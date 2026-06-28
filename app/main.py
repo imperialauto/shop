@@ -102,6 +102,33 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     })
 
 
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request, db: Session = Depends(get_db)):
+    try:
+        user = get_current_user(request, db)
+    except HTTPException:
+        return RedirectResponse("/login", status_code=302)
+    return templates.TemplateResponse("settings.html", {"request": request, "user": user})
+
+
+@app.post("/settings/change-password")
+def change_password(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+):
+    try:
+        user = get_current_user(request, db)
+    except HTTPException:
+        return RedirectResponse("/login", status_code=302)
+    if not verify_password(current_password, user.password_hash):
+        return templates.TemplateResponse("settings.html", {"request": request, "user": user, "error": "Current password is incorrect"})
+    user.password_hash = hash_password(new_password)
+    db.commit()
+    return templates.TemplateResponse("settings.html", {"request": request, "user": user, "success": "Password updated!"})
+
+
 @app.get("/status/{token}", response_class=HTMLResponse)
 def public_status(request: Request, token: str, db: Session = Depends(get_db)):
     from app.models import RepairOrder

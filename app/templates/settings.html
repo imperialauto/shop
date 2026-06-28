@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Settings — Imperial Auto Care{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-2xl font-bold text-yellow-400">Settings</h1>
+</div>
+
+<div class="max-w-md">
+  <div class="card">
+    <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-4">Change Password</h3>
+
+    {% if error %}
+    <div class="bg-red-900 border border-red-700 text-red-200 text-sm rounded px-3 py-2 mb-4">{{ error }}</div>
+    {% endif %}
+    {% if success %}
+    <div class="bg-green-900 border border-green-700 text-green-200 text-sm rounded px-3 py-2 mb-4">{{ success }}</div>
+    {% endif %}
+
+    <form method="post" action="/settings/change-password" class="space-y-4">
+      <div>
+        <label class="form-label">Current Password</label>
+        <input type="password" name="current_password" required class="form-input" />
+      </div>
+      <div>
+        <label class="form-label">New Password</label>
+        <input type="password" name="new_password" required class="form-input" />
+      </div>
+      <button type="submit" class="btn-primary">Update Password</button>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
