@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}{{ customer.first_name }} {{ customer.last_name }} — Imperial Auto Care{% endblock %}
+{% block content %}
+
+<div class="flex items-center gap-3 mb-2">
+  <a href="/customers/" class="text-stone-400 hover:text-gold-300 text-sm">← Customers</a>
+</div>
+
+<div class="flex items-start justify-between mb-4">
+  <div>
+    {% if customer.customer_type == 'fleet' %}
+    <span class="badge-fleet mb-1 inline-block">FLEET</span>
+    <h1 class="text-2xl font-bold text-yellow-400">{{ customer.fleet_name }}</h1>
+    <p class="text-stone-400">{{ customer.first_name }} {{ customer.last_name }}</p>
+    {% else %}
+    <h1 class="text-2xl font-bold text-yellow-400">{{ customer.first_name }} {{ customer.last_name }}</h1>
+    {% endif %}
+  </div>
+  <div class="flex gap-2">
+    <a href="/customers/{{ customer.id }}/edit" class="btn-secondary">Edit</a>
+    <a href="/ro/new?customer_id={{ customer.id }}" class="btn-primary">+ New RO</a>
+    <a href="/vehicles/new?customer_id={{ customer.id }}" class="btn-secondary">+ Add Vehicle</a>
+  </div>
+</div>
+
+<div class="grid grid-cols-2 gap-4 mb-4">
+  <div class="card">
+    <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Contact</h3>
+    {% if customer.phone %}<p class="text-sm">📞 {{ customer.phone }}</p>{% endif %}
+    {% if customer.email %}<p class="text-sm mt-1">✉ {{ customer.email }}</p>{% endif %}
+    {% if customer.address %}<p class="text-sm text-stone-400 mt-1">{{ customer.address }}</p>{% endif %}
+    {% if customer.notes %}<p class="text-sm text-stone-400 mt-2 border-t border-plum-700 pt-2">{{ customer.notes }}</p>{% endif %}
+  </div>
+
+  <!-- Vehicles -->
+  <div class="card">
+    <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Vehicles ({{ customer.vehicles|length }})</h3>
+    {% for v in customer.vehicles %}
+    <div class="flex items-center justify-between py-1">
+      <span class="text-sm">{{ v.year }} {{ v.make }} {{ v.model }}{% if v.engine %} — {{ v.engine }}{% endif %}</span>
+      <a href="/vehicles/{{ v.id }}/edit" class="text-xs text-stone-500 hover:text-gold-400">edit</a>
+    </div>
+    {% else %}
+    <p class="text-stone-500 text-sm">No vehicles. <a href="/vehicles/new?customer_id={{ customer.id }}" class="text-gold-400 hover:underline">Add one →</a></p>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Repair Orders -->
+<div class="card">
+  <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Repair Orders ({{ customer.repair_orders|length }})</h3>
+  {% if customer.repair_orders %}
+  <table>
+    <thead>
+      <tr>
+        <th>RO #</th>
+        <th>Vehicle</th>
+        <th>Concern</th>
+        <th>Status</th>
+        <th>Date</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ro in customer.repair_orders|sort(attribute='created_at', reverse=True) %}
+      <tr class="cursor-pointer" onclick="window.location='/ro/{{ ro.id }}'">
+        <td class="text-gold-400 font-mono">#{{ ro.id }}</td>
+        <td class="text-stone-400">{{ ro.vehicle.year }} {{ ro.vehicle.make }} {{ ro.vehicle.model }}</td>
+        <td class="text-stone-300 max-w-xs truncate">{{ ro.concern or '—' }}</td>
+        <td><span class="badge-status bg-gray-700 text-gray-300">{{ ro.status.replace('_',' ').title() }}</span></td>
+        <td class="text-stone-500 text-xs">{{ ro.created_at.strftime('%m/%d/%y') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-stone-500 text-sm">No repair orders yet.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

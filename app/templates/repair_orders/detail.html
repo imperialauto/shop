@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% block title %}RO #{{ ro.id }} — Imperial Auto Care{% endblock %}
+{% block content %}
+
+<div class="flex items-center gap-3 mb-2">
+  <a href="/ro/" class="text-stone-400 hover:text-gold-300 text-sm">← Repair Orders</a>
+</div>
+
+<div class="flex items-start justify-between mb-4">
+  <div>
+    <h1 class="text-2xl font-bold text-yellow-400">RO #{{ ro.id }}</h1>
+    <p class="text-stone-400 text-sm mt-0.5">Created {{ ro.created_at.strftime('%B %d, %Y') }}</p>
+  </div>
+  <div class="flex gap-2">
+    <form method="post" action="/ro/{{ ro.id }}/update-status" class="flex gap-2 items-center">
+      <select name="status" class="form-select w-44">
+        {% for val, label in statuses %}
+        <option value="{{ val }}" {% if ro.status == val %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn-secondary">Update</button>
+    </form>
+    <a href="/invoices/create/{{ ro.id }}" class="btn-primary" onclick="return confirm('Create invoice from current line items?')">Create Invoice</a>
+  </div>
+</div>
+
+<div class="grid grid-cols-3 gap-4 mb-4">
+  <!-- Customer & Vehicle -->
+  <div class="card col-span-1">
+    <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Customer</h3>
+    {% if ro.customer.customer_type == 'fleet' %}
+    <span class="badge-fleet mb-1 inline-block">FLEET</span>
+    <p class="font-semibold text-gold-300">{{ ro.customer.fleet_name }}</p>
+    {% endif %}
+    <p class="font-semibold">{{ ro.customer.first_name }} {{ ro.customer.last_name }}</p>
+    {% if ro.customer.phone %}<p class="text-stone-400 text-sm">{{ ro.customer.phone }}</p>{% endif %}
+    {% if ro.customer.email %}<p class="text-stone-400 text-sm">{{ ro.customer.email }}</p>{% endif %}
+    <a href="/customers/{{ ro.customer.id }}" class="text-gold-400 text-xs hover:underline mt-2 block">View customer →</a>
+  </div>
+
+  <div class="card col-span-1">
+    <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Vehicle</h3>
+    <p class="font-semibold">{{ ro.vehicle.year }} {{ ro.vehicle.make }} {{ ro.vehicle.model }}</p>
+    {% if ro.vehicle.engine %}<p class="text-stone-400 text-sm">{{ ro.vehicle.engine }}</p>{% endif %}
+    {% if ro.vehicle.vin %}<p class="text-stone-500 text-xs font-mono">{{ ro.vehicle.vin }}</p>{% endif %}
+    {% if ro.mileage_in %}<p class="text-stone-400 text-sm">{{ "{:,}".format(ro.mileage_in) }} miles in</p>{% endif %}
+    {% if ro.vehicle.license_plate %}<p class="text-stone-400 text-sm">{{ ro.vehicle.license_plate }}</p>{% endif %}
+  </div>
+
+  <div class="card col-span-1">
+    <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Details</h3>
+    <p class="text-stone-400 text-sm">Status: <span class="text-stone-200">{{ ro.status.replace('_',' ').title() }}</span></p>
+    <p class="text-stone-400 text-sm mt-1">Tech: <span class="text-stone-200">{{ ro.assigned_tech.full_name if ro.assigned_tech else 'Unassigned' }}</span></p>
+    <p class="text-stone-400 text-sm mt-1">Public link:
+      <a href="/status/{{ ro.public_token }}" target="_blank" class="text-gold-400 text-xs hover:underline">Customer status page →</a>
+    </p>
+  </div>
+</div>
+
+<!-- Customer Concern -->
+{% if ro.concern %}
+<div class="card mb-4">
+  <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-2">Customer Concern</h3>
+  <p class="text-stone-200">{{ ro.concern }}</p>
+</div>
+{% endif %}
+
+<!-- Tech Notes -->
+<div class="card mb-4">
+  <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Tech Notes / Diagnostic Second-Brain</h3>
+  <form method="post" action="/ro/{{ ro.id }}/update-notes">
+    <textarea name="tech_notes" rows="5" class="form-input mb-3"
+      placeholder="Document your diagnostic process, findings, parts replaced, labor performed…">{{ ro.tech_notes or '' }}</textarea>
+    <button type="submit" class="btn-secondary text-xs">Save Notes</button>
+  </form>
+</div>
+
+<!-- AI Assist Bar -->
+<div class="card mb-4 border-gold-400 border">
+  <h3 class="text-xs text-gold-400 uppercase tracking-wide mb-3">⚡ AI Assist</h3>
+  <div class="flex gap-2 mb-4">
+    <button class="btn-secondary text-xs"
+      hx-post="/ai/suggest-diagnostic/{{ ro.id }}"
+      hx-target="#ai-output"
+      hx-indicator="#ai-spinner">
+      🔍 Suggest Diagnostic
+    </button>
+    <button class="btn-secondary text-xs"
+      hx-post="/ai/draft-line-items/{{ ro.id }}"
+      hx-target="#ai-output"
+      hx-indicator="#ai-spinner">
+      📋 Draft Line Items
+    </button>
+    <button class="btn-secondary text-xs"
+      hx-post="/ai/suggest-upsells/{{ ro.id }}"
+      hx-target="#ai-output"
+      hx-indicator="#ai-spinner">
+      💡 Suggest Upsells
+    </button>
+    <span id="ai-spinner" class="htmx-indicator text-stone-400 text-xs self-center">Thinking…</span>
+  </div>
+  <div id="ai-output" class="text-stone-300 text-sm min-h-8"></div>
+</div>
+
+<!-- Line Items -->
+<div class="card mb-4">
+  <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Line Items</h3>
+  {% if ro.line_items %}
+  <table class="mb-4">
+    <thead>
+      <tr>
+        <th>Description</th>
+        <th>Type</th>
+        <th class="text-right">Qty</th>
+        <th class="text-right">Unit Price</th>
+        <th class="text-right">Total</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for li in ro.line_items %}
+      <tr>
+        <td>{{ li.description }}</td>
+        <td class="text-stone-400">{{ li.item_type }}</td>
+        <td class="text-right text-stone-400">{{ li.quantity }}</td>
+        <td class="text-right text-stone-400">${{ "%.2f"|format(li.unit_price) }}</td>
+        <td class="text-right font-semibold">${{ "%.2f"|format(li.total) }}</td>
+        <td>
+          <form method="post" action="/ro/{{ ro.id }}/delete-line-item/{{ li.id }}" class="inline">
+            <button type="submit" class="text-red-500 hover:text-red-400 text-xs" onclick="return confirm('Delete this line item?')">×</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="text-right text-gold-300 font-bold">Subtotal: ${{ "%.2f"|format(subtotal) }}</div>
+  {% endif %}
+
+  <!-- Add Line Item -->
+  <form method="post" action="/ro/{{ ro.id }}/add-line-item" class="mt-4 grid grid-cols-5 gap-2 items-end">
+    <div class="col-span-2">
+      <label class="form-label">Description</label>
+      <input type="text" name="description" required class="form-input" placeholder="e.g. Replace fuel filter" />
+    </div>
+    <div>
+      <label class="form-label">Type</label>
+      <select name="item_type" class="form-select">
+        <option value="labor">Labor</option>
+        <option value="part">Part</option>
+        <option value="sublet">Sublet</option>
+        <option value="misc">Misc</option>
+      </select>
+    </div>
+    <div>
+      <label class="form-label">Qty / Hrs</label>
+      <input type="number" name="quantity" step="0.1" value="1" class="form-input" />
+    </div>
+    <div>
+      <label class="form-label">Unit Price</label>
+      <input type="number" name="unit_price" step="0.01" value="0" class="form-input" />
+    </div>
+    <div class="col-span-5">
+      <button type="submit" class="btn-secondary text-xs">+ Add Line Item</button>
+    </div>
+  </form>
+</div>
+
+<!-- Communications -->
+{% if ro.communications %}
+<div class="card mb-4">
+  <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Communications</h3>
+  {% for comm in ro.communications %}
+  <div class="flex gap-3 mb-2">
+    <span class="text-xs text-stone-500">{{ comm.created_at.strftime('%m/%d %H:%M') }}</span>
+    <span class="text-xs {% if comm.direction == 'inbound' %}text-blue-400{% else %}text-green-400{% endif %}">
+      {{ comm.direction }} {{ comm.channel }}
+    </span>
+    <span class="text-sm text-stone-300">{{ comm.body }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% endblock %}

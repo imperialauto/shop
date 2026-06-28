@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Invoice #{{ invoice.id }} — Imperial Auto Care{% endblock %}
+{% block content %}
+
+<div class="flex items-center gap-3 mb-2">
+  <a href="/invoices/" class="text-stone-400 hover:text-gold-300 text-sm">← Invoices</a>
+</div>
+
+<div class="flex items-start justify-between mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-yellow-400">Invoice #{{ invoice.id }}</h1>
+    <p class="text-stone-400 text-sm">RO <a href="/ro/{{ invoice.repair_order_id }}" class="text-gold-400 hover:underline">#{{ invoice.repair_order_id }}</a> · {{ invoice.created_at.strftime('%B %d, %Y') }}</p>
+  </div>
+  <div class="flex gap-2">
+    {% if invoice.status == 'draft' %}
+    <form method="post" action="/invoices/{{ invoice.id }}/mark-sent">
+      <button class="btn-secondary">Mark Sent</button>
+    </form>
+    {% endif %}
+    <span class="badge-status self-center px-3 py-1
+      {% if invoice.status == 'paid' %}bg-green-900 text-green-300
+      {% elif invoice.status == 'sent' %}bg-blue-900 text-blue-300
+      {% else %}bg-gray-700 text-gray-300{% endif %}">
+      {{ invoice.status.title() }}
+    </span>
+  </div>
+</div>
+
+<div class="grid grid-cols-2 gap-4 mb-6">
+  <div class="card">
+    <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-2">Bill To</h3>
+    <p class="font-semibold">{{ invoice.repair_order.customer.first_name }} {{ invoice.repair_order.customer.last_name }}</p>
+    {% if invoice.repair_order.customer.phone %}<p class="text-stone-400 text-sm">{{ invoice.repair_order.customer.phone }}</p>{% endif %}
+  </div>
+  <div class="card">
+    <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-2">Vehicle</h3>
+    <p class="font-semibold">{{ invoice.repair_order.vehicle.year }} {{ invoice.repair_order.vehicle.make }} {{ invoice.repair_order.vehicle.model }}</p>
+    {% if invoice.repair_order.vehicle.vin %}<p class="text-stone-500 text-xs font-mono">{{ invoice.repair_order.vehicle.vin }}</p>{% endif %}
+  </div>
+</div>
+
+<!-- Line Items -->
+<div class="card mb-4">
+  <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Line Items</h3>
+  <table>
+    <thead><tr><th>Description</th><th>Type</th><th class="text-right">Qty</th><th class="text-right">Unit Price</th><th class="text-right">Total</th></tr></thead>
+    <tbody>
+      {% for li in invoice.repair_order.line_items %}
+      <tr>
+        <td>{{ li.description }}</td>
+        <td class="text-stone-400">{{ li.item_type }}</td>
+        <td class="text-right text-stone-400">{{ li.quantity }}</td>
+        <td class="text-right text-stone-400">${{ "%.2f"|format(li.unit_price) }}</td>
+        <td class="text-right">${{ "%.2f"|format(li.total) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="mt-4 text-right space-y-1">
+    <p class="text-stone-400 text-sm">Subtotal: <span class="text-stone-200">${{ "%.2f"|format(invoice.subtotal) }}</span></p>
+    <p class="text-stone-400 text-sm">Tax ({{ "%.1f"|format(invoice.tax_rate * 100) }}%): <span class="text-stone-200">${{ "%.2f"|format(invoice.tax_amount) }}</span></p>
+    <p class="text-gold-300 font-bold text-lg">Total: ${{ "%.2f"|format(invoice.total) }}</p>
+    <p class="text-stone-400 text-sm">Paid: <span class="text-green-400">${{ "%.2f"|format(total_paid) }}</span></p>
+    <p class="text-stone-400 text-sm">Balance: <span class="{% if balance > 0 %}text-red-400{% else %}text-green-400{% endif %} font-semibold">${{ "%.2f"|format(balance) }}</span></p>
+  </div>
+</div>
+
+<!-- Payments -->
+{% if invoice.payments %}
+<div class="card mb-4">
+  <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Payments</h3>
+  {% for p in invoice.payments %}
+  <div class="flex justify-between py-1 border-b border-plum-700 text-sm">
+    <span>{{ p.paid_at.strftime('%m/%d/%y') }} — {{ p.method.title() }}{% if p.reference %} ({{ p.reference }}){% endif %}</span>
+    <span class="text-green-400 font-semibold">${{ "%.2f"|format(p.amount) }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Add Payment -->
+{% if balance > 0 %}
+<div class="card">
+  <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Add Payment</h3>
+  <form method="post" action="/invoices/{{ invoice.id }}/add-payment" class="flex gap-3 items-end">
+    <div>
+      <label class="form-label">Amount</label>
+      <input type="number" name="amount" step="0.01" value="{{ "%.2f"|format(balance) }}" class="form-input w-32" required />
+    </div>
+    <div>
+      <label class="form-label">Method</label>
+      <select name="method" class="form-select w-32">
+        <option value="cash">Cash</option>
+        <option value="card">Card</option>
+        <option value="check">Check</option>
+        <option value="ach">ACH</option>
+      </select>
+    </div>
+    <div class="flex-1">
+      <label class="form-label">Reference</label>
+      <input type="text" name="reference" class="form-input" placeholder="Check #, last 4 digits…" />
+    </div>
+    <button type="submit" class="btn-primary">Record Payment</button>
+  </form>
+</div>
+{% endif %}
+
+{% endblock %}

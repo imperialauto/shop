@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}{% if vehicle %}Edit{% else %}Add{% endif %} Vehicle — Imperial Auto Care{% endblock %}
+{% block content %}
+
+<div class="flex items-center gap-3 mb-6">
+  <a href="/customers/" class="text-stone-400 hover:text-gold-300">← Customers</a>
+  <h1 class="text-2xl font-bold text-yellow-400">{% if vehicle %}Edit Vehicle{% else %}Add Vehicle{% endif %}</h1>
+</div>
+
+<form method="post" action="{% if vehicle %}/vehicles/{{ vehicle.id }}/edit{% else %}/vehicles/new{% endif %}" class="max-w-xl space-y-4">
+  <div class="card space-y-4">
+
+    <div>
+      <label class="form-label">Customer *</label>
+      <select name="customer_id" class="form-select" required>
+        {% for c in customers %}
+        <option value="{{ c.id }}" {% if selected_customer_id == c.id %}selected{% endif %}>
+          {% if c.customer_type == 'fleet' %}[FLEET] {{ c.fleet_name }} — {% endif %}
+          {{ c.first_name }} {{ c.last_name }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="grid grid-cols-3 gap-3">
+      <div>
+        <label class="form-label">Year</label>
+        <input type="number" name="year" value="{{ vehicle.year if vehicle else '' }}" class="form-input" placeholder="2020" min="1980" max="2030" />
+      </div>
+      <div>
+        <label class="form-label">Make</label>
+        <input type="text" name="make" value="{{ vehicle.make if vehicle else '' }}" class="form-input" list="makes-list" placeholder="Ford" />
+        <datalist id="makes-list">
+          {% for m in makes %}<option value="{{ m }}">{% endfor %}
+        </datalist>
+      </div>
+      <div>
+        <label class="form-label">Model</label>
+        <input type="text" name="model" value="{{ vehicle.model if vehicle else '' }}" class="form-input" list="models-list" placeholder="F-250" />
+        <datalist id="models-list">
+          {% for make, models in diesel_models.items() %}
+          {% for m in models %}<option value="{{ m }}">{% endfor %}
+          {% endfor %}
+        </datalist>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="form-label">Trim</label>
+        <input type="text" name="trim" value="{{ vehicle.trim if vehicle else '' }}" class="form-input" placeholder="XLT, Lariat…" />
+      </div>
+      <div>
+        <label class="form-label">Engine</label>
+        <input type="text" name="engine" value="{{ vehicle.engine if vehicle else '' }}" class="form-input" list="engines-list" placeholder="6.7L Powerstroke" />
+        <datalist id="engines-list">
+          <option value="6.0L Powerstroke">
+          <option value="6.7L Powerstroke">
+          <option value="6.4L Powerstroke">
+          <option value="7.3L Powerstroke">
+          <option value="6.6L Duramax">
+          <option value="6.7L Cummins">
+          <option value="3.0L Sprinter CDI">
+          <option value="2.7L EcoBoost">
+          <option value="5.0L Coyote">
+        </datalist>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="form-label">VIN</label>
+        <input type="text" name="vin" value="{{ vehicle.vin if vehicle else '' }}" class="form-input font-mono" maxlength="17" placeholder="17-character VIN" />
+      </div>
+      <div>
+        <label class="form-label">License Plate</label>
+        <input type="text" name="license_plate" value="{{ vehicle.license_plate if vehicle else '' }}" class="form-input" />
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="form-label">Current Mileage</label>
+        <input type="number" name="mileage" value="{{ vehicle.mileage if vehicle else '' }}" class="form-input" />
+      </div>
+      <div>
+        <label class="form-label">Color</label>
+        <input type="text" name="color" value="{{ vehicle.color if vehicle else '' }}" class="form-input" placeholder="White, Black…" />
+      </div>
+    </div>
+
+    <div>
+      <label class="form-label">Notes</label>
+      <textarea name="notes" rows="2" class="form-input">{{ vehicle.notes if vehicle else '' }}</textarea>
+    </div>
+  </div>
+
+  <div class="flex gap-3">
+    <button type="submit" class="btn-primary">{% if vehicle %}Save Changes{% else %}Add Vehicle{% endif %}</button>
+    <a href="/customers/" class="btn-secondary">Cancel</a>
+  </div>
+</form>
+
+{% endblock %}

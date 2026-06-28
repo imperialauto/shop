@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Invoices — Imperial Auto Care{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-2xl font-bold text-yellow-400">Invoices</h1>
+</div>
+
+<div class="card">
+  {% if invoices %}
+  <table>
+    <thead>
+      <tr>
+        <th>Invoice #</th>
+        <th>RO #</th>
+        <th>Customer</th>
+        <th class="text-right">Total</th>
+        <th>Status</th>
+        <th>Date</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for inv in invoices %}
+      <tr class="cursor-pointer" onclick="window.location='/invoices/{{ inv.id }}'">
+        <td class="text-gold-400 font-mono">#{{ inv.id }}</td>
+        <td class="text-stone-400"><a href="/ro/{{ inv.repair_order_id }}" class="hover:text-gold-400">#{{ inv.repair_order_id }}</a></td>
+        <td>{{ inv.repair_order.customer.first_name }} {{ inv.repair_order.customer.last_name }}</td>
+        <td class="text-right font-semibold">${{ "%.2f"|format(inv.total) }}</td>
+        <td>
+          <span class="badge-status
+            {% if inv.status == 'paid' %}bg-green-900 text-green-300
+            {% elif inv.status == 'sent' %}bg-blue-900 text-blue-300
+            {% elif inv.status == 'void' %}bg-red-900 text-red-300
+            {% else %}bg-gray-700 text-gray-300{% endif %}">
+            {{ inv.status.title() }}
+          </span>
+        </td>
+        <td class="text-stone-500 text-xs">{{ inv.created_at.strftime('%m/%d/%y') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-stone-500 text-sm">No invoices yet. Create one from an open repair order.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

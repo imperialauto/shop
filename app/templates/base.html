@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Imperial Auto Care{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            plum: { 900: '#1a0a2e', 800: '#2d1554', 700: '#3d1f6e', 600: '#4e2a85' },
+            gold: { 400: '#d4a853', 300: '#e0c070', 200: '#edd494' },
+            stone: { 700: '#44403c', 600: '#57534e', 500: '#78716c', 400: '#a8a29e' }
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <style>
+    body { background-color: #1a0a2e; color: #e8e0d5; }
+    .nav-link { @apply text-stone-400 hover:text-gold-300 px-3 py-2 rounded text-sm font-medium transition-colors; }
+    .nav-link.active { @apply text-gold-300 bg-plum-700; }
+    .btn-primary { @apply bg-gold-400 hover:bg-gold-300 text-plum-900 font-semibold px-4 py-2 rounded text-sm transition-colors; }
+    .btn-secondary { @apply bg-plum-700 hover:bg-plum-600 text-gold-300 border border-plum-600 px-4 py-2 rounded text-sm transition-colors; }
+    .btn-danger { @apply bg-red-800 hover:bg-red-700 text-red-100 px-4 py-2 rounded text-sm transition-colors; }
+    .card { @apply bg-plum-800 border border-plum-700 rounded-lg p-4; }
+    .form-input { @apply bg-plum-900 border border-plum-600 text-stone-200 rounded px-3 py-2 w-full text-sm focus:outline-none focus:border-gold-400; }
+    .form-label { @apply block text-stone-400 text-xs font-semibold mb-1 uppercase tracking-wide; }
+    .form-select { @apply bg-plum-900 border border-plum-600 text-stone-200 rounded px-3 py-2 w-full text-sm focus:outline-none focus:border-gold-400; }
+    .badge-fleet { @apply bg-gold-400 text-plum-900 text-xs font-bold px-2 py-0.5 rounded; }
+    .badge-status { @apply text-xs font-semibold px-2 py-0.5 rounded; }
+    table { @apply w-full text-sm; }
+    th { @apply text-left text-stone-400 text-xs uppercase tracking-wide pb-2 border-b border-plum-700; }
+    td { @apply py-2 border-b border-plum-700 text-stone-200; }
+    tr:hover td { @apply bg-plum-700 bg-opacity-30; }
+  </style>
+</head>
+<body class="min-h-screen">
+
+{% if user is defined and user %}
+<nav class="bg-plum-900 border-b border-plum-700 px-4 py-3">
+  <div class="max-w-7xl mx-auto flex items-center justify-between">
+    <div class="flex items-center gap-6">
+      <a href="/dashboard" class="text-gold-400 font-bold text-lg tracking-tight">⚙ Imperial Auto Care</a>
+      <a href="/dashboard" class="nav-link {% if request.url.path == '/dashboard' %}active{% endif %}">Dashboard</a>
+      <a href="/ro/" class="nav-link {% if '/ro/' in request.url.path %}active{% endif %}">Repair Orders</a>
+      <a href="/customers/" class="nav-link {% if '/customers/' in request.url.path %}active{% endif %}">Customers</a>
+      <a href="/customers/?type_filter=fleet" class="nav-link">Fleet</a>
+      <a href="/invoices/" class="nav-link {% if '/invoices/' in request.url.path %}active{% endif %}">Invoices</a>
+    </div>
+    <div class="flex items-center gap-3">
+      <span class="text-stone-400 text-sm">{{ user.full_name or user.username }}</span>
+      <a href="/logout" class="text-stone-500 hover:text-red-400 text-sm">Logout</a>
+    </div>
+  </div>
+</nav>
+{% endif %}
+
+<main class="max-w-7xl mx-auto px-4 py-6">
+  {% block content %}{% endblock %}
+</main>
+
+</body>
+</html>

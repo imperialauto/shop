@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Customers — Imperial Auto Care{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-2xl font-bold text-yellow-400">Customers</h1>
+  <a href="/customers/new" class="btn-primary">+ New Customer</a>
+</div>
+
+<div class="card mb-4">
+  <form method="get" class="flex gap-3 items-end">
+    <div>
+      <label class="form-label">Type</label>
+      <select name="type_filter" class="form-select w-36" onchange="this.form.submit()">
+        <option value="all" {% if type_filter=='all' %}selected{% endif %}>All</option>
+        <option value="fleet" {% if type_filter=='fleet' %}selected{% endif %}>Fleet</option>
+        <option value="individual" {% if type_filter=='individual' %}selected{% endif %}>Individual</option>
+      </select>
+    </div>
+    <div class="flex-1">
+      <label class="form-label">Search</label>
+      <input type="text" name="search" value="{{ search }}" placeholder="Name, fleet, or phone…" class="form-input" />
+    </div>
+    <button type="submit" class="btn-secondary">Search</button>
+  </form>
+</div>
+
+<div class="card">
+  {% if customers %}
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Phone</th>
+        <th>Email</th>
+        <th>Vehicles</th>
+        <th>ROs</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in customers %}
+      <tr class="cursor-pointer" onclick="window.location='/customers/{{ c.id }}'">
+        <td>
+          {% if c.customer_type == 'fleet' %}
+          <span class="badge-fleet mr-1">FLEET</span>
+          <span class="font-semibold text-gold-300">{{ c.fleet_name }}</span>
+          <span class="text-stone-400 text-xs ml-1">— {{ c.first_name }} {{ c.last_name }}</span>
+          {% else %}
+          <span class="font-semibold">{{ c.first_name }} {{ c.last_name }}</span>
+          {% endif %}
+        </td>
+        <td class="text-stone-400">{{ c.phone or '—' }}</td>
+        <td class="text-stone-400">{{ c.email or '—' }}</td>
+        <td class="text-stone-400">{{ c.vehicles|length }}</td>
+        <td class="text-stone-400">{{ c.repair_orders|length }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-stone-500 text-sm">No customers found. <a href="/customers/new" class="text-gold-400 hover:underline">Add one →</a></p>
+  {% endif %}
+</div>
+
+{% endblock %}

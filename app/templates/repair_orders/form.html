@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}New Repair Order — Imperial Auto Care{% endblock %}
+{% block content %}
+
+<div class="flex items-center gap-3 mb-6">
+  <a href="/ro/" class="text-stone-400 hover:text-gold-300">← Repair Orders</a>
+  <h1 class="text-2xl font-bold text-yellow-400">New Repair Order</h1>
+</div>
+
+<form method="post" action="/ro/new" class="max-w-2xl space-y-4">
+  <div class="card space-y-4">
+    <div>
+      <label class="form-label">Customer *</label>
+      <select name="customer_id" class="form-select" required
+        hx-get="/ro/0/vehicles" hx-target="#vehicle-select" hx-include="[name='customer_id']"
+        onchange="this.form.querySelector('[name=customer_id]').value=this.value">
+        <option value="">Select customer…</option>
+        {% for c in customers %}
+        <option value="{{ c.id }}" {% if selected_customer_id == c.id %}selected{% endif %}>
+          {% if c.customer_type == 'fleet' %}[FLEET] {{ c.fleet_name }} — {% endif %}
+          {{ c.first_name }} {{ c.last_name }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label class="form-label">Vehicle *</label>
+      <div id="vehicle-select">
+        <select name="vehicle_id" class="form-select" required>
+          <option value="">Select customer first…</option>
+        </select>
+      </div>
+    </div>
+
+    <div>
+      <label class="form-label">Assigned Tech</label>
+      <select name="assigned_tech_id" class="form-select">
+        <option value="">Unassigned</option>
+        {% for t in techs %}
+        <option value="{{ t.id }}">{{ t.full_name or t.username }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label class="form-label">Mileage In</label>
+      <input type="number" name="mileage_in" class="form-input" placeholder="Current mileage" />
+    </div>
+
+    <div>
+      <label class="form-label">Customer Concern</label>
+      <div class="flex flex-wrap gap-2 mb-2">
+        {% for concern in common_concerns %}
+        <button type="button" onclick="document.querySelector('[name=concern]').value='{{ concern }}'"
+          class="text-xs bg-plum-700 hover:bg-plum-600 text-stone-300 px-2 py-1 rounded border border-plum-600">
+          {{ concern }}
+        </button>
+        {% endfor %}
+      </div>
+      <textarea name="concern" rows="3" class="form-input" placeholder="Describe the customer's concern…"></textarea>
+    </div>
+  </div>
+
+  <div class="flex gap-3">
+    <button type="submit" class="btn-primary">Create Repair Order</button>
+    <a href="/ro/" class="btn-secondary">Cancel</a>
+  </div>
+</form>
+
+{% endblock %}
