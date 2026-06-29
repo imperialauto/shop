@@ -7,6 +7,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 OPENPHONE_API_KEY = os.getenv("OPENPHONE_API_KEY", "")
 OPENPHONE_SIGNING_SECRET = os.getenv("OPENPHONE_SIGNING_SECRET", "")
+OWNER_PHONE = os.getenv("OWNER_PHONE", "")  # Jaelan's cell — receives estimate approval texts
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./imperial_auto.db")
 
 # Railway gives a postgres:// URL, SQLAlchemy needs postgresql://
