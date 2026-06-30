@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Estimate Generator — Imperial Auto Care{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-xl font-bold text-gold-300">Estimate Generator</h1>
+    <span class="text-stone-400 text-sm">Paste a customer text or drop a screenshot — AI does the rest</span>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+    <!-- Input form -->
+    <div class="card">
+      <!-- Tab toggle -->
+      <div class="flex gap-2 mb-4" id="tabs">
+        <button onclick="showTab('text')" id="tab-text"
+          class="px-3 py-1.5 rounded text-sm font-medium transition-colors bg-gold-400 text-plum-900">
+          Paste Text
+        </button>
+        <button onclick="showTab('image')" id="tab-image"
+          class="px-3 py-1.5 rounded text-sm font-medium transition-colors bg-plum-700 text-stone-300 hover:text-gold-300">
+          Screenshot
+        </button>
+      </div>
+
+      <form
+        hx-post="/estimates/generate"
+        hx-target="#estimate-result"
+        hx-swap="innerHTML"
+        hx-indicator="#spinner"
+        enctype="multipart/form-data"
+      >
+
+        <!-- Text tab -->
+        <div id="panel-text">
+          <label class="form-label">Customer conversation</label>
+          <textarea
+            name="conversation_text"
+            rows="12"
+            placeholder="Paste the text thread here — any format works.
+
+Example:
+John: Hey do you guys do diesel? My 2019 F250 6.7 is smoking on startup and ticking at idle, about 120k miles
+You: Yes definitely, what's your name?
+John: John Smith"
+            class="form-input font-mono text-xs resize-none"
+          ></textarea>
+        </div>
+
+        <!-- Screenshot tab -->
+        <div id="panel-image" class="hidden">
+          <label class="form-label">Screenshot of text thread</label>
+          <div
+            class="border-2 border-dashed border-plum-600 rounded-lg p-8 text-center cursor-pointer hover:border-gold-400 transition-colors"
+            onclick="document.getElementById('screenshot-input').click()"
+            ondragover="event.preventDefault()"
+            ondrop="handleDrop(event)"
+          >
+            <div id="drop-label" class="text-stone-400 text-sm">
+              <div class="text-3xl mb-2">📱</div>
+              <div>Click to choose or drag & drop</div>
+              <div class="text-xs mt-1 text-stone-500">PNG, JPG, WEBP</div>
+            </div>
+            <img id="preview-img" class="hidden max-h-48 mx-auto rounded mt-3" />
+          </div>
+          <input
+            type="file"
+            id="screenshot-input"
+            name="screenshot"
+            accept="image/*"
+            class="hidden"
+            onchange="previewImage(this)"
+          />
+        </div>
+
+        <button type="submit" class="btn-primary w-full mt-4 py-2.5">
+          Generate Estimate
+        </button>
+
+        <!-- Spinner -->
+        <div id="spinner" class="htmx-indicator mt-3 text-center text-stone-400 text-sm">
+          <svg class="animate-spin inline w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+          </svg>
+          Reading conversation and generating estimate…
+        </div>
+
+      </form>
+    </div>
+
+    <!-- Result -->
+    <div id="estimate-result" class="space-y-4">
+      <div class="card border-dashed border-plum-600 text-center py-12 text-stone-500 text-sm">
+        Estimate will appear here
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<style>
+  .htmx-indicator { display: none; }
+  .htmx-request .htmx-indicator { display: block; }
+</style>
+
+<script>
+  function showTab(tab) {
+    const isText = tab === 'text';
+    document.getElementById('panel-text').classList.toggle('hidden', !isText);
+    document.getElementById('panel-image').classList.toggle('hidden', isText);
+    document.getElementById('tab-text').className = isText
+      ? 'px-3 py-1.5 rounded text-sm font-medium transition-colors bg-gold-400 text-plum-900'
+      : 'px-3 py-1.5 rounded text-sm font-medium transition-colors bg-plum-700 text-stone-300 hover:text-gold-300';
+    document.getElementById('tab-image').className = isText
+      ? 'px-3 py-1.5 rounded text-sm font-medium transition-colors bg-plum-700 text-stone-300 hover:text-gold-300'
+      : 'px-3 py-1.5 rounded text-sm font-medium transition-colors bg-gold-400 text-plum-900';
+  }
+
+  function previewImage(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      document.getElementById('drop-label').classList.add('hidden');
+      const img = document.getElementById('preview-img');
+      img.src = e.target.result;
+      img.classList.remove('hidden');
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handleDrop(e) {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (!file || !file.type.startsWith('image/')) return;
+    const input = document.getElementById('screenshot-input');
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    previewImage(input);
+  }
+</script>
+{% endblock %}

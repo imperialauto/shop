@@ -50,6 +50,7 @@
       <a href="/customers/" class="nav-link {% if '/customers/' in request.url.path %}active{% endif %}">Customers</a>
       <a href="/customers/?type_filter=fleet" class="nav-link">Fleet</a>
       <a href="/invoices/" class="nav-link {% if '/invoices/' in request.url.path %}active{% endif %}">Invoices</a>
+      <a href="/estimates/" class="nav-link {% if '/estimates/' in request.url.path %}active{% endif %}">Estimates</a>
     </div>
     <div class="flex items-center gap-3">
       <a href="/settings" class="text-stone-400 hover:text-gold-300 text-sm">{{ user.full_name or user.username }}</a>

@@ -9,7 +9,7 @@ from app.config import SECRET_KEY
 from app.database import get_db, init_db
 from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user
-from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks
+from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen
 
 import os
 
@@ -30,6 +30,7 @@ app.include_router(repair_orders.router, prefix="/ro", tags=["repair_orders"])
 app.include_router(invoices.router, prefix="/invoices", tags=["invoices"])
 app.include_router(ai_assist.router, prefix="/ai", tags=["ai"])
 app.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
+app.include_router(estimate_gen.router, prefix="/estimates", tags=["estimates"])
 
 
 @app.on_event("startup")
