@@ -2,9 +2,9 @@ from fastapi import APIRouter, Request, HTTPException, Header, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.config import OPENPHONE_SIGNING_SECRET, OPENPHONE_API_KEY, ANTHROPIC_API_KEY, OWNER_PHONE
+from app.config import OPENPHONE_SIGNING_SECRET, OPENPHONE_API_KEY, GROQ_API_KEY, OWNER_PHONE
 import hmac, hashlib, base64, json, httpx, secrets
-import anthropic
+from groq import AsyncGroq
 
 router = APIRouter()
 
@@ -109,18 +109,17 @@ Do NOT output the JSON until you have all five items."""
 
 async def intake_turn(conversation: list, new_message: str) -> tuple[str, dict | None]:
     """One turn of the intake conversation. Returns (reply, collected_data_or_None)."""
-    client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+    client = AsyncGroq(api_key=GROQ_API_KEY)
 
-    messages = conversation + [{"role": "user", "content": new_message}]
+    messages = [{"role": "system", "content": INTAKE_SYSTEM}] + conversation + [{"role": "user", "content": new_message}]
 
-    response = await client.messages.create(
-        model="claude-haiku-4-5-20251001",
+    response = await client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
         max_tokens=300,
-        system=INTAKE_SYSTEM,
         messages=messages,
     )
 
-    reply = response.content[0].text.strip()
+    reply = response.choices[0].message.content.strip()
 
     # Check if Claude signalled completion with JSON
     collected = None
@@ -139,7 +138,16 @@ async def intake_turn(conversation: list, new_message: str) -> tuple[str, dict |
 ESTIMATE_SYSTEM = """You are a diesel and fleet repair estimator for Imperial Auto Care in Phoenix, AZ.
 Rates: diesel/fleet $150/hr, gas $130/hr. Parts markup 25-30% over dealer cost.
 
-Respond ONLY with this JSON:
+CRITICAL — ONE-TIME-USE (OTU) PARTS KNOWLEDGE:
+You must flag any OTU parts relevant to the job in the otu_parts array. Common examples:
+- 6.0L Powerstroke: head bolts (TTY), EGR cooler gaskets, oil cooler o-rings, injector cup o-rings, valley cover gasket
+- 6.7L Powerstroke: EGR cooler outlet gasket, turbo pedestal o-rings, DPF/DOC gaskets, some EGR hardware
+- 6.6L Duramax LLY/LBZ/LMM: head bolts (TTY), injector return line o-rings, valley cover gasket, EGR valve gasket
+- 6.6L Duramax LML/L5P: CP4 high-pressure fuel lines (crimped — OTU), fuel rail return lines, head bolts
+- Cummins 5.9/6.7: head bolts (TTY), injector copper washers, injector hold-down hardware, flywheel bolts (some)
+- All platforms: stretch/TTY bolts of any kind, copper crush washers, exhaust manifold bolts (heat-stressed, always inspect), combustion seal washers
+
+Respond ONLY with this JSON (no other text):
 {
   "summary": "One-line description of the work",
   "labor_hours": 4.5,
@@ -149,16 +157,17 @@ Respond ONLY with this JSON:
   "parts_high": 1100,
   "total_low": 1475,
   "total_high": 1775,
-  "notes": "Important caveats, things to watch for, recommended additional services",
-  "needs_inspection": false
+  "notes": "Important caveats, things to watch for, recommended upsells",
+  "needs_inspection": false,
+  "otu_parts": ["6.0L head bolts (TTY — must replace)", "EGR cooler gaskets (one-time-use)"]
 }
 
 Set needs_inspection=true only when you genuinely cannot estimate without seeing the vehicle.
-Use real flat-rate labor times. Apply diesel expertise for Powerstroke, Duramax, and Cummins jobs."""
+Use real flat-rate labor times. otu_parts should be an empty array [] if no OTU parts apply."""
 
 
 async def generate_estimate(data: dict) -> dict:
-    client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+    client = AsyncGroq(api_key=GROQ_API_KEY)
 
     prompt = (
         f"Generate a repair estimate:\n"
@@ -168,14 +177,16 @@ async def generate_estimate(data: dict) -> dict:
         f"Customer: {data.get('name')}"
     )
 
-    response = await client.messages.create(
-        model="claude-opus-4-8",
-        max_tokens=600,
-        system=ESTIMATE_SYSTEM,
-        messages=[{"role": "user", "content": prompt}],
+    response = await client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        max_tokens=700,
+        messages=[
+            {"role": "system", "content": ESTIMATE_SYSTEM},
+            {"role": "user", "content": prompt},
+        ],
     )
 
-    text = response.content[0].text.strip()
+    text = response.choices[0].message.content.strip()
     start = text.find("{")
     end = text.rfind("}") + 1
     return json.loads(text[start:end])
@@ -366,12 +377,15 @@ async def openphone_webhook(
 
         # Notify Jaelan
         if OWNER_PHONE:
+            otu = estimate.get("otu_parts", [])
+            otu_line = f"\n⚠ OTU: {', '.join(otu)}" if otu else ""
             owner_msg = (
                 f"New estimate\n"
                 f"{name} ({from_number})\n"
                 f"{year} {make} {model} — {collected.get('engine')}\n"
                 f"Job: {collected.get('complaint')}\n"
-                f"Est: ${estimate.get('total_low', 0):,.0f}–${estimate.get('total_high', 0):,.0f}\n"
+                f"Est: ${estimate.get('total_low', 0):,.0f}–${estimate.get('total_high', 0):,.0f}"
+                f"{otu_line}\n"
                 f"Review: https://web-production-94989.up.railway.app/ro/{ro.id}"
             )
             await send_sms(OWNER_PHONE, owner_msg)

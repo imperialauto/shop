@@ -1,12 +1,14 @@
 from fastapi import APIRouter, Request, HTTPException, Depends, Form, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-import anthropic, json, base64, os, secrets
+from groq import AsyncGroq
+import json, base64, os, secrets, io
+from datetime import date
 
 from app.database import get_db
 from app.auth import get_current_user
-from app.config import ANTHROPIC_API_KEY
+from app.config import GROQ_API_KEY
 
 router = APIRouter()
 templates = Jinja2Templates(
@@ -17,6 +19,15 @@ EXTRACT_ESTIMATE_SYSTEM = """You are a repair estimator for Imperial Auto Care, 
 Rates: diesel/fleet $150/hr, gas $130/hr. Parts markup 25-30% over dealer cost.
 
 The shop owner has shared a customer conversation (pasted text or a screenshot). Extract vehicle info and generate an estimate.
+
+CRITICAL — ONE-TIME-USE (OTU) PARTS KNOWLEDGE:
+You must flag any OTU/TTY parts relevant to this job. Common examples by platform:
+- 6.0L Powerstroke: head bolts (TTY), EGR cooler gaskets, oil cooler o-rings, injector cup o-rings, valley cover gasket
+- 6.7L Powerstroke: EGR cooler outlet gasket, turbo pedestal o-rings, DPF/DOC gaskets, EGR valve gasket
+- 6.6L Duramax LLY/LBZ/LMM: head bolts (TTY), injector return line o-rings, valley cover gasket, EGR valve gasket
+- 6.6L Duramax LML/L5P: CP4 high-pressure fuel lines (crimped OTU), fuel rail return lines, head bolts (TTY)
+- Cummins 5.9/6.7: head bolts (TTY), injector copper crush washers, injector hold-down hardware, flywheel bolts (some)
+- All platforms: any stretch/TTY bolt, copper banjo crush washers, exhaust manifold bolts (heat-stressed — always inspect/replace), combustion seal washers
 
 Output ONLY this JSON (nothing else before or after):
 {
@@ -37,7 +48,8 @@ Output ONLY this JSON (nothing else before or after):
   "total_low": 1475,
   "total_high": 1775,
   "notes": "important caveats, diesel-specific watch items, recommended upsells",
-  "needs_inspection": false
+  "needs_inspection": false,
+  "otu_parts": ["6.0L head bolts (TTY — must replace)", "EGR cooler gaskets (one-time-use)"]
 }
 
 Rules:
@@ -45,7 +57,8 @@ Rules:
 - Add any fields you had to guess to missing_info
 - needs_inspection=true only when you genuinely cannot estimate without seeing the vehicle
 - Use real flat-rate labor times (Mitchell/AllData standards)
-- Apply diesel expertise for Powerstroke, Duramax, Cummins"""
+- Apply diesel expertise for Powerstroke, Duramax, Cummins
+- otu_parts should be [] if no OTU parts apply to this job"""
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -97,15 +110,19 @@ async def generate_from_input(
             '<p class="text-red-400 text-sm">Paste a conversation or upload a screenshot first.</p>'
         )
 
-    client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+    client = AsyncGroq(api_key=GROQ_API_KEY)
+    # Use vision model for images, text model for pasted text
+    model = "llama-3.2-90b-vision-preview" if (screenshot and screenshot.filename) else "llama-3.3-70b-versatile"
     try:
-        response = await client.messages.create(
-            model="claude-opus-4-8",
+        response = await client.chat.completions.create(
+            model=model,
             max_tokens=900,
-            system=EXTRACT_ESTIMATE_SYSTEM,
-            messages=[{"role": "user", "content": content}],
+            messages=[
+                {"role": "system", "content": EXTRACT_ESTIMATE_SYSTEM},
+                {"role": "user", "content": content},
+            ],
         )
-        text = response.content[0].text.strip()
+        text = response.choices[0].message.content.strip()
         start = text.find("{")
         end = text.rfind("}") + 1
         data = json.loads(text[start:end])
@@ -120,8 +137,18 @@ async def generate_from_input(
     missing_html = ""
     if missing:
         missing_html = f"""
-        <div class="bg-yellow-900 bg-opacity-30 border border-yellow-700 rounded p-3 mb-4 text-sm text-yellow-300">
-          ⚠ Heads up — I had to guess or couldn't find: <strong>{', '.join(missing)}</strong>. Double-check before sending.
+        <div class="bg-yellow-900 bg-opacity-30 border border-yellow-700 rounded p-3 text-sm text-yellow-300">
+          ⚠ Had to guess or couldn't find: <strong>{', '.join(missing)}</strong>. Double-check before sending.
+        </div>"""
+
+    otu = data.get("otu_parts", [])
+    otu_html = ""
+    if otu:
+        otu_items = "".join(f"<li>{p}</li>" for p in otu)
+        otu_html = f"""
+        <div class="bg-red-900 bg-opacity-40 border border-red-700 rounded p-3 text-sm">
+          <div class="text-red-300 font-bold mb-1">🔴 ONE-TIME-USE PARTS — Order before starting</div>
+          <ul class="text-red-200 text-xs space-y-0.5 list-disc list-inside">{otu_items}</ul>
         </div>"""
 
     if data.get("needs_inspection"):
@@ -131,34 +158,56 @@ async def generate_from_input(
           <p>Can't give a solid number without seeing the vehicle first. Let them know to bring it in.</p>
         </div>"""
     else:
-        lh = data.get("labor_hours", 0)
-        lr = data.get("labor_rate", 150)
-        lt = data.get("labor_total", 0)
-        pl = data.get("parts_low", 0)
-        ph = data.get("parts_high", 0)
-        tl = data.get("total_low", 0)
-        th = data.get("total_high", 0)
+        lh = float(data.get("labor_hours", 0) or 0)
+        lr = float(data.get("labor_rate", 150) or 150)
+        lt = float(data.get("labor_total", 0) or 0)
+        pl = float(data.get("parts_low", 0) or 0)
+        ph = float(data.get("parts_high", 0) or 0)
+        tl = float(data.get("total_low", 0) or 0)
+        th = float(data.get("total_high", 0) or 0)
         estimate_block = f"""
-        <div class="grid grid-cols-2 gap-3 text-sm mb-4">
-          <div class="bg-plum-900 rounded p-3">
-            <div class="text-stone-400 text-xs uppercase tracking-wide mb-1">Labor</div>
-            <div class="text-stone-200">{lh} hrs @ ${lr}/hr</div>
-            <div class="text-gold-300 font-semibold">${lt:,.0f}</div>
+        <div class="bg-plum-900 rounded p-3 text-sm mb-2">
+          <div class="text-stone-400 text-xs uppercase tracking-wide mb-2">Labor — adjust if needed</div>
+          <div class="flex gap-2 items-center mb-1">
+            <input id="lh" type="number" step="0.5" min="0" value="{lh}"
+              class="form-input w-20 text-center" onchange="recalc()" />
+            <span class="text-stone-400 text-xs">hrs @</span>
+            <input id="lr" type="number" step="5" min="0" value="{lr}"
+              class="form-input w-20 text-center" onchange="recalc()" />
+            <span class="text-stone-400 text-xs">/hr =</span>
+            <span id="lt" class="text-gold-300 font-semibold">${lt:,.0f}</span>
           </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3 text-sm mb-2">
           <div class="bg-plum-900 rounded p-3">
             <div class="text-stone-400 text-xs uppercase tracking-wide mb-1">Parts</div>
             <div class="text-stone-200">${pl:,.0f} – ${ph:,.0f}</div>
           </div>
-          <div class="bg-plum-900 rounded p-3 col-span-2">
+          <div class="bg-plum-900 rounded p-3">
             <div class="text-stone-400 text-xs uppercase tracking-wide mb-1">Total Estimate</div>
-            <div class="text-gold-400 font-bold text-lg">${tl:,.0f} – ${th:,.0f}</div>
+            <div id="total" class="text-gold-400 font-bold">${tl:,.0f} – ${th:,.0f}</div>
           </div>
-        </div>"""
+        </div>
+        <script>
+          const parts_low={pl}, parts_high={ph};
+          function recalc() {{
+            const lh=parseFloat(document.getElementById('lh').value)||0;
+            const lr=parseFloat(document.getElementById('lr').value)||0;
+            const lt=lh*lr;
+            document.getElementById('lt').textContent='$'+lt.toLocaleString('en-US',{{maximumFractionDigits:0}});
+            const tl=lt+parts_low, th=lt+parts_high;
+            document.getElementById('total').textContent='$'+tl.toLocaleString('en-US',{{maximumFractionDigits:0}})+' – $'+th.toLocaleString('en-US',{{maximumFractionDigits:0}});
+            // Update hidden JSON for PDF/RO
+            const d=JSON.parse(document.getElementById('est-json').value);
+            d.labor_hours=lh; d.labor_rate=lr; d.labor_total=lt; d.total_low=tl; d.total_high=th;
+            document.querySelectorAll('.est-json-input').forEach(el=>el.value=JSON.stringify(d));
+          }}
+        </script>"""
 
     notes_html = ""
     if data.get("notes"):
         notes_html = f"""
-        <div class="text-xs text-stone-400 bg-plum-900 rounded p-3 mb-4">
+        <div class="text-xs text-stone-400 bg-plum-900 rounded p-3">
           <span class="font-semibold text-stone-300">Notes:</span> {data['notes']}
         </div>"""
 
@@ -172,12 +221,11 @@ async def generate_from_input(
     summary = data.get("summary", complaint)
 
     return HTMLResponse(f"""
-    <div class="card space-y-4">
-      <div class="flex items-center justify-between">
-        <h2 class="text-gold-300 font-semibold">Estimate Ready</h2>
-      </div>
+    <div class="card space-y-3">
+      <h2 class="text-gold-300 font-semibold">Estimate Ready</h2>
 
       {missing_html}
+      {otu_html}
 
       <div class="grid grid-cols-2 gap-3 text-sm">
         <div>
@@ -200,24 +248,36 @@ async def generate_from_input(
       </div>
 
       <div>
-        <div class="text-stone-400 text-xs uppercase tracking-wide mb-2">Job</div>
+        <div class="text-stone-400 text-xs uppercase tracking-wide mb-1">Job</div>
         <div class="text-stone-200 text-sm font-medium">{summary}</div>
       </div>
 
       {estimate_block}
       {notes_html}
 
-      <form hx-post="/estimates/create-ro" hx-target="#ro-result" hx-swap="innerHTML" class="border-t border-plum-700 pt-4">
-        <input type="hidden" name="estimate_json" value='{estimate_json}' />
-        <div class="flex items-end gap-3">
-          <div class="flex-1">
-            <label class="form-label">Customer phone (optional)</label>
-            <input type="text" name="phone_number" placeholder="+16025551234" class="form-input" />
+      <!-- Hidden master JSON (updated by recalc()) -->
+      <input id="est-json" type="hidden" value='{estimate_json}' />
+
+      <div class="border-t border-plum-700 pt-3 space-y-3">
+        <!-- PDF download -->
+        <form method="post" action="/estimates/pdf" target="_blank">
+          <input class="est-json-input" type="hidden" name="estimate_json" value='{estimate_json}' />
+          <button type="submit" class="btn-secondary w-full">⬇ Download PDF Estimate</button>
+        </form>
+
+        <!-- Create RO -->
+        <form hx-post="/estimates/create-ro" hx-target="#ro-result" hx-swap="innerHTML">
+          <input class="est-json-input" type="hidden" name="estimate_json" value='{estimate_json}' />
+          <div class="flex items-end gap-3">
+            <div class="flex-1">
+              <label class="form-label">Customer phone (optional)</label>
+              <input type="text" name="phone_number" placeholder="+16025551234" class="form-input" />
+            </div>
+            <button type="submit" class="btn-primary whitespace-nowrap">Create Draft RO</button>
           </div>
-          <button type="submit" class="btn-primary whitespace-nowrap">Create Draft RO</button>
-        </div>
-        <div id="ro-result" class="mt-3"></div>
-      </form>
+        </form>
+        <div id="ro-result"></div>
+      </div>
     </div>
     """)
 
@@ -308,3 +368,149 @@ async def create_ro_from_estimate(
           <a href="/ro/{ro.id}" class="btn-primary text-xs">Open RO →</a>
         </div>
     """)
+
+
+@router.post("/pdf")
+async def download_pdf(
+    request: Request,
+    estimate_json: str = Form(...),
+):
+    """Generate and return a PDF estimate."""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.units import inch
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+    data = json.loads(estimate_json)
+    buf = io.BytesIO()
+
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=letter,
+        topMargin=0.75 * inch,
+        bottomMargin=0.75 * inch,
+        leftMargin=inch,
+        rightMargin=inch,
+    )
+
+    styles = getSampleStyleSheet()
+    dark = colors.HexColor("#1a0a2e")
+    gold = colors.HexColor("#d4a853")
+    grey = colors.HexColor("#57534e")
+    light = colors.HexColor("#e8e0d5")
+
+    title_style = ParagraphStyle("title", parent=styles["Heading1"], textColor=dark, fontSize=20, spaceAfter=2)
+    sub_style = ParagraphStyle("sub", parent=styles["Normal"], textColor=grey, fontSize=10, spaceAfter=12)
+    label_style = ParagraphStyle("label", parent=styles["Normal"], textColor=grey, fontSize=8, spaceAfter=2)
+    value_style = ParagraphStyle("value", parent=styles["Normal"], textColor=dark, fontSize=11, spaceAfter=8)
+    note_style = ParagraphStyle("note", parent=styles["Normal"], textColor=grey, fontSize=9, spaceAfter=6)
+
+    today = date.today().strftime("%B %d, %Y")
+    name = data.get("name", "Customer")
+    year = data.get("year", "")
+    make = data.get("make", "")
+    model_name = data.get("model", "")
+    engine = data.get("engine", "")
+    mileage = int(data.get("mileage", 0) or 0)
+    complaint = data.get("complaint", "")
+    summary = data.get("summary", complaint)
+    needs_inspection = data.get("needs_inspection", False)
+
+    story = []
+
+    # Header
+    story.append(Paragraph("Imperial Auto Care", title_style))
+    story.append(Paragraph("Diesel & Fleet Specialist · Phoenix, AZ", sub_style))
+    story.append(Spacer(1, 0.1 * inch))
+
+    # Info table
+    info_data = [
+        ["Date", today, "Customer", name],
+        ["Vehicle", f"{year} {make} {model_name}", "Engine", engine],
+        ["Mileage", f"{mileage:,} mi", "Concern", complaint],
+    ]
+    info_table = Table(info_data, colWidths=[1.1 * inch, 2.5 * inch, 1 * inch, 2 * inch])
+    info_table.setStyle(TableStyle([
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("TEXTCOLOR", (0, 0), (0, -1), colors.HexColor("#57534e")),
+        ("TEXTCOLOR", (2, 0), (2, -1), colors.HexColor("#57534e")),
+        ("TEXTCOLOR", (1, 0), (1, -1), dark),
+        ("TEXTCOLOR", (3, 0), (3, -1), dark),
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
+        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.HexColor("#f5f0ea"), colors.white]),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    story.append(info_table)
+    story.append(Spacer(1, 0.25 * inch))
+
+    # Job summary
+    story.append(Paragraph("JOB SUMMARY", label_style))
+    story.append(Paragraph(summary, value_style))
+    story.append(Spacer(1, 0.1 * inch))
+
+    # Estimate table
+    if needs_inspection:
+        story.append(Paragraph(
+            "⚠ An in-person inspection is required before a firm estimate can be provided.",
+            note_style,
+        ))
+    else:
+        lh = data.get("labor_hours", 0)
+        lr = data.get("labor_rate", 150)
+        lt = data.get("labor_total", 0)
+        pl = data.get("parts_low", 0)
+        ph = data.get("parts_high", 0)
+        tl = data.get("total_low", 0)
+        th = data.get("total_high", 0)
+
+        est_data = [
+            ["Description", "Qty", "Rate", "Amount"],
+            [f"Labor — {summary}", f"{lh} hrs", f"${lr}/hr", f"${lt:,.0f}"],
+            ["Parts & Materials (estimate)", "", "", f"${pl:,.0f} – ${ph:,.0f}"],
+            ["", "", "TOTAL ESTIMATE", f"${tl:,.0f} – ${th:,.0f}"],
+        ]
+        est_table = Table(est_data, colWidths=[3.5 * inch, 0.8 * inch, 1.2 * inch, 1.2 * inch])
+        est_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), dark),
+            ("TEXTCOLOR", (0, 0), (-1, 0), gold),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.HexColor("#f5f0ea"), colors.white]),
+            ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#f0ebe0")),
+            ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+            ("TOPPADDING", (0, 0), (-1, -1), 7),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ]))
+        story.append(est_table)
+
+    story.append(Spacer(1, 0.2 * inch))
+
+    # Notes
+    if data.get("notes"):
+        story.append(Paragraph("NOTES & RECOMMENDATIONS", label_style))
+        story.append(Paragraph(data["notes"], note_style))
+        story.append(Spacer(1, 0.1 * inch))
+
+    # Footer disclaimer
+    story.append(Spacer(1, 0.3 * inch))
+    story.append(Paragraph(
+        "This is an estimate only. Final pricing may vary based on actual parts and labor required. "
+        "Prices valid for 30 days. All work performed by ASE-certified technicians.",
+        ParagraphStyle("footer", parent=styles["Normal"], textColor=grey, fontSize=8),
+    ))
+
+    doc.build(story)
+    buf.seek(0)
+
+    filename = f"estimate_{name.replace(' ', '_')}_{today.replace(' ', '_')}.pdf"
+    return StreamingResponse(
+        buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

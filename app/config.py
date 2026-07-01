@@ -4,7 +4,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")  # kept for backward compat
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 OPENPHONE_API_KEY = os.getenv("OPENPHONE_API_KEY", "")
 OPENPHONE_SIGNING_SECRET = os.getenv("OPENPHONE_SIGNING_SECRET", "")
 OWNER_PHONE = os.getenv("OWNER_PHONE", "")  # Jaelan's cell — receives estimate approval texts
