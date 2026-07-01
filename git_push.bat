@@ -1,7 +1,7 @@
 @echo off
 cd /d "C:\Users\proga\OneDrive\Documents\Claude\Projects\Dashboard"
 git add -A
-git commit -m "Groq AI (free), PDF download, OTU parts warnings, editable labor"
+git commit -m "Fix: swap anthropic import to groq in ai_assist.py"
 git push
 echo.
 echo Done! Press any key to close.

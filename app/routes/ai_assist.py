@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import RepairOrder
 from app.auth import get_current_user
-from app.config import ANTHROPIC_API_KEY
-import anthropic
+from app.config import GROQ_API_KEY
+from groq import Groq
 
 router = APIRouter()
 
@@ -29,15 +29,15 @@ def get_vehicle_context(ro: RepairOrder) -> str:
 
 
 def call_claude(prompt: str) -> str:
-    if not ANTHROPIC_API_KEY:
-        return "AI assist not configured. Set ANTHROPIC_API_KEY in your .env file."
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    message = client.messages.create(
-        model="claude-opus-4-8",
+    if not GROQ_API_KEY:
+        return "AI assist not configured. Set GROQ_API_KEY in your environment."
+    client = Groq(api_key=GROQ_API_KEY)
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
         max_tokens=1024,
         messages=[{"role": "user", "content": prompt}]
     )
-    return message.content[0].text
+    return response.choices[0].message.content
 
 
 @router.post("/suggest-diagnostic/{ro_id}", response_class=HTMLResponse)
