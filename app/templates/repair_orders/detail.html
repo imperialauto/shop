@@ -167,19 +167,45 @@
 </div>
 
 <!-- Communications -->
-{% if ro.communications %}
 <div class="card mb-4">
-  <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Communications</h3>
-  {% for comm in ro.communications %}
-  <div class="flex gap-3 mb-2">
-    <span class="text-xs text-stone-500">{{ comm.created_at.strftime('%m/%d %H:%M') }}</span>
-    <span class="text-xs {% if comm.direction == 'inbound' %}text-blue-400{% else %}text-green-400{% endif %}">
-      {{ comm.direction }} {{ comm.channel }}
-    </span>
-    <span class="text-sm text-stone-300">{{ comm.body }}</span>
+  <div class="flex items-center justify-between mb-3">
+    <h3 class="text-xs text-stone-400 uppercase tracking-wide">Message History</h3>
+    {% if ro.customer.phone %}
+    <a href="tel:{{ ro.customer.phone }}" class="text-xs text-gold-400 hover:underline">
+      📞 {{ ro.customer.phone }}
+    </a>
+    {% endif %}
   </div>
-  {% endfor %}
+
+  {% if comms %}
+  <div class="flex flex-col gap-2 max-h-96 overflow-y-auto pr-1" id="comms-thread">
+    {% for comm in comms %}
+    <div class="flex {% if comm.direction == 'outbound' %}justify-end{% else %}justify-start{% endif %}">
+      <div class="max-w-xs lg:max-w-md">
+        {# Channel badge above bubble #}
+        <div class="text-xs text-stone-500 mb-0.5 {% if comm.direction == 'outbound' %}text-right{% endif %}">
+          {{ comm.channel | upper }} · {{ comm.created_at.strftime('%b %d, %I:%M %p') }}
+        </div>
+        <div class="px-3 py-2 rounded-2xl text-sm leading-snug
+          {% if comm.direction == 'outbound' %}
+            bg-yellow-500 text-stone-900 rounded-br-sm
+          {% else %}
+            bg-stone-700 text-stone-100 rounded-bl-sm
+          {% endif %}">
+          {{ comm.body }}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <script>
+    // Auto-scroll to bottom of thread on load
+    const thread = document.getElementById('comms-thread');
+    if (thread) thread.scrollTop = thread.scrollHeight;
+  </script>
+  {% else %}
+  <p class="text-stone-500 text-sm">No messages yet. Messages from the SMS intake bot will appear here.</p>
+  {% endif %}
 </div>
-{% endif %}
 
 {% endblock %}

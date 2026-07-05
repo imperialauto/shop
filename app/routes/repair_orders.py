@@ -3,7 +3,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import RepairOrder, Customer, Vehicle, User, LineItem
+from app.models import RepairOrder, Customer, Vehicle, User, LineItem, Communication
 from app.auth import get_current_user
 import os, secrets
 
@@ -127,9 +127,16 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404)
     techs = db.query(User).all()
     subtotal = sum(li.total for li in ro.line_items)
+    # Pull all communications for this customer (across all ROs), sorted oldest→newest
+    comms = (
+        db.query(Communication)
+        .filter(Communication.customer_id == ro.customer_id)
+        .order_by(Communication.created_at.asc())
+        .all()
+    )
     return templates.TemplateResponse("repair_orders/detail.html", {
         "request": request, "user": user, "ro": ro, "techs": techs,
-        "statuses": RO_STATUSES, "subtotal": subtotal,
+        "statuses": RO_STATUSES, "subtotal": subtotal, "comms": comms,
     })
 
 

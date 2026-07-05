@@ -62,6 +62,7 @@ async def send_sms(to: str, body: str) -> dict:
             headers={"Authorization": f"Bearer {OPENPHONE_API_KEY}"},
             json=payload,
         )
+        print(f"[SMS] status={resp.status_code} to={to} payload={payload} response={resp.text[:300]}")
         return resp.json()
 
 # ── Conversation session helpers ───────────────────────────────────────────
