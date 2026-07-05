@@ -1,7 +1,7 @@
 @echo off
 cd /d "C:\Users\proga\OneDrive\Documents\Claude\Projects\Dashboard"
 git add -A
-git commit -m "Fix SMS send: OPENPHONE_PHONE_NUMBER_ID bypass + full webhook/send logging"
+git commit -m "Fix SMS auth: remove Bearer prefix from OpenPhone API calls (401 fix)"
 git push
 echo.
 echo Done! Press any key to close.

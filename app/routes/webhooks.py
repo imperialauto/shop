@@ -35,7 +35,7 @@ async def get_phone_number_id() -> str | None:
     async with httpx.AsyncClient() as client:
         resp = await client.get(
             "https://api.openphone.com/v1/phone-numbers",
-            headers={"Authorization": f"Bearer {OPENPHONE_API_KEY}"},
+            headers={"Authorization": OPENPHONE_API_KEY},
         )
         print(f"[SMS] phone-numbers lookup: status={resp.status_code} body={resp.text[:300]}")
         if resp.status_code == 200:
@@ -68,7 +68,7 @@ async def send_sms(to: str, body: str) -> dict:
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             "https://api.openphone.com/v1/messages",
-            headers={"Authorization": f"Bearer {OPENPHONE_API_KEY}"},
+            headers={"Authorization": OPENPHONE_API_KEY},
             json=payload,
         )
         print(f"[SMS] status={resp.status_code} from={phone_number_id} to={to} response={resp.text[:300]}")
