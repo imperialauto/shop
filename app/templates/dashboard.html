@@ -2,80 +2,105 @@
 {% block title %}Dashboard — Imperial Auto Care{% endblock %}
 {% block content %}
 
-<div class="flex items-center justify-between mb-6">
-  <h1 class="text-2xl font-bold text-yellow-400">Dashboard</h1>
-  <a href="/ro/new" class="btn-primary">+ New Repair Order</a>
+<div class="page-header">
+  <div>
+    <div class="page-title">Dashboard</div>
+    <div style="font-size:12px; color:#52525b; margin-top:3px;">{{ now.strftime('%A, %B %d') if now else '' }}</div>
+  </div>
+  <a href="/ro/new" class="btn-primary">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    New RO
+  </a>
 </div>
 
-<!-- Stats -->
-<div class="grid grid-cols-3 gap-4 mb-6">
-  <div class="card text-center">
-    <div class="text-3xl font-bold text-yellow-400">{{ open_count }}</div>
-    <div class="text-stone-400 text-sm mt-1">Open ROs</div>
-  </div>
-  <div class="card text-center">
-    <div class="text-3xl font-bold text-yellow-400">{{ total_customers }}</div>
-    <div class="text-stone-400 text-sm mt-1">Customers</div>
-  </div>
-  <div class="card text-center">
-    <div class="text-3xl font-bold text-yellow-400">{{ total_ros }}</div>
-    <div class="text-stone-400 text-sm mt-1">Total ROs</div>
-  </div>
-</div>
+<div class="page-body">
 
-<!-- Open ROs -->
-<div class="card">
-  <div class="flex items-center justify-between mb-4">
-    <h2 class="font-semibold text-gold-300">Open Repair Orders</h2>
-    <a href="/ro/" class="text-xs text-stone-400 hover:text-gold-300">View all →</a>
+  <!-- Stat Row -->
+  <div style="display:grid; grid-template-columns: repeat(4,1fr); gap:12px; margin-bottom:20px;">
+    <div class="card-sm" style="display:flex; align-items:center; gap:14px;">
+      <div style="width:36px; height:36px; background:rgba(212,168,83,0.12); border-radius:8px; display:flex; align-items:center; justify-content:center;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#d4a853" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      </div>
+      <div>
+        <div style="font-size:22px; font-weight:700; color:#fafafa; line-height:1;">{{ open_count }}</div>
+        <div style="font-size:11.5px; color:#52525b; margin-top:2px;">Open ROs</div>
+      </div>
+    </div>
+    <div class="card-sm" style="display:flex; align-items:center; gap:14px;">
+      <div style="width:36px; height:36px; background:rgba(96,165,250,0.1); border-radius:8px; display:flex; align-items:center; justify-content:center;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      </div>
+      <div>
+        <div style="font-size:22px; font-weight:700; color:#fafafa; line-height:1;">{{ total_customers }}</div>
+        <div style="font-size:11.5px; color:#52525b; margin-top:2px;">Customers</div>
+      </div>
+    </div>
+    <div class="card-sm" style="display:flex; align-items:center; gap:14px;">
+      <div style="width:36px; height:36px; background:rgba(74,222,128,0.1); border-radius:8px; display:flex; align-items:center; justify-content:center;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      </div>
+      <div>
+        <div style="font-size:22px; font-weight:700; color:#fafafa; line-height:1;">{{ total_ros }}</div>
+        <div style="font-size:11.5px; color:#52525b; margin-top:2px;">Total ROs</div>
+      </div>
+    </div>
+    <div class="card-sm" style="display:flex; align-items:center; gap:14px;">
+      <div style="width:36px; height:36px; background:rgba(192,132,252,0.1); border-radius:8px; display:flex; align-items:center; justify-content:center;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+      </div>
+      <div>
+        <div style="font-size:22px; font-weight:700; color:#fafafa; line-height:1;">{{ total_invoices if total_invoices is defined else '—' }}</div>
+        <div style="font-size:11.5px; color:#52525b; margin-top:2px;">Invoices</div>
+      </div>
+    </div>
   </div>
-  {% if open_ros %}
-  <table>
-    <thead>
-      <tr>
-        <th>RO #</th>
-        <th>Customer</th>
-        <th>Vehicle</th>
-        <th>Concern</th>
-        <th>Status</th>
-        <th>Date</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for ro in open_ros %}
-      <tr class="cursor-pointer" onclick="window.location='/ro/{{ ro.id }}'">
-        <td class="text-gold-400 font-mono">#{{ ro.id }}</td>
-        <td>
-          {% if ro.customer.customer_type == 'fleet' %}
-          <span class="badge-fleet mr-1">FLEET</span>
-          {{ ro.customer.fleet_name }}
-          {% else %}
-          {{ ro.customer.first_name }} {{ ro.customer.last_name }}
-          {% endif %}
-        </td>
-        <td class="text-stone-400">{{ ro.vehicle.year }} {{ ro.vehicle.make }} {{ ro.vehicle.model }}</td>
-        <td class="text-stone-300 max-w-xs truncate">{{ ro.concern or '—' }}</td>
-        <td>
-          {% set s = ro.status %}
-          <span class="badge-status
-            {% if s == 'intake' %}bg-gray-700 text-gray-300
-            {% elif s == 'diagnosing' %}bg-blue-900 text-blue-300
-            {% elif s == 'waiting_parts' %}bg-orange-900 text-orange-300
-            {% elif s == 'in_progress' %}bg-green-900 text-green-300
-            {% elif s == 'waiting_approval' %}bg-yellow-900 text-yellow-300
-            {% elif s == 'complete' %}bg-purple-900 text-purple-300
-            {% else %}bg-gray-800 text-gray-400{% endif %}">
-            {{ s.replace('_', ' ').title() }}
-          </span>
-        </td>
-        <td class="text-stone-500 text-xs">{{ ro.created_at.strftime('%m/%d/%y') }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="text-stone-500 text-sm">No open repair orders. <a href="/ro/new" class="text-gold-400 hover:underline">Create one →</a></p>
-  {% endif %}
-</div>
 
+  <!-- Open ROs Table -->
+  <div class="card" style="padding:0; overflow:hidden;">
+    <div style="padding:14px 16px 12px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,0.06);">
+      <span style="font-size:13.5px; font-weight:600; color:#e4e4e7;">Open Repair Orders</span>
+      <a href="/ro/" style="font-size:12px; color:#52525b; text-decoration:none;" onmouseover="this.style.color='#d4a853'" onmouseout="this.style.color='#52525b'">View all →</a>
+    </div>
+    {% if open_ros %}
+    <table>
+      <thead>
+        <tr>
+          <th style="padding-left:16px;">RO</th>
+          <th>Customer</th>
+          <th>Vehicle</th>
+          <th>Concern</th>
+          <th>Status</th>
+          <th style="padding-right:16px;">Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ro in open_ros %}
+        <tr class="cursor-pointer" onclick="window.location='/ro/{{ ro.id }}'" style="cursor:pointer;">
+          <td style="padding-left:16px; color:#d4a853; font-weight:600; font-family:monospace;">#{{ ro.id }}</td>
+          <td>
+            {% if ro.customer.customer_type == 'fleet' %}
+            <span class="badge badge-fleet" style="margin-right:6px;">FLEET</span>{{ ro.customer.fleet_name }}
+            {% else %}
+            <span style="color:#e4e4e7;">{{ ro.customer.first_name }} {{ ro.customer.last_name }}</span>
+            {% endif %}
+          </td>
+          <td>{{ ro.vehicle.year }} {{ ro.vehicle.make }} {{ ro.vehicle.model }}</td>
+          <td style="max-width:220px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#71717a;">{{ ro.concern or '—' }}</td>
+          <td>
+            <span class="badge badge-{{ ro.status }}">{{ ro.status.replace('_',' ').title() }}</span>
+          </td>
+          <td style="padding-right:16px; font-size:12px; color:#3f3f46;">{{ ro.created_at.strftime('%m/%d/%y') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="padding:40px 20px; text-align:center; color:#3f3f46; font-size:13.5px;">
+      No open repair orders.
+      <a href="/ro/new" style="color:#d4a853; text-decoration:none; margin-left:4px;">Create one →</a>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
 {% endblock %}
