@@ -10,6 +10,7 @@ from app.database import get_db, init_db
 from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user
 from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign
+from app.scheduler import start_scheduler
 
 import os
 
@@ -48,12 +49,16 @@ def startup():
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS customer_signature TEXT",
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS customer_approved_by VARCHAR(128)",
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS customer_signed_at TIMESTAMP",
+            "ALTER TABLE estimate_sessions ADD COLUMN IF NOT EXISTS follow_up_sent BOOLEAN DEFAULT FALSE",
         ]:
             try:
                 conn.execute(sa.text(stmt))
                 conn.commit()
             except Exception:
-                pass  # Column already exists or SQLite (no IF NOT EXISTS for some drivers)
+                pass  # Column already exists
+
+    # Start background scheduler (follow-up jobs, etc.)
+    start_scheduler()
 
     # Create default admin if no users exist
     db = SessionLocal()

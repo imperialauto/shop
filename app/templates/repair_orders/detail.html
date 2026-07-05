@@ -150,7 +150,7 @@
   <form method="post" action="/ro/{{ ro.id }}/add-line-item" class="mt-4 grid grid-cols-5 gap-2 items-end">
     <div class="col-span-2">
       <label class="form-label">Description</label>
-      <input type="text" name="description" required class="form-input" placeholder="e.g. Replace fuel filter" />
+      <input type="text" name="description" id="li-description" required class="form-input" placeholder="e.g. Replace fuel filter" />
     </div>
     <div>
       <label class="form-label">Type</label>
@@ -169,8 +169,20 @@
       <label class="form-label">Unit Price</label>
       <input type="number" name="unit_price" step="0.01" value="0" class="form-input" />
     </div>
-    <div class="col-span-5">
+    <div class="col-span-5 flex gap-2 items-center flex-wrap">
       <button type="submit" class="btn-secondary text-xs">+ Add Line Item</button>
+      <!-- AutoZone Pro Quick Lookup -->
+      <button type="button" id="azpro-btn"
+        onclick="(function(){
+          var desc = document.getElementById('li-description').value.trim();
+          var veh = '{{ ro.vehicle.year }} {{ ro.vehicle.make }} {{ ro.vehicle.model }}';
+          var q = encodeURIComponent((veh + (desc ? ' ' + desc : '')).trim());
+          window.open('https://www.autozonepro.com/catalog/parts/search?searchTerm=' + q, '_blank');
+        })()"
+        style="background:#e60012; color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:11.5px; font-weight:600; cursor:pointer; white-space:nowrap; display:flex; align-items:center; gap:5px;">
+        <span>🔴</span> AutoZone Pro
+      </button>
+      <span class="text-stone-600 text-xs">← searches vehicle + description</span>
     </div>
   </form>
 </div>

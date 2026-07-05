@@ -12,7 +12,7 @@
 
     <div>
       <label class="form-label">Customer *</label>
-      <select name="customer_id" class="form-select" required>
+      <select name="customer_id" id="customer-select" class="form-select" required>
         {% for c in customers %}
         <option value="{{ c.id }}" {% if selected_customer_id == c.id %}selected{% endif %}>
           {% if c.customer_type == 'fleet' %}[FLEET] {{ c.fleet_name }} — {% endif %}
@@ -22,21 +22,43 @@
       </select>
     </div>
 
+    <!-- VIN decode -->
+    <div>
+      <label class="form-label">VIN <span style="font-weight:400; color:#52525b;">(auto-fills year/make/model when 17 chars)</span></label>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input type="text" name="vin" id="vin-input"
+          value="{{ vehicle.vin if vehicle else '' }}"
+          class="form-input font-mono" maxlength="17" placeholder="17-character VIN"
+          style="flex:1; text-transform:uppercase;" />
+        <span id="vin-status" style="font-size:12px; color:#52525b; white-space:nowrap;"></span>
+      </div>
+    </div>
+
+    <!-- Year / Make / Model -->
     <div class="grid grid-cols-3 gap-3">
       <div>
-        <label class="form-label">Year</label>
-        <input type="number" name="year" value="{{ vehicle.year if vehicle else '' }}" class="form-input" placeholder="2020" min="1980" max="2030" />
+        <label class="form-label">Year *</label>
+        <select name="year" id="year-select" class="form-input">
+          <option value="">Year</option>
+          {% for y in range(2027, 1984, -1) %}
+          <option value="{{ y }}" {% if vehicle and vehicle.year == y %}selected{% endif %}>{{ y }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div>
         <label class="form-label">Make</label>
-        <input type="text" name="make" value="{{ vehicle.make if vehicle else '' }}" class="form-input" list="makes-list" placeholder="Ford" />
+        <input type="text" name="make" id="make-input"
+          value="{{ vehicle.make if vehicle else '' }}"
+          class="form-input" list="makes-list" placeholder="Ford" autocomplete="off" />
         <datalist id="makes-list">
           {% for m in makes %}<option value="{{ m }}">{% endfor %}
         </datalist>
       </div>
       <div>
         <label class="form-label">Model</label>
-        <input type="text" name="model" value="{{ vehicle.model if vehicle else '' }}" class="form-input" list="models-list" placeholder="F-250" />
+        <input type="text" name="model" id="model-input"
+          value="{{ vehicle.model if vehicle else '' }}"
+          class="form-input" list="models-list" placeholder="F-250" autocomplete="off" />
         <datalist id="models-list">
           {% for make, models in diesel_models.items() %}
           {% for m in models %}<option value="{{ m }}">{% endfor %}
@@ -48,41 +70,48 @@
     <div class="grid grid-cols-2 gap-3">
       <div>
         <label class="form-label">Trim</label>
-        <input type="text" name="trim" value="{{ vehicle.trim if vehicle else '' }}" class="form-input" placeholder="XLT, Lariat…" />
+        <input type="text" name="trim" value="{{ vehicle.trim if vehicle else '' }}" class="form-input" placeholder="XLT, Lariat, DRW…" />
       </div>
       <div>
         <label class="form-label">Engine</label>
-        <input type="text" name="engine" value="{{ vehicle.engine if vehicle else '' }}" class="form-input" list="engines-list" placeholder="6.7L Powerstroke" />
+        <input type="text" name="engine" id="engine-input"
+          value="{{ vehicle.engine if vehicle else '' }}"
+          class="form-input" list="engines-list" placeholder="6.7L Powerstroke" />
         <datalist id="engines-list">
           <option value="6.0L Powerstroke">
-          <option value="6.7L Powerstroke">
           <option value="6.4L Powerstroke">
+          <option value="6.7L Powerstroke">
           <option value="7.3L Powerstroke">
-          <option value="6.6L Duramax">
+          <option value="6.6L Duramax LLY">
+          <option value="6.6L Duramax LBZ">
+          <option value="6.6L Duramax LMM">
+          <option value="6.6L Duramax LML">
+          <option value="6.6L Duramax L5P">
+          <option value="5.9L Cummins">
           <option value="6.7L Cummins">
           <option value="3.0L Sprinter CDI">
           <option value="2.7L EcoBoost">
+          <option value="3.5L EcoBoost">
           <option value="5.0L Coyote">
+          <option value="6.2L V8">
+          <option value="5.7L Hemi">
+          <option value="6.4L Hemi">
         </datalist>
       </div>
     </div>
 
     <div class="grid grid-cols-2 gap-3">
       <div>
-        <label class="form-label">VIN</label>
-        <input type="text" name="vin" value="{{ vehicle.vin if vehicle else '' }}" class="form-input font-mono" maxlength="17" placeholder="17-character VIN" />
-      </div>
-      <div>
         <label class="form-label">License Plate</label>
         <input type="text" name="license_plate" value="{{ vehicle.license_plate if vehicle else '' }}" class="form-input" />
       </div>
-    </div>
-
-    <div class="grid grid-cols-2 gap-3">
       <div>
         <label class="form-label">Current Mileage</label>
         <input type="number" name="mileage" value="{{ vehicle.mileage if vehicle else '' }}" class="form-input" />
       </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-3">
       <div>
         <label class="form-label">Color</label>
         <input type="text" name="color" value="{{ vehicle.color if vehicle else '' }}" class="form-input" placeholder="White, Black…" />
@@ -100,5 +129,105 @@
     <a href="/customers/" class="btn-secondary">Cancel</a>
   </div>
 </form>
+
+<script>
+// ── Model suggestions per make ────────────────────────────────────────────
+const makeModels = {
+  "Ford":          ["F-150", "F-250 Super Duty", "F-350 Super Duty", "F-450 Super Duty", "F-550 Super Duty", "Transit", "Ranger", "Explorer", "Expedition", "Escape", "Edge", "Bronco"],
+  "Chevrolet":     ["Silverado 1500", "Silverado 2500HD", "Silverado 3500HD", "Colorado", "Tahoe", "Suburban", "Equinox", "Traverse", "Express"],
+  "GMC":           ["Sierra 1500", "Sierra 2500HD", "Sierra 3500HD", "Canyon", "Yukon", "Terrain", "Acadia", "Savana"],
+  "Dodge":         ["Ram 1500", "Ram 2500", "Ram 3500", "Durango", "Challenger", "Charger"],
+  "Ram":           ["1500", "1500 Classic", "2500", "3500", "4500", "5500", "ProMaster", "ProMaster City"],
+  "Mercedes-Benz": ["Sprinter 2500", "Sprinter 3500", "Sprinter 3500XD", "Metris", "C-Class", "E-Class", "GLE", "GLC"],
+  "Toyota":        ["Tacoma", "Tundra", "4Runner", "RAV4", "Camry", "Corolla", "Highlander", "Sequoia", "Land Cruiser"],
+  "Honda":         ["Civic", "Accord", "CR-V", "Pilot", "Odyssey", "Ridgeline", "HR-V", "Passport"],
+  "Nissan":        ["Frontier", "Titan", "Titan XD", "Pathfinder", "Rogue", "Murano", "Armada", "Altima"],
+  "Jeep":          ["Wrangler", "Gladiator", "Grand Cherokee", "Cherokee", "Compass", "Renegade"],
+  "Volkswagen":    ["Passat", "Jetta", "Golf", "Tiguan", "Atlas", "Touareg"],
+  "BMW":           ["3 Series", "5 Series", "7 Series", "X3", "X5", "X7"],
+  "Freightliner":  ["Sprinter", "M2 106", "Cascadia"],
+  "International": ["ProStar", "LoneStar", "MV Series"],
+};
+
+document.getElementById('make-input').addEventListener('input', function() {
+  const make = this.value.trim();
+  const modelsList = document.getElementById('models-list');
+  modelsList.innerHTML = '';
+  const models = makeModels[make] || [];
+  models.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m;
+    modelsList.appendChild(opt);
+  });
+});
+
+// ── VIN decoder (NHTSA free API) ──────────────────────────────────────────
+const vinInput   = document.getElementById('vin-input');
+const vinStatus  = document.getElementById('vin-status');
+const yearSel    = document.getElementById('year-select');
+const makeInput  = document.getElementById('make-input');
+const modelInput = document.getElementById('model-input');
+const engineInput = document.getElementById('engine-input');
+
+vinInput.addEventListener('input', function() {
+  // Force uppercase
+  const raw = this.value.toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g, '');
+  this.value = raw;
+  vinStatus.style.color = '#52525b';
+
+  if (raw.length < 17) {
+    vinStatus.textContent = raw.length > 0 ? `${raw.length}/17` : '';
+    return;
+  }
+
+  vinStatus.textContent = '⏳ Decoding…';
+  fetch(`https://vpic.nhtsa.dot.gov/api/vehicles/decodevinvalues/${raw}?format=json`)
+    .then(r => r.json())
+    .then(data => {
+      const r = data.Results?.[0];
+      if (!r || !r.Make) {
+        vinStatus.textContent = '⚠ Not found';
+        vinStatus.style.color = '#fb923c';
+        return;
+      }
+
+      // Year
+      if (r.ModelYear) {
+        yearSel.value = r.ModelYear;
+      }
+      // Make
+      if (r.Make) {
+        const mke = r.Make.charAt(0) + r.Make.slice(1).toLowerCase();
+        // Prefer proper-cased known make
+        const known = Object.keys(makeModels).find(k => k.toLowerCase() === r.Make.toLowerCase());
+        makeInput.value = known || mke;
+        makeInput.dispatchEvent(new Event('input')); // update model datalist
+      }
+      // Model
+      if (r.Model) {
+        const mdl = r.Model;
+        modelInput.value = mdl;
+      }
+      // Engine — build from displacement + fuel
+      if (!engineInput.value) {
+        const fuel    = (r.FuelTypePrimary || '').toLowerCase();
+        const dispL   = parseFloat(r.DisplacementL || '');
+        const dispStr = !isNaN(dispL) ? dispL.toFixed(1) + 'L' : '';
+        if (dispStr && fuel.includes('diesel')) {
+          engineInput.value = dispStr + ' Diesel';
+        } else if (dispStr) {
+          engineInput.value = dispStr;
+        }
+      }
+
+      vinStatus.textContent = '✓ Decoded';
+      vinStatus.style.color = '#4ade80';
+    })
+    .catch(() => {
+      vinStatus.textContent = '⚠ Decode failed';
+      vinStatus.style.color = '#fb923c';
+    });
+});
+</script>
 
 {% endblock %}

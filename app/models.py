@@ -182,5 +182,6 @@ class EstimateSession(Base):
     conversation = Column(Text, default="[]")       # JSON list of {role, content} messages
     collected_data = Column(Text, default="{}")     # JSON with extracted vehicle/complaint info
     draft_ro_id = Column(Integer, ForeignKey("repair_orders.id"), nullable=True)
+    follow_up_sent = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Request, Depends, Form, HTTPException
+from fastapi import APIRouter, Request, Depends, Form, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import RepairOrder, Customer, Vehicle, User, LineItem, Communication
 from app.auth import get_current_user
+from app.config import GOOGLE_REVIEW_LINK
 import os, secrets
 
 router = APIRouter()
@@ -140,16 +141,45 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
     })
 
 
+async def _send_review_request(phone: str, first_name: str):
+    """Background task: send Google review request after delivery."""
+    from app.routes.webhooks import send_sms
+    msg = (
+        f"Hi {first_name}! Thanks for choosing Imperial Auto Care — we really appreciate your business. "
+        f"If you have 30 seconds, a Google review helps us out more than you know: {GOOGLE_REVIEW_LINK} 🙏"
+    )
+    await send_sms(phone, msg)
+
+
 @router.post("/{ro_id}/update-status")
-def update_status(request: Request, ro_id: int, db: Session = Depends(get_db), status: str = Form(...)):
+def update_status(
+    request: Request,
+    ro_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    status: str = Form(...),
+):
     user = require_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=302)
     ro = db.query(RepairOrder).filter(RepairOrder.id == ro_id).first()
     if not ro:
         raise HTTPException(status_code=404)
+
+    prev_status = ro.status
     ro.status = status
     db.commit()
+
+    # Auto-send review request when marked delivered (only once)
+    if status == "delivered" and prev_status != "delivered":
+        if ro.customer and ro.customer.phone and GOOGLE_REVIEW_LINK:
+            background_tasks.add_task(
+                _send_review_request,
+                ro.customer.phone,
+                ro.customer.first_name or "there",
+            )
+            print(f"[Review] Queued review request to {ro.customer.phone} for RO #{ro_id}")
+
     return RedirectResponse(f"/ro/{ro_id}", status_code=302)
 
 
@@ -207,5 +237,38 @@ def delete_line_item(request: Request, ro_id: int, li_id: int, db: Session = Dep
 def get_vehicles_for_customer(request: Request, ro_id: int, customer_id: int, db: Session = Depends(get_db)):
     """HTMX endpoint — returns vehicle options for a selected customer"""
     vehicles = db.query(Vehicle).filter(Vehicle.customer_id == customer_id).all()
-    opts = "".join(f'<option value="{v.id}">{v.year} {v.make} {v.model}</option>' for v in vehicles)
-    return HTMLResponse(f'<select name="vehicle_id" class="form-select">{opts}</select>')
+
+    add_link = (
+        f'<a href="/vehicles/new?customer_id={customer_id}" target="_blank" '
+        f'class="btn-primary text-xs" style="white-space:nowrap; padding:6px 10px;">+ Add Vehicle</a>'
+    )
+
+    if not vehicles:
+        return HTMLResponse(
+            f'<div style="display:flex;gap:8px;align-items:center;">'
+            f'<select name="vehicle_id" class="form-select" required>'
+            f'<option value="">No vehicles on file — add one first</option>'
+            f'</select>'
+            f'{add_link}'
+            f'</div>'
+        )
+
+    opts = '<option value="">Select vehicle…</option>'
+    for v in vehicles:
+        label = f"{v.year} {v.make} {v.model}"
+        if v.engine:
+            label += f" — {v.engine}"
+        if v.license_plate:
+            label += f" · {v.license_plate}"
+        opts += f'<option value="{v.id}">{label}</option>'
+
+    add_btn = (
+        f'<a href="/vehicles/new?customer_id={customer_id}" target="_blank" '
+        f'class="btn-secondary text-xs" style="white-space:nowrap; padding:6px 10px;">+ Add</a>'
+    )
+    return HTMLResponse(
+        f'<div style="display:flex;gap:8px;align-items:center;">'
+        f'<select name="vehicle_id" class="form-select" required style="flex:1;">{opts}</select>'
+        f'{add_btn}'
+        f'</div>'
+    )

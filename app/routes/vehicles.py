@@ -91,6 +91,21 @@ def edit_vehicle_form(request: Request, vehicle_id: int, db: Session = Depends(g
     })
 
 
+@router.get("/{vehicle_id}", response_class=HTMLResponse)
+def vehicle_detail(request: Request, vehicle_id: int, db: Session = Depends(get_db)):
+    user = require_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
+    if not vehicle:
+        raise HTTPException(status_code=404)
+    # Sort ROs oldest→newest for timeline
+    ros = sorted(vehicle.repair_orders, key=lambda r: r.created_at)
+    return templates.TemplateResponse("vehicles/detail.html", {
+        "request": request, "user": user, "vehicle": vehicle, "ros": ros,
+    })
+
+
 @router.post("/{vehicle_id}/edit")
 def update_vehicle(
     request: Request,

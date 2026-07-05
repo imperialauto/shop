@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}{{ vehicle.year }} {{ vehicle.make }} {{ vehicle.model }} — Imperial Auto Care{% endblock %}
+{% block content %}
+
+<div class="flex items-center gap-3 mb-2">
+  <a href="/customers/{{ vehicle.customer_id }}" class="text-stone-400 hover:text-gold-300 text-sm">← Customer</a>
+</div>
+
+<div class="flex items-start justify-between mb-4">
+  <div>
+    <h1 class="text-2xl font-bold text-yellow-400">{{ vehicle.year }} {{ vehicle.make }} {{ vehicle.model }}</h1>
+    {% if vehicle.engine %}<p class="text-stone-400 text-sm mt-0.5">{{ vehicle.engine }}</p>{% endif %}
+    {% if vehicle.vin %}<p class="text-stone-500 text-xs font-mono mt-0.5">VIN: {{ vehicle.vin }}</p>{% endif %}
+  </div>
+  <div class="flex gap-2">
+    <a href="/ro/new?customer_id={{ vehicle.customer_id }}&vehicle_id={{ vehicle.id }}" class="btn-primary">+ New RO</a>
+    <a href="/vehicles/{{ vehicle.id }}/edit" class="btn-secondary">Edit Vehicle</a>
+  </div>
+</div>
+
+<!-- Vehicle info cards -->
+<div class="grid grid-cols-3 gap-4 mb-6">
+  <div class="card">
+    <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Owner</h3>
+    <p class="font-semibold">{{ vehicle.customer.first_name }} {{ vehicle.customer.last_name }}</p>
+    {% if vehicle.customer.customer_type == 'fleet' %}
+    <span class="badge-fleet inline-block mt-1">FLEET — {{ vehicle.customer.fleet_name }}</span>
+    {% endif %}
+    {% if vehicle.customer.phone %}<p class="text-stone-400 text-sm mt-1">{{ vehicle.customer.phone }}</p>{% endif %}
+    <a href="/customers/{{ vehicle.customer_id }}" class="text-gold-400 text-xs hover:underline mt-2 block">View account →</a>
+  </div>
+
+  <div class="card">
+    <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Vehicle Details</h3>
+    {% if vehicle.license_plate %}<p class="text-sm">🪪 {{ vehicle.license_plate }}</p>{% endif %}
+    {% if vehicle.color %}<p class="text-sm text-stone-400 mt-1">{{ vehicle.color }}</p>{% endif %}
+    {% if vehicle.mileage %}<p class="text-sm text-stone-400 mt-1">{{ "{:,}".format(vehicle.mileage) }} miles (at intake)</p>{% endif %}
+    {% if vehicle.trim %}<p class="text-sm text-stone-400 mt-1">{{ vehicle.trim }}</p>{% endif %}
+  </div>
+
+  <div class="card">
+    <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Service Summary</h3>
+    <p class="text-sm text-stone-400">Total ROs: <span class="text-stone-200 font-semibold">{{ ros|length }}</span></p>
+    {% if ros %}
+    <p class="text-sm text-stone-400 mt-1">First service: <span class="text-stone-200">{{ ros[0].created_at.strftime('%b %d, %Y') }}</span></p>
+    <p class="text-sm text-stone-400 mt-1">Last service: <span class="text-stone-200">{{ ros[-1].created_at.strftime('%b %d, %Y') }}</span></p>
+    {% set last_mileage = namespace(val=0) %}
+    {% for ro in ros %}{% if ro.mileage_in %}{% set last_mileage.val = ro.mileage_in %}{% endif %}{% endfor %}
+    {% if last_mileage.val > 0 %}
+    <p class="text-sm text-stone-400 mt-1">Last mileage in: <span class="text-stone-200">{{ "{:,}".format(last_mileage.val) }}</span></p>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+<!-- Service History Timeline -->
+{% if ros %}
+<h2 class="text-sm text-stone-400 uppercase tracking-wide font-semibold mb-3">Service History</h2>
+
+<div class="relative">
+  <!-- Vertical timeline line -->
+  <div style="position:absolute; left:15px; top:0; bottom:0; width:2px; background:rgba(255,255,255,0.06); border-radius:1px;"></div>
+
+  <div class="space-y-4 pl-10">
+    {% for ro in ros|reverse %}
+    <div class="relative">
+      <!-- Timeline dot -->
+      <div style="position:absolute; left:-42px; top:16px; width:12px; height:12px; border-radius:50%; border:2px solid;
+        {% if ro.status == 'delivered' %}border-color:#2dd4bf; background:#0f2e2c;
+        {% elif ro.status == 'complete' %}border-color:#c084fc; background:#1a0e2e;
+        {% elif ro.status in ['in_progress','diagnosing'] %}border-color:#4ade80; background:#0f2e1a;
+        {% elif ro.status == 'waiting_approval' %}border-color:#facc15; background:#2a2210;
+        {% else %}border-color:#52525b; background:#18181b;{% endif %}">
+      </div>
+
+      <div class="card" onclick="window.location='/ro/{{ ro.id }}'" style="cursor:pointer;">
+        <div class="flex items-start justify-between mb-2">
+          <div>
+            <span class="text-gold-400 font-mono text-sm">RO #{{ ro.id }}</span>
+            <span class="text-stone-500 text-xs ml-2">{{ ro.created_at.strftime('%B %d, %Y') }}</span>
+            {% if ro.mileage_in %}
+            <span class="text-stone-500 text-xs ml-2">· {{ "{:,}".format(ro.mileage_in) }} mi</span>
+            {% endif %}
+          </div>
+          <span class="text-xs px-2 py-0.5 rounded-full
+            {% if ro.status == 'delivered' %}bg-teal-900 text-teal-300
+            {% elif ro.status == 'complete' %}bg-purple-900 text-purple-300
+            {% elif ro.status == 'in_progress' %}bg-green-900 text-green-300
+            {% elif ro.status == 'waiting_approval' %}bg-yellow-900 text-yellow-300
+            {% elif ro.status == 'waiting_parts' %}bg-orange-900 text-orange-300
+            {% else %}bg-stone-800 text-stone-400{% endif %}">
+            {{ ro.status.replace('_',' ').title() }}
+          </span>
+        </div>
+
+        {% if ro.concern %}
+        <p class="text-stone-300 text-sm mb-2">{{ ro.concern }}</p>
+        {% endif %}
+
+        {% if ro.line_items %}
+        <div class="border-t border-stone-800 pt-2 mt-2">
+          <p class="text-xs text-stone-500 uppercase tracking-wide mb-1.5">Work Performed</p>
+          <div class="space-y-0.5">
+            {% for li in ro.line_items %}
+            <div class="flex justify-between text-sm">
+              <span class="text-stone-400">
+                <span class="text-xs text-stone-600 mr-1">{{ li.item_type }}</span>
+                {{ li.description }}
+              </span>
+              <span class="text-stone-500 text-xs ml-2 whitespace-nowrap">${{ "%.0f"|format(li.total) }}</span>
+            </div>
+            {% endfor %}
+          </div>
+          <div class="text-right text-gold-400 text-sm font-semibold mt-2">
+            Total: ${{ "%.2f"|format(ro.line_items|sum(attribute='total')) }}
+          </div>
+        </div>
+        {% endif %}
+
+        {% if ro.tech_notes %}
+        <details class="mt-2">
+          <summary class="text-xs text-stone-500 cursor-pointer hover:text-stone-400">Tech notes</summary>
+          <p class="text-xs text-stone-500 mt-1 whitespace-pre-wrap">{{ ro.tech_notes }}</p>
+        </details>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+{% else %}
+<div class="card text-center py-8">
+  <p class="text-stone-500">No service history yet.</p>
+  <a href="/ro/new?customer_id={{ vehicle.customer_id }}&vehicle_id={{ vehicle.id }}" class="btn-primary mt-4 inline-block">Create First RO</a>
+</div>
+{% endif %}
+
+{% endblock %}
