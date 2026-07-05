@@ -51,9 +51,18 @@
     <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Details</h3>
     <p class="text-stone-400 text-sm">Status: <span class="text-stone-200">{{ ro.status.replace('_',' ').title() }}</span></p>
     <p class="text-stone-400 text-sm mt-1">Tech: <span class="text-stone-200">{{ ro.assigned_tech.full_name if ro.assigned_tech else 'Unassigned' }}</span></p>
-    <p class="text-stone-400 text-sm mt-1">Public link:
-      <a href="/status/{{ ro.public_token }}" target="_blank" class="text-gold-400 text-xs hover:underline">Customer status page →</a>
+    <p class="text-stone-400 text-xs mt-1">
+      <a href="/status/{{ ro.public_token }}" target="_blank" class="text-gold-400 hover:underline">Customer status page →</a>
     </p>
+    <hr style="border-color:rgba(255,255,255,0.06); margin:10px 0;">
+    {% if ro.signed_at %}
+    <p style="color:#4ade80; font-size:12px;">✓ Signed by {{ ro.approved_by }}<br><span style="color:#52525b;">{{ ro.signed_at.strftime('%b %d %I:%M %p') }}</span></p>
+    {% else %}
+    <div style="display:flex; flex-direction:column; gap:5px;">
+      <a href="/sign/ro/{{ ro.public_token }}" target="_blank" class="btn-secondary" style="font-size:11.5px; padding:5px 10px;">🖊 Open Signature Page</a>
+      <button onclick="navigator.clipboard.writeText(window.location.origin+'/sign/ro/{{ ro.public_token }}').then(()=>{this.textContent='✓ Copied!';setTimeout(()=>this.textContent='📋 Copy Sig Link',2000)})" class="btn-secondary" style="font-size:11.5px; padding:5px 10px;">📋 Copy Sig Link</button>
+    </div>
+    {% endif %}
   </div>
 </div>
 

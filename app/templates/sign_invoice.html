@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Sign Invoice — Imperial Auto Care</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #09090b; color: #e4e4e7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100dvh; padding-bottom: 40px; }
+    .top-bar { background: #111113; border-bottom: 1px solid rgba(255,255,255,0.07); padding: 14px 20px; display: flex; align-items: center; gap: 12px; }
+    .top-bar .logo { font-size: 20px; }
+    .top-bar .shop { font-size: 15px; font-weight: 700; color: #d4a853; }
+    .top-bar .sub { font-size: 12px; color: #52525b; }
+    .container { max-width: 540px; margin: 0 auto; padding: 20px 16px; }
+    .section-title { font-size: 11px; font-weight: 600; color: #52525b; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 10px; }
+    .card { background: #18181b; border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+    .vehicle-line { font-size: 18px; font-weight: 700; color: #fafafa; }
+    .vehicle-sub { font-size: 13px; color: #71717a; margin-top: 3px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    thead th { text-align: left; font-size: 10.5px; font-weight: 600; color: #52525b; text-transform: uppercase; letter-spacing: 0.06em; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+    tbody td { padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.04); color: #a1a1aa; vertical-align: top; }
+    tbody tr:last-child td { border-bottom: none; }
+    .td-desc { color: #e4e4e7; }
+    .td-right { text-align: right; white-space: nowrap; }
+    .total-section { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.07); }
+    .total-line { display: flex; justify-content: space-between; font-size: 13px; color: #71717a; margin-bottom: 4px; }
+    .total-final { display: flex; justify-content: space-between; font-size: 20px; font-weight: 700; color: #d4a853; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.07); }
+    .sig-pad-wrap { position: relative; border-radius: 10px; overflow: hidden; border: 2px solid rgba(255,255,255,0.12); background: #fafafa; touch-action: none; }
+    .sig-pad-wrap canvas { display: block; width: 100%; height: 160px; cursor: crosshair; touch-action: none; }
+    .sig-hint { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); font-size: 11px; color: rgba(0,0,0,0.25); pointer-events: none; white-space: nowrap; }
+    .sig-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .btn-clear { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #71717a; font-size: 13px; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
+    .name-input { background: #09090b; border: 1px solid rgba(255,255,255,0.1); color: #e4e4e7; border-radius: 8px; padding: 10px 12px; width: 100%; font-size: 14px; outline: none; margin-top: 10px; }
+    .name-input:focus { border-color: #d4a853; }
+    .submit-btn { width: 100%; background: #d4a853; color: #09090b; font-size: 15px; font-weight: 700; padding: 14px; border: none; border-radius: 10px; cursor: pointer; margin-top: 16px; }
+    .submit-btn:active { background: #c49640; }
+    .error-msg { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.25); color: #f87171; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 12px; }
+    .already-signed { background: rgba(74,222,128,0.08); border: 1px solid rgba(74,222,128,0.2); color: #4ade80; border-radius: 10px; padding: 16px; text-align: center; font-size: 14px; }
+    .auth-notice { font-size: 11.5px; color: #52525b; line-height: 1.5; margin-top: 8px; }
+  </style>
+</head>
+<body>
+
+<div class="top-bar">
+  <div class="logo">⚙</div>
+  <div>
+    <div class="shop">Imperial Auto Care</div>
+    <div class="sub">Phoenix, AZ — Diesel &amp; Fleet Specialist</div>
+  </div>
+</div>
+
+<div class="container">
+
+  {% if invoice.customer_signed_at %}
+  <div class="already-signed" style="margin-top:20px;">
+    ✓ Invoice signed by {{ invoice.customer_approved_by }} on {{ invoice.customer_signed_at.strftime('%B %d, %Y') }}
+  </div>
+  {% else %}
+
+  <h2 style="font-size:18px; font-weight:700; color:#fafafa; margin:16px 0 14px;">Final Invoice #{{ invoice.id }}</h2>
+
+  {% if error %}
+  <div class="error-msg">{{ error }}</div>
+  {% endif %}
+
+  <div class="card">
+    <div class="section-title">Vehicle</div>
+    <div class="vehicle-line">{{ ro.vehicle.year }} {{ ro.vehicle.make }} {{ ro.vehicle.model }}</div>
+    {% if ro.vehicle.engine %}<div class="vehicle-sub">{{ ro.vehicle.engine }}</div>{% endif %}
+    {% if ro.customer %}
+    <div class="vehicle-sub" style="margin-top:6px;">{{ ro.customer.first_name }} {{ ro.customer.last_name }}</div>
+    {% endif %}
+  </div>
+
+  {% if ro.line_items %}
+  <div class="card">
+    <div class="section-title">Work Performed</div>
+    <table>
+      <thead>
+        <tr><th>Description</th><th class="td-right">Amount</th></tr>
+      </thead>
+      <tbody>
+        {% for li in ro.line_items %}
+        <tr>
+          <td class="td-desc">
+            {{ li.description }}
+            <div style="font-size:11.5px; color:#52525b; margin-top:1px;">{{ li.item_type | title }} × {{ li.quantity }}</div>
+          </td>
+          <td class="td-right">${{ "%.2f"|format(li.total) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="total-section">
+      <div class="total-line"><span>Subtotal</span><span>${{ "%.2f"|format(invoice.subtotal) }}</span></div>
+      {% if invoice.tax_amount > 0 %}
+      <div class="total-line"><span>Tax ({{ "%.1f"|format(invoice.tax_rate * 100) }}%)</span><span>${{ "%.2f"|format(invoice.tax_amount) }}</span></div>
+      {% endif %}
+      <div class="total-final"><span>Total Due</span><span>${{ "%.2f"|format(invoice.total) }}</span></div>
+    </div>
+  </div>
+  {% endif %}
+
+  <form method="post" id="sign-form">
+    <input type="hidden" name="signature_data" id="sig-data" />
+    <div class="card">
+      <div class="section-title">Your Name</div>
+      <input class="name-input" type="text" name="approved_by" placeholder="Full name" autocomplete="name" required />
+      <div class="section-title" style="margin-top:14px;">Signature</div>
+      <div class="sig-pad-wrap">
+        <canvas id="sig-canvas"></canvas>
+        <div class="sig-hint" id="sig-hint">Sign here</div>
+      </div>
+      <div class="sig-actions">
+        <button type="button" class="btn-clear" onclick="clearSig()">Clear</button>
+      </div>
+      <p class="auth-notice">By signing, I confirm the work listed above was completed satisfactorily and authorize payment of the total amount shown.</p>
+    </div>
+    <button type="submit" class="submit-btn" onclick="return prepareSubmit()">✓ Sign &amp; Confirm Receipt</button>
+  </form>
+
+  {% endif %}
+</div>
+
+<script>
+  const canvas = document.getElementById('sig-canvas');
+  const hint = document.getElementById('sig-hint');
+  const ctx = canvas.getContext('2d');
+  let drawing = false, hasSig = false;
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = canvas.offsetWidth * dpr;
+    canvas.height = canvas.offsetHeight * dpr;
+    ctx.scale(dpr, dpr);
+    ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  }
+  resize();
+  function getPos(e) { const r = canvas.getBoundingClientRect(), s = e.touches ? e.touches[0] : e; return { x: s.clientX - r.left, y: s.clientY - r.top }; }
+  canvas.addEventListener('mousedown', e => { e.preventDefault(); drawing = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); if(hint) hint.style.display='none'; hasSig=true; });
+  canvas.addEventListener('mousemove', e => { if (!drawing) return; e.preventDefault(); const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); });
+  canvas.addEventListener('mouseup', () => drawing = false);
+  canvas.addEventListener('touchstart', e => { e.preventDefault(); drawing = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); if(hint) hint.style.display='none'; hasSig=true; }, { passive: false });
+  canvas.addEventListener('touchmove', e => { if (!drawing) return; e.preventDefault(); const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); }, { passive: false });
+  canvas.addEventListener('touchend', () => drawing = false);
+  function clearSig() { ctx.clearRect(0,0,canvas.width,canvas.height); hasSig=false; if(hint) hint.style.display=''; }
+  function prepareSubmit() { if (!hasSig) { alert('Please draw your signature first.'); return false; } document.getElementById('sig-data').value = canvas.toDataURL('image/png'); return true; }
+</script>
+
+</body>
+</html>

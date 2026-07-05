@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Signed — Imperial Auto Care</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #09090b; color: #e4e4e7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; text-align: center; }
+    .check { font-size: 56px; margin-bottom: 16px; }
+    h1 { font-size: 22px; font-weight: 700; color: #fafafa; margin-bottom: 8px; }
+    p { font-size: 14px; color: #71717a; line-height: 1.6; max-width: 320px; }
+    .shop { font-size: 13px; color: #d4a853; margin-top: 20px; font-weight: 600; }
+    .detail { font-size: 13px; color: #52525b; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <div class="check">✅</div>
+  <h1>
+    {% if doc_type == "invoice" %}Invoice Signed{% else %}Work Authorized{% endif %}
+  </h1>
+  <p>
+    {% if doc_type == "invoice" %}
+      Thank you! Your invoice has been signed. Imperial Auto Care has been notified. You're good to go!
+    {% else %}
+      Thank you! We've received your authorization and will begin work on your {{ ro.vehicle.year }} {{ ro.vehicle.make }} {{ ro.vehicle.model }}. We'll reach out when it's ready.
+    {% endif %}
+  </p>
+  <div class="shop">Imperial Auto Care</div>
+  <div class="detail">Phoenix, AZ · Diesel &amp; Fleet Specialist</div>
+</body>
+</html>

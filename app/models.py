@@ -80,6 +80,10 @@ class RepairOrder(Base):
     mileage_in = Column(Integer)
     mileage_out = Column(Integer)
     promised_date = Column(DateTime)
+    # Customer signature (estimate approval)
+    signature_data = Column(Text, nullable=True)   # base64 PNG data URL
+    approved_by = Column(String(128), nullable=True)
+    signed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -147,6 +151,10 @@ class Invoice(Base):
     total = Column(Float, default=0.0)
     status = Column(String(16), default="draft")  # draft, sent, paid, void
     notes = Column(Text)
+    # Customer signature at completion/pickup
+    customer_signature = Column(Text, nullable=True)  # base64 PNG data URL
+    customer_approved_by = Column(String(128), nullable=True)
+    customer_signed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     repair_order = relationship("RepairOrder", back_populates="invoices")

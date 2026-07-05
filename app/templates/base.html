@@ -21,12 +21,12 @@
     * { box-sizing: border-box; }
     body { background: #09090b; color: #e4e4e7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
 
-    /* Sidebar */
-    .sidebar { width: 220px; min-height: 100vh; background: #111113; border-right: 1px solid rgba(255,255,255,0.06); position: fixed; top: 0; left: 0; display: flex; flex-direction: column; z-index: 50; }
+    /* ── Sidebar ───────────────────────────────────── */
+    .sidebar { width: 220px; min-height: 100vh; background: #111113; border-right: 1px solid rgba(255,255,255,0.06); position: fixed; top: 0; left: 0; display: flex; flex-direction: column; z-index: 50; transition: transform 0.25s ease; }
     .sidebar-logo { padding: 20px 16px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); }
     .sidebar-logo .brand { font-size: 15px; font-weight: 700; color: #d4a853; letter-spacing: -0.3px; }
     .sidebar-logo .sub { font-size: 11px; color: #52525b; margin-top: 2px; }
-    .sidebar-nav { padding: 12px 8px; flex: 1; }
+    .sidebar-nav { padding: 12px 8px; flex: 1; overflow-y: auto; }
     .nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; font-size: 13.5px; font-weight: 500; color: #71717a; text-decoration: none; margin-bottom: 2px; transition: all 0.15s; }
     .nav-item:hover { background: rgba(255,255,255,0.05); color: #e4e4e7; }
     .nav-item.active { background: rgba(212,168,83,0.12); color: #d4a853; }
@@ -37,17 +37,17 @@
     .sidebar-footer a:hover { color: #71717a; }
     .sidebar-footer .username { font-size: 13px; color: #a1a1aa; font-weight: 500; margin-bottom: 4px; }
 
-    /* Main content */
+    /* ── Main content ──────────────────────────────── */
     .main-content { margin-left: 220px; min-height: 100vh; }
     .page-header { padding: 24px 28px 0; display: flex; align-items: center; justify-content: space-between; }
     .page-title { font-size: 20px; font-weight: 700; color: #fafafa; }
     .page-body { padding: 20px 28px 32px; }
 
-    /* Cards */
+    /* ── Cards ─────────────────────────────────────── */
     .card { background: #18181b; border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 16px; }
     .card-sm { background: #18181b; border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 12px 14px; }
 
-    /* Buttons */
+    /* ── Buttons ───────────────────────────────────── */
     .btn-primary { background: #d4a853; color: #09090b; font-weight: 600; font-size: 13px; padding: 7px 14px; border-radius: 8px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; transition: background 0.15s; border: none; cursor: pointer; }
     .btn-primary:hover { background: #e0b96a; }
     .btn-secondary { background: rgba(255,255,255,0.05); color: #a1a1aa; font-weight: 500; font-size: 13px; padding: 7px 14px; border-radius: 8px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(255,255,255,0.08); transition: all 0.15s; cursor: pointer; }
@@ -55,7 +55,7 @@
     .btn-danger { background: rgba(239,68,68,0.1); color: #f87171; font-size: 13px; padding: 7px 14px; border-radius: 8px; border: 1px solid rgba(239,68,68,0.2); cursor: pointer; transition: all 0.15s; }
     .btn-danger:hover { background: rgba(239,68,68,0.18); }
 
-    /* Forms */
+    /* ── Forms ─────────────────────────────────────── */
     .form-input { background: #09090b; border: 1px solid rgba(255,255,255,0.1); color: #e4e4e7; border-radius: 8px; padding: 7px 12px; width: 100%; font-size: 13.5px; outline: none; transition: border-color 0.15s; }
     .form-input:focus { border-color: #d4a853; }
     .form-select { background: #09090b; border: 1px solid rgba(255,255,255,0.1); color: #e4e4e7; border-radius: 8px; padding: 7px 12px; width: 100%; font-size: 13.5px; outline: none; }
@@ -63,7 +63,8 @@
     .form-label { display: block; font-size: 11.5px; font-weight: 600; color: #52525b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px; }
     textarea.form-input { resize: vertical; }
 
-    /* Tables */
+    /* ── Tables ────────────────────────────────────── */
+    .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
     table { width: 100%; font-size: 13.5px; border-collapse: collapse; }
     thead th { text-align: left; font-size: 11px; font-weight: 600; color: #52525b; text-transform: uppercase; letter-spacing: 0.06em; padding: 0 12px 8px; border-bottom: 1px solid rgba(255,255,255,0.06); }
     tbody td { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.04); color: #a1a1aa; vertical-align: middle; }
@@ -71,29 +72,84 @@
     tbody tr:hover td { background: rgba(255,255,255,0.02); }
     tbody td:first-child { color: #e4e4e7; }
 
-    /* Badges */
+    /* ── Badges ────────────────────────────────────── */
     .badge { display: inline-flex; align-items: center; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
     .badge-fleet { background: rgba(212,168,83,0.15); color: #d4a853; border: 1px solid rgba(212,168,83,0.25); }
-    .badge-intake    { background: rgba(113,113,122,0.15); color: #a1a1aa; }
-    .badge-diagnosing { background: rgba(59,130,246,0.15); color: #60a5fa; }
-    .badge-waiting_parts { background: rgba(249,115,22,0.15); color: #fb923c; }
-    .badge-in_progress { background: rgba(34,197,94,0.15); color: #4ade80; }
+    .badge-intake         { background: rgba(113,113,122,0.15); color: #a1a1aa; }
+    .badge-diagnosing     { background: rgba(59,130,246,0.15);  color: #60a5fa; }
+    .badge-waiting_parts  { background: rgba(249,115,22,0.15);  color: #fb923c; }
+    .badge-in_progress    { background: rgba(34,197,94,0.15);   color: #4ade80; }
     .badge-waiting_approval { background: rgba(234,179,8,0.15); color: #facc15; }
-    .badge-complete  { background: rgba(168,85,247,0.15); color: #c084fc; }
-    .badge-delivered { background: rgba(20,184,166,0.15); color: #2dd4bf; }
+    .badge-complete       { background: rgba(168,85,247,0.15);  color: #c084fc; }
+    .badge-delivered      { background: rgba(20,184,166,0.15);  color: #2dd4bf; }
 
-    /* Misc */
+    /* ── Misc ──────────────────────────────────────── */
     .section-label { font-size: 11px; font-weight: 600; color: #52525b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
     .htmx-indicator { display: none; }
     .htmx-request .htmx-indicator { display: inline; }
     .htmx-request.htmx-indicator { display: inline; }
     .divider { border: none; border-top: 1px solid rgba(255,255,255,0.06); margin: 16px 0; }
+
+    /* ── Mobile header ─────────────────────────────── */
+    .mob-header {
+      display: none;
+      position: fixed; top: 0; left: 0; right: 0; height: 56px;
+      background: #111113;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      z-index: 49;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+    }
+    .mob-brand { font-size: 14px; font-weight: 700; color: #d4a853; }
+    .hamburger { background: none; border: none; cursor: pointer; padding: 6px; color: #71717a; border-radius: 6px; }
+    .hamburger:hover { background: rgba(255,255,255,0.06); color: #e4e4e7; }
+
+    /* ── Sidebar backdrop (mobile) ─────────────────── */
+    .sidebar-backdrop {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.55);
+      z-index: 48;
+    }
+
+    /* ── Mobile responsive ─────────────────────────── */
+    @media (max-width: 767px) {
+      .mob-header { display: flex; }
+      .sidebar { transform: translateX(-240px); min-height: 100dvh; }
+      .sidebar.open { transform: translateX(0); }
+      .sidebar-backdrop { display: block; opacity: 0; pointer-events: none; transition: opacity 0.25s; }
+      .sidebar-backdrop.open { opacity: 1; pointer-events: all; }
+      .main-content { margin-left: 0 !important; padding-top: 56px; }
+      .page-header { padding: 14px 14px 0; flex-wrap: wrap; gap: 8px; }
+      .page-body { padding: 14px 14px 32px; }
+      .page-title { font-size: 17px; }
+      /* Stack grid cols on mobile */
+      .grid { grid-template-columns: 1fr !important; }
+      /* Table font smaller */
+      table { font-size: 12.5px; }
+      thead th { padding: 0 8px 8px; font-size: 10px; }
+      tbody td { padding: 9px 8px; }
+    }
   </style>
 </head>
 <body>
 
 {% if user is defined and user %}
-<div class="sidebar">
+
+<!-- Mobile top header -->
+<div class="mob-header">
+  <button class="hamburger" onclick="toggleSidebar()" aria-label="Menu">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <div class="mob-brand">⚙ Imperial Auto</div>
+  <div style="width:32px;"></div>
+</div>
+
+<!-- Sidebar backdrop -->
+<div class="sidebar-backdrop" id="sidebar-backdrop" onclick="toggleSidebar()"></div>
+
+<div class="sidebar" id="sidebar">
   <div class="sidebar-logo">
     <div class="brand">⚙ Imperial Auto</div>
     <div class="sub">Shop Management</div>
@@ -101,29 +157,29 @@
 
   <nav class="sidebar-nav">
     <div class="nav-section">Main</div>
-    <a href="/dashboard" class="nav-item {% if request.url.path == '/dashboard' %}active{% endif %}">
+    <a href="/dashboard" class="nav-item {% if request.url.path == '/dashboard' %}active{% endif %}" onclick="closeSidebar()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
       Dashboard
     </a>
-    <a href="/ro/" class="nav-item {% if '/ro/' in request.url.path %}active{% endif %}">
+    <a href="/ro/" class="nav-item {% if '/ro/' in request.url.path %}active{% endif %}" onclick="closeSidebar()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
       Repair Orders
     </a>
-    <a href="/estimates/" class="nav-item {% if '/estimates/' in request.url.path %}active{% endif %}">
+    <a href="/estimates/" class="nav-item {% if '/estimates/' in request.url.path %}active{% endif %}" onclick="closeSidebar()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
       Estimates
     </a>
-    <a href="/invoices/" class="nav-item {% if '/invoices/' in request.url.path %}active{% endif %}">
+    <a href="/invoices/" class="nav-item {% if '/invoices/' in request.url.path %}active{% endif %}" onclick="closeSidebar()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
       Invoices
     </a>
 
     <div class="nav-section">Customers</div>
-    <a href="/customers/" class="nav-item {% if '/customers/' in request.url.path and 'fleet' not in request.url.query %}active{% endif %}">
+    <a href="/customers/" class="nav-item {% if '/customers/' in request.url.path and 'fleet' not in request.url.query %}active{% endif %}" onclick="closeSidebar()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
       All Customers
     </a>
-    <a href="/customers/?type_filter=fleet" class="nav-item">
+    <a href="/customers/?type_filter=fleet" class="nav-item" onclick="closeSidebar()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
       Fleet
     </a>
@@ -140,6 +196,21 @@
 <div class="{% if user is defined and user %}main-content{% endif %}">
   {% block content %}{% endblock %}
 </div>
+
+<script>
+  function toggleSidebar() {
+    const s = document.getElementById('sidebar');
+    const b = document.getElementById('sidebar-backdrop');
+    if (s) s.classList.toggle('open');
+    if (b) b.classList.toggle('open');
+  }
+  function closeSidebar() {
+    const s = document.getElementById('sidebar');
+    const b = document.getElementById('sidebar-backdrop');
+    if (s) s.classList.remove('open');
+    if (b) b.classList.remove('open');
+  }
+</script>
 
 </body>
 </html>

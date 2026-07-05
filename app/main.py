@@ -9,7 +9,7 @@ from app.config import SECRET_KEY
 from app.database import get_db, init_db
 from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user
-from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen
+from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign
 
 import os
 
@@ -31,13 +31,31 @@ app.include_router(invoices.router, prefix="/invoices", tags=["invoices"])
 app.include_router(ai_assist.router, prefix="/ai", tags=["ai"])
 app.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
 app.include_router(estimate_gen.router, prefix="/estimates", tags=["estimates"])
+app.include_router(sign.router, prefix="/sign", tags=["sign"])
 
 
 @app.on_event("startup")
 def startup():
     init_db()
+    # Safe column migrations — add new columns without a full migration framework
+    from app.database import SessionLocal, engine
+    import sqlalchemy as sa
+    with engine.connect() as conn:
+        for stmt in [
+            "ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS signature_data TEXT",
+            "ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS approved_by VARCHAR(128)",
+            "ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS signed_at TIMESTAMP",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS customer_signature TEXT",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS customer_approved_by VARCHAR(128)",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS customer_signed_at TIMESTAMP",
+        ]:
+            try:
+                conn.execute(sa.text(stmt))
+                conn.commit()
+            except Exception:
+                pass  # Column already exists or SQLite (no IF NOT EXISTS for some drivers)
+
     # Create default admin if no users exist
-    from app.database import SessionLocal
     db = SessionLocal()
     try:
         if db.query(User).count() == 0:
