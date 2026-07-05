@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request, HTTPException, Header, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.config import OPENPHONE_SIGNING_SECRET, OPENPHONE_API_KEY, GROQ_API_KEY, OWNER_PHONE
+from app.config import OPENPHONE_SIGNING_SECRET, OPENPHONE_API_KEY, GROQ_API_KEY, OWNER_PHONE, OPENPHONE_PHONE_NUMBER_ID
 import hmac, hashlib, base64, json, httpx, secrets
 from groq import AsyncGroq
 
@@ -24,26 +24,33 @@ _phone_number_id_cache: str | None = None
 async def get_phone_number_id() -> str | None:
     """Fetch the first phone number ID from the workspace (cached)."""
     global _phone_number_id_cache
+    # Use env var override if set (most reliable)
+    if OPENPHONE_PHONE_NUMBER_ID:
+        return OPENPHONE_PHONE_NUMBER_ID
     if _phone_number_id_cache:
         return _phone_number_id_cache
     if not OPENPHONE_API_KEY:
+        print("[SMS] No OPENPHONE_API_KEY set — cannot look up phone number ID")
         return None
     async with httpx.AsyncClient() as client:
         resp = await client.get(
             "https://api.openphone.com/v1/phone-numbers",
             headers={"Authorization": f"Bearer {OPENPHONE_API_KEY}"},
         )
+        print(f"[SMS] phone-numbers lookup: status={resp.status_code} body={resp.text[:300]}")
         if resp.status_code == 200:
             numbers = resp.json().get("data", [])
             if numbers:
                 _phone_number_id_cache = numbers[0]["id"]
+                print(f"[SMS] using phone number id: {_phone_number_id_cache}")
                 return _phone_number_id_cache
+        print("[SMS] Could not get phone number ID — from field will be missing")
     return None
 
 
 async def send_sms(to: str, body: str) -> dict:
     if not OPENPHONE_API_KEY:
-        print(f"[SMS skipped — no API key] To: {to} | {body}")
+        print(f"[SMS skipped — no API key] To: {to} | {body[:80]}")
         return {"error": "no api key"}
 
     # Normalize to E.164
@@ -52,9 +59,11 @@ async def send_sms(to: str, body: str) -> dict:
         to = "+1" + to.lstrip("1")
 
     phone_number_id = await get_phone_number_id()
-    payload: dict = {"to": [to], "content": body}
-    if phone_number_id:
-        payload["from"] = phone_number_id
+    if not phone_number_id:
+        print(f"[SMS BLOCKED] No from number — message not sent. To: {to} | {body[:80]}")
+        return {"error": "no from number"}
+
+    payload: dict = {"from": phone_number_id, "to": [to], "content": body}
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
@@ -62,7 +71,7 @@ async def send_sms(to: str, body: str) -> dict:
             headers={"Authorization": f"Bearer {OPENPHONE_API_KEY}"},
             json=payload,
         )
-        print(f"[SMS] status={resp.status_code} to={to} payload={payload} response={resp.text[:300]}")
+        print(f"[SMS] status={resp.status_code} from={phone_number_id} to={to} response={resp.text[:300]}")
         return resp.json()
 
 # ── Conversation session helpers ───────────────────────────────────────────
@@ -298,11 +307,14 @@ async def openphone_webhook(
             raise HTTPException(status_code=401, detail="Invalid signature")
 
     data = json.loads(payload)
+    print(f"[WEBHOOK] type={data.get('type')} keys={list(data.keys())} preview={str(data)[:400]}")
 
     if data.get("type") != "message.received":
+        print(f"[WEBHOOK] skipping event type: {data.get('type')}")
         return JSONResponse({"status": "ok"})
 
     msg = data.get("data", {}).get("object", {})
+    print(f"[WEBHOOK] msg keys={list(msg.keys())} direction={msg.get('direction')} from={msg.get('from')} body={str(msg.get('body',''))[:100]}")
 
     # Skip outbound messages (bot's own replies)
     if msg.get("direction") == "outbound":
@@ -312,6 +324,7 @@ async def openphone_webhook(
     body = msg.get("body", "").strip()
 
     if not from_number or not body:
+        print(f"[WEBHOOK] missing from_number or body — skipping. from={from_number!r} body={body!r}")
         return JSONResponse({"status": "ok"})
 
     # Load or create conversation session
