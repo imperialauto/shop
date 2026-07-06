@@ -83,7 +83,7 @@ def get_active_session(db: Session, phone: str):
         db.query(EstimateSession)
         .filter(
             EstimateSession.phone_number == phone,
-            EstimateSession.status.in_(["collecting", "draft_ready", "scheduling"]),
+            EstimateSession.status.in_(["collecting", "draft_ready", "scheduling", "forwarded", "scheduled"]),
         )
         .order_by(EstimateSession.created_at.desc())
         .first()
@@ -101,6 +101,14 @@ def create_session(db: Session, phone: str):
 # ── Claude intake conversation ─────────────────────────────────────────────
 
 INTAKE_SYSTEM = """You are the intake assistant for Imperial Auto Care, a diesel and fleet specialist shop in Phoenix, AZ.
+
+Shop info you CAN answer if a customer asks:
+- Address: 7915 N Glen Harbor Blvd, Suite 417, Glendale, AZ 85307
+- Phone: (480) 914-4144
+- Specialty: diesel engines and commercial fleet vehicles
+
+If a customer asks something you CANNOT answer (hours, specific scheduling availability, billing, insurance, warranty policy, anything requiring a human decision), do NOT guess and do NOT repeat yourself. Instead, output ONLY this JSON on its own line:
+{"forward":true,"reason":"<brief description of what they asked>"}
 
 Your job: collect information via SMS to build an accurate repair estimate. Be friendly, professional, and BRIEF — this is SMS. One or two sentences max per reply.
 
@@ -136,8 +144,8 @@ Set customer_supplied_parts to true if the customer mentioned bringing/having th
 Do NOT output JSON until you have the diagnostic follow-ups answered."""
 
 
-async def intake_turn(conversation: list, new_message: str) -> tuple[str, dict | None]:
-    """One turn of the intake conversation. Returns (reply, collected_data_or_None)."""
+async def intake_turn(conversation: list, new_message: str) -> tuple[str, dict | None, bool]:
+    """One turn of the intake conversation. Returns (reply, collected_data_or_None, should_forward)."""
     client = AsyncGroq(api_key=GROQ_API_KEY)
 
     messages = [{"role": "system", "content": INTAKE_SYSTEM}] + conversation + [{"role": "user", "content": new_message}]
@@ -150,9 +158,21 @@ async def intake_turn(conversation: list, new_message: str) -> tuple[str, dict |
 
     reply = response.choices[0].message.content.strip()
 
-    # Check if Claude signalled completion with JSON
+    # Check if bot wants to forward to owner
+    should_forward = False
+    if '"forward":true' in reply or '"forward": true' in reply:
+        try:
+            start = reply.find("{")
+            end = reply.rfind("}") + 1
+            fwd = json.loads(reply[start:end])
+            if fwd.get("forward"):
+                should_forward = True
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Check if bot signalled intake completion with JSON
     collected = None
-    if '"done":true' in reply or '"done": true' in reply:
+    if not should_forward and ('"done":true' in reply or '"done": true' in reply):
         try:
             start = reply.find("{")
             end = reply.rfind("}") + 1
@@ -160,7 +180,7 @@ async def intake_turn(conversation: list, new_message: str) -> tuple[str, dict |
         except (json.JSONDecodeError, ValueError):
             pass
 
-    return reply, collected
+    return reply, collected, should_forward
 
 # ── Estimate generation ────────────────────────────────────────────────────
 
@@ -325,6 +345,21 @@ def create_draft_ro(db: Session, session, data: dict, estimate: dict):
 YES_WORDS = {"yes", "y", "yes!", "yep", "yeah", "ya", "sure", "ok", "okay", "yup", "absolutely", "let's do it", "lets do it"}
 
 
+async def forward_to_owner(from_number: str, body: str, context: str = ""):
+    """Tell the customer a human will follow up and ping the owner with the message."""
+    await send_sms(
+        from_number,
+        "I'll get someone from the shop to follow up with you directly — give us just a moment. "
+        "You can also reach us at (480) 914-4144.",
+    )
+    if OWNER_PHONE:
+        note = f"\nContext: {context}" if context else ""
+        await send_sms(
+            OWNER_PHONE,
+            f"📨 Message needs your attention\nFrom: {from_number}\n\"{body}\"{note}",
+        )
+
+
 async def parse_appointment_date(user_input: str) -> datetime.datetime | None:
     """Use Groq to parse a natural-language date/time into a datetime. Returns None if unclear."""
     client = AsyncGroq(api_key=GROQ_API_KEY)
@@ -406,6 +441,22 @@ async def openphone_webhook(
     # Load or create conversation session
     session = get_active_session(db, from_number)
 
+    # ── Already forwarded or scheduled — pass message to owner ────────────
+    if session and session.status in ("forwarded", "scheduled"):
+        if OWNER_PHONE:
+            label = "Follow-up" if session.status == "forwarded" else "Post-appt question"
+            await send_sms(
+                OWNER_PHONE,
+                f"📨 {label} from {from_number}:\n\"{body}\"",
+            )
+        # Let the customer know a human will respond
+        await send_sms(
+            from_number,
+            "Got it — I'll pass that along to the shop. Someone will follow up with you shortly. "
+            "You can also reach us at (480) 914-4144.",
+        )
+        return JSONResponse({"status": "ok"})
+
     # ── Scheduling reply ───────────────────────────────────────────────────
     if session and session.status == "scheduling":
         appt_dt = await parse_appointment_date(body)
@@ -467,11 +518,10 @@ async def openphone_webhook(
                 "(e.g. 'Monday at 8am', 'this Thursday afternoon', 'July 10th at 2pm')",
             )
         else:
-            await send_sms(
-                from_number,
-                "No worries! Just reply YES when you're ready to book, "
-                "or call us at (480) 914-4144. We'll hold your estimate.",
-            )
+            # Forward to owner instead of looping — they have a question
+            await forward_to_owner(from_number, body, context="customer has a pending estimate")
+            session.status = "forwarded"
+            db.commit()
         return JSONResponse({"status": "ok"})
 
     # ── New or active intake conversation ──────────────────────────────────
@@ -481,7 +531,14 @@ async def openphone_webhook(
     conversation = json.loads(session.conversation or "[]")
 
     # Run one turn of the intake conversation
-    reply, collected = await intake_turn(conversation, body)
+    reply, collected, should_forward = await intake_turn(conversation, body)
+
+    # ── Bot doesn't know — forward to owner ───────────────────────────────
+    if should_forward:
+        await forward_to_owner(from_number, body, context="active intake session")
+        session.status = "forwarded"
+        db.commit()
+        return JSONResponse({"status": "ok"})
 
     # Update conversation history
     conversation.append({"role": "user", "content": body})
