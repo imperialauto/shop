@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, HTTPException, Header, Depends
+﻿from fastapi import APIRouter, Request, HTTPException, Header, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -9,7 +9,7 @@ from groq import AsyncGroq
 
 router = APIRouter()
 
-# ── Signature verification ─────────────────────────────────────────────────
+# â”€â”€ Signature verification â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def verify_signature(payload: bytes, signature: str, secret: str) -> bool:
     if not secret:
@@ -18,7 +18,7 @@ def verify_signature(payload: bytes, signature: str, secret: str) -> bool:
     expected = hmac.new(key, payload, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)
 
-# ── Quo/OpenPhone API ──────────────────────────────────────────────────────
+# â”€â”€ Quo/OpenPhone API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 _phone_number_id_cache: str | None = None
 
@@ -31,7 +31,7 @@ async def get_phone_number_id() -> str | None:
     if _phone_number_id_cache:
         return _phone_number_id_cache
     if not OPENPHONE_API_KEY:
-        print("[SMS] No OPENPHONE_API_KEY set — cannot look up phone number ID")
+        print("[SMS] No OPENPHONE_API_KEY set â€” cannot look up phone number ID")
         return None
     async with httpx.AsyncClient() as client:
         resp = await client.get(
@@ -45,13 +45,13 @@ async def get_phone_number_id() -> str | None:
                 _phone_number_id_cache = numbers[0]["id"]
                 print(f"[SMS] using phone number id: {_phone_number_id_cache}")
                 return _phone_number_id_cache
-        print("[SMS] Could not get phone number ID — from field will be missing")
+        print("[SMS] Could not get phone number ID â€” from field will be missing")
     return None
 
 
 async def send_sms(to: str, body: str) -> dict:
     if not OPENPHONE_API_KEY:
-        print(f"[SMS skipped — no API key] To: {to} | {body[:80]}")
+        print(f"[SMS skipped â€” no API key] To: {to} | {body[:80]}")
         return {"error": "no api key"}
 
     # Normalize to E.164
@@ -61,7 +61,7 @@ async def send_sms(to: str, body: str) -> dict:
 
     phone_number_id = await get_phone_number_id()
     if not phone_number_id:
-        print(f"[SMS BLOCKED] No from number — message not sent. To: {to} | {body[:80]}")
+        print(f"[SMS BLOCKED] No from number â€” message not sent. To: {to} | {body[:80]}")
         return {"error": "no from number"}
 
     payload: dict = {"from": phone_number_id, "to": [to], "content": body}
@@ -75,7 +75,7 @@ async def send_sms(to: str, body: str) -> dict:
         print(f"[SMS] status={resp.status_code} from={phone_number_id} to={to} response={resp.text[:300]}")
         return resp.json()
 
-# ── Conversation session helpers ───────────────────────────────────────────
+# â”€â”€ Conversation session helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def get_active_session(db: Session, phone: str):
     from app.models import EstimateSession
@@ -98,7 +98,7 @@ def create_session(db: Session, phone: str):
     db.refresh(session)
     return session
 
-# ── Claude intake conversation ─────────────────────────────────────────────
+# â”€â”€ Claude intake conversation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 INTAKE_SYSTEM = """You are the intake assistant for Imperial Auto Care, a diesel and fleet specialist shop in Phoenix, AZ.
 
@@ -110,38 +110,40 @@ Shop info you CAN answer if a customer asks:
 If a customer asks something you CANNOT answer (hours, specific scheduling availability, billing, insurance, warranty policy, anything requiring a human decision), do NOT guess and do NOT repeat yourself. Instead, output ONLY this JSON on its own line:
 {"forward":true,"reason":"<brief description of what they asked>"}
 
-Your job: collect information via SMS to build an accurate repair estimate. Be friendly, professional, and BRIEF — this is SMS. One or two sentences max per reply.
+Your job: collect information via SMS to build an accurate repair estimate. Be friendly, professional, and BRIEF â€” this is SMS. One or two sentences max per reply.
 
-You need to collect ALL of the following (in a natural conversation — don't make it feel like a form):
+You need to collect ALL of the following (in a natural conversation â€” don't make it feel like a form):
 1. Customer name
 2. Vehicle year, make, and model
-3. Engine — ALWAYS confirm gas or diesel. If diesel, get the exact engine (6.0L Powerstroke, 6.7L Powerstroke, 6.4L Powerstroke, 7.3L Powerstroke, 6.6L Duramax, 5.9L or 6.7L Cummins, 3.0L Sprinter CDI, etc.)
+3. Engine â€” ALWAYS confirm gas or diesel. If diesel, get the exact engine (6.0L Powerstroke, 6.7L Powerstroke, 6.4L Powerstroke, 7.3L Powerstroke, 6.6L Duramax, 5.9L or 6.7L Cummins, 3.0L Sprinter CDI, etc.)
 4. Approximate mileage
-5. The complaint — and ALWAYS follow up with diagnostic questions:
+5. The complaint â€” and ALWAYS follow up with diagnostic questions:
    - How long has this been happening?
    - Is it constant or intermittent (comes and goes)?
    - Any warning lights on the dash? Which ones?
    - Does it get worse under load, at highway speed, or when fully warmed up?
    - Any recent repairs, fluid changes, or work done on it?
    - Any unusual smells, smoke color, or noises? (describe)
-   These follow-up questions are critical for diesel diagnostics — don't skip them. Work them in naturally as the customer describes the issue, 1-2 at a time.
-6. Customer-supplied parts — if the customer mentions they have their own parts, want to bring their own parts, or already bought a part, note it. Do NOT make this a required question — only flag it if they bring it up.
+   These follow-up questions are critical for diesel diagnostics â€” don't skip them. Work them in naturally as the customer describes the issue, 1-2 at a time.
+6. Customer-supplied parts â€” if the customer mentions they have their own parts, want to bring their own parts, or already bought a part, note it. Do NOT make this a required question â€” only flag it if they bring it up.
 
 Rules:
-- Ask 1-2 questions per message — never dump everything at once
+- Ask 1-2 questions per message â€” never dump everything at once
 - If they give multiple pieces of info, acknowledge and only ask for what's still missing
 - If their complaint is vague ("runs rough", "won't start"), ask clarifying questions before moving on
-- Be conversational, not robotic — you represent the shop
-- NEVER mention prices, rates, or cost estimates during the intake — that comes in the formal estimate after we have full details
-- NEVER say "bring it in" or suggest scheduling before the estimate is generated — let the customer get an estimate first
-- Build trust through your diagnostic questions — show you know diesel, not that you're trying to sell them something
-- If the customer mentions they have their own parts or want to supply parts, warmly acknowledge it and let them know we do install customer-supplied parts (just note it internally — do NOT quote a rate in chat)
+- Be conversational, not robotic â€” you represent the shop
+- NEVER mention prices, rates, or cost estimates during the intake â€” that comes in the formal estimate after we have full details
+- NEVER say "bring it in" or suggest scheduling before the estimate is generated â€” let the customer get an estimate first
+- Build trust through your diagnostic questions â€” show you know diesel, not that you're trying to sell them something
+- If the customer mentions they have their own parts or want to supply parts, warmly acknowledge it and let them know we do install customer-supplied parts (just note it internally â€” do NOT quote a rate in chat)
 - When you have ALL items (name, year, make, model, engine, mileage, complaint with diagnostic detail), output ONLY this JSON on its own line:
 {"done":true,"name":"...","year":2019,"make":"Ford","model":"F-250","engine":"6.7L Powerstroke diesel","mileage":120000,"complaint":"...","customer_supplied_parts":false}
 
 The complaint field should include ALL diagnostic details gathered (symptoms, duration, warning lights, conditions, recent work).
 Set customer_supplied_parts to true if the customer mentioned bringing/having their own parts.
-Do NOT output JSON until you have the diagnostic follow-ups answered."""
+Do NOT output JSON until you have the diagnostic follow-ups answered.
+
+If you see a message starting with "Customer sent a photo showing:", that means a customer sent an image and it was automatically analyzed. Use that information as part of the intake â€” acknowledge it naturally ("Got it, I can see the codes from your photo â€” let me ask a couple follow-up questions...") and continue collecting any missing info."""
 
 
 async def intake_turn(conversation: list, new_message: str) -> tuple[str, dict | None, bool]:
@@ -182,7 +184,7 @@ async def intake_turn(conversation: list, new_message: str) -> tuple[str, dict |
 
     return reply, collected, should_forward
 
-# ── Estimate generation ────────────────────────────────────────────────────
+# â”€â”€ Estimate generation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 ESTIMATE_SYSTEM = """You are a diesel and fleet repair estimator for Imperial Auto Care in Phoenix, AZ.
 
@@ -193,12 +195,12 @@ Customer-supplied parts rates: diesel $165/hr, gas $145/hr. When customer_suppli
   - Set total_low/total_high to labor only
   - Add to notes: "Labor rate reflects customer-supplied parts. We do not warranty parts not sourced by the shop."
 
-CRITICAL — ONE-TIME-USE (OTU) PARTS KNOWLEDGE:
+CRITICAL â€” ONE-TIME-USE (OTU) PARTS KNOWLEDGE:
 You must flag any OTU parts relevant to the job in the otu_parts array. Common examples:
 - 6.0L Powerstroke: head bolts (TTY), EGR cooler gaskets, oil cooler o-rings, injector cup o-rings, valley cover gasket
 - 6.7L Powerstroke: EGR cooler outlet gasket, turbo pedestal o-rings, DPF/DOC gaskets, some EGR hardware
 - 6.6L Duramax LLY/LBZ/LMM: head bolts (TTY), injector return line o-rings, valley cover gasket, EGR valve gasket
-- 6.6L Duramax LML/L5P: CP4 high-pressure fuel lines (crimped — OTU), fuel rail return lines, head bolts
+- 6.6L Duramax LML/L5P: CP4 high-pressure fuel lines (crimped â€” OTU), fuel rail return lines, head bolts
 - Cummins 5.9/6.7: head bolts (TTY), injector copper washers, injector hold-down hardware, flywheel bolts (some)
 - All platforms: stretch/TTY bolts of any kind, copper crush washers, exhaust manifold bolts (heat-stressed, always inspect), combustion seal washers
 
@@ -215,7 +217,7 @@ Respond ONLY with this JSON (no other text):
   "notes": "Important caveats, things to watch for, recommended upsells",
   "needs_inspection": false,
   "customer_supplied_parts": false,
-  "otu_parts": ["6.0L head bolts (TTY — must replace)", "EGR cooler gaskets (one-time-use)"]
+  "otu_parts": ["6.0L head bolts (TTY â€” must replace)", "EGR cooler gaskets (one-time-use)"]
 }
 
 Set needs_inspection=true only when you genuinely cannot estimate without seeing the vehicle.
@@ -228,7 +230,7 @@ async def generate_estimate(data: dict) -> dict:
     csp = data.get("customer_supplied_parts", False)
     prompt = (
         f"Generate a repair estimate:\n"
-        f"Vehicle: {data.get('year')} {data.get('make')} {data.get('model')} — {data.get('engine')}\n"
+        f"Vehicle: {data.get('year')} {data.get('make')} {data.get('model')} â€” {data.get('engine')}\n"
         f"Mileage: {data.get('mileage')}\n"
         f"Complaint: {data.get('complaint')}\n"
         f"Customer: {data.get('name')}\n"
@@ -249,7 +251,7 @@ async def generate_estimate(data: dict) -> dict:
     end = text.rfind("}") + 1
     return json.loads(text[start:end])
 
-# ── Mileage parsing ────────────────────────────────────────────────────────
+# â”€â”€ Mileage parsing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def parse_mileage(raw) -> int:
     s = str(raw).lower().replace(",", "").replace(" ", "").replace("miles", "").replace("mi", "")
@@ -263,7 +265,7 @@ def parse_mileage(raw) -> int:
     except ValueError:
         return 0
 
-# ── Draft RO creation ──────────────────────────────────────────────────────
+# â”€â”€ Draft RO creation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def create_draft_ro(db: Session, session, data: dict, estimate: dict):
     from app.models import Customer, Vehicle, RepairOrder, LineItem, Communication
@@ -299,7 +301,7 @@ def create_draft_ro(db: Session, session, data: dict, estimate: dict):
         status="waiting_approval",
         concern=data.get("complaint", ""),
         tech_notes=(
-            f"SMS Estimate Request — {session.phone_number}\n"
+            f"SMS Estimate Request â€” {session.phone_number}\n"
             f"Engine: {data.get('engine')}\n"
             f"Mileage: {data.get('mileage')}\n\n"
             f"AI Notes: {estimate.get('notes', '')}"
@@ -313,7 +315,7 @@ def create_draft_ro(db: Session, session, data: dict, estimate: dict):
     if not estimate.get("needs_inspection"):
         db.add(LineItem(
             repair_order_id=ro.id,
-            description=f"Labor — {estimate.get('summary', data.get('complaint'))}",
+            description=f"Labor â€” {estimate.get('summary', data.get('complaint'))}",
             item_type="labor",
             quantity=estimate.get("labor_hours", 0),
             unit_price=estimate.get("labor_rate", 150),
@@ -322,7 +324,7 @@ def create_draft_ro(db: Session, session, data: dict, estimate: dict):
         if parts_mid > 0:
             db.add(LineItem(
                 repair_order_id=ro.id,
-                description="Parts (estimate — subject to final quote)",
+                description="Parts (estimate â€” subject to final quote)",
                 item_type="part",
                 quantity=1,
                 unit_price=parts_mid,
@@ -340,7 +342,7 @@ def create_draft_ro(db: Session, session, data: dict, estimate: dict):
     db.refresh(ro)
     return ro, customer
 
-# ── Appointment date parser ────────────────────────────────────────────────
+# â”€â”€ Appointment date parser â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 YES_WORDS = {"yes", "y", "yes!", "yep", "yeah", "ya", "sure", "ok", "okay", "yup", "absolutely", "let's do it", "lets do it"}
 
@@ -349,14 +351,14 @@ async def forward_to_owner(from_number: str, body: str, context: str = ""):
     """Tell the customer a human will follow up and ping the owner with the message."""
     await send_sms(
         from_number,
-        "I'll get someone from the shop to follow up with you directly — give us just a moment. "
+        "I'll get someone from the shop to follow up with you directly â€” give us just a moment. "
         "You can also reach us at (480) 914-4144.",
     )
     if OWNER_PHONE:
         note = f"\nContext: {context}" if context else ""
         await send_sms(
             OWNER_PHONE,
-            f"📨 Message needs your attention\nFrom: {from_number}\n\"{body}\"{note}",
+            f"ðŸ“¨ Message needs your attention\nFrom: {from_number}\n\"{body}\"{note}",
         )
 
 
@@ -375,7 +377,7 @@ async def parse_appointment_date(user_input: str) -> datetime.datetime | None:
                     f"Today is {today.strftime('%A, %B %d, %Y')}. The shop is in Phoenix, AZ (Mountain Standard Time, no DST). "
                     "Parse the user's requested appointment date/time. "
                     "If a time is missing, default to 08:00. "
-                    "Output ONLY valid JSON — no other text: "
+                    "Output ONLY valid JSON â€” no other text: "
                     '{"date":"YYYY-MM-DD","time":"HH:MM","valid":true} or {"valid":false} if the input is too unclear to parse.'
                 ),
             },
@@ -403,7 +405,47 @@ def fmt_appt(dt: datetime.datetime) -> str:
     return dt.strftime(f"%A, %B %-d at {hour}:{minute} {ampm}")
 
 
-# ── Webhook endpoint ───────────────────────────────────────────────────────
+
+# â”€â”€ Vision: describe an image URL using Groq llama-4-scout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+async def describe_image(url: str) -> str:
+    """Download image and ask a vision model to describe it for auto intake context."""
+    try:
+        client = AsyncGroq(api_key=GROQ_API_KEY)
+        resp = await client.chat.completions.create(
+            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": url},
+                        },
+                        {
+                            "type": "text",
+                            "text": (
+                                "You are helping an auto repair shop intake bot. "
+                                "Describe what you see in this image as it relates to a vehicle problem. "
+                                "If you see diagnostic trouble codes (DTCs), list them all. "
+                                "If you see a dashboard warning light, name it. "
+                                "If you see physical damage, describe it concisely. "
+                                "Keep your response under 3 sentences. "
+                                "Start with: \'Customer sent a photo showing:\'"
+                            ),
+                        },
+                    ],
+                }
+            ],
+            max_tokens=200,
+        )
+        return resp.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"[VISION] error describing image: {e}")
+        return "[Customer sent a photo â€” could not analyze it automatically]"
+
+
+# â”€â”€ Webhook endpoint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @router.post("/openphone")
 async def openphone_webhook(
@@ -433,31 +475,45 @@ async def openphone_webhook(
 
     from_number = msg.get("from", "").strip()
     body = msg.get("body", "").strip()
+    media = msg.get("media", [])
 
-    if not from_number or not body:
-        print(f"[WEBHOOK] missing from_number or body — skipping. from={from_number!r} body={body!r}")
+    if not from_number:
+        print(f"[WEBHOOK] missing from_number â€” skipping.")
+        return JSONResponse({"status": "ok"})
+
+    # â”€â”€ MMS image handling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    if media:
+        image_urls = [m.get("url") for m in media if m.get("url") and "image" in m.get("type", "")]
+        if image_urls:
+            vision_desc = await describe_image(image_urls[0])
+            print(f"[WEBHOOK] image received â€” vision description: {vision_desc[:120]}")
+            # Prepend vision description to any text the customer also sent
+            body = vision_desc + (f"\n\nCustomer also wrote: {body}" if body else "")
+
+    if not body:
+        print(f"[WEBHOOK] empty body, no media â€” skipping.")
         return JSONResponse({"status": "ok"})
 
     # Load or create conversation session
     session = get_active_session(db, from_number)
 
-    # ── Already forwarded or scheduled — pass message to owner ────────────
+    # â”€â”€ Already forwarded or scheduled â€” pass message to owner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if session and session.status in ("forwarded", "scheduled"):
         if OWNER_PHONE:
             label = "Follow-up" if session.status == "forwarded" else "Post-appt question"
             await send_sms(
                 OWNER_PHONE,
-                f"📨 {label} from {from_number}:\n\"{body}\"",
+                f"ðŸ“¨ {label} from {from_number}:\n\"{body}\"",
             )
         # Let the customer know a human will respond
         await send_sms(
             from_number,
-            "Got it — I'll pass that along to the shop. Someone will follow up with you shortly. "
+            "Got it â€” I'll pass that along to the shop. Someone will follow up with you shortly. "
             "You can also reach us at (480) 914-4144.",
         )
         return JSONResponse({"status": "ok"})
 
-    # ── Scheduling reply ───────────────────────────────────────────────────
+    # â”€â”€ Scheduling reply â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if session and session.status == "scheduling":
         appt_dt = await parse_appointment_date(body)
         if appt_dt is None:
@@ -474,7 +530,7 @@ async def openphone_webhook(
         year = collected.get("year", "")
         make = collected.get("make", "")
         model = collected.get("model", "")
-        cal_summary = f"Drop-off: {name} — {year} {make} {model}"
+        cal_summary = f"Drop-off: {name} â€” {year} {make} {model}"
         cal_desc = f"Phone: {from_number}\nRO: #{session.draft_ro_id}\nConcern: {collected.get('complaint', '')}"
         create_appointment(cal_summary, cal_desc, appt_dt, duration_hours=2.0)
 
@@ -490,7 +546,7 @@ async def openphone_webhook(
         await send_sms(
             from_number,
             f"You're all set! We have you down for {appt_str}. "
-            f"Please plan to drop off by that time. See you then! — Imperial Auto Care (480) 914-4144",
+            f"Please plan to drop off by that time. See you then! â€” Imperial Auto Care (480) 914-4144",
         )
 
         # Notify Jaelan
@@ -507,7 +563,7 @@ async def openphone_webhook(
         db.commit()
         return JSONResponse({"status": "ok"})
 
-    # ── Customer replied after estimate sent (draft_ready) ─────────────────
+    # â”€â”€ Customer replied after estimate sent (draft_ready) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if session and session.status == "draft_ready":
         if body.strip().lower() in YES_WORDS:
             session.status = "scheduling"
@@ -518,13 +574,13 @@ async def openphone_webhook(
                 "(e.g. 'Monday at 8am', 'this Thursday afternoon', 'July 10th at 2pm')",
             )
         else:
-            # Forward to owner instead of looping — they have a question
+            # Forward to owner instead of looping â€” they have a question
             await forward_to_owner(from_number, body, context="customer has a pending estimate")
             session.status = "forwarded"
             db.commit()
         return JSONResponse({"status": "ok"})
 
-    # ── New or active intake conversation ──────────────────────────────────
+    # â”€â”€ New or active intake conversation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if session is None:
         session = create_session(db, from_number)
 
@@ -533,7 +589,7 @@ async def openphone_webhook(
     # Run one turn of the intake conversation
     reply, collected, should_forward = await intake_turn(conversation, body)
 
-    # ── Bot doesn't know — forward to owner ───────────────────────────────
+    # â”€â”€ Bot doesn't know â€” forward to owner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if should_forward:
         await forward_to_owner(from_number, body, context="active intake session")
         session.status = "forwarded"
@@ -546,12 +602,12 @@ async def openphone_webhook(
     session.conversation = json.dumps(conversation)
 
     if collected and collected.get("done"):
-        # All info collected — generate estimate
+        # All info collected â€” generate estimate
         session.status = "generating"
         session.collected_data = json.dumps(collected)
         db.commit()
 
-        await send_sms(from_number, "Perfect, I have everything I need! Generating your estimate now — give me just a moment.")
+        await send_sms(from_number, "Perfect, I have everything I need! Generating your estimate now â€” give me just a moment.")
 
         try:
             estimate = await generate_estimate(collected)
@@ -579,7 +635,7 @@ async def openphone_webhook(
             customer_msg = (
                 f"Hi {name}! Thanks for the details on your {year} {make} {model}. "
                 f"Based on what you've described, we'd need to do a hands-on inspection before "
-                f"we can give you a solid number — there are a few things that can only be confirmed in person. "
+                f"we can give you a solid number â€” there are a few things that can only be confirmed in person. "
                 f"No charge for the inspection. Reply YES to set up a drop-off time, "
                 f"or call us at (480) 914-4144!"
             )
@@ -595,13 +651,13 @@ async def openphone_webhook(
             total_high = estimate.get("total_high", 0)
 
             parts_line = (
-                "Parts: You're supplying — no parts charge from us\n"
+                "Parts: You're supplying â€” no parts charge from us\n"
                 if csp
-                else f"Parts: ${parts_low:,.0f}–${parts_high:,.0f}\n"
+                else f"Parts: ${parts_low:,.0f}â€“${parts_high:,.0f}\n"
             )
             csp_note = (
                 "\nNote: Since you're supplying your own parts, we use our customer-supplied rate. "
-                "We also can't warranty parts we didn't source — just so you know upfront.\n"
+                "We also can't warranty parts we didn't source â€” just so you know upfront.\n"
                 if csp else ""
             )
 
@@ -610,10 +666,10 @@ async def openphone_webhook(
                 f"{summary}\n\n"
                 f"Labor: {labor_hrs} hrs @ ${labor_rate}/hr = ${labor_total:,.0f}\n"
                 f"{parts_line}"
-                f"Estimated total: ${total_low:,.0f}–${total_high:,.0f}\n"
+                f"Estimated total: ${total_low:,.0f}â€“${total_high:,.0f}\n"
                 f"{csp_note}"
                 f"{notes}\n\n"
-                f"These are ballpark numbers — final price confirmed once we're hands-on. "
+                f"These are ballpark numbers â€” final price confirmed once we're hands-on. "
                 f"Reply YES to schedule a drop-off, or call us at (480) 914-4144!"
             )
 
@@ -622,20 +678,20 @@ async def openphone_webhook(
         # Notify Jaelan
         if OWNER_PHONE:
             otu = estimate.get("otu_parts", [])
-            otu_line = f"\n⚠ OTU: {', '.join(otu)}" if otu else ""
+            otu_line = f"\nâš  OTU: {', '.join(otu)}" if otu else ""
             owner_msg = (
                 f"New estimate\n"
                 f"{name} ({from_number})\n"
-                f"{year} {make} {model} — {collected.get('engine')}\n"
+                f"{year} {make} {model} â€” {collected.get('engine')}\n"
                 f"Job: {collected.get('complaint')}\n"
-                f"Est: ${estimate.get('total_low', 0):,.0f}–${estimate.get('total_high', 0):,.0f}"
+                f"Est: ${estimate.get('total_low', 0):,.0f}â€“${estimate.get('total_high', 0):,.0f}"
                 f"{otu_line}\n"
                 f"Review: https://web-production-94989.up.railway.app/ro/{ro.id}"
             )
             await send_sms(OWNER_PHONE, owner_msg)
 
     else:
-        # Still collecting info — send next question
+        # Still collecting info â€” send next question
         db.commit()
         await send_sms(from_number, reply)
 
