@@ -4,6 +4,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from groq import AsyncGroq
 import json, base64, os, secrets, io
+from xml.sax.saxutils import escape as xml_escape
 from datetime import date
 
 from app.database import get_db
@@ -15,8 +16,8 @@ templates = Jinja2Templates(
     directory=os.path.join(os.path.dirname(__file__), "..", "templates")
 )
 
-EXTRACT_ESTIMATE_SYSTEM = """You are a repair estimator for Imperial Auto Care, a diesel and fleet specialist shop in Phoenix, AZ.
-Rates: diesel/fleet $150/hr, gas $130/hr. Parts markup 25-30% over dealer cost.
+EXTRACT_ESTIMATE_SYSTEM = """You are a repair estimator for Imperial Auto Care, a full-service auto repair shop in Phoenix, AZ that serves everyday daily-driver customers as well as diesel and commercial fleet vehicles.
+Rates: diesel/fleet $150/hr, everyday gas vehicle $130/hr. Parts markup 25-30% over dealer cost. Regular everyday customers (non-diesel, non-fleet) are common — treat their vehicles with the same care and rigor, just using the gas labor rate and skipping diesel-only sections below.
 
 The shop owner has shared a customer conversation (pasted text or a screenshot). Extract vehicle info and generate an estimate.
 
@@ -381,6 +382,13 @@ async def download_pdf(
     from reportlab.lib import colors
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    def _pdf_para(value, style):
+        """Escape special chars and turn real line breaks into <br/> tags so
+        multi-line AI text (notes, summaries, long concerns) doesn't get
+        collapsed onto one run-on line, and wraps instead of overlapping."""
+        safe = xml_escape(str(value or "")).replace("\r\n", "\n").replace("\n", "<br/>")
+        return Paragraph(safe, style)
+    
 
     data = json.loads(estimate_json)
     buf = io.BytesIO()
@@ -400,11 +408,12 @@ async def download_pdf(
     grey = colors.HexColor("#57534e")
     light = colors.HexColor("#e8e0d5")
 
-    title_style = ParagraphStyle("title", parent=styles["Heading1"], textColor=dark, fontSize=20, spaceAfter=2)
-    sub_style = ParagraphStyle("sub", parent=styles["Normal"], textColor=grey, fontSize=10, spaceAfter=12)
-    label_style = ParagraphStyle("label", parent=styles["Normal"], textColor=grey, fontSize=8, spaceAfter=2)
-    value_style = ParagraphStyle("value", parent=styles["Normal"], textColor=dark, fontSize=11, spaceAfter=8)
-    note_style = ParagraphStyle("note", parent=styles["Normal"], textColor=grey, fontSize=9, spaceAfter=6)
+title_style = ParagraphStyle("title", parent=styles["Heading1"], textColor=dark, fontSize=20, leading=24, spaceAfter=2)
+sub_style = ParagraphStyle("sub", parent=styles["Normal"], textColor=grey, fontSize=10, leading=13, spaceAfter=12)
+label_style = ParagraphStyle("label", parent=styles["Normal"], textColor=grey, fontSize=8, leading=10, spaceAfter=2)
+value_style = ParagraphStyle("value", parent=styles["Normal"], textColor=dark, fontSize=11, leading=15, spaceAfter=8)
+note_style = ParagraphStyle("note", parent=styles["Normal"], textColor=grey, fontSize=9, leading=13, spaceAfter=6)
+cell_style = ParagraphStyle("cell", parent=styles["Normal"], textColor=dark, fontSize=9, leading=12)
 
     today = date.today().strftime("%B %d, %Y")
     name = data.get("name", "Customer")
@@ -421,14 +430,14 @@ async def download_pdf(
 
     # Header
     story.append(Paragraph("Imperial Auto Care", title_style))
-    story.append(Paragraph("Diesel & Fleet Specialist · Phoenix, AZ", sub_style))
+        story.append(Paragraph("Full-Service Auto Repair - Diesel, Fleet &amp; Everyday Vehicles - Phoenix, AZ", sub_style))
     story.append(Spacer(1, 0.1 * inch))
 
     # Info table
     info_data = [
         ["Date", today, "Customer", name],
         ["Vehicle", f"{year} {make} {model_name}", "Engine", engine],
-        ["Mileage", f"{mileage:,} mi", "Concern", complaint],
+        ["Mileage", f"{mileage:,} mi", "Concern", _pdf_para(complaint, cell_style)],
     ]
     info_table = Table(info_data, colWidths=[1.1 * inch, 2.5 * inch, 1 * inch, 2 * inch])
     info_table.setStyle(TableStyle([
@@ -449,7 +458,7 @@ async def download_pdf(
 
     # Job summary
     story.append(Paragraph("JOB SUMMARY", label_style))
-    story.append(Paragraph(summary, value_style))
+    story.append(_pdf_para(summary, value_style))
     story.append(Spacer(1, 0.1 * inch))
 
     # Estimate table
@@ -469,8 +478,7 @@ async def download_pdf(
 
         est_data = [
             ["Description", "Qty", "Rate", "Amount"],
-            [f"Labor — {summary}", f"{lh} hrs", f"${lr}/hr", f"${lt:,.0f}"],
-            ["Parts & Materials (estimate)", "", "", f"${pl:,.0f} – ${ph:,.0f}"],
+            [_pdf_para(f"Labor — {summary}", cell_style), f"{lh} hrs", f"${lr}/hr", f"${lt:,.0f}"],            ["Parts & Materials (estimate)", "", "", f"${pl:,.0f} – ${ph:,.0f}"],
             ["", "", "TOTAL ESTIMATE", f"${tl:,.0f} – ${th:,.0f}"],
         ]
         est_table = Table(est_data, colWidths=[3.5 * inch, 0.8 * inch, 1.2 * inch, 1.2 * inch])
@@ -494,7 +502,7 @@ async def download_pdf(
     # Notes
     if data.get("notes"):
         story.append(Paragraph("NOTES & RECOMMENDATIONS", label_style))
-        story.append(Paragraph(data["notes"], note_style))
+        story.append(_pdf_para(data["notes"], note_style))
         story.append(Spacer(1, 0.1 * inch))
 
     # Footer disclaimer
