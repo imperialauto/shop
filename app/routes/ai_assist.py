@@ -54,7 +54,7 @@ def suggest_diagnostic(request: Request, ro_id: int, db: Session = Depends(get_d
     concern = ro.concern or "No concern listed"
     notes = ro.tech_notes or "No tech notes yet"
 
-    prompt = f"""You are a master diesel and automotive technician with deep expertise in Ford Powerstroke (6.0L, 6.7L), Cummins, Duramax, Mercedes Sprinter, and commercial fleet vehicles.
+    prompt = f"""You are a master automotive technician at a shop that services everyday daily-driver vehicles of all makes, plus deep diesel and fleet expertise (Ford Powerstroke 6.0L/6.7L, Cummins, Duramax, Mercedes Sprinter, and commercial fleet vehicles).
 
 Vehicle: {vehicle_ctx}
 Customer concern: {concern}
@@ -85,7 +85,7 @@ def draft_line_items(request: Request, ro_id: int, db: Session = Depends(get_db)
     vehicle_ctx = get_vehicle_context(ro)
     notes = ro.tech_notes or "No tech notes"
 
-    prompt = f"""You are a shop management assistant for an automotive repair shop specializing in diesel and fleet vehicles.
+    prompt = f"""You are a shop management assistant for Imperial Auto Care, a repair shop serving everyday daily-driver customers as well as diesel and commercial fleet vehicles.
 
 Vehicle: {vehicle_ctx}
 Tech notes / work performed: {notes}
@@ -119,7 +119,7 @@ def suggest_upsells(request: Request, ro_id: int, db: Session = Depends(get_db))
     concern = ro.concern or ""
     notes = ro.tech_notes or ""
 
-    prompt = f"""You are an experienced diesel shop service advisor. Your job is to identify legitimate upsell and maintenance opportunities based on the vehicle in the shop.
+    prompt = f"""You are an experienced service advisor for a shop that serves everyday daily-driver customers as well as diesel and fleet vehicles. Your job is to identify legitimate upsell and maintenance opportunities based on the vehicle in the shop.
 
 Vehicle: {vehicle_ctx}
 Current concern: {concern}
