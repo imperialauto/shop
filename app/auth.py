@@ -22,6 +22,14 @@ def get_current_user(request: Request, db: Session) -> User:
     return user
 
 
+def require_admin(user: User):
+    """Raise 403 unless the given user has the admin role. Use inside routes
+    that manage other user accounts (creating/removing logins, resetting
+    passwords for someone else)."""
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+
 def login_user(request: Request, user: User):
     request.session["user_id"] = user.id
     request.session["username"] = user.username
