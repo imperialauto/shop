@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.config import SECRET_KEY
 from app.database import get_db, init_db
 from app.models import User
-from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user
+from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user, require_admin
 from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign
 from app.scheduler import start_scheduler
 
@@ -132,7 +132,10 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
         user = get_current_user(request, db)
     except HTTPException:
         return RedirectResponse("/login", status_code=302)
-    return templates.TemplateResponse("settings.html", {"request": request, "user": user})
+    users = None
+    if user.role == "admin":
+        users = db.query(User).order_by(User.created_at.asc()).all()
+    return templates.TemplateResponse("settings.html", {"request": request, "user": user, "users": users})
 
 
 @app.post("/settings/change-password")
@@ -151,6 +154,140 @@ def change_password(
     user.password_hash = hash_password(new_password)
     db.commit()
     return templates.TemplateResponse("settings.html", {"request": request, "user": user, "success": "Password updated!"})
+
+
+@app.post("/settings/users/create")
+def create_user(
+    request: Request,
+    db: Session = Depends(get_db),
+    username: str = Form(...),
+    full_name: str = Form(""),
+    password: str = Form(...),
+    role: str = Form("office"),
+):
+    try:
+        user = get_current_user(request, db)
+        require_admin(user)
+    except HTTPException:
+        return RedirectResponse("/login", status_code=302)
+
+    users = db.query(User).order_by(User.created_at.asc()).all()
+    username_clean = username.strip().lower()
+
+    if not username_clean or not password:
+        return templates.TemplateResponse("settings.html", {
+            "request": request, "user": user, "users": users,
+            "user_error": "Username and password are required.",
+        })
+
+    if len(password) < 6:
+        return templates.TemplateResponse("settings.html", {
+            "request": request, "user": user, "users": users,
+            "user_error": "Password must be at least 6 characters.",
+        })
+
+    if db.query(User).filter(User.username == username_clean).first():
+        return templates.TemplateResponse("settings.html", {
+            "request": request, "user": user, "users": users,
+            "user_error": f"Username '{username_clean}' is already taken.",
+        })
+
+    if role not in ("admin", "office", "tech"):
+        role = "office"
+
+    new_user = User(
+        username=username_clean,
+        password_hash=hash_password(password),
+        full_name=full_name.strip() or username_clean,
+        role=role,
+    )
+    db.add(new_user)
+    db.commit()
+
+    users = db.query(User).order_by(User.created_at.asc()).all()
+    return templates.TemplateResponse("settings.html", {
+        "request": request, "user": user, "users": users,
+        "user_success": f"Created login for {new_user.full_name} (username: {new_user.username}).",
+    })
+
+
+@app.post("/settings/users/{user_id}/reset-password")
+def reset_user_password(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    new_password: str = Form(...),
+):
+    try:
+        user = get_current_user(request, db)
+        require_admin(user)
+    except HTTPException:
+        return RedirectResponse("/login", status_code=302)
+
+    target = db.query(User).filter(User.id == user_id).first()
+    users = db.query(User).order_by(User.created_at.asc()).all()
+
+    if not target:
+        return templates.TemplateResponse("settings.html", {
+            "request": request, "user": user, "users": users,
+            "user_error": "User not found.",
+        })
+
+    if len(new_password) < 6:
+        return templates.TemplateResponse("settings.html", {
+            "request": request, "user": user, "users": users,
+            "user_error": "Password must be at least 6 characters.",
+        })
+
+    target.password_hash = hash_password(new_password)
+    db.commit()
+    return templates.TemplateResponse("settings.html", {
+        "request": request, "user": user, "users": users,
+        "user_success": f"Password reset for {target.full_name or target.username}.",
+    })
+
+
+@app.post("/settings/users/{user_id}/delete")
+def delete_user(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    try:
+        user = get_current_user(request, db)
+        require_admin(user)
+    except HTTPException:
+        return RedirectResponse("/login", status_code=302)
+
+    users = db.query(User).order_by(User.created_at.asc()).all()
+    target = db.query(User).filter(User.id == user_id).first()
+
+    if not target:
+        return templates.TemplateResponse("settings.html", {
+            "request": request, "user": user, "users": users,
+            "user_error": "User not found.",
+        })
+
+    if target.id == user.id:
+        return templates.TemplateResponse("settings.html", {
+            "request": request, "user": user, "users": users,
+            "user_error": "You can't remove the account you're currently logged in as.",
+        })
+
+    admin_count = db.query(User).filter(User.role == "admin").count()
+    if target.role == "admin" and admin_count <= 1:
+        return templates.TemplateResponse("settings.html", {
+            "request": request, "user": user, "users": users,
+            "user_error": "Can't remove the last admin account.",
+        })
+
+    db.delete(target)
+    db.commit()
+    users = db.query(User).order_by(User.created_at.asc()).all()
+    return templates.TemplateResponse("settings.html", {
+        "request": request, "user": user, "users": users,
+        "user_success": "User removed.",
+    })
 
 
 @app.get("/status/{token}", response_class=HTMLResponse)
