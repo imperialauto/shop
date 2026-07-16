@@ -382,13 +382,13 @@ async def download_pdf(
     from reportlab.lib import colors
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
     def _pdf_para(value, style):
         """Escape special chars and turn real line breaks into <br/> tags so
         multi-line AI text (notes, summaries, long concerns) doesn't get
         collapsed onto one run-on line, and wraps instead of overlapping."""
         safe = xml_escape(str(value or "")).replace("\r\n", "\n").replace("\n", "<br/>")
         return Paragraph(safe, style)
-    
 
     data = json.loads(estimate_json)
     buf = io.BytesIO()
@@ -407,6 +407,7 @@ async def download_pdf(
     gold = colors.HexColor("#d4a853")
     grey = colors.HexColor("#57534e")
     light = colors.HexColor("#e8e0d5")
+
     title_style = ParagraphStyle("title", parent=styles["Heading1"], textColor=dark, fontSize=20, leading=24, spaceAfter=2)
     sub_style = ParagraphStyle("sub", parent=styles["Normal"], textColor=grey, fontSize=10, leading=13, spaceAfter=12)
     label_style = ParagraphStyle("label", parent=styles["Normal"], textColor=grey, fontSize=8, leading=10, spaceAfter=2)
@@ -477,7 +478,8 @@ async def download_pdf(
 
         est_data = [
             ["Description", "Qty", "Rate", "Amount"],
-            [_pdf_para(f"Labor — {summary}", cell_style), f"{lh} hrs", f"${lr}/hr", f"${lt:,.0f}"],            ["Parts & Materials (estimate)", "", "", f"${pl:,.0f} – ${ph:,.0f}"],
+            [_pdf_para(f"Labor — {summary}", cell_style), f"{lh} hrs", f"${lr}/hr", f"${lt:,.0f}"],
+            ["Parts & Materials (estimate)", "", "", f"${pl:,.0f} – ${ph:,.0f}"],
             ["", "", "TOTAL ESTIMATE", f"${tl:,.0f} – ${th:,.0f}"],
         ]
         est_table = Table(est_data, colWidths=[3.5 * inch, 0.8 * inch, 1.2 * inch, 1.2 * inch])
