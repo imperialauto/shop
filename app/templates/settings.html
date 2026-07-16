@@ -6,8 +6,8 @@
   <h1 class="text-2xl font-bold text-yellow-400">Settings</h1>
 </div>
 
-<div class="max-w-md">
-  <div class="card">
+<div class="max-w-2xl space-y-6">
+  <div class="card max-w-md">
     <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-4">Change Password</h3>
 
     {% if error %}
@@ -29,6 +29,87 @@
       <button type="submit" class="btn-primary">Update Password</button>
     </form>
   </div>
+
+  {% if users is not none %}
+  <div class="card">
+    <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-4">Team Members</h3>
+
+    {% if user_error %}
+    <div class="bg-red-900 border border-red-700 text-red-200 text-sm rounded px-3 py-2 mb-4">{{ user_error }}</div>
+    {% endif %}
+    {% if user_success %}
+    <div class="bg-green-900 border border-green-700 text-green-200 text-sm rounded px-3 py-2 mb-4">{{ user_success }}</div>
+    {% endif %}
+
+    <div class="table-wrap mb-6">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Username</th>
+            <th>Role</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td>{{ u.full_name or u.username }}</td>
+            <td>{{ u.username }}</td>
+            <td>
+              <span class="badge {% if u.role == 'admin' %}badge-fleet{% else %}badge-intake{% endif %}">{{ u.role }}</span>
+            </td>
+            <td>
+              <details style="display:inline-block; margin-right: 8px;">
+                <summary class="btn-secondary" style="display:inline-flex; cursor:pointer;">Reset password</summary>
+                <form method="post" action="/settings/users/{{ u.id }}/reset-password" class="flex items-end gap-2 mt-2">
+                  <div>
+                    <label class="form-label">New password</label>
+                    <input type="password" name="new_password" required minlength="6" class="form-input" style="width: 180px;" />
+                  </div>
+                  <button type="submit" class="btn-primary">Set</button>
+                </form>
+              </details>
+              {% if u.id != user.id %}
+              <form method="post" action="/settings/users/{{ u.id }}/delete" style="display:inline;" onsubmit="return confirm('Remove login for {{ u.full_name or u.username }}?');">
+                <button type="submit" class="btn-danger">Remove</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="divider"></div>
+
+    <h4 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Add a Team Member</h4>
+    <form method="post" action="/settings/users/create" class="space-y-4 max-w-md">
+      <div>
+        <label class="form-label">Full Name</label>
+        <input type="text" name="full_name" placeholder="e.g. Maria Gomez" class="form-input" />
+      </div>
+      <div>
+        <label class="form-label">Username</label>
+        <input type="text" name="username" required placeholder="e.g. maria" class="form-input" />
+      </div>
+      <div>
+        <label class="form-label">Temporary Password</label>
+        <input type="password" name="password" required minlength="6" class="form-input" />
+      </div>
+      <div>
+        <label class="form-label">Role</label>
+        <select name="role" class="form-select">
+          <option value="office">Office Coordinator</option>
+          <option value="tech">Technician</option>
+          <option value="admin">Admin (full access)</option>
+        </select>
+      </div>
+      <button type="submit" class="btn-primary">Create Login</button>
+    </form>
+  </div>
+  {% endif %}
 </div>
 
 {% endblock %}
