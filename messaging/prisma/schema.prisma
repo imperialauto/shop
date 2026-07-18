@@ -1,0 +1,125 @@
+// ─────────────────────────────────────────────────────────
+// Standalone schema for the messaging module.
+//
+// IMPORTANT — architecture note added after discovering the actual
+// target codebase: the Cowork dashboard this was originally scoped
+// against (imperialauto/shop) is a Python/FastAPI + SQLAlchemy + Jinja2
+// app, not a Node/Prisma app. "Fold into the existing app.js" (as
+// described in earlier drafts of this module's README) isn't applicable
+// — you can't require() a Node module into a Python process. This module
+// now runs as its OWN small standalone Node service (see server.js),
+// with its own Postgres database, deployed as a second Railway service
+// in the same project. It talks to the outside world only via:
+//   - the Quo webhook (independent of the shop app)
+//   - a small HTML dashboard page it serves itself (public/messages.html)
+// The shop app doesn't need any code changes; link to this service's URL
+// from the shop's nav if you want it reachable from there.
+//
+// Consequence: `Customer` below is this service's OWN lightweight phone
+// -> name cache, NOT the shop app's real customers table. It starts
+// empty — conversations will show phone numbers until names are filled
+// in (manually, or by a future sync job reading the shop app's real
+// customer table via a small API endpoint you add there). Texting works
+// fully either way; only the friendly-name display depends on it.
+//
+// Estimate/RepairOrder job-context lookup (getJobContext.js) is
+// currently a no-op for the same reason — there's no local Estimate/
+// RepairOrder table to query. It's written to degrade gracefully (returns
+// null, draft generation proceeds without job context) rather than error.
+// Wiring it up for real means either pointing this service at the shop
+// app's DATABASE_URL read-only, or adding a small internal API endpoint
+// on the shop app this service can call.
+//
+// Setup:
+//   npx prisma migrate dev --name init
+//   npx prisma generate
+// ─────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ConversationStatus {
+  OPEN
+  DONE
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum DraftStatus {
+  PENDING
+  EDITED
+  SENT
+  DISCARDED
+}
+
+/// Lightweight local cache — see architecture note above. Not the shop
+/// app's real customer record.
+model Customer {
+  id        String   @id @default(cuid())
+  phone     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+
+  conversations Conversation[]
+}
+
+model Conversation {
+  id                String             @id @default(cuid())
+  quoConversationId String             @unique
+  customerPhone     String
+  customerId        String?
+  customer          Customer?          @relation(fields: [customerId], references: [id])
+  status            ConversationStatus @default(OPEN)
+  unreadCount       Int                @default(0)
+  lastMessageAt     DateTime
+  createdAt         DateTime           @default(now())
+
+  messages Message[]
+  drafts   DraftReply[]
+
+  @@index([status, lastMessageAt])
+  @@index([customerPhone])
+}
+
+model Message {
+  id             String           @id @default(cuid())
+  conversationId String
+  conversation   Conversation     @relation(fields: [conversationId], references: [id])
+  quoMessageId   String?          @unique
+  direction      MessageDirection
+  body           String           @default("")
+  mediaUrls      String[]         @default([])
+  quoStatus      String?
+  sentByUserId   String?
+  quoCreatedAt   DateTime
+  createdAt      DateTime         @default(now())
+
+  drafts DraftReply[] @relation("draftBasedOnMessage")
+
+  @@index([conversationId, quoCreatedAt])
+}
+
+model DraftReply {
+  id               String       @id @default(cuid())
+  conversationId   String
+  conversation     Conversation @relation(fields: [conversationId], references: [id])
+  body             String
+  status           DraftStatus  @default(PENDING)
+  basedOnMessageId String?
+  basedOnMessage   Message?     @relation("draftBasedOnMessage", fields: [basedOnMessageId], references: [id])
+  sentMessageId    String?
+  approvedByUserId String?
+  approvedAt       DateTime?
+  createdAt        DateTime     @default(now())
+
+  @@index([conversationId, status])
+}

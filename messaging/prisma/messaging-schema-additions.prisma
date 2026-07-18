@@ -1,0 +1,7 @@
+// SUPERSEDED — do not use this file.
+//
+// This was written under the assumption the messaging module would fold
+// into an existing Node/Prisma dashboard app. The actual target repo
+// (imperialauto/shop) is Python/FastAPI + SQLAlchemy, so that assumption
+// didn't hold. See prisma/schema.prisma instead — it's the real,
+// self-contained schema for this module's own standalone database.
