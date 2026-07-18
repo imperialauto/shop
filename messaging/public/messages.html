@@ -101,6 +101,7 @@
     activeDraftId: null,
     sending: false,
     regenerating: false,
+    fetchingSigningLink: false,
     updatingStatus: false,
     actionError: null,
   };
@@ -197,6 +198,20 @@
       state.actionError = err.message;
     } finally {
       state.regenerating = false; render();
+    }
+  }
+
+  async function handleGetSigningLink() {
+    if (!state.selectedId || state.fetchingSigningLink) return;
+    state.fetchingSigningLink = true; state.actionError = null; render();
+    try {
+      const result = await apiFetch(`/conversations/${state.selectedId}/signing-link`, { method: "POST" });
+      state.composeText = result.draft?.body || "";
+      state.activeDraftId = result.draft?.id || null;
+    } catch (err) {
+      state.actionError = err.message;
+    } finally {
+      state.fetchingSigningLink = false; render();
     }
   }
 
@@ -316,6 +331,9 @@
           ${hasPendingDraft ? `<div class="qm-draft-label">AI draft — review before sending</div>` : ""}
           <textarea class="qm-textarea" id="qm-compose-text" rows="3" placeholder="Type a reply…">${escapeHtml(state.composeText)}</textarea>
           <div class="qm-compose-actions">
+            <button type="button" id="qm-signing-link" class="qm-btn qm-btn-secondary" ${state.fetchingSigningLink ? "disabled" : ""}>
+              ${state.fetchingSigningLink ? "Looking up RO…" : "Send estimate for signature"}
+            </button>
             <button type="button" id="qm-regenerate" class="qm-btn qm-btn-secondary" ${state.regenerating ? "disabled" : ""}>
               ${state.regenerating ? "Regenerating…" : "Regenerate draft"}
             </button>
@@ -339,6 +357,7 @@
     root.querySelectorAll("[data-conv-id]").forEach((btn) => btn.addEventListener("click", () => selectConversation(btn.dataset.convId)));
     root.querySelector("#qm-toggle-status")?.addEventListener("click", handleToggleStatus);
     root.querySelector("#qm-regenerate")?.addEventListener("click", handleRegenerate);
+    root.querySelector("#qm-signing-link")?.addEventListener("click", handleGetSigningLink);
     root.querySelector("#qm-send")?.addEventListener("click", handleSend);
     const textarea = root.querySelector("#qm-compose-text");
     if (textarea) {
