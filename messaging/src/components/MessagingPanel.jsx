@@ -68,6 +68,7 @@ export default function MessagingPanel() {
   const [activeDraftId, setActiveDraftId] = useState(null);
   const [sending, setSending] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [fetchingSigningLink, setFetchingSigningLink] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [actionError, setActionError] = useState(null);
 
@@ -169,6 +170,21 @@ export default function MessagingPanel() {
       setActionError(err.message);
     } finally {
       setRegenerating(false);
+    }
+  }
+
+  async function handleGetSigningLink() {
+    if (!selectedId || fetchingSigningLink) return;
+    setFetchingSigningLink(true);
+    setActionError(null);
+    try {
+      const result = await apiFetch(`/conversations/${selectedId}/signing-link`, { method: "POST" });
+      setComposeText(result.draft?.body || "");
+      setActiveDraftId(result.draft?.id || null);
+    } catch (err) {
+      setActionError(err.message);
+    } finally {
+      setFetchingSigningLink(false);
     }
   }
 
@@ -301,6 +317,14 @@ export default function MessagingPanel() {
                 placeholder="Type a reply…"
               />
               <div className="qm-compose-actions">
+                <button
+                  type="button"
+                  className="qm-btn qm-btn-secondary"
+                  onClick={handleGetSigningLink}
+                  disabled={fetchingSigningLink}
+                >
+                  {fetchingSigningLink ? "Looking up RO…" : "Send estimate for signature"}
+                </button>
                 <button
                   type="button"
                   className="qm-btn qm-btn-secondary"
