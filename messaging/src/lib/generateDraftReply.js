@@ -1,22 +1,22 @@
 // ─────────────────────────────────────────────────────────
-// Calls Claude to draft a reply to a customer text thread. This function
+// Calls an LLM to draft a reply to a customer text thread. This function
 // ONLY returns text — it never sends anything itself. The caller always
 // stores the result as a PENDING DraftReply; a human has to approve it
 // via POST /api/messages/conversations/:id/send before Quo ever sends it.
+//
+// Provider: Groq (OpenAI-compatible chat completions API), switched from
+// Anthropic on 2026-07-17 at the owner's request to avoid needing paid
+// Anthropic credits — GROQ_API_KEY was already sitting unused in the
+// shop app's env. Uses plain fetch() instead of an SDK so no new
+// dependency has to be added to package.json.
+//
+// Same system prompt / safety rules as before the swap — only the
+// transport and model changed, to keep drafting behavior as close to
+// identical as possible.
 // ─────────────────────────────────────────────────────────
 
-const Anthropic = require("@anthropic-ai/sdk");
-
-let _client;
-function client() {
-  if (!_client) {
-    if (!process.env.ANTHROPIC_API_KEY) throw new Error("Missing ANTHROPIC_API_KEY env var");
-    _client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  }
-  return _client;
-}
-
-const MODEL = process.env.CLAUDE_DRAFT_MODEL || "claude-sonnet-5";
+const GROQ_API_BASE_URL = process.env.GROQ_API_BASE_URL || "https://api.groq.com/openai/v1";
+const MODEL = process.env.GROQ_DRAFT_MODEL || "llama-3.3-70b-versatile";
 const MAX_TOKENS = 400;
 
 const SYSTEM_PROMPT = `You are drafting a text message reply on behalf of Imperial Auto Care, an auto repair shop, replying to a customer over SMS.
@@ -38,6 +38,10 @@ Rules:
  */
 async function generateDraftReply({ history, customerName, jobContext }) {
   if (!history?.length) return null;
+  if (!process.env.GROQ_API_KEY) {
+    console.error("generateDraftReply: Missing GROQ_API_KEY env var");
+    return null;
+  }
 
   const transcript = history
     .map((m) => `${m.direction === "INBOUND" ? customerName || "Customer" : "Shop"}: ${m.body}`)
@@ -53,22 +57,33 @@ async function generateDraftReply({ history, customerName, jobContext }) {
   const userMessage = `${contextLines}\n\nConversation so far (oldest first):\n${transcript}\n\nDraft the shop's next reply.`;
 
   try {
-    const response = await client().messages.create({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userMessage }],
+    const res = await fetch(`${GROQ_API_BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: MAX_TOKENS,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: userMessage },
+        ],
+      }),
     });
 
-    const text = response.content
-      ?.filter((block) => block.type === "text")
-      .map((block) => block.text)
-      .join("\n")
-      .trim();
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => "");
+      throw new Error(`Groq API ${res.status}: ${errBody.slice(0, 500)}`);
+    }
+
+    const data = await res.json();
+    const text = data.choices?.[0]?.message?.content?.trim();
 
     return text || null;
   } catch (err) {
-    console.error("generateDraftReply: Claude call failed:", err);
+    console.error("generateDraftReply: Groq call failed:", err);
     return null; // caller treats a null/failed draft as "no draft this time", never blocks message storage
   }
 }
