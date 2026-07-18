@@ -1,81 +1,66 @@
 // ─────────────────────────────────────────────────────────
-// Looks up the customer's open repair order / estimate so the AI draft
-// can reference real job context ("your brake job is scheduled for...")
-// instead of replying blind.
+// Looks up the customer's real open repair order / invoice from the shop
+// app (imperialauto/shop, Python/FastAPI) so the AI draft can reference
+// actual job context ("your brake job is scheduled for...") instead of
+// replying blind.
 //
-// STATUS: currently a graceful no-op. This module's own Prisma schema
-// (prisma/schema.prisma) doesn't define Estimate/RepairOrder models — the
-// real shop data lives in imperialauto/shop's Python/FastAPI + SQLAlchemy
-// database, a completely separate system from this Node service. Rather
-// than guess at a schema this service doesn't own, `prisma.estimate` /
-// `prisma.repairOrder` are simply undefined here, and the optional
-// chaining below makes that return `null` cleanly — draft generation
-// proceeds without job context instead of erroring.
+// Previously this was a no-op: this module's own Prisma schema doesn't
+// have Estimate/RepairOrder models, and the real shop data lives in a
+// separate Python/SQLAlchemy database. As of 2026-07-17 it calls the shop
+// app's internal API (app/routes/internal_messaging.py) over HTTPS
+// instead, using conversation.customerPhone as the lookup key — the shop
+// app matches loosely on the last 10 digits.
 //
-// To make this real, pick one:
-//   (a) Point this service at the shop app's DATABASE_URL read-only and
-//       add matching Prisma models once you confirm the real table/column
-//       names (e.g. is it `estimates.total`, `total_amount`, `total_cents`?).
-//   (b) Add a small internal read endpoint to the shop app (e.g.
-//       GET /internal/customers/:phone/open-job) and call it with fetch()
-//       from here instead of Prisma.
-// Either way, keep the try/catch-and-return-null fallback so a broken
-// integration degrades the AI draft's context instead of breaking replies.
+// Degrades gracefully: if SHOP_APP_API_URL/INTERNAL_API_KEY aren't set,
+// the call fails, or there's no matching customer, this returns null and
+// draft generation proceeds without job context — same behavior as
+// before, just wired to real data when it's available.
 // ─────────────────────────────────────────────────────────
+
+const shopClient = require("./shopClient");
 
 /**
  * @param {import("@prisma/client").PrismaClient} prisma
- * @param {{ customerId?: string|null }} conversation
- * @returns {Promise<null | { customerName?: string, vehicle?: string, openEstimate?: object, openRepairOrder?: object, summary: string }>}
+ * @param {{ customerPhone: string }} conversation
+ * @returns {Promise<null | { customerName?: string, openRepairOrder?: object, openInvoice?: object, summary: string|null }>}
  */
-async function getJobContextForConversation(prisma, conversation) {
-  if (!conversation?.customerId) return null;
+async function getJobContextForConversation(_prisma, conversation) {
+  if (!conversation?.customerPhone) return null;
 
-  // Guarded with try/catch per-model: if your dashboard doesn't have one
-  // of these models (or names it differently), this degrades to partial
-  // context instead of failing the whole draft.
-  const [customer, openEstimate, openRepairOrder] = await Promise.all([
-    prisma.customer.findUnique({ where: { id: conversation.customerId } }).catch(() => null),
-    prisma.estimate
-      ?.findFirst({
-        where: { customerId: conversation.customerId, status: { in: ["OPEN", "PENDING", "SENT"] } },
-        orderBy: { createdAt: "desc" },
-      })
-      .catch(() => null) ?? null,
-    prisma.repairOrder
-      ?.findFirst({
-        where: { customerId: conversation.customerId, status: { in: ["OPEN", "IN_PROGRESS", "SCHEDULED"] } },
-        orderBy: { createdAt: "desc" },
-        include: { vehicle: true },
-      })
-      .catch(() => null) ?? null,
-  ]);
-
-  if (!customer && !openEstimate && !openRepairOrder) return null;
+  const ctx = await shopClient.getContext(conversation.customerPhone).catch(() => null);
+  if (!ctx?.found) return null;
 
   const parts = [];
-  if (openRepairOrder) {
-    const vehicle = openRepairOrder.vehicle
-      ? `${openRepairOrder.vehicle.year || ""} ${openRepairOrder.vehicle.make || ""} ${openRepairOrder.vehicle.model || ""}`.trim()
-      : null;
+  const vehicle = ctx.vehicles?.[0];
+  const vehicleLabel = vehicle ? `${vehicle.year || ""} ${vehicle.make || ""} ${vehicle.model || ""}`.trim() : null;
+
+  if (ctx.openRepairOrder) {
+    const ro = ctx.openRepairOrder;
     parts.push(
-      `Open repair order${vehicle ? ` for their ${vehicle}` : ""}, status: ${openRepairOrder.status}${
-        openRepairOrder.description ? ` — ${openRepairOrder.description}` : ""
-      }.`
+      `Open repair order${vehicleLabel ? ` for their ${vehicleLabel}` : ""}, status: ${ro.status}${
+        ro.concern ? ` — ${ro.concern}` : ""
+      }${ro.promisedDate ? `, promised ${ro.promisedDate}` : ""}.`
     );
+    if (ro.signedAt) {
+      parts.push("Customer has already signed off on this repair order.");
+    } else if (ro.hasSigningLink) {
+      parts.push("There's an estimate/signing link on file for this repair order, not yet signed.");
+    }
   }
-  if (openEstimate) {
-    // See TODO above — `total` is a guess pending schema confirmation.
-    const total = openEstimate.total ?? openEstimate.totalAmount ?? openEstimate.grandTotal;
+
+  if (ctx.openInvoice) {
+    const inv = ctx.openInvoice;
     parts.push(
-      `Open estimate (status: ${openEstimate.status})${total != null ? ` for approximately $${Number(total).toFixed(2)}` : ""}.`
+      `Open invoice (status: ${inv.status})${inv.total != null ? ` for $${Number(inv.total).toFixed(2)}` : ""}${
+        inv.signedAt ? ", signed" : ", awaiting signature"
+      }.`
     );
   }
 
   return {
-    customerName: customer?.name,
-    openEstimate,
-    openRepairOrder,
+    customerName: ctx.customer?.name,
+    openRepairOrder: ctx.openRepairOrder,
+    openInvoice: ctx.openInvoice,
     summary: parts.length ? parts.join(" ") : null,
   };
 }
