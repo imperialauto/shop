@@ -41,6 +41,7 @@ const prisma = require("../db/prisma");
 const { verifyQuoWebhook } = require("../lib/verifyQuoWebhookSignature");
 const { generateDraftReply } = require("../lib/generateDraftReply");
 const { getJobContextForConversation } = require("../lib/getJobContext");
+const shopClient = require("../lib/shopClient");
 
 const router = express.Router();
 
@@ -124,6 +125,18 @@ async function handleMessageEvent(event) {
   // there isn't already a PENDING draft waiting for review.
   const isNewInbound = direction === "INBOUND" && event.type === "message.received";
   if (!isNewInbound) return;
+
+  // Best-effort mirror into the shop app's native Communication log, so
+  // an inbound text shows up on the customer's RO detail page too.
+  // Fire-and-forget — never let this block draft generation.
+  shopClient
+    .logCommunication({
+      phone: customerPhone,
+      direction: "inbound",
+      body: msg.body || "",
+      externalId: msg.id,
+    })
+    .catch((err) => console.error("Failed to mirror inbound SMS to shop app:", err));
 
   const existingPending = await prisma.draftReply.findFirst({
     where: { conversationId: conversation.id, status: "PENDING" },

@@ -18,6 +18,7 @@
 const express = require("express");
 const prisma = require("../db/prisma");
 const quo = require("../lib/quoClient");
+const shopClient = require("../lib/shopClient");
 const { generateDraftReply } = require("../lib/generateDraftReply");
 const { getJobContextForConversation } = require("../lib/getJobContext");
 
@@ -158,6 +159,40 @@ router.post("/conversations/:id/draft", asyncHandler(async (req, res) => {
   res.json(draft);
 }));
 
+// POST /api/messages/conversations/:id/signing-link — look up this
+// customer's open repair order in the shop app and stage a PENDING draft
+// with a link to sign the estimate. This does NOT send anything — same
+// as /draft, it only creates a draft the coordinator still has to review
+// and approve via /send. Requires SHOP_APP_API_URL + INTERNAL_API_KEY to
+// be configured on this service.
+router.post("/conversations/:id/signing-link", asyncHandler(async (req, res) => {
+  if (!shopClient.configured()) {
+    return res.status(503).json({ error: "Shop app integration not configured (SHOP_APP_API_URL / INTERNAL_API_KEY)" });
+  }
+
+  const conversation = await prisma.conversation.findUnique({ where: { id: req.params.id } });
+  if (!conversation) return res.status(404).json({ error: "Conversation not found" });
+
+  const ctx = await shopClient.getContext(conversation.customerPhone);
+  if (!ctx.found || !ctx.openRepairOrder) {
+    return res.status(404).json({ error: "No matching customer with an open repair order found in the shop app" });
+  }
+
+  const link = await shopClient.getSigningLink(ctx.openRepairOrder.id);
+
+  // Discard any prior pending draft for this thread, then store the new one.
+  await prisma.draftReply.updateMany({
+    where: { conversationId: conversation.id, status: "PENDING" },
+    data: { status: "DISCARDED" },
+  });
+
+  const draft = await prisma.draftReply.create({
+    data: { conversationId: conversation.id, body: link.suggestedText, status: "PENDING" },
+  });
+
+  res.json({ draft, repairOrderId: link.repairOrderId, signingUrl: link.signingUrl });
+}));
+
 // POST /api/messages/conversations/:id/send — approve & send.
 // THIS IS THE ONLY PATH IN THIS MODULE THAT ACTUALLY SENDS A TEXT — it
 // only runs when a human hits "Send" in the dashboard UI, never
@@ -209,6 +244,19 @@ router.post("/conversations/:id/send", asyncHandler(async (req, res) => {
     where: { id: conversation.id },
     data: { lastMessageAt: message.quoCreatedAt },
   });
+
+  // Best-effort mirror into the shop app's native Communication log so
+  // this text shows up on the customer's RO detail page. Fire-and-forget
+  // — never let this failing block the response, since the message has
+  // already actually been sent.
+  shopClient
+    .logCommunication({
+      phone: conversation.customerPhone,
+      direction: "outbound",
+      body,
+      externalId: sent?.id || null,
+    })
+    .catch((err) => console.error("Failed to mirror outbound SMS to shop app:", err));
 
   res.json({ message, sent });
 }));
