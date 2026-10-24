@@ -23,6 +23,13 @@ const { requireDashboardAuth } = require("./lib/basicAuth");
  * request body for signature verification.
  */
 function mountMessagingRoutes(app) {
+  // Private Operations bridge: scoped service token, no dashboard-password reuse.
+  const { createOperationsBridge } = require("./routes/operationsBridge");
+  app.use("/api/operations", express.json({ limit: "24kb" }), createOperationsBridge({
+    prisma: require("./db/prisma"), quo: require("./lib/quoClient"),
+    generateDraftReply: require("./lib/generateDraftReply").generateDraftReply,
+  }));
+
   // 1. Webhook — raw body, no auth (Quo signs the request instead).
   app.use("/webhooks/quo", quoWebhookRouter);
 
