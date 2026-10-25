@@ -68,9 +68,11 @@ def startup():
     db = SessionLocal()
     try:
         if db.query(User).count() == 0:
+            if not os.environ.get("INITIAL_ADMIN_PASSWORD"):
+                raise RuntimeError("INITIAL_ADMIN_PASSWORD must be configured before first admin creation")
             admin = User(
                 username="admin",
-                password_hash=hash_password("imperial2024"),
+                password_hash=hash_password(os.environ["INITIAL_ADMIN_PASSWORD"]),
                 full_name="Admin",
                 role="admin"
             )

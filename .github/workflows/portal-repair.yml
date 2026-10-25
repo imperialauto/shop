@@ -1,0 +1,30 @@
+name: Portal repair validation
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [fix/repair-orders-startup-20261025]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile all Python modules
+        run: python -m compileall -q app
+      - name: Check removed default credential
+        run: |
+          if grep -R 'hash_password("imperial2024")' app; then
+            echo 'Insecure default password detected'
+            exit 1
+          fi
+      - name: Install application requirements
+        run: pip install -r requirements.txt
+      - name: Import application
+        env:
+          SECRET_KEY: ci-test-secret-not-for-production
+          DATABASE_URL: sqlite:////tmp/imperial-ci.db
+          INTERNAL_API_KEY: ci-test-internal-key
+        run: python -c 'from app.main import app; print("Imported", app.title)'
