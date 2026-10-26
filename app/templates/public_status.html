@@ -82,7 +82,7 @@
       <div class="signed-badge">✓ Signed by {{ inv.customer_approved_by }}</div>
       {% else %}
       <div style="font-size:13px; color:#71717a; margin-bottom:12px;">Your vehicle is ready. Please review and sign the final invoice.</div>
-      <a href="/sign/invoice/{{ inv.id }}" class="sign-btn">Review &amp; Sign Invoice →</a>
+      <a href="/sign/invoice/{{ inv.id }}?token={{ ro.public_token }}" class="sign-btn">Review &amp; Sign Invoice →</a>
       {% endif %}
     </div>
     {% endif %}
@@ -93,3 +93,4 @@
 </div>
 </body>
 </html>
+
