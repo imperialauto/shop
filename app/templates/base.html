@@ -134,6 +134,7 @@
   </style>
 </head>
 <body>
+{% if request.app.state.read_only %}<div role="status" style="position:relative;z-index:60;background:#433018;color:#ffe2a3;padding:12px;text-align:center">Recovery audit mode · Production changes and automatic customer actions are paused.</div>{% endif %}
 
 {% if user is defined and user %}
 
@@ -214,3 +215,4 @@
 
 </body>
 </html>
+

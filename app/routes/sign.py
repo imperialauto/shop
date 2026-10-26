@@ -6,6 +6,7 @@ from app.database import get_db
 from app.models import RepairOrder, Invoice
 from datetime import datetime
 import os
+import secrets
 
 router = APIRouter()
 templates = Jinja2Templates(
@@ -46,9 +47,7 @@ async def sign_ro_submit(request: Request, token: str, db: Session = Depends(get
     ro.signature_data = signature_data
     ro.approved_by = approved_by or "Customer"
     ro.signed_at = datetime.utcnow()
-    # Auto-advance status from waiting_approval → in_progress
-    if ro.status == "waiting_approval":
-        ro.status = "in_progress"
+    # A signature records authorization; starting repair work is a separate staff decision.
     db.commit()
 
     return templates.TemplateResponse("sign_complete.html", {
@@ -59,9 +58,9 @@ async def sign_ro_submit(request: Request, token: str, db: Session = Depends(get
 # ── Invoice signing (at pickup / final bill) ────────────────────────────────
 
 @router.get("/invoice/{invoice_id}", response_class=HTMLResponse)
-def sign_invoice_page(request: Request, invoice_id: int, db: Session = Depends(get_db)):
+def sign_invoice_page(request: Request, invoice_id: int, token: str = "", db: Session = Depends(get_db)):
     invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
-    if not invoice:
+    if not invoice or len(token) < 16 or not invoice.repair_order.public_token or not secrets.compare_digest(invoice.repair_order.public_token, token):
         raise HTTPException(status_code=404, detail="Not found")
     return templates.TemplateResponse("sign_invoice.html", {
         "request": request, "invoice": invoice, "ro": invoice.repair_order,
@@ -69,9 +68,9 @@ def sign_invoice_page(request: Request, invoice_id: int, db: Session = Depends(g
 
 
 @router.post("/invoice/{invoice_id}", response_class=HTMLResponse)
-async def sign_invoice_submit(request: Request, invoice_id: int, db: Session = Depends(get_db)):
+async def sign_invoice_submit(request: Request, invoice_id: int, token: str = "", db: Session = Depends(get_db)):
     invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
-    if not invoice:
+    if not invoice or len(token) < 16 or not invoice.repair_order.public_token or not secrets.compare_digest(invoice.repair_order.public_token, token):
         raise HTTPException(status_code=404, detail="Not found")
 
     form = await request.form()
@@ -87,10 +86,10 @@ async def sign_invoice_submit(request: Request, invoice_id: int, db: Session = D
     invoice.customer_signature = signature_data
     invoice.customer_approved_by = approved_by or "Customer"
     invoice.customer_signed_at = datetime.utcnow()
-    if invoice.status == "sent":
-        invoice.status = "paid"
+    # Signing acknowledges the document; only actual payment records can settle it.
     db.commit()
 
     return templates.TemplateResponse("sign_complete.html", {
         "request": request, "ro": invoice.repair_order, "doc_type": "invoice",
     })
+
