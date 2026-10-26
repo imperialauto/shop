@@ -39,45 +39,36 @@ app.include_router(sign.router, prefix="/sign", tags=["sign"])
 app.include_router(internal_messaging.router, prefix="/internal", tags=["internal"])
 
 
+# Recovery startup is intentionally read-only: no schema mutation, default
+# account creation, migrations, or customer follow-up scheduler.
+from app.recovery import database_audit, read_only_enabled
+from fastapi.responses import JSONResponse
+import logging
+import json
+
+app.state.read_only = read_only_enabled()
+
+@app.middleware("http")
+async def recovery_mode(request: Request, call_next):
+    if app.state.read_only and request.method not in ("GET", "HEAD", "OPTIONS") and request.url.path != "/login":
+        return JSONResponse({"error": "Recovery audit mode: production changes and external actions are paused.", "read_only": True}, status_code=503)
+    return await call_next(request)
+
 @app.on_event("startup")
 def startup():
-    init_db()
-    # Safe column migrations — add new columns without a full migration framework
-    from app.database import SessionLocal, engine
-    import sqlalchemy as sa
-    with engine.connect() as conn:
-        for stmt in [
-            "ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS signature_data TEXT",
-            "ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS approved_by VARCHAR(128)",
-            "ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS signed_at TIMESTAMP",
-            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS customer_signature TEXT",
-            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS customer_approved_by VARCHAR(128)",
-            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS customer_signed_at TIMESTAMP",
-            "ALTER TABLE estimate_sessions ADD COLUMN IF NOT EXISTS follow_up_sent BOOLEAN DEFAULT FALSE",
-        ]:
-            try:
-                conn.execute(sa.text(stmt))
-                conn.commit()
-            except Exception:
-                pass  # Column already exists
+    audit = database_audit()
+    app.state.database_audit = audit
+    logging.getLogger("uvicorn.error").info("imperial_database_audit %s", json.dumps(audit, sort_keys=True))
 
-    # Start background scheduler (follow-up jobs, etc.)
-    start_scheduler()
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok", "mode": "read-only" if app.state.read_only else "active"}
 
-    # Create default admin if no users exist
-    db = SessionLocal()
-    try:
-        if db.query(User).count() == 0:
-            admin = User(
-                username="admin",
-                password_hash=hash_password("imperial2024"),
-                full_name="Admin",
-                role="admin"
-            )
-            db.add(admin)
-            db.commit()
-    finally:
-        db.close()
+@app.get("/readyz")
+def readyz():
+    audit = database_audit(include_counts=False)
+    ready = audit["connected"] and not audit.get("error_type") and not audit.get("missing_tables") and not audit.get("missing_columns")
+    return JSONResponse({"status": "ready" if ready else "not_ready", "database_connected": audit["connected"], "mode": "read-only" if app.state.read_only else "active"}, status_code=200 if ready else 503)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -95,7 +86,7 @@ def login_page(request: Request):
 @app.post("/login")
 def login_submit(request: Request, username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == username).first()
-    if not user or not verify_password(password, user.password_hash):
+    if password == "imperial2024" or not user or not verify_password(password, user.password_hash):
         return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid username or password"})
     login_user(request, user)
     return RedirectResponse("/dashboard", status_code=302)
@@ -164,3 +155,4 @@ def public_status(request: Request, token: str, db: Session = Depends(get_db)):
     if not ro:
         raise HTTPException(status_code=404, detail="Not found")
     return templates.TemplateResponse("public_status.html", {"request": request, "ro": ro})
+
