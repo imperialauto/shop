@@ -3,6 +3,11 @@ function normalizePhone(value){const s=String(value||'').trim();let digits=s.rep
 function allowed(token,header){if(!token||token.length<32)return false;const expected=Buffer.from('Bearer '+token),actual=Buffer.from(String(header||''));return expected.length===actual.length&&crypto.timingSafeEqual(expected,actual);}
 function publicMessage(m){return {id:String(m.id||''),direction:['INCOMING','INBOUND'].includes(String(m.direction||'').toUpperCase())?'INBOUND':'OUTBOUND',body:String(m.body||m.text||m.content||''),status:String(m.status||m.quoStatus||''),createdAt:m.createdAt||m.quoCreatedAt||null,mediaUrls:[...(Array.isArray(m.mediaUrls)?m.mediaUrls:[]),...(Array.isArray(m.media)?m.media.map(x=>x.url):[])].filter(x=>typeof x==='string'&&x.startsWith('https://'))};}
 function safeFailure(error){const status=Number(error?.status);const code=String(error?.code||'');return {status:Number.isInteger(status)&&status>=400&&status<=599?status:null,code:/^(?:P[0-9]{4}|[0-9]{4,10})$/.test(code)?code:null};}
+function rejectionDetails(status,code){
+ const nextAction=status===402?'Check Quo billing and available messaging credits. This response does not establish the current balance.':status===401||status===403?'Check the Quo API connection and sending permissions.':status===429?'Check Quo sending limits before a new reviewed attempt.':'Review the recipient, sending number and message in Quo.';
+ return {state:'rejected',mayRetry:false,providerStatus:status,providerCode:code||null,nextAction,message:'Quo rejected this attempt. '+nextAction+' Nothing will be retried automatically.'};
+}
+function storedRejection(status){const match=/^rejected:([0-9]{3})(?::([0-9]{4,10}))?$/.exec(status||'');return match?rejectionDetails(Number(match[1]),match[2]):null;}
 function createOperationsBridge({prisma,quo,generateDraftReply,token=()=>process.env.OPERATIONS_BRIDGE_TOKEN,logFailure=detail=>console.error('operations_bridge_failure',JSON.stringify(detail))}){
  return async function operationsBridge(req,res){
  res.set('Cache-Control','private, no-store');
@@ -15,8 +20,9 @@ function createOperationsBridge({prisma,quo,generateDraftReply,token=()=>process
   const existing=await prisma.message.findUnique({where:{id:'operations-'+requestId}});
   if(!existing)return res.json({state:'not_attempted',requestId,mayRetry:false,message:'No reservation exists. The bridge did not reach its provider-send step for this request.'});
   if(existing.quoMessageId)return res.json({state:'accepted',requestId,providerId:existing.quoMessageId,status:existing.quoStatus||'accepted',mayRetry:false});
-  const rejected=/^rejected:([0-9]{3})(?::([0-9]{4,10}))?$/.exec(existing.quoStatus||'');
-  return res.json({state:rejected?'rejected':'uncertain',requestId,mayRetry:false,...(rejected?{providerStatus:Number(rejected[1]),providerCode:rejected[2]||null}:{}),message:rejected?'Quo rejected this attempt. No automatic retry is allowed.':'This request is reserved without a verified provider receipt. Reconcile the Quo thread before another attempt.'});
+  const rejected=storedRejection(existing.quoStatus);
+  if(rejected)return res.json({...rejected,requestId});
+  return res.json({state:'uncertain',requestId,mayRetry:false,message:'This request is reserved without a verified provider receipt. Reconcile the Quo thread before another attempt.'});
  }
  if(!((req.method==='GET'&&action==='/conversation')||(req.method==='POST'&&['/draft','/send'].includes(action))))return res.status(404).json({error:'Unknown action'});
  const phone=normalizePhone(req.method==='GET'?req.query.phone:req.body?.phone);
@@ -38,6 +44,8 @@ function createOperationsBridge({prisma,quo,generateDraftReply,token=()=>process
  if(existing){
  if(existing.body!==body||existing.conversation.customerPhone!==phone)return res.status(409).json({error:'Request ID already belongs to a different message.'});
  if(existing.quoMessageId)return res.json({state:'accepted',replayed:true,message:publicMessage(existing),providerId:existing.quoMessageId});
+ const rejected=storedRejection(existing.quoStatus);
+ if(rejected)return res.status(409).json({...rejected,requestId,replayed:true,error:rejected.message});
  return res.status(409).json({state:'uncertain',error:'This request has already been attempted. Review the live thread before sending another message.'});
  }
  let conversation=await prisma.conversation.findFirst({where:{customerPhone:phone},orderBy:{lastMessageAt:'desc'}});
@@ -53,7 +61,7 @@ function createOperationsBridge({prisma,quo,generateDraftReply,token=()=>process
  const detail=safeFailure(error),rejected=[400,401,402,403,404,405,413,415,422,429].includes(detail.status);
  logFailure({phase:'provider_send',requestId,...detail});
  await prisma.message.update({where:{id},data:{quoStatus:rejected?'rejected:'+detail.status+(detail.code?':'+detail.code:''):'unknown'}}).catch(()=>{});
- if(rejected)return res.status(502).json({state:'rejected',error:'Quo rejected the send (HTTP '+detail.status+(detail.code?', code '+detail.code:'')+'). Nothing will be retried automatically.',providerStatus:detail.status,providerCode:detail.code,requestId});
+ if(rejected){const outcome=rejectionDetails(detail.status,detail.code);return res.status(502).json({...outcome,error:outcome.message,requestId});}
  return res.status(502).json({state:'uncertain',error:'Send result is uncertain. Check the live Quo thread before sending again.',requestId});
  }
  }catch(error){logFailure({phase:sendAttempted?'after_provider_attempt':'before_provider_attempt',...safeFailure(error)});return res.status(502).json({state:sendAttempted?'uncertain':'not_sent',providerAttempted:sendAttempted,error:sendAttempted?'Send result uncertain. Reconcile the Quo thread before another attempt.':'Messaging failed before the provider send step. Nothing was sent by this request.'});}
