@@ -5,7 +5,7 @@
   "description": "Quo texting + AI draft-reply module for the Imperial Auto Care Cowork dashboard",
   "main": "server.js",
   "scripts": {
-    "start": "prisma db push --skip-generate && node server.js",
+    "start": "node server.js",
     "postinstall": "prisma generate",
     "backfill": "node src/scripts/backfillQuoHistory.js",
     "migrate": "prisma migrate dev --name init"
