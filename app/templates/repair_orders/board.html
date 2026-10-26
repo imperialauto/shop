@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Repair board — Imperial Auto Care{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-6"><h1 class="text-2xl font-bold text-yellow-400">Repair order board</h1><a href="/ro/" class="btn-secondary">List view</a></div>
+<div style="display:flex;gap:16px;overflow:auto;padding-bottom:20px">
+{% for key, label in statuses if key != 'delivered' %}
+<section class="card" style="min-width:240px;flex:1"><h2>{{ label }} · {{ columns[key]|length }}</h2>
+{% for ro in columns[key] %}<a class="card-sm" style="display:block;margin-top:12px" href="/ro/{{ ro.id }}"><strong>RO #{{ ro.id }} · {{ ro.customer.first_name }} {{ ro.customer.last_name }}</strong><p>{{ ro.vehicle.year }} {{ ro.vehicle.make }} {{ ro.vehicle.model }}</p><p>{{ ro.next_action }}</p></a>{% else %}<p>No jobs</p>{% endfor %}
+</section>{% endfor %}
+</div>
+{% endblock %}
