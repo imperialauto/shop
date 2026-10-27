@@ -29,6 +29,8 @@ async function request(path, options = {}) {
   }
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
+    redirect: "manual",
+    signal: options.signal || AbortSignal.timeout(15000),
     headers: {
       "Content-Type": "application/json",
       "X-Internal-Key": API_KEY,
@@ -56,6 +58,12 @@ async function getContext(phone) {
     console.error("shopClient.getContext failed:", err);
     return { found: false };
   }
+}
+
+// Operations must distinguish an unavailable source from a successful empty lookup.
+async function getContextStrict(phone) {
+  if (!configured() || !phone) throw new Error("Legacy context is not configured");
+  return request(`/internal/messaging/context?phone=${encodeURIComponent(phone)}`);
 }
 
 /**
@@ -86,4 +94,5 @@ async function logCommunication({ phone, direction, body, externalId }) {
   }
 }
 
-module.exports = { configured, getContext, getSigningLink, logCommunication };
+module.exports = { configured, getContext, getContextStrict, getSigningLink, logCommunication };
+
