@@ -28,6 +28,7 @@ function mountMessagingRoutes(app) {
   app.use("/api/operations", express.json({ limit: "24kb" }), createOperationsBridge({
     prisma: require("./db/prisma"), quo: require("./lib/quoClient"),
     generateDraftReply: require("./lib/generateDraftReply").generateDraftReply,
+    shopClient: require("./lib/shopClient"),
   }));
 
   // 1. Webhook — raw body, no auth (Quo signs the request instead).
@@ -55,3 +56,4 @@ function createApp() {
 }
 
 module.exports = { createApp, mountMessagingRoutes };
+
