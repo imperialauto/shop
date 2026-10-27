@@ -1,4 +1,5 @@
 const crypto=require('node:crypto');
+const {projectRepairContext}=require('../lib/repairContextProjection');
 function normalizePhone(value){const s=String(value||'').trim();let digits=s.replace(/\D/g,'');if(digits.length===10)digits='1'+digits;if(!/^\d{11,15}$/.test(digits)||(!s.startsWith('+')&&digits.length!==11))throw Error('Enter a valid customer phone number.');return '+'+digits;}
 function allowed(token,header){if(!token||token.length<32)return false;const expected=Buffer.from('Bearer '+token),actual=Buffer.from(String(header||''));return expected.length===actual.length&&crypto.timingSafeEqual(expected,actual);}
 function publicMessage(m){return {id:String(m.id||''),direction:['INCOMING','INBOUND'].includes(String(m.direction||'').toUpperCase())?'INBOUND':'OUTBOUND',body:String(m.body||m.text||m.content||''),status:String(m.status||m.quoStatus||''),createdAt:m.createdAt||m.quoCreatedAt||null,mediaUrls:[...(Array.isArray(m.mediaUrls)?m.mediaUrls:[]),...(Array.isArray(m.media)?m.media.map(x=>x.url):[])].filter(x=>typeof x==='string'&&x.startsWith('https://'))};}
@@ -8,13 +9,17 @@ function rejectionDetails(status,code){
  return {state:'rejected',mayRetry:false,providerStatus:status,providerCode:code||null,nextAction,message:'Quo rejected this attempt. '+nextAction+' Nothing will be retried automatically.'};
 }
 function storedRejection(status){const match=/^rejected:([0-9]{3})(?::([0-9]{4,10}))?$/.exec(status||'');return match?rejectionDetails(Number(match[1]),match[2]):null;}
-function createOperationsBridge({prisma,quo,generateDraftReply,token=()=>process.env.OPERATIONS_BRIDGE_TOKEN,logFailure=detail=>console.error('operations_bridge_failure',JSON.stringify(detail))}){
+function createOperationsBridge({prisma,quo,generateDraftReply,shopClient,token=()=>process.env.OPERATIONS_BRIDGE_TOKEN,logFailure=detail=>console.error('operations_bridge_failure',JSON.stringify(detail))}){
  return async function operationsBridge(req,res){
  res.set('Cache-Control','private, no-store');
  if(!allowed(token(),req.headers.authorization))return res.status(401).json({error:'Unauthorized'});
  let sendAttempted=false;
  try{
  const action=req.path;
+ if(req.method==='GET'&&action==='/repair-context'){
+  try{const phone=normalizePhone(req.query?.phone);if(typeof shopClient?.getContextStrict!=='function')throw Error('Legacy context unavailable');const context=projectRepairContext(await shopClient.getContextStrict(phone));return res.json({...context,phone,source:'Imperial legacy portal',checkedAt:new Date().toISOString()});}
+  catch(error){logFailure({phase:'repair_context',...safeFailure(error)});return res.status(503).json({error:'Legacy repair records could not be checked. Existing records are retained; this is not a successful empty lookup.'});}
+ }
  if(req.method==='GET'&&action==='/delivery-status'){
   const requestId=String(req.query?.requestId||'');if(!/^[a-f0-9-]{36}$/i.test(requestId))return res.status(400).json({error:'A valid send request ID is required.'});
   const existing=await prisma.message.findUnique({where:{id:'operations-'+requestId}});
@@ -68,3 +73,4 @@ function createOperationsBridge({prisma,quo,generateDraftReply,token=()=>process
  };
 }
 module.exports={createOperationsBridge,normalizePhone,allowed,publicMessage,safeFailure};
+
