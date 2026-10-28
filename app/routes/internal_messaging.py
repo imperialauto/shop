@@ -218,6 +218,17 @@ def log_communication(
         .first()
     )
 
+    # Idempotency: Quo may retry webhook deliveries or replay historical messages.
+    # Do not mirror the same external message twice for the same customer.
+    if external_id:
+        existing = (
+            db.query(Communication)
+            .filter(Communication.customer_id == customer.id, Communication.external_id == external_id)
+            .first()
+        )
+        if existing:
+            return {"logged": True, "duplicate": True, "repairOrderId": existing.repair_order_id}
+
     comm = Communication(
         repair_order_id=open_ro.id if open_ro else None,
         customer_id=customer.id,
