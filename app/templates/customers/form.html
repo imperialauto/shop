@@ -1,5 +1,66 @@
 {% extends "base.html" %}
-{% block title %}{% if customer %}Edit{% else %}New{% endif %} Customer — Imperial Auto Care{% endblock %}
+{% block title %}{% if customer %}Edit{% else %}New{% endif %} Customer — Imperial Auto Care{% if not customer %}
+<script>
+(function () {
+  const form = document.getElementById('customer-form');
+  const card = document.getElementById('customer-fields');
+  const nav = document.getElementById('intake-navigation');
+  const submit = document.getElementById('customer-submit');
+  const nameGrid = card.querySelector('.grid');
+  if (!form || !card || !nav || !nameGrid) return;
+  nameGrid.className = 'space-y-4';
+  const fields = Array.from(card.children);
+  const firstIndex = fields.indexOf(nameGrid);
+  const nameFields = Array.from(nameGrid.children);
+  nameGrid.replaceWith(...nameFields);
+  fields.splice(firstIndex, 1, ...nameFields);
+  const fleet = document.getElementById('fleet-section');
+  const progress = document.getElementById('intake-progress');
+  const back = document.getElementById('intake-back');
+  const next = document.getElementById('intake-next');
+  let index = 0;
+  const active = () => fields.filter(el => el !== fleet || form.querySelector('input[name="customer_type"]:checked')?.value === 'fleet');
+  function render() {
+    const steps = active();
+    index = Math.min(index, steps.length - 1);
+    fields.forEach(el => { el.hidden = true; el.classList.add('hidden'); });
+    const current = steps[index];
+    current.hidden = false;
+    current.classList.remove('hidden');
+    nav.classList.remove('hidden');
+    submit.classList.toggle('hidden', index !== steps.length - 1);
+    next.classList.toggle('hidden', index === steps.length - 1);
+    back.disabled = index === 0;
+    progress.textContent = 'Question ' + (index + 1) + ' of ' + steps.length;
+    current.querySelector('input:not([type="radio"]), textarea')?.focus();
+  }
+  next.addEventListener('click', () => {
+    const current = active()[index];
+    const inputs = Array.from(current.querySelectorAll('input, textarea'));
+    for (const input of inputs) {
+      if (!input.checkValidity()) { input.reportValidity(); return; }
+    }
+    index++;
+    render();
+  });
+  back.addEventListener('click', () => { if (index > 0) index--; render(); });
+  form.querySelectorAll('input[name="customer_type"]').forEach(input => input.addEventListener('change', render));
+  form.addEventListener('submit', event => {
+    for (const input of form.querySelectorAll('input[required]')) {
+      if (!input.checkValidity()) {
+        const target = fields.find(el => el.contains(input));
+        index = active().indexOf(target);
+        if (index >= 0) { render(); input.reportValidity(); }
+        event.preventDefault();
+        return;
+      }
+    }
+  });
+  render();
+})();
+</script>
+{% endif %}
+{% endblock %}
 {% block content %}
 
 <div class="flex items-center gap-3 mb-6">
@@ -7,8 +68,8 @@
   <h1 class="text-2xl font-bold text-yellow-400">{% if customer %}Edit Customer{% else %}New Customer{% endif %}</h1>
 </div>
 
-<form method="post" action="{% if customer %}/customers/{{ customer.id }}/edit{% else %}/customers/new{% endif %}" class="max-w-xl space-y-4">
-  <div class="card space-y-4">
+<form id="customer-form" method="post" action="{% if customer %}/customers/{{ customer.id }}/edit{% else %}/customers/new{% endif %}" class="max-w-xl space-y-4">
+  <div id="customer-fields" class="card space-y-4">
 
     <div>
       <label class="form-label">Customer Type</label>
@@ -65,7 +126,13 @@
     </div>
   </div>
 
-  <div class="flex gap-3">
+  {% if not customer %}
+  <div id="intake-navigation" class="hidden max-w-xl space-y-3" aria-live="polite">
+    <p id="intake-progress" class="text-sm text-stone-400"></p>
+    <div class="flex gap-3"><button type="button" id="intake-back" class="btn-secondary">Back</button><button type="button" id="intake-next" class="btn-primary">Next</button></div>
+  </div>
+  {% endif %}
+  <div id="customer-submit" class="flex gap-3">
     <button type="submit" class="btn-primary">{% if customer %}Save Changes{% else %}Create Customer{% endif %}</button>
     <a href="/customers/" class="btn-secondary">Cancel</a>
   </div>
