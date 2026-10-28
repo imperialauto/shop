@@ -19,6 +19,7 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from datetime import datetime
 import os
 import secrets
@@ -238,6 +239,14 @@ def log_communication(
         external_id=external_id,
     )
     db.add(comm)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if external_id:
+            existing = db.query(Communication).filter(Communication.external_id == external_id).first()
+            if existing:
+                return {"logged": True, "duplicate": True, "repairOrderId": existing.repair_order_id}
+        raise
 
     return {"logged": True, "repairOrderId": open_ro.id if open_ro else None}
