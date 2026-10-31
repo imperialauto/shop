@@ -7,6 +7,8 @@ import json
 import os
 from datetime import datetime, time, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -17,6 +19,12 @@ from app.appointment_model import Appointment
 from app.appointments import AppointmentWindow, AppointmentValidationError, validate_slot
 
 router = APIRouter()
+templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), '..', 'templates'))
+
+@router.get('/calendar', response_class=HTMLResponse)
+def calendar_page(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    return templates.TemplateResponse('calendar.html', {'request': request, 'user': user})
 
 class AppointmentInput(BaseModel):
     repair_order_id: int = Field(gt=0)
