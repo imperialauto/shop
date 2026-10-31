@@ -7,6 +7,19 @@ on:
 jobs:
   app-tests:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test-only
+          POSTGRES_DB: appointment_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -40,3 +53,8 @@ jobs:
               assert client.get('/appointments/').status_code == 401
               assert client.post('/appointments/', json={'repair_order_id':1,'resource_id':'bay-1','starts_at':'2026-11-02T10:00:00-07:00','ends_at':'2026-11-02T11:00:00-07:00'}).status_code == 503
           PY
+
+      - name: PostgreSQL migration and appointment workflows
+        env:
+          TEST_DATABASE_URL: postgresql://test:test-only@127.0.0.1:5432/appointment_test
+        run: PYTHONPATH=. python tests/appointment_postgres.py -v

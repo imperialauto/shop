@@ -9,7 +9,7 @@ from datetime import datetime, time, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.auth import get_current_user
@@ -32,6 +32,14 @@ class AppointmentInput(BaseModel):
     starts_at: datetime
     ends_at: datetime
 
+    @field_validator("resource_id")
+    @classmethod
+    def normalize_resource(cls, value):
+        value = value.strip().casefold()
+        if not value:
+            raise ValueError("A technician or bay is required.")
+        return value
+
 def configured_hours():
     raw = os.environ.get("SHOP_HOURS_JSON")
     if not raw:
@@ -45,6 +53,8 @@ def configured_hours():
             index = int(day)
             if index not in range(7):
                 raise ValueError("Weekday outside 0-6")
+            if not isinstance(pair, list) or len(pair) != 2:
+                raise ValueError("Expected exactly opening and closing times")
             opens, closes = time.fromisoformat(pair[0]), time.fromisoformat(pair[1])
             if opens >= closes or opens.tzinfo is not None or closes.tzinfo is not None:
                 raise ValueError("Invalid opening interval")
@@ -108,7 +118,7 @@ def confirm_appointment(appointment_id: int, request: Request, db: Session = Dep
     try:
         if db.bind.dialect.name != "postgresql":
             raise HTTPException(503, "Concurrent booking requires PostgreSQL.")
-        appointment = db.get(Appointment, appointment_id)
+        appointment = db.query(Appointment).filter(Appointment.id == appointment_id).with_for_update().first()
         if appointment is None:
             raise HTTPException(404, "Appointment not found.")
         if appointment.status != "tentative":
@@ -134,7 +144,7 @@ def confirm_appointment(appointment_id: int, request: Request, db: Session = Dep
 @router.post("/{appointment_id}/cancel")
 def cancel_appointment(appointment_id: int, request: Request, db: Session = Depends(get_db)):
     get_current_user(request, db)
-    appointment = db.get(Appointment, appointment_id)
+    appointment = db.query(Appointment).filter(Appointment.id == appointment_id).with_for_update().first()
     if appointment is None:
         raise HTTPException(404, "Appointment not found.")
     if appointment.status in ("completed", "cancelled"):
@@ -147,7 +157,7 @@ def cancel_appointment(appointment_id: int, request: Request, db: Session = Depe
 @router.post("/{appointment_id}/complete")
 def complete_appointment(appointment_id: int, request: Request, db: Session = Depends(get_db)):
     get_current_user(request, db)
-    appointment = db.get(Appointment, appointment_id)
+    appointment = db.query(Appointment).filter(Appointment.id == appointment_id).with_for_update().first()
     if appointment is None:
         raise HTTPException(404, "Appointment not found.")
     if appointment.status != "confirmed":
@@ -155,3 +165,4 @@ def complete_appointment(appointment_id: int, request: Request, db: Session = De
     appointment.status = "completed"
     db.commit()
     return {"id": appointment.id, "status": appointment.status}
+
