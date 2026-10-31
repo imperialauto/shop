@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Calendar — Imperial Auto Care{% endblock %}
+{% block content %}
+<div class="page-header"><div class="page-title">Shop Calendar</div><a href="/ro/new" class="btn-primary">New repair order</a></div>
+<div class="page-body">
+  <div class="card" style="padding:18px;margin-bottom:16px">
+    <h2 style="margin:0 0 12px">Schedule a repair order</h2>
+    <form id="appointment-form" style="display:flex;flex-wrap:wrap;gap:12px;align-items:end">
+      <label>Repair order # <input name="repair_order_id" type="number" min="1" required></label>
+      <label>Technician / bay <input name="resource_id" maxlength="80" required placeholder="bay-1"></label>
+      <label>Start (Phoenix time) <input name="starts_at" type="datetime-local" required></label>
+      <label>End (Phoenix time) <input name="ends_at" type="datetime-local" required></label>
+      <button type="submit" class="btn-primary">Save tentative appointment</button>
+    </form>
+    <p id="booking-message" role="status" aria-live="polite"></p>
+    <small>Booking is restricted to configured shop hours. Tentative appointments reserve a bay or technician until cancelled.</small>
+  </div>
+  <div class="card" style="padding:18px">
+    <h2 style="margin:0 0 12px">Appointments</h2>
+    <p id="calendar-error" role="alert"></p>
+    <table><thead><tr><th>Start</th><th>End</th><th>RO</th><th>Resource</th><th>Status</th><th>Actions</th></tr></thead><tbody id="calendar-rows"></tbody></table>
+  </div>
+</div>
+<script>
+(() => {
+  const rows = document.getElementById('calendar-rows');
+  const error = document.getElementById('calendar-error');
+  const message = document.getElementById('booking-message');
+  const form = document.getElementById('appointment-form');
+  const phoenixTime = iso => new Intl.DateTimeFormat('en-US', {timeZone:'America/Phoenix',dateStyle:'medium',timeStyle:'short'}).format(new Date(iso));
+  async function request(path, options={}) {
+    const response = await fetch(path, {credentials:'same-origin', ...options});
+    if (!response.ok) {
+      let detail = 'Request failed (' + response.status + ')';
+      try { const data = await response.json(); detail = typeof data.detail === 'string' ? data.detail : detail; } catch (_) {}
+      throw new Error(detail);
+    }
+    return response.json();
+  }
+  function cell(row, value) { const td=document.createElement('td'); td.textContent=String(value); row.appendChild(td); return td; }
+  async function load() {
+    error.textContent='';
+    try {
+      const appointments=await request('/appointments/');
+      rows.replaceChildren();
+      for (const a of appointments) {
+        const tr=document.createElement('tr');
+        cell(tr,phoenixTime(a.starts_at)); cell(tr,phoenixTime(a.ends_at));
+        const ro=cell(tr,''); const link=document.createElement('a'); link.href='/ro/'+encodeURIComponent(a.repair_order_id); link.textContent='#'+a.repair_order_id; ro.appendChild(link);
+        cell(tr,a.resource_id); cell(tr,a.status);
+        const actions=cell(tr,'');
+        const transitions=a.status==='tentative'?['confirm','cancel']:a.status==='confirmed'?['complete','cancel']:[];
+        for(const action of transitions) {
+          const btn=document.createElement('button');btn.type='button';btn.textContent=action;btn.className='btn-secondary';
+          btn.addEventListener('click',async()=>{btn.disabled=true;try{await request('/appointments/'+a.id+'/'+action,{method:'POST'});await load();}catch(e){error.textContent=e.message;btn.disabled=false;}});
+          actions.appendChild(btn);
+        }
+        rows.appendChild(tr);
+      }
+      if (!appointments.length) {const tr=document.createElement('tr');cell(tr,'No appointments yet.');rows.appendChild(tr);}
+    } catch(e) {error.textContent=e.message;}
+  }
+  form.addEventListener('submit',async e=>{
+    e.preventDefault();message.textContent='';
+    const values=Object.fromEntries(new FormData(form));
+    const asPhoenix = v => v + ':00-07:00'; // Arizona does not observe DST.
+    const payload={repair_order_id:Number(values.repair_order_id),resource_id:values.resource_id,starts_at:asPhoenix(values.starts_at),ends_at:asPhoenix(values.ends_at)};
+    try {await request('/appointments/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});message.textContent='Tentative appointment saved.';form.reset();await load();}
+    catch(e){message.textContent=e.message;}
+  });
+  load();
+})();
+</script>
+{% endblock %}
