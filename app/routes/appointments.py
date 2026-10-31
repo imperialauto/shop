@@ -38,7 +38,18 @@ def configured_hours():
         return {}
     try:
         data = json.loads(raw)
-        return {int(day): (time.fromisoformat(pair[0]), time.fromisoformat(pair[1])) for day, pair in data.items() if int(day) in range(7)}
+        if not isinstance(data, dict):
+            raise ValueError("Expected weekday-to-hours mapping")
+        hours = {}
+        for day, pair in data.items():
+            index = int(day)
+            if index not in range(7):
+                raise ValueError("Weekday outside 0-6")
+            opens, closes = time.fromisoformat(pair[0]), time.fromisoformat(pair[1])
+            if opens >= closes or opens.tzinfo is not None or closes.tzinfo is not None:
+                raise ValueError("Invalid opening interval")
+            hours[index] = (opens, closes)
+        return hours
     except (ValueError, TypeError, KeyError, AttributeError, IndexError) as exc:
         raise HTTPException(503, "Shop hours configuration is invalid.") from exc
 
@@ -59,6 +70,8 @@ def book_appointment(payload: AppointmentInput, request: Request, db: Session = 
     try:
         candidate = AppointmentWindow(payload.starts_at, payload.ends_at, payload.resource_id)
         validate_slot(candidate, [], configured_hours())
+        if candidate.starts_at.astimezone(timezone.utc) <= datetime.now(timezone.utc):
+            raise AppointmentValidationError("Appointments must start in the future.")
     except AppointmentValidationError as exc:
         raise HTTPException(422, str(exc)) from exc
 
