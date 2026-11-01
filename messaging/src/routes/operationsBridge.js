@@ -16,6 +16,11 @@ function createOperationsBridge({prisma,quo,generateDraftReply,shopClient,token=
  let sendAttempted=false;
  try{
  const action=req.path;
+ if(req.method==='GET'&&action==='/inbox'){
+  const rows=await prisma.message.findMany({where:{quoCreatedAt:{gte:new Date(Date.now()-72*3600000)},quoMessageId:{not:null}},orderBy:[{quoCreatedAt:'desc'},{id:'desc'}],take:101,include:{conversation:{select:{customerPhone:true,quoConversationId:true}}}});
+  const messages=rows.slice(0,100).map(m=>({...publicMessage({...m,id:m.quoMessageId,createdAt:m.quoCreatedAt}),phone:normalizePhone(m.conversation.customerPhone),conversationId:m.conversation.quoConversationId}));
+  return res.json({messages,truncated:rows.length>100,coverage:'Latest 100 stored text events from the last 72 hours; excludes calls and messages absent from the webhook store.',checkedAt:new Date().toISOString(),source:'Quo webhook store'});
+ }
  if(req.method==='GET'&&action==='/repair-context'){
   try{const phone=normalizePhone(req.query?.phone);if(typeof shopClient?.getContextStrict!=='function')throw Error('Legacy context unavailable');const context=projectRepairContext(await shopClient.getContextStrict(phone));return res.json({...context,phone,source:'Imperial legacy portal',checkedAt:new Date().toISOString()});}
   catch(error){logFailure({phase:'repair_context',...safeFailure(error)});return res.status(503).json({error:'Legacy repair records could not be checked. Existing records are retained; this is not a successful empty lookup.'});}
