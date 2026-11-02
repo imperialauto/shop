@@ -13,11 +13,16 @@ class Appointment(Base):
     status = Column(String(24), nullable=False, default="tentative")
     # Quoted value at booking. This is not collected money.
     booked_value = Column(Numeric(10, 2), nullable=False, default=0)
+    location = Column(String(12), nullable=False, default="shop")
+    travel_before_minutes = Column(Integer, nullable=False, default=0)
+    buffer_after_minutes = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now().astimezone())
     __table_args__ = (
         CheckConstraint("ends_at > starts_at", name="appointment_positive_duration"),
         CheckConstraint("status IN ('tentative','confirmed','cancelled','completed')", name="appointment_valid_status"),
         CheckConstraint("booked_value >= 0", name="appointment_booked_value_nonnegative"),
+        CheckConstraint("location IN ('shop','mobile')", name="appointment_valid_location"),
+        CheckConstraint("travel_before_minutes >= 0 AND buffer_after_minutes >= 0", name="appointment_blocked_time_nonnegative"),
     )
 
 

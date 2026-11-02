@@ -10,10 +10,12 @@
       <label>Technician / bay <input name="resource_id" maxlength="80" required placeholder="bay-1"></label>
       <label>Start (Phoenix time) <input name="starts_at" type="datetime-local" required></label>
       <label>End (Phoenix time) <input name="ends_at" type="datetime-local" required></label>
+      <label>Location <select name="location"><option value="shop">Shop</option><option value="mobile">Mobile</option></select></label>
+      <label>Travel minutes (mobile) <input name="travel_minutes" type="number" min="0" max="240" value="0"></label>
       <button type="submit" class="btn-primary">Save tentative appointment</button>
     </form>
     <p id="booking-message" role="status" aria-live="polite"></p>
-    <small>Booking is restricted to configured shop hours. Tentative appointments reserve a bay or technician until cancelled.</small>
+    <small>Booking is restricted to configured shop hours. Tentative appointments reserve a bay or technician until cancelled. Shop appointments also block one hour afterward, and mobile appointments block travel time beforehand.</small>
   </div>
   <div class="card" style="padding:18px">
     <h2 style="margin:0 0 12px">Appointments</h2>
@@ -64,7 +66,7 @@
     e.preventDefault();message.textContent='';
     const values=Object.fromEntries(new FormData(form));
     const asPhoenix = v => v + ':00-07:00'; // Arizona does not observe DST.
-    const payload={repair_order_id:Number(values.repair_order_id),resource_id:values.resource_id,starts_at:asPhoenix(values.starts_at),ends_at:asPhoenix(values.ends_at)};
+    const payload={repair_order_id:Number(values.repair_order_id),resource_id:values.resource_id,starts_at:asPhoenix(values.starts_at),ends_at:asPhoenix(values.ends_at),location:values.location,travel_minutes:Number(values.travel_minutes||0)};
     try {await request('/appointments/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});message.textContent='Tentative appointment saved.';form.reset();await load();}
     catch(e){message.textContent=e.message;}
   });
