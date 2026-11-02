@@ -94,7 +94,8 @@ def assess(body: str) -> Assessment:
     reasons = [key for key, pattern in REASONS.items() if pattern.search(text)]
     if safety and "high_risk" not in reasons:
         reasons.append("high_risk")
-    if category == "pricing" and "unverified_estimate" not in reasons:
+    # Any price question goes to the owner, whatever else the message is about.
+    if PRICE.search(text) and "unverified_estimate" not in reasons:
         reasons.append("unverified_estimate")
 
     match = VEHICLE.search(text)
