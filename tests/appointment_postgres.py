@@ -28,7 +28,7 @@ class PostgreSQLWorkflow(unittest.TestCase):
     def setUpClass(cls):
         # Recreate only the explicitly named disposable fixture database tables.
         Base.metadata.drop_all(engine)
-        Base.metadata.create_all(engine, tables=[t for t in Base.metadata.sorted_tables if t.name not in ('appointments', 'booking_slots', 'dispatch_items', 'dispatch_events', 'dispatch_policies', 'dispatch_audit', 'dispatch_sync')])
+        Base.metadata.create_all(engine, tables=[t for t in Base.metadata.sorted_tables if t.name not in ('appointments', 'booking_slots', 'dispatch_items', 'dispatch_events', 'dispatch_policies', 'dispatch_audit', 'dispatch_outbound', 'dispatch_sync')])
         migrations = [Path(p).read_text() for p in ('migrations/20261031_appointments.sql', 'migrations/20261102_live_overlay.sql', 'migrations/20261102_dispatcher.sql')]
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for migration in migrations * 2:  # additive migrations are repeatable

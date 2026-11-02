@@ -69,6 +69,14 @@
         </select>
       </label>
       {% endfor %}
+      {% for policy in dispatch_auto_policies %}
+      <label style="display:flex; justify-content:space-between; gap:12px; align-items:center;">{{ policy.label }}
+        <select name="{{ policy.key }}">
+          <option value="auto"{% if policy.mode == 'auto' %} selected{% endif %}>Automatic</option>
+          <option value="off"{% if policy.mode == 'off' %} selected{% endif %}>Off</option>
+        </select>
+      </label>
+      {% endfor %}
       <div><button class="btn-secondary">Save rules</button></div>
     </form>
   </details>

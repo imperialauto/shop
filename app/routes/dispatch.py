@@ -10,13 +10,15 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
+from app.appointments import PHOENIX
 from app.auth import get_current_user, require_admin
 from app.database import get_db
-from app.dispatch import LOCKED_POLICIES, POLICIES, apply_policies, assess, propose
+from app.config import OWNER_PHONE
+from app.dispatch import AUTO_POLICIES, LOCKED_POLICIES, POLICIES, apply_policies, assess, auto_reply, parse_owner_command, propose
 from app.appointment_model import Appointment
-from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchPolicy, DispatchSync, OPEN_STATUSES
+from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync, OPEN_STATUSES
 from app.models import Communication, Customer, RepairOrder, Vehicle
-from app.routes.internal_messaging import _find_customer_by_phone, require_internal_key
+from app.routes.internal_messaging import _find_customer_by_phone, _normalize_phone, require_internal_key
 
 router = APIRouter()
 internal_router = APIRouter()
@@ -30,6 +32,12 @@ class IntakeMessage(BaseModel):
     messageId: str = Field(min_length=1, max_length=128)
     phone: str = Field(min_length=1, max_length=32)
     body: str = Field(default="", max_length=4000)
+    recovery: bool = False  # replayed by the catch-up job: never reply or act on it
+
+
+class OutboundResult(BaseModel):
+    key: str = Field(min_length=1, max_length=160)
+    status: str = Field(pattern="^(sent|failed|skipped)$")
 
 
 class SyncReport(BaseModel):
@@ -46,8 +54,7 @@ def policy_modes(db: Session) -> dict[str, str]:
     return {p.key: p.mode for p in db.query(DispatchPolicy).all()}
 
 
-def _record(db: Session, message: IntakeMessage) -> DispatchItem:
-    result = assess(message.body)
+def _record(db: Session, message: IntakeMessage, result) -> DispatchItem:
     customer = _find_customer_by_phone(db, message.phone)
     vehicle = None
     if customer and result.vin:
@@ -86,20 +93,195 @@ def _record(db: Session, message: IntakeMessage) -> DispatchItem:
     return item
 
 
+def reserve(db: Session, key: str, kind: str, item_id: int | None = None) -> bool:
+    """True once for each key. A lost race or a repeat returns False."""
+    if db.query(DispatchOutbound).filter(DispatchOutbound.dedupe_key == key).first():
+        return False
+    db.add(DispatchOutbound(dedupe_key=key, kind=kind, item_id=item_id))
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return False
+    return True
+
+
+def _auto_reply_for(db: Session, item: DispatchItem, message: IntakeMessage, result):
+    if message.recovery or item.status != "routine" or item.urgency != "normal":
+        return None
+    has_vehicle = bool(item.vehicle_text) or (
+        item.customer_id is not None
+        and db.query(Vehicle).filter(Vehicle.customer_id == item.customer_id).first() is not None
+    )
+    choice = auto_reply(result, has_vehicle, policy_modes(db))
+    if choice is None:
+        return None
+    template, text = choice
+    # Hours can repeat a week later; the vehicle question is only asked once.
+    period = datetime.now(PHOENIX).strftime("%G-%V") if template == "hours" else "once"
+    key = f"auto:{message.conversationId}:{template}:{period}"
+    if not reserve(db, key, "customer", item.id):
+        return None
+    audit(db, item.id, "system", "auto_reply_reserved", template)
+    db.commit()
+    return {"key": key, "text": text}
+
+
+def _is_owner(phone: str) -> bool:
+    return bool(OWNER_PHONE) and _normalize_phone(phone) == _normalize_phone(OWNER_PHONE)
+
+
+def _open_approvals(db: Session) -> list[DispatchItem]:
+    return db.query(DispatchItem).filter(DispatchItem.status == "needs_owner").order_by(DispatchItem.id).all()
+
+
+def _label(item: DispatchItem) -> str:
+    return item.vehicle_text or item.customer_phone
+
+
+def _owner_command(db: Session, message: IntakeMessage) -> str:
+    command = parse_owner_command(message.body)
+    if command is None:
+        return "Reply YES 12 or NO 12 with the item number, or OPEN for the list."
+    decision, item_id = command
+    waiting = _open_approvals(db)
+    if decision == "list":
+        if not waiting:
+            return "Nothing is waiting on you."
+        return "\n".join(f"#{i.id} {_label(i)}: {i.category}" for i in waiting[:8])
+    if item_id is None:
+        if len(waiting) != 1:
+            return f"{len(waiting)} approvals are open. Reply with a number, like YES 12."
+        item_id = waiting[0].id
+    item = db.query(DispatchItem).filter(DispatchItem.id == item_id).with_for_update().first()
+    if item is None or item.status not in OPEN_STATUSES:
+        return f"#{item_id} is not open."
+    alerted = db.query(DispatchOutbound).filter(
+        DispatchOutbound.dedupe_key == f"alert:{item.id}:{item.last_message_id}",
+        DispatchOutbound.status == "sent",
+    ).first()
+    if alerted is None:
+        return f"#{item.id} has a newer customer message. Check the latest text before deciding."
+    item.status = "approved" if decision == "approve" else "declined"
+    item.decided_at = item.updated_at = datetime.now().astimezone()
+    audit(db, item.id, "owner_sms", f"owner_{decision}")
+    db.commit()
+    if decision == "approve":
+        return f"Approved #{item.id}. Next: {item.proposed_action}"[:300]
+    return f"Declined #{item.id}."
+
+
 @internal_router.post("/intake")
 def intake(message: IntakeMessage, db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
     if db.query(DispatchEvent).filter(DispatchEvent.quo_message_id == message.messageId).first():
         return {"recorded": False, "duplicate": True}
+    if _is_owner(message.phone):
+        if message.recovery:
+            return {"recorded": False, "duplicate": True, "owner": True}
+        db.add(DispatchEvent(quo_message_id=message.messageId))
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            return {"recorded": False, "duplicate": True, "owner": True}
+        return {"recorded": True, "owner": True, "ownerReply": _owner_command(db, message)}
+    result = assess(message.body)
     for attempt in (1, 2):  # a concurrent delivery can win the unique index once
         try:
-            item = _record(db, message)
-            return {"recorded": True, "itemId": item.id, "status": item.status}
+            item = _record(db, message, result)
+            return {"recorded": True, "itemId": item.id, "status": item.status,
+                    "autoReply": _auto_reply_for(db, item, message, result)}
         except IntegrityError:
             db.rollback()
             if db.query(DispatchEvent).filter(DispatchEvent.quo_message_id == message.messageId).first():
                 return {"recorded": False, "duplicate": True}
             if attempt == 2:
                 raise
+
+
+NUDGE_AFTER = {"needs_owner": timedelta(hours=2), "approved": timedelta(hours=24)}
+TICK_LIMIT = 10
+DAILY_HOUR = 10
+NUDGE_HOURS = range(10, 19)
+
+
+def _alert_text(item: DispatchItem) -> str:
+    head = "URGENT" if item.urgency != "normal" else "Approval"
+    summary = " ".join(item.summary.split())[:140]
+    return f"{head} #{item.id}: {_label(item)}\n{summary}\nNext: {item.proposed_action[:140]}\nReply YES {item.id} or NO {item.id}"
+
+
+def _daily_text(db: Session, now: datetime) -> str:
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    appointments = db.query(Appointment).filter(
+        Appointment.status.in_(("tentative", "confirmed")),
+        Appointment.starts_at >= start.astimezone(timezone.utc),
+        Appointment.starts_at < (start + timedelta(days=1)).astimezone(timezone.utc),
+    ).order_by(Appointment.starts_at).all()
+    times = ", ".join(_utc(a.starts_at).astimezone(PHOENIX).strftime("%-I:%M %p") for a in appointments[:6])
+    waiting = _open_approvals(db)
+    customers = db.query(DispatchItem).filter(DispatchItem.status == "approved").count()
+    routine = db.query(DispatchItem).filter(DispatchItem.status == "routine").count()
+    lines = [
+        f"Today: {len(appointments)} booked" + (f" ({times})" if times else ""),
+        f"Waiting on you: {len(waiting)}",
+        f"Waiting on customers: {customers}",
+        f"Other open messages: {routine}",
+    ]
+    lines += [f"#{i.id} {_label(i)}" for i in waiting[:4]]
+    return "\n".join(lines)
+
+
+def due_owner_messages(db: Session, now: datetime) -> list[dict]:
+    """Everything owed to the owner right now. Failed texts come back next tick."""
+    if not OWNER_PHONE:
+        return []
+    now = now.astimezone(PHOENIX)
+    due: list[tuple[str, str, int | None, str]] = []
+    for item in db.query(DispatchItem).filter(DispatchItem.status.in_(OPEN_STATUSES)).all():
+        if item.status == "needs_owner" or item.urgency != "normal":
+            due.append((f"alert:{item.id}:{item.last_message_id}", "owner_alert", item.id, _alert_text(item)))
+    if now.hour in NUDGE_HOURS:
+        for item in db.query(DispatchItem).filter(DispatchItem.status.in_(tuple(NUDGE_AFTER))).all():
+            if now - _utc(item.updated_at).astimezone(PHOENIX) >= NUDGE_AFTER[item.status]:
+                what = "Still waiting on you" if item.status == "needs_owner" else "No customer follow-up yet"
+                due.append((f"nudge:{item.id}:{now.date()}", "owner_nudge", item.id,
+                            f"{what}: #{item.id} {_label(item)}. {item.proposed_action[:120]}"))
+    if now.weekday() != 6 and DAILY_HOUR <= now.hour < DAILY_HOUR + 3:
+        due.append((f"daily:{now.date()}", "owner_daily", None, _daily_text(db, now)))
+
+    messages = []
+    for key, kind, item_id, text in due:
+        row = db.query(DispatchOutbound).filter(DispatchOutbound.dedupe_key == key).first()
+        if row is None:
+            if not reserve(db, key, kind, item_id):
+                continue
+        elif row.status == "failed":
+            row.status = "reserved"
+            db.commit()
+        else:
+            continue
+        messages.append({"key": key, "text": text})
+        if len(messages) >= TICK_LIMIT:
+            break
+    return messages
+
+
+@internal_router.post("/tick")
+def tick(db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
+    return {"ownerPhone": OWNER_PHONE or None, "messages": due_owner_messages(db, datetime.now(timezone.utc))}
+
+
+@internal_router.post("/outbound")
+def outbound_result(result: OutboundResult, db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
+    row = db.query(DispatchOutbound).filter(DispatchOutbound.dedupe_key == result.key).first()
+    if row is None:
+        raise HTTPException(404, "Unknown message.")
+    row.status = result.status
+    row.updated_at = datetime.now().astimezone()
+    audit(db, row.item_id, "system", f"text_{result.status}", row.kind)
+    db.commit()
+    return {"recorded": True}
 
 
 @internal_router.post("/sync")
@@ -174,6 +356,16 @@ async def save_policies(request: Request, db: Session = Depends(get_db)):
             raise HTTPException(422, "Invalid policy mode.")
         if key in LOCKED_POLICIES:
             mode = "approve"
+        policy = db.get(DispatchPolicy, key)
+        if policy is None:
+            db.add(DispatchPolicy(key=key, mode=mode))
+        else:
+            policy.mode = mode
+        audit(db, None, user.username, "policy_saved", f"{key}={mode}")
+    for key in AUTO_POLICIES:
+        mode = form.get(key, "auto")
+        if mode not in ("auto", "off"):
+            raise HTTPException(422, "Invalid policy mode.")
         policy = db.get(DispatchPolicy, key)
         if policy is None:
             db.add(DispatchPolicy(key=key, mode=mode))
@@ -271,7 +463,7 @@ def dashboard_context(db: Session, view: str = "open") -> dict:
     except SQLAlchemyError:
         db.rollback()
         return {"dispatch_ready": False, "dispatch_items": [], "dispatch_policies": [],
-                "dispatch_view": view, "dispatch_views": VIEWS, "dispatch_health": []}
+                "dispatch_view": view, "dispatch_views": VIEWS, "dispatch_health": [], "dispatch_auto_policies": []}
     return {
         "dispatch_ready": True,
         "dispatch_items": cards,
@@ -281,5 +473,8 @@ def dashboard_context(db: Session, view: str = "open") -> dict:
         "dispatch_policies": [
             {"key": key, "label": label, "mode": modes.get(key, "approve"), "locked": key in LOCKED_POLICIES}
             for key, label in POLICIES.items()
+        ],
+        "dispatch_auto_policies": [
+            {"key": key, "label": label, "mode": modes.get(key, "auto")} for key, label in AUTO_POLICIES.items()
         ],
     }

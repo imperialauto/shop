@@ -53,19 +53,28 @@ import json
 
 app.state.read_only = read_only_enabled()
 
+READ_ONLY_INTERNAL_WRITES = (
+    "/internal/messaging/communications",
+    "/internal/dispatch/intake",
+    "/internal/dispatch/sync",
+    "/internal/dispatch/tick",
+    "/internal/dispatch/outbound",
+)
+
+
 def read_only_exempt(request: Request) -> bool:
     """Writes that stay open during recovery. Keep this list as short as possible.
 
     The Quo message mirror is exempt only for an authenticated internal caller:
     it appends to the communications log and has no outbound side effects, and
     blocking it silently drops customer conversations from their records.
-    Dispatch intake only records work for the owner and sends nothing.
+    Dispatch routes touch only the queue tables, never jobs, invoices or payments.
     """
     if request.url.path == "/login":
         return True
     return (
         request.method == "POST"
-        and request.url.path in ("/internal/messaging/communications", "/internal/dispatch/intake", "/internal/dispatch/sync")
+        and request.url.path in READ_ONLY_INTERNAL_WRITES
         and internal_key_valid(request.headers.get("x-internal-key"))
     )
 

@@ -42,6 +42,8 @@ const { verifyQuoWebhook } = require("../lib/verifyQuoWebhookSignature");
 const { generateDraftReply } = require("../lib/generateDraftReply");
 const { getJobContextForConversation } = require("../lib/getJobContext");
 const shopClient = require("../lib/shopClient");
+const quo = require("../lib/quoClient");
+const { handleIntakeResult } = require("../lib/dispatchActions");
 
 const router = express.Router();
 
@@ -138,14 +140,17 @@ async function handleMessageEvent(event) {
     })
     .catch((err) => console.error("Failed to mirror inbound SMS to shop app:", err));
 
-  shopClient
-    .dispatchIntake({
-      conversationId: msg.conversationId,
-      messageId: msg.id,
-      phone: customerPhone,
-      body: msg.body || "",
-    })
-    .catch((err) => console.error("Failed to queue inbound SMS for Operations:", err.message));
+  // Queue the message, then send anything the owner has switched on. A failure
+  // here must never stop message storage or the webhook ack.
+  const dispatched = await shopClient.dispatchIntake({
+    conversationId: msg.conversationId,
+    messageId: msg.id,
+    phone: customerPhone,
+    body: msg.body || "",
+  });
+  await handleIntakeResult({ result: dispatched, messageId: msg.id, phone: customerPhone, quo, shopClient })
+    .catch((err) => console.error("Dispatch action failed:", err.message));
+  if (dispatched.owner) return; // the owner's own texts are commands, not customer messages
 
   const existingPending = await prisma.draftReply.findFirst({
     where: { conversationId: conversation.id, status: "PENDING" },

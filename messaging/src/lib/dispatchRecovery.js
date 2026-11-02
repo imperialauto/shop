@@ -29,6 +29,7 @@ async function runRecovery({ quo, shopClient, phoneNumberId, now = Date.now, loo
           messageId: message.id,
           phone: message.from || conversation.participants?.[0],
           body: message.text || message.body || "",
+          recovery: true,
         });
         if (result.recorded) totals.recorded += 1;
         else if (!result.duplicate) totals.failed += 1;

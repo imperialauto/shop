@@ -32,3 +32,13 @@ if (process.env.DISPATCH_RECOVERY_ENABLED === "true") {
   const { startRecovery } = require("./src/lib/dispatchRecovery");
   startRecovery({ quo, shopClient, phoneNumberId: process.env.QUO_PHONE_NUMBER_ID });
 }
+
+// Off unless explicitly enabled. Approvals, nudges and the morning summary.
+if (process.env.OWNER_TEXTS_ENABLED === "true") {
+  const quo = require("./src/lib/quoClient");
+  const shopClient = require("./src/lib/shopClient");
+  const { deliverOwnerMessages } = require("./src/lib/dispatchActions");
+  const tick = () => deliverOwnerMessages({ quo, shopClient }).catch((err) => console.error("Owner texts failed:", err.message));
+  tick();
+  setInterval(tick, 5 * 60 * 1000);
+}

@@ -42,7 +42,7 @@ class DispatchEvent(Base):
     __tablename__ = "dispatch_events"
     id = Column(Integer, primary_key=True)
     quo_message_id = Column(String(128), nullable=False, unique=True)
-    item_id = Column(Integer, ForeignKey("dispatch_items.id"), nullable=False)
+    item_id = Column(Integer, ForeignKey("dispatch_items.id"))
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
 
 
@@ -55,6 +55,18 @@ class DispatchAudit(Base):
     action = Column(String(32), nullable=False)
     detail = Column(String(255))
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+
+
+class DispatchOutbound(Base):
+    """One row per text this system may send, so nothing goes out twice."""
+    __tablename__ = "dispatch_outbound"
+    id = Column(Integer, primary_key=True)
+    dedupe_key = Column(String(160), nullable=False, unique=True)
+    kind = Column(String(16), nullable=False)
+    item_id = Column(Integer, ForeignKey("dispatch_items.id"))
+    status = Column(String(12), nullable=False, default="reserved")
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_now)
 
 
 class DispatchSync(Base):

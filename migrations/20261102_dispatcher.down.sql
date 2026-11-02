@@ -2,6 +2,7 @@
 -- and the appointment travel/buffer values. Take a backup first.
 BEGIN;
 DROP TABLE IF EXISTS dispatch_sync;
+DROP TABLE IF EXISTS dispatch_outbound;
 DROP TABLE IF EXISTS dispatch_audit;
 DROP TABLE IF EXISTS dispatch_policies;
 DROP TABLE IF EXISTS dispatch_events;

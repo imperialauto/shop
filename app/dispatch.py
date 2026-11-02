@@ -6,6 +6,17 @@ showing the owner. A negated phrase such as "no fuel leak" still flags safety.
 import re
 from dataclasses import dataclass, field
 
+SHOP_DETAILS = (
+    "Imperial Auto Care is at 7915 N Glen Harbor Blvd, Suite 508, Glendale, AZ 85307. "
+    "We're open Mon-Fri 11 AM-7 PM and Sat 12-5 PM, closed Sunday."
+)
+ASK_VEHICLE = "Thanks for reaching out to Imperial Auto Care! What's the year, make and model of your vehicle?"
+# Automatic replies the owner approved. Modes are "auto" and "off".
+AUTO_POLICIES = {
+    "auto_hours_address": "Answer hours and address questions",
+    "auto_vehicle_details": "Ask for missing year, make and model",
+}
+
 # Each policy maps to what the owner sees; "approve" is always the default.
 POLICIES = {
     "discount_credit": "Nonstandard discounts and credits",
@@ -29,6 +40,7 @@ URGENT = re.compile(r"\b(asap|urgent\w*|emergency|right now|today|need (it|my ca
 TOW = re.compile(r"\b(tow\w*|flatbed|roadside)\b", re.I)
 SCHEDULE = re.compile(r"\b(appointment|schedule\w*|reschedule\w*|book\w*|available|availability|what time|come in|drop (it )?off)\b", re.I)
 PRICE = re.compile(r"\b(how much|price|pricing|quote|estimate|cost)\b", re.I)
+INFO = re.compile(r"\b(your hours|what are (your|the) hours|hours\?|what time do you|when do you (open|close)|are you open|your address|what'?s the address|where are you|where'?s the shop|your location)\b", re.I)
 STATUS = re.compile(r"\b(status|is it ready|ready yet|done yet|any update|update on)\b", re.I)
 REASONS = {
     "discount_credit": re.compile(r"\b(discount|credit|coupon|cheaper|price match|waive)\b", re.I),
@@ -64,7 +76,9 @@ def assess(body: str) -> Assessment:
     safety = bool(SAFETY.search(text))
     urgency = "safety" if safety else "urgent" if URGENT.search(text) else "normal"
 
-    if TOW.search(text):
+    if INFO.search(text) and not (TOW.search(text) or PRICE.search(text) or safety):
+        category = "info"
+    elif TOW.search(text):
         category = "towing"
     elif STATUS.search(text):
         category = "status"
@@ -100,6 +114,7 @@ def propose(category: str, urgency: str, missing: list[str]) -> str:
     if urgency == "safety":
         steps.append("Call or reply first: possible safety issue, advise before any driving.")
     steps.append({
+        "info": "Share the shop hours and address.",
         "towing": "Confirm the vehicle rolls and steers, then the tow timing.",
         "status": "Check the job status, then send an approved update.",
         "scheduling": "Check confirmed availability before offering a time.",
@@ -110,6 +125,34 @@ def propose(category: str, urgency: str, missing: list[str]) -> str:
     if missing:
         steps.append("Ask for: " + ", ".join(missing) + ".")
     return " ".join(steps)
+
+
+def auto_reply(result: Assessment, has_vehicle: bool, modes: dict[str, str]):
+    """(template, text) only for a plain routine message, otherwise None."""
+    if result.urgency != "normal" or result.reasons:
+        return None
+    if result.category == "info" and modes.get("auto_hours_address", "auto") == "auto":
+        return "hours", SHOP_DETAILS
+    if (result.category in ("repair", "scheduling") and not has_vehicle
+            and "year, make and model" in result.missing
+            and modes.get("auto_vehicle_details", "auto") == "auto"):
+        return "vehicle", ASK_VEHICLE
+    return None
+
+
+OWNER_COMMAND = re.compile(r"^\s*(yes|y|approve|approved|no|n|decline)\s*#?\s*(\d+)?\s*[.!]?\s*$", re.I)
+
+
+def parse_owner_command(body: str):
+    """("approve"|"decline", item id or None), ("list", None), or None."""
+    text = (body or "").strip()
+    if re.fullmatch(r"(open|list|queue)\??", text, re.I):
+        return "list", None
+    match = OWNER_COMMAND.match(text)
+    if not match:
+        return None
+    decision = "approve" if match.group(1).lower().startswith(("y", "a")) else "decline"
+    return decision, int(match.group(2)) if match.group(2) else None
 
 
 def apply_policies(reasons, modes: dict[str, str]) -> list[str]:

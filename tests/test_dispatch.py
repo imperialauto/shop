@@ -5,6 +5,8 @@ stays empty for test_recovery's startup assertions.
 """
 import json
 import unittest
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from unittest.mock import patch
 
 import fixture_environment  # noqa: F401
@@ -14,8 +16,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
-from app.dispatch import apply_policies, assess
-from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchPolicy, DispatchSync
+from app.dispatch import apply_policies, assess, parse_owner_command
+from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync
 from app.main import app
 from app.models import Customer, User
 from app.routes import dispatch, internal_messaging
@@ -23,6 +25,8 @@ from app.routes import dispatch, internal_messaging
 KEY = "fixture-internal-key"
 HEADERS = {"X-Internal-Key": KEY}
 INTAKE = "/internal/dispatch/intake"
+OWNER = "+16025550199"
+AZ = ZoneInfo("America/Phoenix")
 
 
 def message(ident, body, conversation="CNfixture"):
@@ -224,6 +228,115 @@ class QueueWorkflowTests(unittest.TestCase):
         self.assertIn("TEST ONLY", page.text)
         self.assertIn("Awaiting approval", page.text)
         self.assertIn("Nothing priced yet", page.text)
+
+    def test_hours_question_gets_one_reply_a_week(self):
+        first = self.post("m1", "what are your hours?").json()
+        self.assertIn("Suite 508", first["autoReply"]["text"])
+        self.assertIn("Mon-Fri 11 AM-7 PM and Sat 12-5 PM", first["autoReply"]["text"])
+        self.assertIsNone(self.post("m2", "what are your hours?").json()["autoReply"])
+
+    def test_vehicle_question_is_only_asked_once_and_only_when_missing(self):
+        reply = self.post("m1", "I have a noise when I brake").json()["autoReply"]
+        self.assertIn("year, make and model", reply["text"])
+        self.assertIsNone(self.post("m2", "It's getting worse, there's a noise").json()["autoReply"])
+        known = self.post("m3", "2011 Ford Focus has a noise", "CNother").json()
+        self.assertIsNone(known["autoReply"])
+
+    def test_sensitive_messages_never_get_an_auto_reply(self):
+        for ident, body in enumerate(("Where are you? I have a fuel leak", "what are your hours and how much for brakes?",
+                                      "I need a refund, are you open?")):
+            result = self.post(f"s{ident}", body, f"CN{ident}").json()
+            self.assertIsNone(result["autoReply"], body)
+
+    def test_auto_reply_policy_can_be_turned_off(self):
+        with self.Session() as db:
+            db.add(DispatchPolicy(key="auto_hours_address", mode="off"))
+            db.commit()
+        self.assertIsNone(self.post("m1", "what are your hours?").json()["autoReply"])
+
+    def test_recovered_messages_do_not_auto_reply(self):
+        response = self.client.post(INTAKE, headers=HEADERS, json={**message("m1", "what are your hours?"), "recovery": True})
+        self.assertIsNone(response.json()["autoReply"])
+
+    def owner_text(self, ident, body):
+        return self.client.post(INTAKE, headers=HEADERS, json={"conversationId": "CNowner", "messageId": ident, "phone": OWNER, "body": body}).json()
+
+    def alert(self, now=None):
+        with self.Session() as db, patch.object(dispatch, "OWNER_PHONE", OWNER):
+            return dispatch.due_owner_messages(db, now or datetime(2026, 11, 2, 9, 0, tzinfo=AZ))
+
+    def mark_sent(self, key):
+        self.assertEqual(self.client.post("/internal/dispatch/outbound", headers=HEADERS, json={"key": key, "status": "sent"}).status_code, 200)
+
+    def test_approval_text_is_sent_once_and_yes_approves(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        item = self.items()[0]
+        due = self.alert()
+        self.assertEqual(len(due), 1)
+        self.assertIn(f"Reply YES {item.id}", due[0]["text"])
+        self.assertTrue(due[0]["text"].startswith("URGENT"))
+        self.mark_sent(due[0]["key"])
+        self.assertEqual(self.alert(), [])
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            reply = self.owner_text("o1", f"yes {item.id}")
+        self.assertTrue(reply["owner"])
+        self.assertIn(f"Approved #{item.id}", reply["ownerReply"])
+        self.assertEqual(self.items()[0].status, "approved")
+        self.assertEqual(len(self.items()), 1)
+
+    def test_yes_is_refused_after_a_newer_customer_message(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        item = self.items()[0]
+        self.mark_sent(self.alert()[0]["key"])
+        self.post("m2", "it's on fire now")
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            reply = self.owner_text("o1", f"YES {item.id}")
+        self.assertIn("newer customer message", reply["ownerReply"])
+        self.assertEqual(self.items()[0].status, "needs_owner")
+        self.assertEqual(len(self.alert()), 1)  # the newer message alerts again
+
+    def test_only_the_owner_number_can_decide(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        item = self.items()[0]
+        self.mark_sent(self.alert()[0]["key"])
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            self.post("m2", f"YES {item.id}", "CNstranger")
+        self.assertEqual(self.items()[0].status, "needs_owner")
+
+    def test_failed_owner_text_is_offered_again(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        key = self.alert()[0]["key"]
+        self.client.post("/internal/dispatch/outbound", headers=HEADERS, json={"key": key, "status": "failed"})
+        self.assertEqual(self.alert()[0]["key"], key)
+
+    def test_daily_summary_runs_once_at_ten_and_not_on_sunday(self):
+        monday = datetime(2026, 11, 2, 10, 5, tzinfo=AZ)
+        due = self.alert(monday)
+        self.assertEqual([m["key"] for m in due], ["daily:2026-11-02"])
+        self.assertIn("Today: 0 booked", due[0]["text"])
+        self.assertEqual(self.alert(monday), [])
+        self.assertEqual(self.alert(datetime(2026, 11, 1, 10, 5, tzinfo=AZ)), [])
+
+    def test_stale_items_get_one_nudge_a_day(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        self.mark_sent(self.alert()[0]["key"])
+        with self.Session() as db:
+            row = db.query(DispatchItem).one()
+            row.updated_at = datetime(2026, 11, 3, 8, 0, tzinfo=AZ)
+            db.commit()
+        late = datetime(2026, 11, 3, 16, 0, tzinfo=AZ)
+        nudges = [m for m in self.alert(late) if m["key"].startswith("nudge")]
+        self.assertEqual(len(nudges), 1)
+        self.assertIn("Still waiting on you", nudges[0]["text"])
+        self.assertEqual([m for m in self.alert(late) if m["key"].startswith("nudge")], [])
+        self.assertEqual([m for m in self.alert(datetime(2026, 11, 4, 21, 0, tzinfo=AZ)) if m["key"].startswith("nudge")], [])
+
+    def test_owner_commands_parse(self):
+        self.assertEqual(parse_owner_command("Yes 12"), ("approve", 12))
+        self.assertEqual(parse_owner_command("no #7."), ("decline", 7))
+        self.assertEqual(parse_owner_command("y"), ("approve", None))
+        self.assertEqual(parse_owner_command("OPEN"), ("list", None))
+        self.assertIsNone(parse_owner_command("yes I think so but call them"))
 
     def test_reasons_are_stored_as_json(self):
         self.post("m1", "How much for brakes on a 2011 Ford Focus?")

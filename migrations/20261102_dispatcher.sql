@@ -34,14 +34,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_dispatch_open_conversation ON dispatch_item
 CREATE TABLE IF NOT EXISTS dispatch_events (
  id SERIAL PRIMARY KEY,
  quo_message_id VARCHAR(128) NOT NULL UNIQUE,
- item_id INTEGER NOT NULL REFERENCES dispatch_items(id),
+ item_id INTEGER REFERENCES dispatch_items(id),
  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS dispatch_policies (
  key VARCHAR(32) PRIMARY KEY,
  mode VARCHAR(12) NOT NULL DEFAULT 'approve',
  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
- CONSTRAINT dispatch_policy_valid_mode CHECK (mode IN ('approve','notify'))
+ CONSTRAINT dispatch_policy_valid_mode CHECK (mode IN ('approve','notify','auto','off'))
 );
 CREATE TABLE IF NOT EXISTS dispatch_audit (
  id SERIAL PRIMARY KEY,
@@ -52,6 +52,16 @@ CREATE TABLE IF NOT EXISTS dispatch_audit (
  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS ix_dispatch_audit_item ON dispatch_audit (item_id);
+CREATE TABLE IF NOT EXISTS dispatch_outbound (
+ id SERIAL PRIMARY KEY,
+ dedupe_key VARCHAR(160) NOT NULL UNIQUE,
+ kind VARCHAR(16) NOT NULL,
+ item_id INTEGER REFERENCES dispatch_items(id),
+ status VARCHAR(12) NOT NULL DEFAULT 'reserved',
+ created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ CONSTRAINT dispatch_outbound_valid_status CHECK (status IN ('reserved','sent','failed','skipped'))
+);
 CREATE TABLE IF NOT EXISTS dispatch_sync (
  source VARCHAR(32) PRIMARY KEY,
  last_success_at TIMESTAMPTZ,
