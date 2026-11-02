@@ -11,13 +11,14 @@ assert url.host in ('localhost', '127.0.0.1') and url.database == 'appointment_t
 os.environ['DATABASE_URL'] = str(url.render_as_string(hide_password=False))
 os.environ['APP_READ_ONLY'] = 'false'
 os.environ['SECRET_KEY'] = 'test-only-secret'
+os.environ['LIVE_OVERLAY_TOKEN'] = 'overlay-fixture-token'
 os.environ['SHOP_HOURS_JSON'] = '{"0":["10:00","18:00"],"1":["10:00","18:00"],"2":["10:00","18:00"],"3":["10:00","18:00"],"4":["10:00","18:00"]}'
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from app.main import app
 from app.database import Base, engine, SessionLocal
 from app.models import Customer, Vehicle, RepairOrder, User
-from app.appointment_model import Appointment
+from app.appointment_model import Appointment, BookingSlot
 from app.auth import hash_password
 from zoneinfo import ZoneInfo
 
@@ -26,11 +27,11 @@ class PostgreSQLWorkflow(unittest.TestCase):
     def setUpClass(cls):
         # Recreate only the explicitly named disposable fixture database tables.
         Base.metadata.drop_all(engine)
-        Base.metadata.create_all(engine, tables=[t for t in Base.metadata.sorted_tables if t.name != 'appointments'])
-        migration = Path('migrations/20261031_appointments.sql').read_text()
+        Base.metadata.create_all(engine, tables=[t for t in Base.metadata.sorted_tables if t.name not in ('appointments', 'booking_slots')])
+        migrations = [Path(p).read_text() for p in ('migrations/20261031_appointments.sql', 'migrations/20261102_live_overlay.sql')]
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
-            conn.execute(text(migration))
-            conn.execute(text(migration))  # additive migration is repeatable
+            for migration in migrations * 2:  # additive migrations are repeatable
+                conn.execute(text(migration))
         with SessionLocal() as db:
             owner = User(username='fixture', password_hash=hash_password('fixture-pass'), role='admin')
             customer = Customer(first_name='TEST', last_name='ONLY')
@@ -43,7 +44,7 @@ class PostgreSQLWorkflow(unittest.TestCase):
 
     def setUp(self):
         with SessionLocal() as db:
-            db.query(Appointment).delete(); db.commit()
+            db.query(Appointment).delete(); db.query(BookingSlot).delete(); db.commit()
         self.client = TestClient(app)
         self.client.post('/login', data={'username':'fixture', 'password':'fixture-pass'})
         start = (datetime.now(ZoneInfo('America/Phoenix')) + timedelta(days=7)).replace(hour=11,minute=0,second=0,microsecond=0)
@@ -97,5 +98,43 @@ class PostgreSQLWorkflow(unittest.TestCase):
         self.assertEqual(self.client.post('/appointments/999999/confirm').status_code,404)
         self.assertEqual(self.book(starts_at='2000-01-03T11:00:00-07:00', ends_at='2000-01-03T12:00:00-07:00').status_code,422)
         self.assertEqual(self.book(starts_at=self.payload['starts_at'][:19], ends_at=self.payload['ends_at'][:19]).status_code,422)
+
+    def overlay(self):
+        with TestClient(app) as anonymous:
+            response = anonymous.get('/live/overlay/overlay-fixture-token/data')
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def test_overlay_counts_booked_value_and_frees_slots(self):
+        slot = self.client.post('/live/slots', json={k: self.payload[k] for k in ('resource_id', 'starts_at', 'ends_at')})
+        self.assertEqual(slot.status_code, 201, slot.text)
+        data = self.overlay()
+        self.assertEqual((data['booked_count'], data['booked_value'], data['goal'], data['open_count']), (0, 0, 500, 1))
+        self.assertEqual(self.client.post('/live/slots', json={k: self.payload[k] for k in ('resource_id', 'starts_at', 'ends_at')}).status_code, 409)
+
+        ident = self.book(booked_value='325.50').json()['id']
+        data = self.overlay()
+        self.assertEqual((data['booked_count'], data['booked_value'], data['open_count'], data['open_times']), (1, 325.5, 0, []))
+        self.assertNotIn('TEST', str(data))  # no customer or vehicle details reach the stream
+
+        self.client.post(f'/appointments/{ident}/cancel')
+        data = self.overlay()
+        self.assertEqual((data['booked_count'], data['booked_value'], data['open_count']), (0, 0, 1))
+
+        self.assertEqual(self.client.post(f"/live/slots/{slot.json()['id']}/remove").status_code, 200)
+        self.assertEqual(self.overlay()['open_count'], 0)
+
+    def test_slot_rules_and_control_data(self):
+        body = {k: self.payload[k] for k in ('resource_id', 'starts_at', 'ends_at')}
+        self.assertEqual(self.client.post('/live/slots', json={**body, 'starts_at': '2000-01-03T11:00:00-07:00', 'ends_at': '2000-01-03T12:00:00-07:00'}).status_code, 422)
+        with TestClient(app) as anonymous:
+            self.assertEqual(anonymous.post('/live/slots', json=body).status_code, 401)
+            self.assertEqual(anonymous.get('/live/control/data').status_code, 401)
+        self.assertEqual(self.book(booked_value='-1').status_code, 422)
+        self.client.post('/live/slots', json=body)
+        self.book(booked_value='100')
+        control = self.client.get('/live/control/data').json()
+        self.assertEqual(control['booked_today'][0]['customer'], 'TEST ONLY')
+        self.assertEqual(self.client.get('/live/control').status_code, 200)
 
 if __name__ == '__main__': unittest.main()

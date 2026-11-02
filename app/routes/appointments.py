@@ -6,6 +6,7 @@ Uses a PostgreSQL transaction-scoped advisory lock to serialize bookings per res
 import json
 import os
 from datetime import datetime, time, timezone
+from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -31,6 +32,7 @@ class AppointmentInput(BaseModel):
     resource_id: str = Field(min_length=1, max_length=80)
     starts_at: datetime
     ends_at: datetime
+    booked_value: Decimal = Field(default=Decimal("0"), ge=0, le=Decimal("99999999.99"), decimal_places=2)
 
     @field_validator("resource_id")
     @classmethod
@@ -68,7 +70,8 @@ def list_appointments(request: Request, db: Session = Depends(get_db)):
     get_current_user(request, db)
     return [
         {"id": a.id, "repair_order_id": a.repair_order_id, "resource_id": a.resource_id,
-         "starts_at": a.starts_at, "ends_at": a.ends_at, "status": a.status}
+         "starts_at": a.starts_at, "ends_at": a.ends_at, "status": a.status,
+         "booked_value": float(a.booked_value or 0)}
         for a in db.query(Appointment).order_by(Appointment.starts_at).limit(250).all()
     ]
 
@@ -102,6 +105,7 @@ def book_appointment(payload: AppointmentInput, request: Request, db: Session = 
         item = Appointment(
             repair_order_id=payload.repair_order_id, resource_id=payload.resource_id,
             starts_at=payload.starts_at.astimezone(timezone.utc), ends_at=payload.ends_at.astimezone(timezone.utc), status="tentative",
+            booked_value=payload.booked_value,
         )
         db.add(item)
         db.commit()
