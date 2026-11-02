@@ -4,10 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-TEMP = tempfile.TemporaryDirectory()
-os.environ['DATABASE_URL'] = 'sqlite:///' + str(Path(TEMP.name) / 'fixture.db')
-os.environ['SECRET_KEY'] = 'fixture-only-session-secret'
-os.environ['APP_READ_ONLY'] = 'true'
+from fixture_environment import TEMP
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect, text
 from app.main import app
