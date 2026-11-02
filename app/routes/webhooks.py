@@ -103,7 +103,7 @@ def create_session(db: Session, phone: str):
 INTAKE_SYSTEM = """You are the intake assistant for Imperial Auto Care, a diesel and fleet specialist shop in Phoenix, AZ.
 
 Shop info you CAN answer if a customer asks:
-- Address: 7915 N Glen Harbor Blvd, Suite 417, Glendale, AZ 85307
+- Address: 7915 N Glen Harbor Blvd, Suite 508, Glendale, AZ 85307
 - Phone: (480) 914-4144
 - Specialty: diesel engines and commercial fleet vehicles
 
@@ -455,9 +455,11 @@ async def openphone_webhook(
 ):
     payload = await request.body()
 
-    if OPENPHONE_SIGNING_SECRET and x_openphone_signature:
-        if not verify_signature(payload, x_openphone_signature, OPENPHONE_SIGNING_SECRET):
-            raise HTTPException(status_code=401, detail="Invalid signature")
+    # Reject unsigned requests: missing signature must never bypass verification.
+    if not OPENPHONE_SIGNING_SECRET:
+        raise HTTPException(status_code=503, detail="Webhook verification unavailable")
+    if not x_openphone_signature or not verify_signature(payload, x_openphone_signature, OPENPHONE_SIGNING_SECRET):
+        raise HTTPException(status_code=401, detail="Invalid signature")
 
     data = json.loads(payload)
     print(f"[WEBHOOK] type={data.get('type')} keys={list(data.keys())} preview={str(data)[:400]}")
