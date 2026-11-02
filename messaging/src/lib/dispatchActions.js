@@ -56,7 +56,11 @@ async function deliverOwnerMessages({ quo, shopClient }) {
 
 async function handleIntakeResult({ result, messageId, phone, quo, shopClient }) {
   if (result.ownerReply && enabled("OWNER_TEXTS_ENABLED")) {
-    await quo.sendMessage({ to: phone, content: result.ownerReply });
+    try {
+      await quo.sendMessage({ to: phone, content: result.ownerReply });
+    } catch (err) {
+      console.error("Owner reply failed:", err.message); // pending alerts must still go out
+    }
   }
   if (result.autoReply) {
     await sendAutoReply({ autoReply: result.autoReply, messageId, phone, quo, shopClient });

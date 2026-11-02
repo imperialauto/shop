@@ -53,6 +53,11 @@ class AssessmentTests(unittest.TestCase):
         self.assertIn("unverified_estimate", result.reasons)
         self.assertIn("Verify parts and labor", result.proposed_action)
 
+    def test_any_price_question_needs_the_owner(self):
+        result = assess("If we wanted to get it towed in 2 weeks how much would towing cost")
+        self.assertEqual(result.category, "towing")
+        self.assertIn("unverified_estimate", result.reasons)
+
     def test_missing_details_are_requested_once(self):
         result = assess("I need a tow, it won't move")
         self.assertEqual(result.category, "towing")

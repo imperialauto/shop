@@ -51,6 +51,19 @@ test("a failed customer text is reported, not retried", async () => {
   assert.deepEqual(f.outcomes, [{ key: autoReply.key, status: "failed" }]);
 });
 
+test("a failed owner reply does not stop pending alerts", async () => {
+  process.env.OWNER_TEXTS_ENABLED = "true";
+  const f = fixture({ tick: [{ key: "alert:1:m1", text: "Approval #1" }] });
+  const send = f.quo.sendMessage;
+  let first = true;
+  f.quo.sendMessage = async (m) => {
+    if (first) { first = false; throw new Error("quo down"); }
+    return send(m);
+  };
+  await handleIntakeResult({ result: { ownerReply: "Nothing is waiting on you." }, messageId: "m1", phone: OWNER, ...f });
+  assert.deepEqual(f.outcomes, [{ key: "alert:1:m1", status: "sent" }]);
+});
+
 test("owner texts go only to the owner and report each result", async () => {
   process.env.OWNER_TEXTS_ENABLED = "true";
   const f = fixture({ tick: [{ key: "alert:1:m1", text: "Approval #1" }] });
