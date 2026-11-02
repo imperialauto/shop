@@ -24,3 +24,11 @@ const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`Messaging module listening on port ${port}`);
 });
+
+// Off unless explicitly enabled. Reads Quo and records work; never sends.
+if (process.env.DISPATCH_RECOVERY_ENABLED === "true") {
+  const quo = require("./src/lib/quoClient");
+  const shopClient = require("./src/lib/shopClient");
+  const { startRecovery } = require("./src/lib/dispatchRecovery");
+  startRecovery({ quo, shopClient, phoneNumberId: process.env.QUO_PHONE_NUMBER_ID });
+}

@@ -111,5 +111,18 @@ async function dispatchIntake({ conversationId, messageId, phone, body }) {
   }
 }
 
-module.exports = { configured, getContext, getContextStrict, getSigningLink, logCommunication, dispatchIntake };
+async function dispatchSync({ source, ok, detail }) {
+  if (!configured()) return { recorded: false, reason: "not_configured" };
+  try {
+    return await request("/internal/dispatch/sync", {
+      method: "POST",
+      body: JSON.stringify({ source, ok, detail }),
+    });
+  } catch (err) {
+    console.error("shopClient.dispatchSync failed:", err.message);
+    return { recorded: false, reason: "error" };
+  }
+}
+
+module.exports = { configured, getContext, getContextStrict, getSigningLink, logCommunication, dispatchIntake, dispatchSync };
 

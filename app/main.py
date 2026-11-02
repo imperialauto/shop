@@ -65,7 +65,7 @@ def read_only_exempt(request: Request) -> bool:
         return True
     return (
         request.method == "POST"
-        and request.url.path in ("/internal/messaging/communications", "/internal/dispatch/intake")
+        and request.url.path in ("/internal/messaging/communications", "/internal/dispatch/intake", "/internal/dispatch/sync")
         and internal_key_valid(request.headers.get("x-internal-key"))
     )
 
@@ -121,7 +121,7 @@ def logout(request: Request):
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
-def dashboard(request: Request, db: Session = Depends(get_db)):
+def dashboard(request: Request, view: str = "open", db: Session = Depends(get_db)):
     try:
         user = get_current_user(request, db)
     except HTTPException:
@@ -140,7 +140,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         "total_customers": total_customers,
         "total_ros": total_ros,
         "open_count": open_count,
-        **dispatch.dashboard_context(db),
+        **dispatch.dashboard_context(db, view),
         "read_only": app.state.read_only,
     })
 

@@ -15,7 +15,7 @@ os.environ['SECRET_KEY'] = 'test-only-secret'
 os.environ['LIVE_OVERLAY_TOKEN'] = 'overlay-fixture-token'
 os.environ['SHOP_HOURS_JSON'] = '{"0":["10:00","18:00"],"1":["10:00","18:00"],"2":["10:00","18:00"],"3":["10:00","18:00"],"4":["10:00","18:00"]}'
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from app.main import app
 from app.database import Base, engine, SessionLocal
 from app.models import Customer, Vehicle, RepairOrder, User
@@ -28,11 +28,15 @@ class PostgreSQLWorkflow(unittest.TestCase):
     def setUpClass(cls):
         # Recreate only the explicitly named disposable fixture database tables.
         Base.metadata.drop_all(engine)
-        Base.metadata.create_all(engine, tables=[t for t in Base.metadata.sorted_tables if t.name not in ('appointments', 'booking_slots', 'dispatch_items', 'dispatch_events', 'dispatch_policies')])
+        Base.metadata.create_all(engine, tables=[t for t in Base.metadata.sorted_tables if t.name not in ('appointments', 'booking_slots', 'dispatch_items', 'dispatch_events', 'dispatch_policies', 'dispatch_audit', 'dispatch_sync')])
         migrations = [Path(p).read_text() for p in ('migrations/20261031_appointments.sql', 'migrations/20261102_live_overlay.sql', 'migrations/20261102_dispatcher.sql')]
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for migration in migrations * 2:  # additive migrations are repeatable
                 conn.execute(text(migration))
+            # The dispatcher migration must reverse cleanly and reapply.
+            conn.execute(text(Path('migrations/20261102_dispatcher.down.sql').read_text()))
+            assert 'dispatch_items' not in inspect(conn).get_table_names()
+            conn.execute(text(migrations[-1]))
         with SessionLocal() as db:
             owner = User(username='fixture', password_hash=hash_password('fixture-pass'), role='admin')
             customer = Customer(first_name='TEST', last_name='ONLY')

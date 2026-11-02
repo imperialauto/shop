@@ -46,6 +46,27 @@ class DispatchEvent(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
 
 
+class DispatchAudit(Base):
+    """Who or what did what. Holds no message text."""
+    __tablename__ = "dispatch_audit"
+    id = Column(Integer, primary_key=True)
+    item_id = Column(Integer, ForeignKey("dispatch_items.id"), index=True)
+    actor = Column(String(64), nullable=False)
+    action = Column(String(32), nullable=False)
+    detail = Column(String(255))
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+
+
+class DispatchSync(Base):
+    """Health of each feed into the queue, shown on the dashboard."""
+    __tablename__ = "dispatch_sync"
+    source = Column(String(32), primary_key=True)
+    last_success_at = Column(DateTime(timezone=True))
+    last_failure_at = Column(DateTime(timezone=True))
+    consecutive_failures = Column(Integer, nullable=False, default=0)
+    last_detail = Column(String(255))
+
+
 class DispatchPolicy(Base):
     __tablename__ = "dispatch_policies"
     key = Column(String(32), primary_key=True)

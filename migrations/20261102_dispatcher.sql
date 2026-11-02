@@ -1,6 +1,6 @@
 -- Apply only after backup, database audit and explicit migration approval.
 -- Run after 20261102_live_overlay.sql and BEFORE deploying this code.
--- Non-destructive, additive and repeatable.
+-- Non-destructive, additive and repeatable. Reverse with 20261102_dispatcher.down.sql.
 BEGIN;
 ALTER TABLE appointments ADD COLUMN IF NOT EXISTS location VARCHAR(12) NOT NULL DEFAULT 'shop';
 ALTER TABLE appointments ADD COLUMN IF NOT EXISTS travel_before_minutes INTEGER NOT NULL DEFAULT 0;
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS dispatch_items (
  decided_at TIMESTAMPTZ,
  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
- CONSTRAINT dispatch_valid_status CHECK (status IN ('routine','needs_owner','approved','declined')),
+ CONSTRAINT dispatch_valid_status CHECK (status IN ('routine','needs_owner','approved','declined','closed')),
  CONSTRAINT dispatch_valid_urgency CHECK (urgency IN ('normal','urgent','safety'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uq_dispatch_open_conversation ON dispatch_items (quo_conversation_id) WHERE status IN ('routine','needs_owner');
@@ -42,5 +42,21 @@ CREATE TABLE IF NOT EXISTS dispatch_policies (
  mode VARCHAR(12) NOT NULL DEFAULT 'approve',
  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
  CONSTRAINT dispatch_policy_valid_mode CHECK (mode IN ('approve','notify'))
+);
+CREATE TABLE IF NOT EXISTS dispatch_audit (
+ id SERIAL PRIMARY KEY,
+ item_id INTEGER REFERENCES dispatch_items(id),
+ actor VARCHAR(64) NOT NULL,
+ action VARCHAR(32) NOT NULL,
+ detail VARCHAR(255),
+ created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_dispatch_audit_item ON dispatch_audit (item_id);
+CREATE TABLE IF NOT EXISTS dispatch_sync (
+ source VARCHAR(32) PRIMARY KEY,
+ last_success_at TIMESTAMPTZ,
+ last_failure_at TIMESTAMPTZ,
+ consecutive_failures INTEGER NOT NULL DEFAULT 0,
+ last_detail VARCHAR(255)
 );
 COMMIT;

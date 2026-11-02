@@ -15,10 +15,10 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
 from app.dispatch import apply_policies, assess
-from app.dispatch_model import DispatchEvent, DispatchItem, DispatchPolicy
+from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchPolicy, DispatchSync
 from app.main import app
 from app.models import Customer, User
-from app.routes import internal_messaging
+from app.routes import dispatch, internal_messaging
 
 KEY = "fixture-internal-key"
 HEADERS = {"X-Internal-Key": KEY}
@@ -176,6 +176,54 @@ class QueueWorkflowTests(unittest.TestCase):
         with self.Session() as db:
             self.assertEqual(db.get(DispatchPolicy, "refund").mode, "approve")
             self.assertEqual(db.get(DispatchPolicy, "discount_credit").mode, "notify")
+
+    def test_actions_are_audited_without_message_text(self):
+        app.state.read_only = False
+        self.post("m1", "private fuel leak detail on a 2013 Ford Fusion")
+        item = self.items()[0]
+        with self.login:
+            self.client.post(f"/dispatch/{item.id}/decide", data={"decision": "approve", "expected_message_id": "m1"})
+            closed = self.client.post(f"/dispatch/{item.id}/close", follow_redirects=False)
+        self.assertEqual(closed.status_code, 303)
+        with self.Session() as db:
+            rows = db.query(DispatchAudit).order_by(DispatchAudit.id).all()
+        self.assertEqual([(r.actor, r.action) for r in rows],
+                         [("system", "message_received"), ("owner", "owner_approve"), ("owner", "owner_close")])
+        self.assertFalse(any("private" in (r.detail or "") for r in rows))
+
+    def test_sync_failures_escalate_and_recover(self):
+        app.state.read_only = True
+        for _ in range(3):
+            self.client.post("/internal/dispatch/sync", headers=HEADERS, json={"source": "quo_recovery", "ok": False})
+        with self.Session() as db:
+            self.assertTrue(dispatch._sync_health(db)[0]["problem"])
+        self.client.post("/internal/dispatch/sync", headers=HEADERS, json={"source": "quo_recovery", "ok": True})
+        with self.Session() as db:
+            self.assertFalse(dispatch._sync_health(db)[0]["problem"])
+            self.assertEqual(db.get(DispatchSync, "quo_recovery").consecutive_failures, 0)
+
+    def test_filters_separate_the_queue(self):
+        app.state.read_only = False
+        self.post("m1", "2013 Ford Fusion fuel leak", "CNone")
+        self.post("m2", "hello there", "CNtwo")
+        self.post("m3", "2011 Ford Focus question", "CNthree")
+        third = self.items()[2]
+        with self.login:
+            self.client.post(f"/dispatch/{third.id}/decide", data={"decision": "approve", "expected_message_id": "m3"})
+        with self.Session() as db:
+            counts = {view: len(dispatch.dashboard_context(db, view)["dispatch_items"]) for view in dispatch.VIEWS}
+            self.assertEqual(dispatch.dashboard_context(db, "nonsense")["dispatch_view"], "open")
+        self.assertEqual(counts, {"open": 2, "urgent": 1, "approval": 1, "customer": 1, "scheduled": 0, "completed": 0})
+
+    def test_dashboard_renders_cards(self):
+        app.state.read_only = True
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        with patch("app.main.get_current_user", side_effect=lambda request, db: db.get(User, 1)):
+            page = self.client.get("/dashboard")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("TEST ONLY", page.text)
+        self.assertIn("Awaiting approval", page.text)
+        self.assertIn("Nothing priced yet", page.text)
 
     def test_reasons_are_stored_as_json(self):
         self.post("m1", "How much for brakes on a 2011 Ford Focus?")
