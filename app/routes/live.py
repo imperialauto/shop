@@ -66,13 +66,13 @@ def open_slots(db: Session, now: datetime) -> list[BookingSlot]:
         return []
     active = db.query(Appointment).filter(
         Appointment.status.in_(ACTIVE),
-        Appointment.ends_at > now,
-        Appointment.starts_at < slots[-1].ends_at,
+        Appointment.ends_at > now - timedelta(hours=4),
+        Appointment.starts_at < slots[-1].ends_at + timedelta(hours=4),
     ).all()
     return [slot for slot in slots if not any(
         item.resource_id == slot.resource_id
-        and utc(item.starts_at) < utc(slot.ends_at)
-        and utc(slot.starts_at) < utc(item.ends_at)
+        and utc(item.starts_at) - timedelta(minutes=item.travel_before_minutes or 0) < utc(slot.ends_at)
+        and utc(slot.starts_at) < utc(item.ends_at) + timedelta(minutes=item.buffer_after_minutes or 0)
         for item in active
     )]
 

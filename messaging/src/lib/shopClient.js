@@ -94,5 +94,51 @@ async function logCommunication({ phone, direction, body, externalId }) {
   }
 }
 
-module.exports = { configured, getContext, getContextStrict, getSigningLink, logCommunication };
+/**
+ * Best-effort hand-off of an inbound SMS to the Operations queue. Records work
+ * for the owner only; it never sends anything and never throws.
+ */
+async function dispatchIntake({ conversationId, messageId, phone, body, recovery = false }) {
+  if (!configured()) return { recorded: false, reason: "not_configured" };
+  try {
+    return await request("/internal/dispatch/intake", {
+      method: "POST",
+      body: JSON.stringify({ conversationId, messageId, phone, body, recovery }),
+    });
+  } catch (err) {
+    console.error("shopClient.dispatchIntake failed:", err.message);
+    return { recorded: false, reason: "error" };
+  }
+}
+
+async function dispatchSync({ source, ok, detail }) {
+  if (!configured()) return { recorded: false, reason: "not_configured" };
+  try {
+    return await request("/internal/dispatch/sync", {
+      method: "POST",
+      body: JSON.stringify({ source, ok, detail }),
+    });
+  } catch (err) {
+    console.error("shopClient.dispatchSync failed:", err.message);
+    return { recorded: false, reason: "error" };
+  }
+}
+
+async function dispatchTick() {
+  return request("/internal/dispatch/tick", { method: "POST", body: "{}" });
+}
+
+async function dispatchOutbound({ key, status }) {
+  try {
+    return await request("/internal/dispatch/outbound", { method: "POST", body: JSON.stringify({ key, status }) });
+  } catch (err) {
+    console.error("shopClient.dispatchOutbound failed:", err.message);
+    return { recorded: false };
+  }
+}
+
+module.exports = {
+  configured, getContext, getContextStrict, getSigningLink, logCommunication,
+  dispatchIntake, dispatchSync, dispatchTick, dispatchOutbound,
+};
 

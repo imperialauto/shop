@@ -5,19 +5,20 @@ Uses a PostgreSQL transaction-scoped advisory lock to serialize bookings per res
 """
 import json
 import os
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
+from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import RepairOrder
 from app.appointment_model import Appointment
-from app.appointments import AppointmentWindow, AppointmentValidationError, validate_slot
+from app.appointments import AppointmentWindow, AppointmentValidationError, overlaps, validate_slot
 
 router = APIRouter()
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), '..', 'templates'))
@@ -27,12 +28,57 @@ def calendar_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     return templates.TemplateResponse('calendar.html', {'request': request, 'user': user})
 
+MAX_TRAVEL_MINUTES = 240
+ACTIVE_STATUSES = ("tentative", "confirmed")
+
+
+def shop_buffer_minutes() -> int:
+    """One hour after shop appointments unless SHOP_BUFFER_MINUTES says otherwise."""
+    raw = os.environ.get("SHOP_BUFFER_MINUTES", "60")
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise HTTPException(503, "Shop buffer configuration is invalid.") from exc
+    if not 0 <= value <= MAX_TRAVEL_MINUTES:
+        raise HTTPException(503, "Shop buffer configuration is invalid.")
+    return value
+
+
+def as_window(item: Appointment) -> AppointmentWindow:
+    return AppointmentWindow(item.starts_at, item.ends_at, item.resource_id,
+                             item.travel_before_minutes or 0, item.buffer_after_minutes or 0)
+
+
+def find_conflict(db: Session, candidate: AppointmentWindow, exclude_id: int | None = None):
+    """Run inside the advisory lock. Widened query, then exact blocked-time check."""
+    margin = timedelta(minutes=2 * MAX_TRAVEL_MINUTES)
+    query = db.query(Appointment).filter(
+        Appointment.resource_id == candidate.resource_id,
+        Appointment.status.in_(ACTIVE_STATUSES),
+        Appointment.starts_at < candidate.blocked_until + margin,
+        Appointment.ends_at > candidate.blocked_from - margin,
+    )
+    if exclude_id is not None:
+        query = query.filter(Appointment.id != exclude_id)
+    return next((item for item in query.all() if overlaps(candidate, as_window(item))), None)
+
+
 class AppointmentInput(BaseModel):
     repair_order_id: int = Field(gt=0)
     resource_id: str = Field(min_length=1, max_length=80)
     starts_at: datetime
     ends_at: datetime
     booked_value: Decimal = Field(default=Decimal("0"), ge=0, le=Decimal("99999999.99"), decimal_places=2)
+    location: Literal["shop", "mobile"] = "shop"
+    travel_minutes: int = Field(default=0, ge=0, le=MAX_TRAVEL_MINUTES)
+
+    @model_validator(mode="after")
+    def mobile_needs_travel(self):
+        if self.location == "mobile" and self.travel_minutes < 1:
+            raise ValueError("Mobile appointments need travel time.")
+        if self.location == "shop" and self.travel_minutes:
+            raise ValueError("Shop appointments do not have travel time.")
+        return self
 
     @field_validator("resource_id")
     @classmethod
@@ -71,7 +117,8 @@ def list_appointments(request: Request, db: Session = Depends(get_db)):
     return [
         {"id": a.id, "repair_order_id": a.repair_order_id, "resource_id": a.resource_id,
          "starts_at": a.starts_at, "ends_at": a.ends_at, "status": a.status,
-         "booked_value": float(a.booked_value or 0)}
+         "booked_value": float(a.booked_value or 0), "location": a.location,
+         "travel_before_minutes": a.travel_before_minutes, "buffer_after_minutes": a.buffer_after_minutes}
         for a in db.query(Appointment).order_by(Appointment.starts_at).limit(250).all()
     ]
 
@@ -81,7 +128,9 @@ def book_appointment(payload: AppointmentInput, request: Request, db: Session = 
     if db.get(RepairOrder, payload.repair_order_id) is None:
         raise HTTPException(404, "Repair order not found.")
     try:
-        candidate = AppointmentWindow(payload.starts_at, payload.ends_at, payload.resource_id)
+        buffer_minutes = shop_buffer_minutes() if payload.location == "shop" else 0
+        candidate = AppointmentWindow(payload.starts_at, payload.ends_at, payload.resource_id,
+                                      payload.travel_minutes, buffer_minutes)
         validate_slot(candidate, [], configured_hours())
         if candidate.starts_at.astimezone(timezone.utc) <= datetime.now(timezone.utc):
             raise AppointmentValidationError("Appointments must start in the future.")
@@ -94,18 +143,14 @@ def book_appointment(payload: AppointmentInput, request: Request, db: Session = 
         if db.bind.dialect.name != "postgresql":
             raise HTTPException(503, "Concurrent booking requires PostgreSQL.")
         db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:resource))"), {"resource": payload.resource_id})
-        conflicting = db.query(Appointment).filter(
-            Appointment.resource_id == payload.resource_id,
-            Appointment.status.in_(("tentative", "confirmed")),
-            Appointment.starts_at < payload.ends_at.astimezone(timezone.utc),
-            Appointment.ends_at > payload.starts_at.astimezone(timezone.utc),
-        ).first()
+        conflicting = find_conflict(db, candidate)
         if conflicting:
             raise HTTPException(409, "Resource is already booked for this time.")
         item = Appointment(
             repair_order_id=payload.repair_order_id, resource_id=payload.resource_id,
             starts_at=payload.starts_at.astimezone(timezone.utc), ends_at=payload.ends_at.astimezone(timezone.utc), status="tentative",
-            booked_value=payload.booked_value,
+            booked_value=payload.booked_value, location=payload.location,
+            travel_before_minutes=payload.travel_minutes, buffer_after_minutes=buffer_minutes,
         )
         db.add(item)
         db.commit()
@@ -128,13 +173,7 @@ def confirm_appointment(appointment_id: int, request: Request, db: Session = Dep
         if appointment.status != "tentative":
             raise HTTPException(409, "Only tentative appointments can be confirmed.")
         db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:resource))"), {"resource": appointment.resource_id})
-        conflict = db.query(Appointment).filter(
-            Appointment.id != appointment.id,
-            Appointment.resource_id == appointment.resource_id,
-            Appointment.status.in_(("tentative", "confirmed")),
-            Appointment.starts_at < appointment.ends_at,
-            Appointment.ends_at > appointment.starts_at,
-        ).first()
+        conflict = find_conflict(db, as_window(appointment), exclude_id=appointment.id)
         if conflict:
             raise HTTPException(409, "Resource has a conflicting appointment.")
         appointment.status = "confirmed"

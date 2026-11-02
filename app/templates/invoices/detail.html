@@ -79,6 +79,7 @@
 {% endif %}
 
 <!-- Add Payment -->
+{% if payment_error %}<p role="alert" style="color:#f87171; margin:8px 0;">{{ payment_error }}</p>{% endif %}
 {% if balance > 0 %}
 <div class="card">
   <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Add Payment</h3>
@@ -90,10 +91,12 @@
     <div>
       <label class="form-label">Method</label>
       <select name="method" class="form-select w-32">
+        <option value="zelle">Zelle</option>
         <option value="cash">Cash</option>
         <option value="card">Card</option>
         <option value="check">Check</option>
         <option value="ach">ACH</option>
+        <option value="paypal">PayPal</option>
       </select>
     </div>
     <div class="flex-1">

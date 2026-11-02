@@ -1,0 +1,84 @@
+<div class="card" style="padding:0; overflow:hidden; margin-bottom:20px;">
+  <div style="padding:14px 16px 12px; border-bottom:1px solid rgba(255,255,255,0.06); display:flex; justify-content:space-between; gap:12px;">
+    <span style="font-size:13.5px; font-weight:600; color:#e4e4e7;">Needs attention</span>
+    <span style="font-size:12px; color:#71717a;">{{ dispatch_items|length }} open</span>
+  </div>
+  {% if not dispatch_ready %}
+  <div style="padding:16px; color:#a1a1aa; font-size:13px;">The queue is not set up on this database yet.</div>
+  {% else %}
+  {% if read_only %}
+  <div style="padding:10px 16px; color:#d4a853; font-size:12.5px; border-bottom:1px solid rgba(255,255,255,0.06);">The system is read-only. New messages still appear here, but decisions and policy changes will not save.</div>
+  {% endif %}
+  <nav aria-label="Queue filters" style="display:flex; flex-wrap:wrap; gap:6px; padding:10px 16px; border-bottom:1px solid rgba(255,255,255,0.06);">
+    {% for key, label in dispatch_views.items() %}
+    <a href="/dashboard?view={{ key }}" style="font-size:12px; text-decoration:none; color:{{ '#d4a853' if key == dispatch_view else '#a1a1aa' }};"{% if key == dispatch_view %} aria-current="true"{% endif %}>{{ label }}</a>
+    {% endfor %}
+  </nav>
+  {% for row in dispatch_items %}{% set item = row.item %}
+  <details style="border-bottom:1px solid rgba(255,255,255,0.06);"{% if item.urgency == 'safety' %} open{% endif %}>
+    <summary style="padding:12px 16px; cursor:pointer; color:#e4e4e7; font-size:13px;">
+      {% if item.urgency == 'safety' %}<strong style="color:#f87171;">Safety</strong> ·{% elif item.urgency == 'urgent' %}<strong style="color:#d4a853;">Urgent</strong> ·{% endif %}
+      {{ row.customer_name or item.customer_phone }}{% if item.vehicle_text %} · {{ item.vehicle_text }}{% endif %} · {{ item.category|capitalize }}{% if item.status == 'needs_owner' %} · Your approval{% endif %}
+    </summary>
+    <div style="padding:0 16px 14px; font-size:13px; color:#a1a1aa;">
+      <p style="margin:0 0 8px; overflow-wrap:anywhere;">{{ item.summary or 'No message text.' }}</p>
+      {% if row.reasons %}<p style="margin:0 0 8px;">Why you: {{ row.reasons|join(', ') }}</p>{% endif %}
+      <p style="margin:0 0 8px;">Price or impact: {% if row.estimate is not none %}${{ '%.2f'|format(row.estimate) }} on open RO #{{ row.open_ro.id }}{% else %}Nothing priced yet{% endif %}</p>
+      {% if row.open_ro %}<p style="margin:0 0 8px;">Job: <a href="/ro/{{ row.open_ro.id }}" style="color:#d4a853;">RO #{{ row.open_ro.id }}</a> · {{ row.open_ro.status.replace('_',' ') }}</p>{% endif %}
+      {% if row.next_appointment %}<p style="margin:0 0 8px;">Next appointment is booked.</p>{% endif %}
+      {% if row.history %}<details style="margin-bottom:8px;"><summary style="cursor:pointer;">Recent history</summary>
+        {% for entry in row.history %}<p style="margin:6px 0 0; overflow-wrap:anywhere;">{{ entry.direction|capitalize }}: {{ (entry.body or '')[:160] }}</p>{% endfor %}
+      </details>{% endif %}
+      {% if item.status in ('routine', 'needs_owner') %}
+      <form method="post" action="/dispatch/{{ item.id }}/decide">
+        <input type="hidden" name="expected_message_id" value="{{ item.last_message_id }}">
+        <label style="display:block; margin-bottom:8px;">Proposed action
+          <textarea name="proposed_action" rows="2" maxlength="2000" style="display:block; width:100%; margin-top:4px;">{{ item.proposed_action }}</textarea>
+        </label>
+        <div style="display:flex; flex-wrap:wrap; gap:8px;">
+          <button class="btn-primary" name="decision" value="approve">Approve</button>
+          <button class="btn-secondary" name="decision" value="decline">Decline</button>
+          <a class="btn-secondary" href="tel:{{ item.customer_phone }}">Call</a>
+        </div>
+      </form>
+      {% else %}
+      <p style="margin:0 0 8px;">{{ item.status|capitalize }}: {{ item.proposed_action }}</p>
+      <div style="display:flex; flex-wrap:wrap; gap:8px;">
+        {% if item.status == 'approved' %}<form method="post" action="/dispatch/{{ item.id }}/close"><button class="btn-secondary">Close</button></form>{% endif %}
+        <a class="btn-secondary" href="tel:{{ item.customer_phone }}">Call</a>
+      </div>
+      {% endif %}
+    </div>
+  </details>
+  {% else %}
+  <div style="padding:16px; color:#71717a; font-size:13px;">Nothing here.</div>
+  {% endfor %}
+  {% for feed in dispatch_health %}
+  <div style="padding:8px 16px; font-size:12px; color:{{ '#f87171' if feed.problem else '#71717a' }}; border-top:1px solid rgba(255,255,255,0.06);">
+    {{ feed.source|capitalize }}: {% if feed.problem %}needs attention, {{ feed.failures }} failures in a row{% else %}healthy{% endif %}{% if feed.last_success_at %}, last success {{ feed.last_success_at.strftime('%b %d %H:%M') }} UTC{% endif %}
+  </div>
+  {% endfor %}
+  <details style="padding:12px 16px; font-size:13px; color:#a1a1aa;">
+    <summary style="cursor:pointer;">Approval rules</summary>
+    <form method="post" action="/dispatch/policies" style="margin-top:10px; display:grid; gap:8px;">
+      {% for policy in dispatch_policies %}
+      <label style="display:flex; justify-content:space-between; gap:12px; align-items:center;">{{ policy.label }}
+        <select name="{{ policy.key }}"{% if policy.locked %} disabled{% endif %}>
+          <option value="approve"{% if policy.mode == 'approve' %} selected{% endif %}>Ask me</option>
+          <option value="notify"{% if policy.mode == 'notify' %} selected{% endif %}>Just show me</option>
+        </select>
+      </label>
+      {% endfor %}
+      {% for policy in dispatch_auto_policies %}
+      <label style="display:flex; justify-content:space-between; gap:12px; align-items:center;">{{ policy.label }}
+        <select name="{{ policy.key }}">
+          <option value="auto"{% if policy.mode == 'auto' %} selected{% endif %}>Automatic</option>
+          <option value="off"{% if policy.mode == 'off' %} selected{% endif %}>Off</option>
+        </select>
+      </label>
+      {% endfor %}
+      <div><button class="btn-secondary">Save rules</button></div>
+    </form>
+  </details>
+  {% endif %}
+</div>

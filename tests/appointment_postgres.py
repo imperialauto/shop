@@ -4,6 +4,7 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 from sqlalchemy.engine import make_url
 
 url = make_url(os.environ['TEST_DATABASE_URL'])
@@ -14,7 +15,7 @@ os.environ['SECRET_KEY'] = 'test-only-secret'
 os.environ['LIVE_OVERLAY_TOKEN'] = 'overlay-fixture-token'
 os.environ['SHOP_HOURS_JSON'] = '{"0":["10:00","18:00"],"1":["10:00","18:00"],"2":["10:00","18:00"],"3":["10:00","18:00"],"4":["10:00","18:00"]}'
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from app.main import app
 from app.database import Base, engine, SessionLocal
 from app.models import Customer, Vehicle, RepairOrder, User
@@ -27,11 +28,15 @@ class PostgreSQLWorkflow(unittest.TestCase):
     def setUpClass(cls):
         # Recreate only the explicitly named disposable fixture database tables.
         Base.metadata.drop_all(engine)
-        Base.metadata.create_all(engine, tables=[t for t in Base.metadata.sorted_tables if t.name not in ('appointments', 'booking_slots')])
-        migrations = [Path(p).read_text() for p in ('migrations/20261031_appointments.sql', 'migrations/20261102_live_overlay.sql')]
+        Base.metadata.create_all(engine, tables=[t for t in Base.metadata.sorted_tables if t.name not in ('appointments', 'booking_slots', 'dispatch_items', 'dispatch_events', 'dispatch_policies', 'dispatch_audit', 'dispatch_outbound', 'dispatch_sync')])
+        migrations = [Path(p).read_text() for p in ('migrations/20261031_appointments.sql', 'migrations/20261102_live_overlay.sql', 'migrations/20261102_dispatcher.sql')]
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for migration in migrations * 2:  # additive migrations are repeatable
                 conn.execute(text(migration))
+            # The dispatcher migration must reverse cleanly and reapply.
+            conn.execute(text(Path('migrations/20261102_dispatcher.down.sql').read_text()))
+            assert 'dispatch_items' not in inspect(conn).get_table_names()
+            conn.execute(text(migrations[-1]))
         with SessionLocal() as db:
             owner = User(username='fixture', password_hash=hash_password('fixture-pass'), role='admin')
             customer = Customer(first_name='TEST', last_name='ONLY')
@@ -79,7 +84,29 @@ class PostgreSQLWorkflow(unittest.TestCase):
         self.assertEqual(self.book(resource_id=' BAY-1 ').status_code, 409)
         self.assertEqual(self.book(resource_id='bay-2').status_code, 201)
         end = datetime.fromisoformat(self.payload['ends_at'])
-        self.assertEqual(self.book(starts_at=end.isoformat(), ends_at=(end+timedelta(hours=1)).isoformat()).status_code, 201)
+        self.assertEqual(self.book(starts_at=end.isoformat(), ends_at=(end+timedelta(hours=1)).isoformat()).status_code, 409)
+        after_buffer = end + timedelta(hours=1)
+        self.assertEqual(self.book(starts_at=after_buffer.isoformat(), ends_at=(after_buffer+timedelta(hours=1)).isoformat()).status_code, 201)
+
+    def test_mobile_travel_blocks_time_before_the_visit(self):
+        start = datetime.fromisoformat(self.payload['starts_at'])
+        self.assertEqual(self.book().status_code, 201)  # shop job, blocked one hour after it ends
+        visit = start + timedelta(hours=2, minutes=30)
+        mobile = dict(location='mobile', starts_at=visit.isoformat(), ends_at=(visit+timedelta(hours=1)).isoformat())
+        self.assertEqual(self.book(travel_minutes=45, **mobile).status_code, 409)
+        self.assertEqual(self.book(travel_minutes=30, **mobile).status_code, 201)
+        self.assertEqual(self.book(location='mobile').status_code, 422)
+
+    def test_dispatch_intake_is_idempotent_on_postgresql(self):
+        message = dict(conversationId='CNfixture', messageId='ACfixture-1', phone='+16025550100', body='Fuel leak and shaking on my 2013 Ford')
+        from app.routes import internal_messaging
+        with patch.object(internal_messaging, 'INTERNAL_API_KEY', 'fixture-key'):
+            headers = {'X-Internal-Key': 'fixture-key'}
+            first = self.client.post('/internal/dispatch/intake', json=message, headers=headers)
+            again = self.client.post('/internal/dispatch/intake', json=message, headers=headers)
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertTrue(first.json()['recorded'])
+        self.assertTrue(again.json()['duplicate'])
 
     def test_simultaneous_bookings_only_one_wins(self):
         def attempt(_):
