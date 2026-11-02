@@ -36,12 +36,19 @@ INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://web-production-94989.up.railway.app")
 
 
+def internal_key_valid(candidate: str | None) -> bool:
+    """Constant-time check; an unset key on this service never matches."""
+    if not INTERNAL_API_KEY or not candidate:
+        return False
+    return secrets.compare_digest(candidate.encode(), INTERNAL_API_KEY.encode())
+
+
 def require_internal_key(x_internal_key: str | None = Header(default=None)):
     if not INTERNAL_API_KEY:
         # Fail closed — an internal API with real customer/financial data
         # must never run wide open just because the env var wasn't set.
         raise HTTPException(status_code=500, detail="INTERNAL_API_KEY not configured on this service")
-    if not x_internal_key or x_internal_key != INTERNAL_API_KEY:
+    if not internal_key_valid(x_internal_key):
         raise HTTPException(status_code=401, detail="Invalid or missing X-Internal-Key header")
     return True
 

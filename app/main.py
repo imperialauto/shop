@@ -43,15 +43,32 @@ app.include_router(internal_messaging.router, prefix="/internal", tags=["interna
 # Recovery startup is intentionally read-only: no schema mutation, default
 # account creation, migrations, or customer follow-up scheduler.
 from app.recovery import database_audit, read_only_enabled
+from app.routes.internal_messaging import internal_key_valid
 from fastapi.responses import JSONResponse
 import logging
 import json
 
 app.state.read_only = read_only_enabled()
 
+def read_only_exempt(request: Request) -> bool:
+    """Writes that stay open during recovery. Keep this list as short as possible.
+
+    The Quo message mirror is exempt only for an authenticated internal caller:
+    it appends to the communications log and has no outbound side effects, and
+    blocking it silently drops customer conversations from their records.
+    """
+    if request.url.path == "/login":
+        return True
+    return (
+        request.method == "POST"
+        and request.url.path == "/internal/messaging/communications"
+        and internal_key_valid(request.headers.get("x-internal-key"))
+    )
+
+
 @app.middleware("http")
 async def recovery_mode(request: Request, call_next):
-    if app.state.read_only and request.method not in ("GET", "HEAD", "OPTIONS") and request.url.path != "/login":
+    if app.state.read_only and request.method not in ("GET", "HEAD", "OPTIONS") and not read_only_exempt(request):
         return JSONResponse({"error": "Recovery audit mode: production changes and external actions are paused.", "read_only": True}, status_code=503)
     return await call_next(request)
 
