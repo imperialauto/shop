@@ -19,6 +19,7 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from datetime import datetime
 import os
 import secrets
@@ -35,12 +36,19 @@ INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://web-production-94989.up.railway.app")
 
 
+def internal_key_valid(candidate: str | None) -> bool:
+    """Constant-time check; an unset key on this service never matches."""
+    if not INTERNAL_API_KEY or not candidate:
+        return False
+    return secrets.compare_digest(candidate.encode(), INTERNAL_API_KEY.encode())
+
+
 def require_internal_key(x_internal_key: str | None = Header(default=None)):
     if not INTERNAL_API_KEY:
         # Fail closed — an internal API with real customer/financial data
         # must never run wide open just because the env var wasn't set.
         raise HTTPException(status_code=500, detail="INTERNAL_API_KEY not configured on this service")
-    if not x_internal_key or x_internal_key != INTERNAL_API_KEY:
+    if not internal_key_valid(x_internal_key):
         raise HTTPException(status_code=401, detail="Invalid or missing X-Internal-Key header")
     return True
 
@@ -218,6 +226,17 @@ def log_communication(
         .first()
     )
 
+    # Idempotency: Quo may retry webhook deliveries or replay historical messages.
+    # Do not mirror the same external message twice for the same customer.
+    if external_id:
+        existing = (
+            db.query(Communication)
+            .filter(Communication.customer_id == customer.id, Communication.external_id == external_id)
+            .first()
+        )
+        if existing:
+            return {"logged": True, "duplicate": True, "repairOrderId": existing.repair_order_id}
+
     comm = Communication(
         repair_order_id=open_ro.id if open_ro else None,
         customer_id=customer.id,
@@ -227,6 +246,14 @@ def log_communication(
         external_id=external_id,
     )
     db.add(comm)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if external_id:
+            existing = db.query(Communication).filter(Communication.external_id == external_id).first()
+            if existing:
+                return {"logged": True, "duplicate": True, "repairOrderId": existing.repair_order_id}
+        raise
 
     return {"logged": True, "repairOrderId": open_ro.id if open_ro else None}

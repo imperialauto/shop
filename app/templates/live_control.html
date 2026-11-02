@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}LIVE Control — Imperial Auto Care{% endblock %}
+{% block content %}
+<div class="page-header"><div class="page-title">LIVE Control</div><a href="/ro/new" class="btn-primary">New repair order</a></div>
+<div class="page-body">
+  <p id="live-error" role="alert" style="color:#f87171"></p>
+  <div class="card" style="padding:18px;margin-bottom:16px">
+    <h2 style="margin:0 0 4px" id="live-total"></h2>
+    <small>Booked value counts quoted work booked today in Phoenix time. It is not money collected.</small>
+    {% if overlay_url %}
+    <details style="margin-top:12px"><summary>TikTok LIVE Studio link</summary>
+      <input readonly value="{{ overlay_url }}" aria-label="Overlay link" style="width:100%;margin-top:8px">
+      <small>Keep this link off screen. Use a Link source sized 480 wide by 400 tall.</small>
+    </details>
+    {% else %}<p style="color:#f87171">Set LIVE_OVERLAY_TOKEN on the server to turn on the overlay link.</p>{% endif %}
+  </div>
+  <div class="card" style="padding:18px;margin-bottom:16px">
+    <h2 style="margin:0 0 12px">Add an open time</h2>
+    <form id="slot-form" style="display:flex;flex-wrap:wrap;gap:12px;align-items:end">
+      <label>Start (Phoenix time) <input name="starts_at" type="datetime-local" required></label>
+      <label>Length (hours) <input name="hours" type="number" min="0.5" max="12" step="0.5" value="2" required></label>
+      <label>Technician / bay <input name="resource_id" maxlength="80" value="bay-1" required></label>
+      <button type="submit" class="btn-primary">Add time</button>
+    </form>
+  </div>
+  <div class="card" style="padding:18px;margin-bottom:16px">
+    <h2 style="margin:0 0 12px">Open times</h2>
+    <form id="book-form" style="display:flex;flex-wrap:wrap;gap:12px;align-items:end;margin-bottom:14px">
+      <label>Repair order
+        <select name="repair_order_id" required>
+          <option value="">Choose</option>
+          {% for ro in orders %}<option value="{{ ro.id }}">#{{ ro.id }} {{ ro.customer.first_name }} {{ ro.customer.last_name }}{% if ro.vehicle %} · {{ ro.vehicle.year or '' }} {{ ro.vehicle.make or '' }} {{ ro.vehicle.model or '' }}{% endif %}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Booked value ($) <input name="booked_value" type="number" min="0" step="0.01" required></label>
+    </form>
+    <small>Choose the repair order and value, then tap Book on a time.</small>
+    <div id="slots" style="margin-top:10px"></div>
+  </div>
+  <div class="card" style="padding:18px">
+    <h2 style="margin:0 0 12px">Booked today</h2>
+    <div id="booked"></div>
+  </div>
+</div>
+<script>
+(() => {
+  const error = document.getElementById('live-error');
+  const bookForm = document.getElementById('book-form');
+  const slotForm = document.getElementById('slot-form');
+  const dollars = value => new Intl.NumberFormat('en-US', {style:'currency', currency:'USD', maximumFractionDigits:2}).format(value);
+  async function request(path, options={}) {
+    const response = await fetch(path, {credentials:'same-origin', ...options});
+    if (!response.ok) {
+      let detail = 'Request failed (' + response.status + ')';
+      try { const data = await response.json(); detail = typeof data.detail === 'string' ? data.detail : (data.error || detail); } catch (_) {}
+      throw new Error(detail);
+    }
+    return response.json();
+  }
+  const post = (path, body) => request(path, {method:'POST', headers:{'Content-Type':'application/json'}, body: body === undefined ? undefined : JSON.stringify(body)});
+  function row(text, buttonText, action) {
+    const line = document.createElement('div');
+    line.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 0;border-top:1px solid rgba(255,255,255,.08)';
+    const label = document.createElement('span'); label.textContent = text; line.appendChild(label);
+    const buttons = document.createElement('span'); buttons.style.cssText = 'display:flex;gap:8px;flex-shrink:0'; line.appendChild(buttons);
+    (Array.isArray(buttonText) ? buttonText : [[buttonText, action]]).forEach(([name, run]) => {
+      const button = document.createElement('button');
+      button.type = 'button'; button.textContent = name; button.className = name === 'Book' ? 'btn-primary' : 'btn-secondary';
+      button.addEventListener('click', async () => {
+        error.textContent = ''; button.disabled = true;
+        try { await run(); await load(); } catch (e) { error.textContent = e.message; button.disabled = false; }
+      });
+      buttons.appendChild(button);
+    });
+    return line;
+  }
+  async function book(slot) {
+    const values = Object.fromEntries(new FormData(bookForm));
+    if (!values.repair_order_id || values.booked_value === '') throw new Error('Choose a repair order and enter the booked value first.');
+    await post('/appointments/', {repair_order_id:Number(values.repair_order_id), resource_id:slot.resource_id, starts_at:slot.starts_at, ends_at:slot.ends_at, booked_value:values.booked_value});
+    bookForm.reset();
+  }
+  async function load() {
+    try {
+      const data = await request('/live/control/data');
+      document.getElementById('live-total').textContent = dollars(data.booked_value) + ' of ' + dollars(data.goal) + ' · ' + data.booked_count + ' booked';
+      const slots = document.getElementById('slots'); slots.replaceChildren();
+      data.slots.forEach(slot => slots.appendChild(row(slot.label + ' · ' + slot.resource_id, [['Book', () => book(slot)], ['Remove', () => post('/live/slots/' + slot.id + '/remove')]])));
+      if (!data.slots.length) slots.textContent = 'No open times listed.';
+      const booked = document.getElementById('booked'); booked.replaceChildren();
+      data.booked_today.forEach(item => {
+        const text = '#' + item.repair_order_id + ' ' + item.customer + ' · ' + item.time + ' · ' + dollars(item.booked_value) + ' · ' + item.status;
+        booked.appendChild(item.status === 'completed' ? row(text, []) : row(text, 'Cancel', () => post('/appointments/' + item.id + '/cancel')));
+      });
+      if (!data.booked_today.length) booked.textContent = 'Nothing booked yet today.';
+    } catch (e) { error.textContent = e.message; }
+  }
+  slotForm.addEventListener('submit', async event => {
+    event.preventDefault(); error.textContent = '';
+    const values = Object.fromEntries(new FormData(slotForm));
+    const start = new Date(values.starts_at + ':00-07:00'); // Arizona does not observe DST.
+    const end = new Date(start.getTime() + Number(values.hours) * 3600000);
+    try {
+      await post('/live/slots', {resource_id:values.resource_id, starts_at:start.toISOString(), ends_at:end.toISOString()});
+      await load();
+    } catch (e) { error.textContent = e.message; }
+  });
+  load();
+  setInterval(load, 15000);
+})();
+</script>
+{% endblock %}

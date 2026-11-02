@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Imperial LIVE</title>
+<style>
+  /* Sized from the source width, so resizing the Link source keeps its proportions. */
+  html { font-size: 4.1667vw; background: transparent; }
+  body { margin: 0; background: transparent; color: #fff; font-family: Georgia, 'Times New Roman', serif; }
+  * { box-sizing: border-box; }
+  .panel { width: 100%; padding: 1.1rem 1.2rem 1.15rem; border-radius: 1rem; background: rgba(45, 2, 69, .92); border: .12rem solid #EAD272; }
+  .row { display: -webkit-flex; display: flex; -webkit-justify-content: space-between; justify-content: space-between; -webkit-align-items: baseline; align-items: baseline; }
+  .label { font-family: Arial, Helvetica, sans-serif; font-size: .82rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #EAD272; }
+  .amount { margin-top: .25rem; font-size: 2.5rem; font-weight: 700; line-height: 1.1; }
+  .goal { font-size: 1.15rem; color: #EAD272; }
+  .track { height: .85rem; margin: .55rem 0 .7rem; border-radius: 1rem; overflow: hidden; background: rgba(255, 255, 255, .18); }
+  .fill { width: 0; height: 100%; border-radius: 1rem; background: #EAD272; -webkit-transition: width .8s ease; transition: width .8s ease; }
+  .count { font-family: Arial, Helvetica, sans-serif; font-size: 1.05rem; font-weight: 700; }
+  .times { margin-top: .85rem; padding-top: .7rem; border-top: .06rem solid rgba(234, 210, 114, .45); }
+  .time { margin-top: .32rem; font-family: Arial, Helvetica, sans-serif; font-size: 1.1rem; font-weight: 700; }
+  .more { margin-top: .32rem; font-family: Arial, Helvetica, sans-serif; font-size: .9rem; color: #EAD272; }
+  .stale .amount, .stale .count, .stale .time { opacity: .55; }
+</style>
+</head>
+<body>
+<div class="panel" id="panel">
+  <div class="row"><span class="label" id="heading">Booked today</span></div>
+  <div class="row"><span class="amount" id="amount">&nbsp;</span><span class="goal" id="goal"></span></div>
+  <div class="track"><div class="fill" id="fill"></div></div>
+  <div class="count" id="count"></div>
+  <div class="times">
+    <div class="label">Open times</div>
+    <div id="times"></div>
+  </div>
+</div>
+<script>
+// TikTok LIVE Studio embeds an old browser engine: keep this plain ES5.
+(function () {
+  var url = {{ ("/live/overlay/" ~ token ~ "/data")|tojson }};
+  var lastSuccess = 0;
+  function byId(id) { return document.getElementById(id); }
+  function money(value) { return '$' + Math.round(value).toString().replace(/\B(?=(\d{3})+$)/g, ','); }
+  function addLine(parent, className, text) {
+    var line = document.createElement('div');
+    line.className = className;
+    line.textContent = text;
+    parent.appendChild(line);
+  }
+  function render(data) {
+    var i, list = byId('times'), extra = data.open_count - data.open_times.length;
+    byId('heading').textContent = data.booked_value >= data.goal ? 'Goal hit today' : 'Booked today';
+    byId('amount').textContent = money(data.booked_value);
+    byId('goal').textContent = 'of ' + money(data.goal);
+    byId('fill').style.width = Math.min(100, data.booked_value / data.goal * 100) + '%';
+    byId('count').textContent = data.booked_count + (data.booked_count === 1 ? ' appointment' : ' appointments') + ' booked';
+    list.textContent = '';
+    for (i = 0; i < data.open_times.length; i++) { addLine(list, 'time', data.open_times[i]); }
+    if (!data.open_count) { addLine(list, 'time', 'Fully booked'); }
+    if (extra > 0) { addLine(list, 'more', '+' + extra + ' more'); }
+  }
+  function poll() {
+    var request = new XMLHttpRequest();
+    request.open('GET', url + '?t=' + new Date().getTime(), true);
+    request.timeout = 7000;
+    request.onload = function () {
+      if (request.status !== 200) { return; }
+      try { render(JSON.parse(request.responseText)); } catch (e) { return; }
+      lastSuccess = new Date().getTime();
+      byId('panel').className = 'panel';
+    };
+    request.send();
+  }
+  setInterval(function () {
+    if (new Date().getTime() - lastSuccess > 45000) { byId('panel').className = 'panel stale'; }
+  }, 5000);
+  poll();
+  setInterval(poll, 8000);
+})();
+</script>
+</body>
+</html>
