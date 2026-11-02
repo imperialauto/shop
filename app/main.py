@@ -9,7 +9,7 @@ from app.config import SECRET_KEY
 from app.database import get_db, init_db
 from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user
-from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, appointments, live
+from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, appointments, dispatch, live
 from app.scheduler import start_scheduler
 
 import os
@@ -27,6 +27,8 @@ templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "t
 # Include routers
 app.include_router(customers.router, prefix="/customers", tags=["customers"])
 app.include_router(appointments.router, prefix="/appointments", tags=["appointments"])
+app.include_router(dispatch.router, prefix="/dispatch", tags=["dispatch"])
+app.include_router(dispatch.internal_router, prefix="/internal/dispatch", tags=["internal"])
 app.include_router(live.router, prefix="/live", tags=["live"])
 app.include_router(vehicles.router, prefix="/vehicles", tags=["vehicles"])
 app.include_router(repair_orders.router, prefix="/ro", tags=["repair_orders"])
@@ -57,12 +59,13 @@ def read_only_exempt(request: Request) -> bool:
     The Quo message mirror is exempt only for an authenticated internal caller:
     it appends to the communications log and has no outbound side effects, and
     blocking it silently drops customer conversations from their records.
+    Dispatch intake only records work for the owner and sends nothing.
     """
     if request.url.path == "/login":
         return True
     return (
         request.method == "POST"
-        and request.url.path == "/internal/messaging/communications"
+        and request.url.path in ("/internal/messaging/communications", "/internal/dispatch/intake")
         and internal_key_valid(request.headers.get("x-internal-key"))
     )
 
@@ -137,6 +140,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         "total_customers": total_customers,
         "total_ros": total_ros,
         "open_count": open_count,
+        **dispatch.dashboard_context(db),
+        "read_only": app.state.read_only,
     })
 
 

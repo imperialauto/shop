@@ -94,5 +94,22 @@ async function logCommunication({ phone, direction, body, externalId }) {
   }
 }
 
-module.exports = { configured, getContext, getContextStrict, getSigningLink, logCommunication };
+/**
+ * Best-effort hand-off of an inbound SMS to the Operations queue. Records work
+ * for the owner only; it never sends anything and never throws.
+ */
+async function dispatchIntake({ conversationId, messageId, phone, body }) {
+  if (!configured()) return { recorded: false, reason: "not_configured" };
+  try {
+    return await request("/internal/dispatch/intake", {
+      method: "POST",
+      body: JSON.stringify({ conversationId, messageId, phone, body }),
+    });
+  } catch (err) {
+    console.error("shopClient.dispatchIntake failed:", err.message);
+    return { recorded: false, reason: "error" };
+  }
+}
+
+module.exports = { configured, getContext, getContextStrict, getSigningLink, logCommunication, dispatchIntake };
 

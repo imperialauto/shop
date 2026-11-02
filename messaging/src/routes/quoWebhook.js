@@ -138,6 +138,15 @@ async function handleMessageEvent(event) {
     })
     .catch((err) => console.error("Failed to mirror inbound SMS to shop app:", err));
 
+  shopClient
+    .dispatchIntake({
+      conversationId: msg.conversationId,
+      messageId: msg.id,
+      phone: customerPhone,
+      body: msg.body || "",
+    })
+    .catch((err) => console.error("Failed to queue inbound SMS for Operations:", err.message));
+
   const existingPending = await prisma.draftReply.findFirst({
     where: { conversationId: conversation.id, status: "PENDING" },
   });
