@@ -160,10 +160,42 @@ def _label(db: Session, item: DispatchItem) -> str:
     return " - ".join(part for part in (name, vehicle) if part) or item.customer_phone
 
 
+def _snapshot_item(db: Session, item: DispatchItem) -> dict:
+    return {"id": item.id, "who": _label(db, item), "phone": item.customer_phone, "type": item.category,
+            "urgency": item.urgency, "lastMessage": item.summary[:200], "nextStep": item.proposed_action[:160],
+            "draftReply": (item.draft_reply or "")[:200] or None,
+            "updatedPhoenix": _utc(item.updated_at).astimezone(PHOENIX).strftime("%a %b %-d %-I:%M %p")}
+
+
+def _owner_snapshot(db: Session) -> dict:
+    now = datetime.now(PHOENIX)
+    def rows(status, limit):
+        found = db.query(DispatchItem).filter(DispatchItem.status == status).order_by(DispatchItem.updated_at.desc()).limit(limit).all()
+        return [_snapshot_item(db, item) for item in found]
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    booked = db.query(Appointment).filter(
+        Appointment.status.in_(("tentative", "confirmed")),
+        Appointment.starts_at >= start.astimezone(timezone.utc),
+        Appointment.starts_at < (start + timedelta(days=2)).astimezone(timezone.utc),
+    ).order_by(Appointment.starts_at).limit(20).all()
+    return {
+        "nowPhoenix": now.strftime("%a %b %-d %-I:%M %p"),
+        "shop": "Open Mon-Fri 11-7, Sat 12-5, closed Sunday. Suite 508.",
+        "waitingOnYou": rows("needs_owner", 15),
+        "otherOpenMessages": rows("routine", 10),
+        "approvedAwaitingFollowUp": rows("approved", 8),
+        "appBookingsTodayAndTomorrow": [
+            {"time": _utc(a.starts_at).astimezone(PHOENIX).strftime("%a %-I:%M %p"), "resource": a.resource_id, "status": a.status}
+            for a in booked
+        ],
+        "notInThisSnapshot": "Google Calendar events, invoices, and website forms.",
+    }
+
+
 def _owner_command(db: Session, message: IntakeMessage) -> dict:
     command = parse_owner_command(message.body)
     if command is None:
-        return {"ownerReply": "Reply YES 12 to send the draft, NO 12 to skip, EDIT 12 your text to send your version, or OPEN for the list."}
+        return {"ownerQuestion": message.body.strip()[:1000], "snapshot": _owner_snapshot(db)}
     decision, item_id = command[:2]
     waiting = _open_approvals(db)
     if decision == "list":

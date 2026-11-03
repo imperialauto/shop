@@ -414,6 +414,15 @@ class QueueWorkflowTests(unittest.TestCase):
         self.assertEqual([m for m in self.alert(late) if m["key"].startswith("nudge")], [])
         self.assertEqual([m for m in self.alert(datetime(2026, 11, 4, 21, 0, tzinfo=AZ)) if m["key"].startswith("nudge")], [])
 
+    def test_a_question_gets_a_read_only_snapshot(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            reply = self.owner_text("o1", "any task?")
+        self.assertEqual(reply["ownerQuestion"], "any task?")
+        self.assertEqual(reply["snapshot"]["waitingOnYou"][0]["id"], 1)
+        self.assertNotIn("customerReply", reply)
+        self.assertEqual(self.items()[0].status, "needs_owner")
+
     def test_owner_commands_parse(self):
         self.assertEqual(parse_owner_command("Yes 12"), ("approve", 12))
         self.assertEqual(parse_owner_command("no #7."), ("decline", 7))
