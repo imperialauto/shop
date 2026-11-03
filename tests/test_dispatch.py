@@ -152,6 +152,18 @@ class QueueWorkflowTests(unittest.TestCase):
         self.assertNotIn("year, make", item.proposed_action)
         self.assertIsNone(response["autoReply"])
 
+    def test_voicemail_from_the_door_is_urgent(self):
+        self.assertEqual(assess("Voicemail: Hi, I'm at your front door").urgency, "urgent")
+
+    def test_upcoming_calendar_event_warns_once(self):
+        now = datetime(2026, 11, 3, 9, 50, tzinfo=AZ)
+        event = {"start": datetime(2026, 11, 3, 11, 0, tzinfo=AZ), "allDay": False, "title": "Sample inspection", "location": ""}
+        with patch.object(dispatch.calendar_feed, "upcoming", return_value=[event]):
+            first = [m for m in self.alert(now) if m["key"].startswith("calendar")]
+            self.assertIn("11:00 AM: Sample inspection", first[0]["text"])
+            self.mark_sent(first[0]["key"])
+            self.assertEqual([m for m in self.alert(now) if m["key"].startswith("calendar")], [])
+
     def test_unmatched_message_is_never_silent(self):
         self.assertEqual(self.post("m1", "sounds good thank you").json()["status"], "needs_owner")
 

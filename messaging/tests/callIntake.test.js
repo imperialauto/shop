@@ -49,3 +49,14 @@ test("a missed call you already returned is not a lead", async () => {
   const texted = [{ direction: "outgoing", createdAt: later }];
   assert.equal(await missedCall({ quo: quo([missed]), phone: "+16025550100", since: "x", messages: texted }), null);
 });
+
+test("an automatic text does not hide a call when the customer keeps writing", async () => {
+  const call = { id: "AC1", direction: "incoming", status: "completed", duration: 0, createdAt: "2026-11-03T10:00:00Z" };
+  const quo = { listCalls: async () => ({ data: [call] }), getVoicemail: async () => ({ transcript: "I'm at the door" }) };
+  const messages = [
+    { direction: "outgoing", createdAt: "2026-11-03T10:01:00Z" },
+    { direction: "incoming", createdAt: "2026-11-03T10:02:00Z" },
+  ];
+  const found = await missedCall({ quo, phone: "+16025550100", since: "2026-11-03T09:00:00Z", messages });
+  assert.equal(found.id, "AC1");
+});
