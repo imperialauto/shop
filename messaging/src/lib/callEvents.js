@@ -3,6 +3,7 @@
 
 const crypto = require("crypto");
 const { generateDraftReply } = require("./generateDraftReply");
+const { lastConversationAt } = require("./callIntake");
 
 const MISSED_DELAY_MS = 30000; // lets the voicemail transcript land first
 const SEEN_LIMIT = 500;
@@ -81,6 +82,16 @@ function createCallEvents({ quo, shopClient, contacts, runPass, deliver, phoneNu
     await deliver();
   }
 
+  // A call you took or made counts as answering, the moment it ends.
+  async function closeIfTalked(callId) {
+    const call = await quo.getCall(callId);
+    const at = call && lastConversationAt([call]);
+    const phone = (call?.participants || []).find((p) => p !== ownNumber);
+    if (!at || !phone) return;
+    const { data: conversations = [] } = await quo.listConversations({ phoneNumbers: [phone], maxResults: 1 });
+    if (conversations[0]?.id) await shopClient.dispatchHandled({ conversationId: conversations[0].id, at });
+  }
+
   async function handle(body) {
     const event = parseEvent(body);
     if (!event.type || !event.callId) return;
@@ -90,6 +101,7 @@ function createCallEvents({ quo, shopClient, contacts, runPass, deliver, phoneNu
     if (seen.size > SEEN_LIMIT) seen.delete(seen.values().next().value);
     if (event.type === "call.summary.completed") return offerSummary(event.callId);
     if (event.type === "call.voicemail.completed") return pass();
+    if (event.type === "call.completed") await closeIfTalked(event.callId);
     if (event.type === "call.missed" || event.type === "call.completed") {
       schedule(() => pass(), MISSED_DELAY_MS);
     }

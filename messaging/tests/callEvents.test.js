@@ -111,3 +111,22 @@ for (const [name, summary] of [["empty", { summary: [] }], ["robocall", { summar
     assert.equal(log.length, 0);
   });
 }
+
+test("a call you took closes the item as soon as it ends", async () => {
+  const handled = [];
+  const events = createCallEvents({
+    quo: { getCall: async () => ({ direction: "outgoing", duration: 90, completedAt: "2026-11-03T22:30:00Z", participants: ["+16025550100"] }),
+      listConversations: async () => ({ data: [{ id: "CNfixture" }] }) },
+    shopClient: { dispatchHandled: async (h) => { handled.push(h); } },
+    runPass: async () => {}, deliver: async () => {}, schedule: () => {},
+  });
+  await events.handle({ id: "EV9", type: "call.completed", data: { object: { id: "AC9" } } });
+  assert.deepEqual(handled, [{ conversationId: "CNfixture", at: "2026-11-03T22:30:00Z" }]);
+});
+
+test("an AI call or an unanswered call does not count as you answering", async () => {
+  const { lastConversationAt } = require("../src/lib/callIntake");
+  assert.equal(lastConversationAt([{ aiHandled: true, duration: 60, answeredAt: "x", direction: "incoming" }]), null);
+  assert.equal(lastConversationAt([{ duration: 0, direction: "incoming" }]), null);
+  assert.equal(lastConversationAt([{ duration: 30, direction: "incoming" }]), null);
+});
