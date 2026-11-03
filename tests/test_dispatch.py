@@ -5,7 +5,7 @@ stays empty for test_recovery's startup assertions.
 """
 import json
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from unittest.mock import patch
 
@@ -477,7 +477,7 @@ class QueueWorkflowTests(unittest.TestCase):
     def set_updated(self, when, status=None):
         with self.Session() as db:
             row = db.query(DispatchItem).one()
-            row.updated_at = when
+            row.updated_at = when.astimezone(timezone.utc)
             row.status = status or row.status
             db.commit()
 
@@ -541,7 +541,7 @@ class QueueWorkflowTests(unittest.TestCase):
         with self.Session() as db:
             row = db.query(DispatchAudit).filter(DispatchAudit.action == "follow_up_due").one()
             row.detail = (now + timedelta(hours=2)).isoformat()
-            row.created_at = now
+            row.created_at = now.astimezone(timezone.utc)
             db.commit()
         due = lambda when: [m for m in self.alert(when) if m["key"].startswith(("urgent", "nudges"))]
         self.assertEqual(due(now + timedelta(minutes=30)), [])
@@ -549,7 +549,7 @@ class QueueWorkflowTests(unittest.TestCase):
 
     def test_a_promise_comes_back_as_a_reminder(self):
         self.post("m1", "2013 Ford Fusion fuel leak")
-        self.draft(1, "m1", "I'll check on the cost and get back to you shortly.")
+        self.draft(1, "m1", body="I'll check on the cost and get back to you shortly.")
         self.mark_sent(self.alert()[0]["key"])
         with patch.object(dispatch, "OWNER_PHONE", OWNER):
             self.assertIn("customerReply", self.owner_text("o1", "YES 1"))
@@ -557,7 +557,7 @@ class QueueWorkflowTests(unittest.TestCase):
             due = db.query(DispatchAudit).filter(DispatchAudit.action == "follow_up_due").one()
             self.assertIsNotNone(due.detail)
             due.detail = datetime(2026, 11, 3, 12, 0, tzinfo=AZ).isoformat()
-            due.created_at = datetime(2026, 11, 3, 10, 0, tzinfo=AZ)
+            due.created_at = datetime(2026, 11, 3, 10, 0, tzinfo=AZ).astimezone(timezone.utc)
             db.commit()
         self.set_updated(datetime(2026, 11, 3, 10, 0, tzinfo=AZ))
         due = [m for m in self.alert(datetime(2026, 11, 3, 12, 5, tzinfo=AZ)) if m["key"].startswith("urgent")]
@@ -565,7 +565,7 @@ class QueueWorkflowTests(unittest.TestCase):
 
     def test_a_plain_answer_needs_no_follow_up(self):
         self.post("m1", "How much for brakes on a 2011 Ford Focus?")
-        self.draft(1, "m1", "A basic diagnostic screening is $75.")
+        self.draft(1, "m1", body="A basic diagnostic screening is $75.")
         self.mark_sent(self.alert(datetime.now(AZ) + timedelta(seconds=40))[0]["key"])
         with patch.object(dispatch, "OWNER_PHONE", OWNER):
             self.owner_text("o1", "YES 1")
