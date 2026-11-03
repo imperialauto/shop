@@ -6,6 +6,7 @@ const { generateDraftReply } = require("./generateDraftReply");
 
 const MISSED_DELAY_MS = 30000; // lets the voicemail transcript land first
 const SEEN_LIMIT = 500;
+const SPAM = /automated (\w+ ){0,3}(message|call|recording)|robocall|telemarket|business (loan|funding)|loan offer|extended warranty|google (business|listing)|business listing/i;
 
 function tokenMatches(given, expected) {
   if (!given || !expected) return false;
@@ -33,7 +34,7 @@ function summaryBody(summary) {
   return `AI answered a call. ${parts.filter(Boolean).join(" ")}`.slice(0, 3500);
 }
 
-function createCallEvents({ quo, shopClient, contacts, runPass, deliver, phoneNumberId, draft = generateDraftReply, schedule = setTimeout }) {
+function createCallEvents({ quo, shopClient, contacts, runPass, deliver, phoneNumberId, draft = generateDraftReply, schedule = setTimeout, ownNumber = process.env.QUO_DEFAULT_FROM_NUMBER, skip = new Set() }) {
   const seen = new Set();
   let running = false;
   let again = false;
@@ -62,10 +63,10 @@ function createCallEvents({ quo, shopClient, contacts, runPass, deliver, phoneNu
     if (!call || call.direction !== "incoming") return;
     if (phoneNumberId && call.phoneNumberId && call.phoneNumberId !== phoneNumberId) return;
     if (!call.aiHandled) return; // calls that reached a person or voicemail have their own path
-    const phone = (call.participants || [])[0];
-    if (!phone) return;
+    const phone = (call.participants || []).find((p) => p !== ownNumber);
+    if (!phone || skip.has(phone.replace(/\D/g, "").slice(-10))) return;
     const summary = await quo.getCallSummary(callId);
-    if (!summary) return;
+    if (!textList(summary?.summary) || SPAM.test(textList(summary.summary))) return;
     const { data: conversations = [] } = await quo.listConversations({ phoneNumbers: [phone], maxResults: 1 });
     const conversationId = conversations[0]?.id || `CALL${phone.replace(/\D/g, "")}`;
     const body = summaryBody(summary);

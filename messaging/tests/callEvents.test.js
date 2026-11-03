@@ -84,3 +84,30 @@ test("the webhook is only created once", async () => {
   assert.equal(await ensureCallWebhook({ quo, url: "https://x/z" }), "created");
   assert.equal(made.length, 1);
 });
+
+test("the shop's own number is never treated as the caller", async () => {
+  const { events, log } = fixture({ participants: ["+14809144144", "+16025550100"] });
+  process.env.QUO_DEFAULT_FROM_NUMBER = "+14809144144";
+  const fresh = createCallEvents({
+    quo: { getCall: async () => ({ direction: "incoming", aiHandled: true, participants: ["+14809144144", "+16025550100"] }),
+      getCallSummary: async () => ({ summary: ["Wants brakes"] }), listConversations: async () => ({ data: [] }) },
+    shopClient: { dispatchIntake: async (m) => { log.intake.push(m); return {}; } },
+    runPass: async () => {}, deliver: async () => {},
+  });
+  await fresh.handle(summaryEvent);
+  assert.equal(log.intake[0].phone, "+16025550100");
+  void events;
+});
+
+for (const [name, summary] of [["empty", { summary: [] }], ["robocall", { summary: ["The caller delivered an automated financial loan message."] }]]) {
+  test(`a ${name} summary raises no alert`, async () => {
+    const log = [];
+    const events = createCallEvents({
+      quo: { getCall: async () => ({ direction: "incoming", aiHandled: true, participants: ["+16025550100"] }), getCallSummary: async () => summary },
+      shopClient: { dispatchIntake: async (m) => { log.push(m); return {}; } },
+      runPass: async () => {}, deliver: async () => {},
+    });
+    await events.handle(summaryEvent);
+    assert.equal(log.length, 0);
+  });
+}

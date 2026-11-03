@@ -166,9 +166,25 @@ OWNER_COMMAND = re.compile(rf"^\s*({APPROVE_WORDS}|{DECLINE_WORDS})\s*#?\s*(\d+)
 CASUAL_COMMAND = re.compile(rf"^\s*({CASUAL_APPROVE}|{CASUAL_DECLINE})\s*#?\s*(\d+)\s*[.!]?\s*$", re.I)
 
 
+OWNER_DONE = re.compile(r"^\s*(?:done|handled|closed?)\s+((?:#?\d+[\s,]*)+)[.!]?\s*$", re.I)
+OWNER_LATER = re.compile(r"^\s*(?:later|snooze)\s*#?\s*(\d+)(?:\s+(\d+)\s*(h|hr|hrs|hour|hours|m|min|mins|minutes)?)?\s*$", re.I)
+PROMISE = re.compile(r"\b(get back to you|follow up|i'?ll (check|look|find out|let you know|confirm|call|text)|call you back|shortly)\b", re.I)
+
+
 def parse_owner_command(body: str):
-    """("approve"|"decline", id or None), ("list", None), ("edit", id, text), or None."""
+    """("approve"|"decline", id or None), ("list", None), ("older", None), ("edit", id, text),
+    ("done", [ids]), ("later", id, minutes), or None."""
     text = (body or "").strip()
+    finished = OWNER_DONE.match(text)
+    if finished:
+        return "done", [int(n) for n in re.findall(r"\d+", finished.group(1))]
+    later = OWNER_LATER.match(text)
+    if later:
+        amount = int(later.group(2) or 2)
+        minutes = amount if (later.group(3) or "h").lower().startswith("m") else amount * 60
+        return "later", int(later.group(1)), min(minutes, 7 * 24 * 60)
+    if re.fullmatch(r"old(er)?\??", text, re.I):
+        return "older", None
     edited = OWNER_EDIT.match(text)
     if edited:
         return "edit", int(edited.group(1)), edited.group(2).strip()
