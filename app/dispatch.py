@@ -43,7 +43,7 @@ TOW = re.compile(r"\b(tow\w*|flatbed|roadside)\b", re.I)
 SCHEDULE = re.compile(r"\b(appointment|schedule\w*|reschedule\w*|book\w*|available|availability|what time|come in|drop (it )?off)\b", re.I)
 PRICE = re.compile(r"\b(how much|price|pricing|quote|estimate|cost)\b", re.I)
 INFO = re.compile(r"\b(your hours|what are (your|the) hours|hours\?|what time do you|when do you (open|close)|are you open|your address|what'?s the address|where are you|where'?s the shop|your location)\b", re.I)
-ARRIVAL = re.compile(r"\b(i'?m here|i am here|we'?re here|we are here|just (got here|arrived|pulled up)|pulled up|i'?m outside|anyone there|are you (there|here|coming))\b", re.I)
+ARRIVAL = re.compile(r"\b(i'?m here|i am here|we'?re here|we are here|just (got here|arrived|pulled up)|pulled up|i'?m outside|anyone there|(at|by) (your|the) (front )?(door|shop|gate)|nobody(?:'?s| is) here|no one(?:'?s| is) here|are you (there|here|coming))\b", re.I)
 WAITING = re.compile(r"^\W*(\?+|hello\W*|hey\W*|hi\W*)$", re.I)
 # Phone tapbacks arrive as text, such as: 👍 to “See you then!”
 REACTION = re.compile(r"^[\s\u200b]*(?:reacted\s+)?[^\w\s]{1,8}[\s\u200b]*to[\s\u200b]+[“\"]|^[\s\u200b]*(?:liked|loved|disliked|laughed at|emphasized|questioned)\s+[“\"]", re.I)

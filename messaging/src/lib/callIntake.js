@@ -22,7 +22,10 @@ function callBody(voicemail) {
 function reachedAfter(call, calls, messages) {
   const missedAt = new Date(call.createdAt);
   const talked = calls.some((c) => c.id !== call.id && new Date(c.createdAt) > missedAt && !isMissed(c) && (c.duration || c.answeredAt));
-  const texted = messages.some((m) => /^out/i.test(m.direction || "") && new Date(m.createdAt) > missedAt);
+  // A later text only counts if the customer has not written again since.
+  const after = messages.filter((m) => new Date(m.createdAt) > missedAt)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const texted = after.length > 0 && /^out/i.test(after[0].direction || "");
   return talked || texted;
 }
 

@@ -341,6 +341,7 @@ NUDGE_AFTER = {"needs_owner": timedelta(hours=2), "approved": timedelta(hours=24
 TICK_LIMIT = 10
 DAILY_HOUR = 10
 DRAFT_GRACE = timedelta(seconds=90)
+APPOINTMENT_WARNING = timedelta(minutes=75)
 NUDGE_HOURS = range(15, 19)  # the 10 AM summary covers the morning
 
 
@@ -403,6 +404,11 @@ def due_owner_messages(db: Session, now: datetime) -> list[dict]:
         if stale:
             rows = [f"#{i.id} {_label(db, i)}: {_next_step(db, i)[:80]}" for i in stale[:6]]
             due.append((f"nudges:{now.date()}", "owner_nudge", None, f"Still open ({len(stale)}):\n" + "\n".join(rows)))
+    for event in calendar_feed.upcoming(now, days=1) or []:
+        lead = event["start"] - now
+        if not event["allDay"] and timedelta(0) < lead <= APPOINTMENT_WARNING:
+            due.append((f"calendar:{event['start'].isoformat()}:{event['title'][:40]}", "owner_calendar", None,
+                        f"Coming up: {calendar_feed.describe(event, False)}. Be at the shop before they arrive."))
     if now.weekday() != 6 and DAILY_HOUR <= now.hour < DAILY_HOUR + 3:
         due.append((f"daily:{now.date()}", "owner_daily", None, _daily_text(db, now)))
 
