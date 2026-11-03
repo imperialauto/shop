@@ -143,7 +143,14 @@ def auto_reply(result: Assessment, has_vehicle: bool, modes: dict[str, str]):
 
 
 OWNER_EDIT = re.compile(r"^\s*edit\s*#?\s*(\d+)\s+(.+)$", re.I | re.S)
-OWNER_COMMAND = re.compile(r"^\s*(yes|y|approve|approved|no|n|decline)\s*#?\s*(\d+)?\s*[.!]?\s*$", re.I)
+# Firm words may stand alone when one approval is open. Casual words also end
+# ordinary conversation ("ok thanks"), so they only act alongside an item number.
+APPROVE_WORDS = r"yes(?: please)?|y|approve|approved|send(?: it)?|go ahead|do it"
+DECLINE_WORDS = r"no|n|decline|declined|skip(?: it)?|don'?t send(?: it)?|do not send(?: it)?"
+CASUAL_APPROVE = r"ok|okay|sure|yep|yeah|looks good"
+CASUAL_DECLINE = r"nope|cancel"
+OWNER_COMMAND = re.compile(rf"^\s*({APPROVE_WORDS}|{DECLINE_WORDS})\s*#?\s*(\d+)?\s*[.!]?\s*$", re.I)
+CASUAL_COMMAND = re.compile(rf"^\s*({CASUAL_APPROVE}|{CASUAL_DECLINE})\s*#?\s*(\d+)\s*[.!]?\s*$", re.I)
 
 
 def parse_owner_command(body: str):
@@ -154,10 +161,11 @@ def parse_owner_command(body: str):
         return "edit", int(edited.group(1)), edited.group(2).strip()
     if re.fullmatch(r"(open|list|queue)\??", text, re.I):
         return "list", None
-    match = OWNER_COMMAND.match(text)
+    match = OWNER_COMMAND.match(text) or CASUAL_COMMAND.match(text)
     if not match:
         return None
-    decision = "approve" if match.group(1).lower().startswith(("y", "a")) else "decline"
+    declined = re.fullmatch(rf"{DECLINE_WORDS}|{CASUAL_DECLINE}", match.group(1), re.I)
+    decision = "decline" if declined else "approve"
     return decision, int(match.group(2)) if match.group(2) else None
 
 

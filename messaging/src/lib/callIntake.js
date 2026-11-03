@@ -1,7 +1,7 @@
 // Turns missed calls and voicemails into queue items, and gives drafts the
 // recent call context for that same phone number. Reads Quo only.
 
-const NOT_LEADS = /google (business|listing)|business listing|business insurance|past due|delinquent|your (car'?s )?extended warranty/i;
+const NOT_LEADS = /google (business|listing)|business listing|business insurance|past due|delinquent|your (car'?s )?extended warranty|your (requested )?(print|order|prescription|package)\b.{0,60}ready for pickup/i;
 
 function isMissed(call) {
   if (call.direction !== "incoming") return false;
