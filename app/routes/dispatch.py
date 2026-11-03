@@ -35,6 +35,12 @@ class IntakeMessage(BaseModel):
     recovery: bool = False  # replayed by the catch-up job: never reply or act on it
 
 
+class DraftInput(BaseModel):
+    conversationId: str = Field(min_length=1, max_length=64)
+    messageId: str = Field(min_length=1, max_length=128)
+    body: str = Field(min_length=1, max_length=2000)
+
+
 class OutboundResult(BaseModel):
     key: str = Field(min_length=1, max_length=160)
     status: str = Field(pattern="^(sent|failed|skipped)$")
@@ -81,6 +87,7 @@ def _record(db: Session, message: IntakeMessage, result) -> DispatchItem:
     item.vehicle_id = vehicle.id if vehicle else item.vehicle_id
     item.vehicle_text = result.vehicle_text or item.vehicle_text
     item.summary = message.body.strip()[:SUMMARY_LIMIT]
+    item.draft_reply = None  # any earlier draft answered an older message
     item.proposed_action = propose(item.category, item.urgency, list(result.missing))
     item.approval_reasons = json.dumps(reasons)
     item.status = "needs_owner" if needs_owner or item.urgency == "safety" else "routine"
@@ -135,40 +142,53 @@ def _open_approvals(db: Session) -> list[DispatchItem]:
     return db.query(DispatchItem).filter(DispatchItem.status == "needs_owner").order_by(DispatchItem.id).all()
 
 
-def _label(item: DispatchItem) -> str:
-    return item.vehicle_text or item.customer_phone
+def _label(db: Session, item: DispatchItem) -> str:
+    customer = db.get(Customer, item.customer_id) if item.customer_id else None
+    name = f"{customer.first_name or ''} {customer.last_name or ''}".strip() if customer else ""
+    vehicle = item.vehicle_text
+    if not vehicle and item.vehicle_id:
+        row = db.get(Vehicle, item.vehicle_id)
+        vehicle = f"{row.year or ''} {row.make or ''} {row.model or ''}".strip() if row else None
+    return " - ".join(part for part in (name, vehicle) if part) or item.customer_phone
 
 
-def _owner_command(db: Session, message: IntakeMessage) -> str:
+def _owner_command(db: Session, message: IntakeMessage) -> dict:
     command = parse_owner_command(message.body)
     if command is None:
-        return "Reply YES 12 or NO 12 with the item number, or OPEN for the list."
-    decision, item_id = command
+        return {"ownerReply": "Reply YES 12 to send the draft, NO 12 to skip, EDIT 12 your text to send your version, or OPEN for the list."}
+    decision, item_id = command[:2]
     waiting = _open_approvals(db)
     if decision == "list":
         if not waiting:
-            return "Nothing is waiting on you."
-        return "\n".join(f"#{i.id} {_label(i)}: {i.category}" for i in waiting[:8])
+            return {"ownerReply": "Nothing is waiting on you."}
+        return {"ownerReply": "\n".join(f"#{i.id} {_label(db, i)}: {i.category}" for i in waiting[:8])}
     if item_id is None:
         if len(waiting) != 1:
-            return f"{len(waiting)} approvals are open. Reply with a number, like YES 12."
+            return {"ownerReply": f"{len(waiting)} approvals are open. Reply with a number, like YES 12."}
         item_id = waiting[0].id
     item = db.query(DispatchItem).filter(DispatchItem.id == item_id).with_for_update().first()
     if item is None or item.status not in OPEN_STATUSES:
-        return f"#{item_id} is not open."
+        return {"ownerReply": f"#{item_id} is not open."}
     alerted = db.query(DispatchOutbound).filter(
         DispatchOutbound.dedupe_key == f"alert:{item.id}:{item.last_message_id}",
         DispatchOutbound.status == "sent",
     ).first()
     if alerted is None:
-        return f"#{item.id} has a newer customer message. Check the latest text before deciding."
-    item.status = "approved" if decision == "approve" else "declined"
+        return {"ownerReply": f"#{item.id} has a newer customer message. Check the latest text before deciding."}
+    text = command[2] if decision == "edit" else item.draft_reply if decision == "approve" else None
+    item.status = "declined" if decision == "decline" else "approved"
     item.decided_at = item.updated_at = datetime.now().astimezone()
     audit(db, item.id, "owner_sms", f"owner_{decision}")
     db.commit()
-    if decision == "approve":
-        return f"Approved #{item.id}. Next: {item.proposed_action}"[:300]
-    return f"Declined #{item.id}."
+    if decision == "decline":
+        return {"ownerReply": f"Skipped #{item.id}. Nothing was sent."}
+    if not text:
+        return {"ownerReply": f"Approved #{item.id}. No draft to send, so reply in Quo. Next: {item.proposed_action}"[:300]}
+    key = f"reply:{item.id}:{item.last_message_id}"
+    if not reserve(db, key, "customer", item.id):
+        return {"ownerReply": f"#{item.id} was already sent."}
+    return {"customerReply": {"key": key, "itemId": item.id, "phone": item.customer_phone, "text": text,
+                              "messageId": item.last_message_id, "conversationId": item.quo_conversation_id}}
 
 
 @internal_router.post("/intake")
@@ -184,7 +204,7 @@ def intake(message: IntakeMessage, db: Session = Depends(get_db), _auth: bool = 
         except IntegrityError:
             db.rollback()
             return {"recorded": False, "duplicate": True, "owner": True}
-        return {"recorded": True, "owner": True, "ownerReply": _owner_command(db, message)}
+        return {"recorded": True, "owner": True, **_owner_command(db, message)}
     result = assess(message.body)
     for attempt in (1, 2):  # a concurrent delivery can win the unique index once
         try:
@@ -202,13 +222,21 @@ def intake(message: IntakeMessage, db: Session = Depends(get_db), _auth: bool = 
 NUDGE_AFTER = {"needs_owner": timedelta(hours=2), "approved": timedelta(hours=24)}
 TICK_LIMIT = 10
 DAILY_HOUR = 10
+DRAFT_GRACE = timedelta(seconds=90)
 NUDGE_HOURS = range(10, 19)
 
 
-def _alert_text(item: DispatchItem) -> str:
+def _alert_text(db: Session, item: DispatchItem) -> str:
     head = "URGENT" if item.urgency != "normal" else "Approval"
-    summary = " ".join(item.summary.split())[:140]
-    return f"{head} #{item.id}: {_label(item)}\n{summary}\nNext: {item.proposed_action[:140]}\nReply YES {item.id} or NO {item.id}"
+    summary = " ".join(item.summary.split())[:160]
+    lines = [f"{head} #{item.id}: {_label(db, item)}", f"Customer said: {summary}"]
+    if item.draft_reply:
+        lines.append(f"Draft reply: {item.draft_reply[:320]}")
+        lines.append(f"YES {item.id} sends it. NO {item.id} skips. EDIT {item.id} your text sends yours.")
+    else:
+        lines.append(f"Next: {item.proposed_action[:140]}")
+        lines.append(f"Reply YES {item.id} or NO {item.id}")
+    return "\n".join(lines)
 
 
 def _daily_text(db: Session, now: datetime) -> str:
@@ -228,7 +256,7 @@ def _daily_text(db: Session, now: datetime) -> str:
         f"Waiting on customers: {customers}",
         f"Other open messages: {routine}",
     ]
-    lines += [f"#{i.id} {_label(i)}" for i in waiting[:4]]
+    lines += [f"#{i.id} {_label(db, i)}" for i in waiting[:4]]
     return "\n".join(lines)
 
 
@@ -240,13 +268,17 @@ def due_owner_messages(db: Session, now: datetime) -> list[dict]:
     due: list[tuple[str, str, int | None, str]] = []
     for item in db.query(DispatchItem).filter(DispatchItem.status.in_(OPEN_STATUSES)).all():
         if item.status == "needs_owner" or item.urgency != "normal":
-            due.append((f"alert:{item.id}:{item.last_message_id}", "owner_alert", item.id, _alert_text(item)))
+            # Give the draft a moment to arrive, except on safety issues.
+            young = now - _utc(item.updated_at).astimezone(PHOENIX) < DRAFT_GRACE
+            if item.draft_reply is None and item.urgency != "safety" and young:
+                continue
+            due.append((f"alert:{item.id}:{item.last_message_id}", "owner_alert", item.id, _alert_text(db, item)))
     if now.hour in NUDGE_HOURS:
         for item in db.query(DispatchItem).filter(DispatchItem.status.in_(tuple(NUDGE_AFTER))).all():
             if now - _utc(item.updated_at).astimezone(PHOENIX) >= NUDGE_AFTER[item.status]:
                 what = "Still waiting on you" if item.status == "needs_owner" else "No customer follow-up yet"
                 due.append((f"nudge:{item.id}:{now.date()}", "owner_nudge", item.id,
-                            f"{what}: #{item.id} {_label(item)}. {item.proposed_action[:120]}"))
+                            f"{what}: #{item.id} {_label(db, item)}. {item.proposed_action[:120]}"))
     if now.weekday() != 6 and DAILY_HOUR <= now.hour < DAILY_HOUR + 3:
         due.append((f"daily:{now.date()}", "owner_daily", None, _daily_text(db, now)))
 
@@ -270,6 +302,22 @@ def due_owner_messages(db: Session, now: datetime) -> list[dict]:
 @internal_router.post("/tick")
 def tick(db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
     return {"ownerPhone": OWNER_PHONE or None, "messages": due_owner_messages(db, datetime.now(timezone.utc))}
+
+
+@internal_router.post("/draft")
+def save_draft(draft: DraftInput, db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
+    """Keeps a draft only if it answers the conversation's latest message."""
+    item = db.query(DispatchItem).filter(
+        DispatchItem.quo_conversation_id == draft.conversationId,
+        DispatchItem.status.in_(OPEN_STATUSES),
+        DispatchItem.last_message_id == draft.messageId,
+    ).first()
+    if item is None:
+        return {"recorded": False}
+    item.draft_reply = draft.body.strip()
+    audit(db, item.id, "system", "draft_saved")
+    db.commit()
+    return {"recorded": True, "itemId": item.id}
 
 
 @internal_router.post("/outbound")

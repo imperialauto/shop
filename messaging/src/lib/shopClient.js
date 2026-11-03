@@ -124,6 +124,18 @@ async function dispatchSync({ source, ok, detail }) {
   }
 }
 
+async function dispatchDraft({ conversationId, messageId, body }) {
+  try {
+    return await request("/internal/dispatch/draft", {
+      method: "POST",
+      body: JSON.stringify({ conversationId, messageId, body }),
+    });
+  } catch (err) {
+    console.error("shopClient.dispatchDraft failed:", err.message);
+    return { recorded: false };
+  }
+}
+
 async function dispatchTick() {
   return request("/internal/dispatch/tick", { method: "POST", body: "{}" });
 }
@@ -139,6 +151,6 @@ async function dispatchOutbound({ key, status }) {
 
 module.exports = {
   configured, getContext, getContextStrict, getSigningLink, logCommunication,
-  dispatchIntake, dispatchSync, dispatchTick, dispatchOutbound,
+  dispatchIntake, dispatchSync, dispatchTick, dispatchOutbound, dispatchDraft,
 };
 

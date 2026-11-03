@@ -23,6 +23,7 @@ class DispatchItem(Base):
     urgency = Column(String(12), nullable=False, default="normal")
     summary = Column(Text, nullable=False, default="")
     proposed_action = Column(Text, nullable=False, default="")
+    draft_reply = Column(Text)
     approval_reasons = Column(Text, nullable=False, default="[]")
     status = Column(String(16), nullable=False, default="routine")
     last_message_id = Column(String(128), nullable=False)
