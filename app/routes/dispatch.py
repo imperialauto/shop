@@ -327,7 +327,7 @@ def _follow_ups(db: Session, now: datetime) -> list[tuple[DispatchItem, str]]:
             if remind is not None:
                 found.append((item, "promised"))
         elif remind is not None or age >= (URGENT_REMINDER if item.urgency != "normal" else NORMAL_REMINDER):
-            found.append((item, "urgent" if item.urgency != "normal" else "waiting"))
+            found.append((item, "urgent" if item.urgency != "normal" and age < URGENT_WINDOW else "waiting"))
     return sorted(found, key=lambda row: (row[1] != "urgent", row[0].updated_at))
 
 
@@ -442,6 +442,8 @@ PROMISE_AFTER = timedelta(hours=2)
 URGENT_REMINDER = timedelta(minutes=20)
 NORMAL_REMINDER = timedelta(hours=2)
 STALE_AFTER = timedelta(days=3)
+URGENT_WINDOW = timedelta(hours=4)  # after this an item moves to the regular digests
+NO_REPLY = "NO_REPLY_NEEDED"
 DIGEST_HOURS = (13, 15, 17)
 QUIET = timedelta(seconds=30)  # lets a burst of customer texts become one alert
 TICK_LIMIT = 10
@@ -455,6 +457,9 @@ def _alert_text(db: Session, item: DispatchItem) -> str:
     head = "URGENT" if item.urgency != "normal" else "Approval"
     summary = " ".join(item.summary.split())[:160]
     lines = [f"{head} #{item.id}: {_label(db, item)}", f"Customer said: {summary}"]
+    if item.draft_reply == "":
+        return "\n".join([f"FYI #{item.id}: {_label(db, item)}", f"Customer said: {summary}",
+                          f"No reply needed. EDIT {item.id} your text if you want to answer."])
     if item.draft_reply:
         lines.append(f"Draft reply: {item.draft_reply[:320]}")
         lines.append(f"YES {item.id} sends it. NO {item.id} skips. EDIT {item.id} your text sends yours.")
@@ -498,7 +503,7 @@ def due_owner_messages(db: Session, now: datetime) -> list[dict]:
     now = now.astimezone(PHOENIX)
     due: list[tuple[str, str, int | None, str]] = []
     for item in db.query(DispatchItem).filter(DispatchItem.status.in_(OPEN_STATUSES)).all():
-        if item.status == "needs_owner" or item.urgency != "normal":
+        if item.status == "needs_owner" or item.urgency != "normal" or item.draft_reply == "":
             # Give the draft a moment to arrive, except on safety issues.
             waited = now - _utc(item.updated_at).astimezone(PHOENIX)
             if item.draft_reply is None and item.urgency != "safety" and waited < DRAFT_GRACE:
@@ -561,7 +566,14 @@ def save_draft(draft: DraftInput, db: Session = Depends(get_db), _auth: bool = D
     ).first()
     if item is None:
         return {"recorded": False}
-    item.draft_reply = draft.body.strip()
+    reasons = json.loads(item.approval_reasons or "[]")
+    if draft.body.strip() == NO_REPLY:
+        if item.urgency != "normal" or reasons != ["customer_reply"]:
+            return {"recorded": False}  # anything sensitive stays with the owner
+        item.draft_reply = ""  # an empty draft means no reply is needed
+        item.status = "routine"
+    else:
+        item.draft_reply = draft.body.strip()
     audit(db, item.id, "system", "draft_saved")
     db.commit()
     return {"recorded": True, "itemId": item.id}

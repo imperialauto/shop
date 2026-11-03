@@ -60,3 +60,20 @@ test("an automatic text does not hide a call when the customer keeps writing", a
   const found = await missedCall({ quo, phone: "+16025550100", since: "2026-11-03T09:00:00Z", messages });
   assert.equal(found.id, "AC1");
 });
+
+test("draft context keeps speakers, time order and the end of a long call", async () => {
+  const long = Array.from({ length: 200 }, (_, i) => ({ identifier: "+14809144144", content: `early line ${i}` }));
+  const dialogue = [...long, { identifier: "+16025550100", content: "I can be there in fifteen minutes" }];
+  const quo = {
+    listCalls: async () => ({ data: [
+      { id: "AC2", createdAt: "2026-11-03T12:00:00Z" },
+      { id: "AC1", createdAt: "2026-11-03T10:00:00Z" },
+    ] }),
+    getVoicemail: async () => null,
+    getTranscript: async (id) => ({ dialogue: id === "AC2" ? dialogue : [{ identifier: "+14809144144", content: "first call" }] }),
+  };
+  const text = await callContext({ quo, phone: "+16025550100" });
+  assert.ok(text.indexOf("first call") < text.indexOf("Customer: I can be there in fifteen minutes"));
+  assert.match(text, /Customer: I can be there in fifteen minutes/);
+  assert.doesNotMatch(text, /early line 0\n/);
+});

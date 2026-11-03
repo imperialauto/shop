@@ -60,3 +60,8 @@ if (process.env.OWNER_TEXTS_ENABLED === "true") {
   tick();
   setInterval(tick, 5 * 60 * 1000);
 }
+
+// Off unless explicitly enabled. Logs drafts for made-up conversations; sends nothing.
+if (process.env.DRAFT_SELF_CHECK === "true") {
+  require("./src/lib/draftSelfCheck").runDraftSelfCheck().catch((err) => console.error("Draft check failed:", err.message));
+}

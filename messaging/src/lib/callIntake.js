@@ -1,6 +1,8 @@
 // Turns missed calls and voicemails into queue items, and gives drafts the
 // recent call context for that same phone number. Reads Quo only.
 
+const CALL_CONTEXT_CHARS = 2500;
+
 const NOT_LEADS = /google (business|listing)|business listing|business insurance|past due|delinquent|your (car'?s )?extended warranty|your (requested )?(print|order|prescription|package)\b.{0,60}ready for pickup/i;
 
 function isMissed(call) {
@@ -47,16 +49,25 @@ function lastConversationAt(calls = []) {
   return times[times.length - 1] || null;
 }
 
+function spokenLines(dialogue = [], customerPhone) {
+  return dialogue
+    .filter((line) => line.content)
+    .map((line) => `${line.identifier === customerPhone ? "Customer" : "Shop"}: ${line.content}`)
+    .join("\n");
+}
+
 async function callContext({ quo, phone, phoneNumberId }) {
   try {
     const { data = [] } = await quo.listCalls({ phoneNumberId, participants: [phone], maxResults: 3 });
+    const calls = [...data].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
     const lines = [];
-    for (const call of data) {
+    for (const call of calls) {
       const voicemail = await quo.getVoicemail(call.id).catch(() => null);
-      if (voicemail?.transcript) lines.push(`Voicemail ${call.createdAt}: ${voicemail.transcript}`);
+      if (voicemail?.transcript) lines.push(`Voicemail at ${call.createdAt}: ${voicemail.transcript}`);
       const transcript = await quo.getTranscript(call.id).catch(() => null);
-      const spoken = (transcript?.dialogue || []).map((d) => d.content).filter(Boolean).join(" ");
-      if (spoken) lines.push(`Call ${call.createdAt}: ${spoken.slice(0, 1200)}`);
+      const spoken = spokenLines(transcript?.dialogue, phone);
+      // Keep the end of the call: that is where plans get settled.
+      if (spoken) lines.push(`Phone call at ${call.createdAt}${call.aiHandled ? " (AI answered)" : ""}:\n${spoken.slice(-CALL_CONTEXT_CHARS)}`);
     }
     return lines.join("\n") || null;
   } catch (err) {
@@ -65,4 +76,4 @@ async function callContext({ quo, phone, phoneNumberId }) {
   }
 }
 
-module.exports = { lastConversationAt, missedCall, callContext, isMissed };
+module.exports = { spokenLines, lastConversationAt, missedCall, callContext, isMissed };

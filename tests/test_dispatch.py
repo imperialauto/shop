@@ -572,6 +572,26 @@ class QueueWorkflowTests(unittest.TestCase):
         with self.Session() as db:
             self.assertEqual(db.query(DispatchAudit).filter(DispatchAudit.action == "follow_up_due").count(), 0)
 
+    def test_no_reply_becomes_an_fyi_and_stops_reminders(self):
+        self.post("m1", "I put it in the trunk of the vehicle")
+        self.assertTrue(self.draft(1, "m1", body="NO_REPLY_NEEDED")["recorded"])
+        item = self.items()[0]
+        self.assertEqual((item.status, item.draft_reply), ("routine", ""))
+        message_ = self.alert(datetime.now(AZ) + timedelta(seconds=40))[0]
+        self.assertIn("FYI #1", message_["text"])
+        self.assertIn("No reply needed", message_["text"])
+
+    def test_sensitive_message_cannot_become_no_reply(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        self.assertFalse(self.draft(1, "m1", body="NO_REPLY_NEEDED")["recorded"])
+        self.assertEqual(self.items()[0].status, "needs_owner")
+
+    def test_urgent_repeats_stop_after_four_hours(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        self.mark_sent(self.alert()[0]["key"])
+        self.set_updated(datetime(2026, 11, 3, 11, 0, tzinfo=AZ))
+        self.assertEqual([m for m in self.alert(datetime(2026, 11, 3, 16, 10, tzinfo=AZ)) if m["key"].startswith("urgent")], [])
+
     def test_burst_of_texts_becomes_one_alert(self):
         self.post("m1", "How much for brakes on a 2011 Ford Focus?")
         self.draft(1, "m1")
