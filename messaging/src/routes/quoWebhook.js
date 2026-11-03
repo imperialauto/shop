@@ -55,6 +55,7 @@ const contacts = createContactLookup({
 
 // How many prior messages to hand the AI as thread context.
 const DRAFT_HISTORY_LIMIT = 15;
+const ALERT_QUIET_MS = 35000;
 
 // IMPORTANT: raw body parser, not express.json() — signature verification
 // needs the exact bytes Quo sent. verifyQuoWebhook parses JSON itself once
@@ -165,6 +166,11 @@ async function handleMessageEvent(event) {
     });
   const deliverAlerts = () =>
     deliverOwnerMessages({ quo, shopClient }).catch((err) => console.error("Owner texts failed:", err.message));
+  // A normal alert waits out a burst of texts, so check again once it has passed.
+  const deliverSoon = async () => {
+    await deliverAlerts();
+    setTimeout(deliverAlerts, ALERT_QUIET_MS);
+  };
 
   if (process.env.CONTACT_SYNC_ENABLED === "true" && dispatched.recorded && !dispatched.owner) {
     await contacts
@@ -189,7 +195,7 @@ async function handleMessageEvent(event) {
   });
   // Approval alerts always need a draft that answers the newest message.
   if (existingPending && dispatched.status !== "needs_owner") {
-    await deliverAlerts();
+    await deliverSoon();
     return;
   }
 
@@ -233,7 +239,7 @@ async function handleMessageEvent(event) {
     // ack — the coordinator can still hit "Regenerate draft" manually.
     console.error("Draft generation failed for conversation", conversation.id, err);
   }
-  await deliverAlerts();
+  await deliverSoon();
 }
 
 module.exports = router;

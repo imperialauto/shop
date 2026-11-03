@@ -17,7 +17,7 @@ from app.appointments import PHOENIX
 from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.config import OWNER_PHONE
-from app.dispatch import AUTO_POLICIES, LOCKED_POLICIES, MAKES, POLICIES, apply_policies, assess, auto_reply, is_reaction, parse_owner_command, propose
+from app.dispatch import AUTO_POLICIES, LOCKED_POLICIES, MAKES, POLICIES, PROMISE, apply_policies, assess, auto_reply, is_reaction, parse_owner_command, propose
 from app.appointment_model import Appointment
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync, OPEN_STATUSES
 from app.models import Communication, Customer, RepairOrder, Vehicle
@@ -112,6 +112,9 @@ def _record(db: Session, message: IntakeMessage, result) -> DispatchItem:
         reasons = sorted(set(reasons) | {"customer_reply"})  # nothing goes quiet just because no rule fits
         needs_owner = apply_policies(reasons, policy_modes(db))
     if item is None:
+        for answered in db.query(DispatchItem).filter(DispatchItem.quo_conversation_id == message.conversationId,
+                                                      DispatchItem.status == "approved").all():
+            answered.status = "closed"  # the new message carries the conversation forward
         item = DispatchItem(quo_conversation_id=message.conversationId, customer_phone=message.phone,
                             last_message_id=message.messageId, category=result.category,
                             urgency=result.urgency)
@@ -253,11 +256,106 @@ def _owner_snapshot(db: Session) -> dict:
     }
 
 
+def _active_item(db: Session, item_id: int):
+    item = db.query(DispatchItem).filter(DispatchItem.id == item_id).with_for_update().first()
+    return item if item is not None and item.status in FOLLOW_UP_STATUSES else None
+
+
+def _mark_done(db: Session, item_ids: list[int]) -> str:
+    closed, skipped = [], []
+    for item_id in item_ids:
+        item = _active_item(db, item_id)
+        if item is None:
+            skipped.append(item_id)
+            continue
+        item.status = "closed"
+        item.decided_at = datetime.now().astimezone()
+        audit(db, item.id, "owner_sms", "owner_done")
+        closed.append(item_id)
+    db.commit()
+    parts = []
+    if closed:
+        parts.append("Closed " + ", ".join(f"#{n}" for n in closed) + ". Nothing was sent.")
+    if skipped:
+        parts.append(", ".join(f"#{n}" for n in skipped) + " not open.")
+    return " ".join(parts)
+
+
+def _snooze(db: Session, item_id: int, minutes: int) -> str:
+    item = _active_item(db, item_id)
+    if item is None:
+        return f"#{item_id} is not open."
+    due = datetime.now(PHOENIX) + timedelta(minutes=minutes)
+    audit(db, item.id, "owner_sms", "follow_up_due", due.isoformat())
+    db.commit()
+    return f"OK. I'll remind you about #{item.id} around {due.strftime('%a %-I:%M %p')}."
+
+
+def _remind_at(db: Session, item: DispatchItem) -> datetime | None:
+    """The latest follow-up time set since the customer last wrote."""
+    row = db.query(DispatchAudit).filter(DispatchAudit.item_id == item.id, DispatchAudit.action == "follow_up_due") \
+        .order_by(DispatchAudit.id.desc()).first()
+    if row is None or _utc(row.created_at) < _utc(item.updated_at) - timedelta(seconds=5):
+        return None
+    return datetime.fromisoformat(row.detail)
+
+
+def _older_items(db: Session, now: datetime) -> list[DispatchItem]:
+    rows = db.query(DispatchItem).filter(DispatchItem.status == "needs_owner").order_by(DispatchItem.id).all()
+    return [i for i in rows if now - _utc(i.updated_at) >= STALE_AFTER]
+
+
+def _waited(delta: timedelta) -> str:
+    minutes = int(delta.total_seconds() // 60)
+    if minutes < 60:
+        return f"{minutes}m"
+    return f"{minutes // 60}h {minutes % 60}m" if minutes < 1440 else f"{minutes // 1440}d"
+
+
+def _follow_ups(db: Session, now: datetime) -> list[tuple[DispatchItem, str]]:
+    """What the owner still owes a customer, urgent first, then longest waiting."""
+    found = []
+    rows = db.query(DispatchItem).filter(DispatchItem.status.in_(("needs_owner", "approved"))).all()
+    for item in rows:
+        age = now - _utc(item.updated_at)
+        if age >= STALE_AFTER:
+            continue
+        remind = _remind_at(db, item)
+        if remind is not None and remind > now:
+            continue
+        if item.status == "approved":
+            if remind is not None:
+                found.append((item, "promised"))
+        elif remind is not None or age >= (URGENT_REMINDER if item.urgency != "normal" else NORMAL_REMINDER):
+            found.append((item, "urgent" if item.urgency != "normal" else "waiting"))
+    return sorted(found, key=lambda row: (row[1] != "urgent", row[0].updated_at))
+
+
+def _follow_up_text(db: Session, now: datetime, rows: list[tuple[DispatchItem, str]]) -> str:
+    lines = [f"Follow up ({len(rows)}):"]
+    for item, kind in rows[:6]:
+        what = "you promised a reply" if kind == "promised" else " ".join((item.summary or "").split())[:48]
+        lines.append(f"#{item.id} {_label(db, item)}, {_waited(now - _utc(item.updated_at))}: {what}")
+    if len(rows) > 6:
+        lines.append(f"+{len(rows) - 6} more. Text OPEN for the list.")
+    lines.append("Reply YES, EDIT, DONE or LATER with the number.")
+    return "\n".join(lines)
+
+
 def _owner_command(db: Session, message: IntakeMessage) -> dict:
     command = parse_owner_command(message.body)
     if command is None:
         return {"ownerQuestion": message.body.strip()[:1000], "snapshot": _owner_snapshot(db)}
     decision, item_id = command[:2]
+    if decision == "done":
+        return {"ownerReply": _mark_done(db, item_id)}
+    if decision == "later":
+        return {"ownerReply": _snooze(db, item_id, command[2])}
+    if decision == "older":
+        rows = _older_items(db, datetime.now(PHOENIX))
+        if not rows:
+            return {"ownerReply": "Nothing older is open."}
+        return {"ownerReply": "\n".join(f"#{i.id} {_label(db, i)}" for i in rows[:10]) + "\nDONE with the numbers clears them."}
     waiting = _open_approvals(db)
     if decision == "list":
         if not waiting:
@@ -280,6 +378,8 @@ def _owner_command(db: Session, message: IntakeMessage) -> dict:
     item.status = "declined" if decision == "decline" else "approved"
     item.decided_at = item.updated_at = datetime.now().astimezone()
     audit(db, item.id, "owner_sms", f"owner_{decision}")
+    if decision != "decline" and (not text or PROMISE.search(text)):
+        audit(db, item.id, "system", "follow_up_due", (item.decided_at + PROMISE_AFTER).isoformat())
     db.commit()
     if decision == "decline":
         return {"ownerReply": f"Skipped #{item.id}. Nothing was sent."}
@@ -337,12 +437,18 @@ def intake(message: IntakeMessage, db: Session = Depends(get_db), _auth: bool = 
                 raise
 
 
-NUDGE_AFTER = {"needs_owner": timedelta(hours=2), "approved": timedelta(hours=24)}
+FOLLOW_UP_STATUSES = ("routine", "needs_owner", "approved")
+PROMISE_AFTER = timedelta(hours=2)
+URGENT_REMINDER = timedelta(minutes=20)
+NORMAL_REMINDER = timedelta(hours=2)
+STALE_AFTER = timedelta(days=3)
+DIGEST_HOURS = (13, 15, 17)
+QUIET = timedelta(seconds=30)  # lets a burst of customer texts become one alert
 TICK_LIMIT = 10
 DAILY_HOUR = 10
 DRAFT_GRACE = timedelta(seconds=90)
 APPOINTMENT_WARNING = timedelta(minutes=75)
-NUDGE_HOURS = range(15, 19)  # the 10 AM summary covers the morning
+FOLLOW_UP_HOURS = range(11, 19)
 
 
 def _alert_text(db: Session, item: DispatchItem) -> str:
@@ -394,16 +500,27 @@ def due_owner_messages(db: Session, now: datetime) -> list[dict]:
     for item in db.query(DispatchItem).filter(DispatchItem.status.in_(OPEN_STATUSES)).all():
         if item.status == "needs_owner" or item.urgency != "normal":
             # Give the draft a moment to arrive, except on safety issues.
-            young = now - _utc(item.updated_at).astimezone(PHOENIX) < DRAFT_GRACE
-            if item.draft_reply is None and item.urgency != "safety" and young:
+            waited = now - _utc(item.updated_at).astimezone(PHOENIX)
+            if item.draft_reply is None and item.urgency != "safety" and waited < DRAFT_GRACE:
+                continue
+            if item.urgency == "normal" and timedelta(0) <= waited < QUIET:
                 continue
             due.append((f"alert:{item.id}:{item.last_message_id}", "owner_alert", item.id, _alert_text(db, item)))
-    if now.hour in NUDGE_HOURS:
-        stale = [item for item in db.query(DispatchItem).filter(DispatchItem.status.in_(tuple(NUDGE_AFTER))).order_by(DispatchItem.id).all()
-                 if now - _utc(item.updated_at).astimezone(PHOENIX) >= NUDGE_AFTER[item.status]]
-        if stale:
-            rows = [f"#{i.id} {_label(db, i)}: {_next_step(db, i)[:80]}" for i in stale[:6]]
-            due.append((f"nudges:{now.date()}", "owner_nudge", None, f"Still open ({len(stale)}):\n" + "\n".join(rows)))
+    if now.weekday() != 6 and now.hour in FOLLOW_UP_HOURS:
+        rows = _follow_ups(db, now)
+        urgent = [row for row in rows if row[1] != "waiting"]
+        if now.hour in DIGEST_HOURS and rows:
+            due.append((f"nudges:{now.date()}:{now.hour}", "owner_nudge", None, _follow_up_text(db, now, rows)))
+        elif urgent:
+            due.append((f"urgent:{now.date()}:{now.hour}:{now.minute // 30}", "owner_nudge", None, _follow_up_text(db, now, urgent)))
+    if now.weekday() != 6 and (now.hour, now.minute) >= (18, 30):
+        rows = _follow_ups(db, now)
+        promised = sum(1 for row in rows if row[1] == "promised")
+        lines = [f"End of day: {len(rows) - promised} waiting on you, {promised} promised follow-ups"]
+        older = len(_older_items(db, now))
+        if older:
+            lines.append(f"{older} older than 3 days. Text OLD to review.")
+        due.append((f"wrap:{now.date()}", "owner_wrap", None, "\n".join(lines)))
     for event in calendar_feed.upcoming(now, days=1) or []:
         lead = event["start"] - now
         if not event["allDay"] and timedelta(0) < lead <= APPOINTMENT_WARNING:
@@ -472,10 +589,12 @@ def handled(report: HandledInput, db: Session = Depends(get_db), _auth: bool = D
     """Closes an open item once someone has answered the customer in Quo."""
     item = db.query(DispatchItem).filter(
         DispatchItem.quo_conversation_id == report.conversationId,
-        DispatchItem.status.in_(OPEN_STATUSES),
+        DispatchItem.status.in_(FOLLOW_UP_STATUSES),
     ).first()
     if item is None or _is_owner(item.customer_phone) or _utc(report.at) <= _utc(item.updated_at):
         return {"closed": False}
+    if item.status == "approved" and _utc(report.at) <= _utc(item.decided_at) + timedelta(minutes=2):
+        return {"closed": False}  # that text is the approved reply itself
     item.status = "closed"
     item.decided_at = item.updated_at = datetime.now().astimezone()
     audit(db, item.id, "system", "replied_in_quo")

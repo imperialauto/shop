@@ -5,7 +5,7 @@ stays empty for test_recovery's startup assertions.
 """
 import json
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from unittest.mock import patch
 
@@ -411,7 +411,7 @@ class QueueWorkflowTests(unittest.TestCase):
         alerts = lambda: [m for m in self.alert(datetime.now(AZ)) if m["key"].startswith("alert")]
         self.assertEqual(alerts(), [])
         self.draft(1, "m1")
-        self.assertIn("Draft reply", alerts()[0]["text"])
+        self.assertEqual(alerts(), [])
 
     def test_contact_label_shows_in_alerts_and_is_not_repeated(self):
         data = {**message("m1", "2011 Mitsubishi Eclipse has a fuel leak", "CNlabel"), "phone": "+16025550111", "contactName": "2011 Mitsubishi Eclipse Inspection"}
@@ -474,20 +474,110 @@ class QueueWorkflowTests(unittest.TestCase):
         self.assertEqual(self.alert(monday), [])
         self.assertEqual(self.alert(datetime(2026, 11, 1, 10, 5, tzinfo=AZ)), [])
 
-    def test_stale_items_get_one_nudge_a_day(self):
-        self.post("m1", "2013 Ford Fusion fuel leak")
-        self.mark_sent(self.alert()[0]["key"])
+    def set_updated(self, when, status=None):
         with self.Session() as db:
             row = db.query(DispatchItem).one()
-            row.updated_at = datetime(2026, 11, 3, 8, 0, tzinfo=AZ)
+            row.updated_at = when.astimezone(timezone.utc)
+            row.status = status or row.status
             db.commit()
-        late = datetime(2026, 11, 3, 16, 0, tzinfo=AZ)
-        nudges = [m for m in self.alert(late) if m["key"].startswith("nudge")]
-        self.assertEqual(len(nudges), 1)
-        self.assertIn("Still open (1)", nudges[0]["text"])
-        self.assertNotIn("year, make", nudges[0]["text"])
-        self.assertEqual([m for m in self.alert(late) if m["key"].startswith("nudge")], [])
-        self.assertEqual([m for m in self.alert(datetime(2026, 11, 4, 21, 0, tzinfo=AZ)) if m["key"].startswith("nudge")], [])
+
+    def test_urgent_item_repeats_every_half_hour_until_handled(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        self.mark_sent(self.alert()[0]["key"])
+        self.set_updated(datetime(2026, 11, 3, 12, 0, tzinfo=AZ))
+        due = lambda now: [m for m in self.alert(now) if m["key"].startswith("urgent")]
+        self.assertEqual(due(datetime(2026, 11, 3, 12, 10, tzinfo=AZ)), [])
+        first = due(datetime(2026, 11, 3, 12, 25, tzinfo=AZ))
+        self.assertIn("Follow up (1)", first[0]["text"])
+        self.mark_sent(first[0]["key"])
+        self.assertEqual(due(datetime(2026, 11, 3, 12, 29, tzinfo=AZ)), [])
+        self.assertEqual(len(due(datetime(2026, 11, 3, 12, 31, tzinfo=AZ))), 1)
+
+    def test_normal_items_come_as_one_digest(self):
+        self.post("m1", "How much for brakes on a 2011 Ford Focus?", "CN1")
+        self.post("m2", "How much for a 2012 Ford Escape tune up?", "CN2")
+        with self.Session() as db:
+            for row in db.query(DispatchItem).all():
+                row.updated_at = datetime(2026, 11, 3, 9, 0, tzinfo=AZ)
+            db.commit()
+        digest = [m for m in self.alert(datetime(2026, 11, 3, 13, 5, tzinfo=AZ)) if m["key"].startswith("nudges")]
+        self.assertEqual(len(digest), 1)
+        self.assertIn("Follow up (2)", digest[0]["text"])
+        self.assertEqual([m for m in self.alert(datetime(2026, 11, 3, 14, 5, tzinfo=AZ)) if m["key"].startswith(("nudges", "urgent"))], [])
+
+    def test_nothing_goes_out_when_the_shop_is_closed(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        self.mark_sent(self.alert()[0]["key"])
+        self.set_updated(datetime(2026, 11, 3, 12, 0, tzinfo=AZ))
+        self.assertEqual([m for m in self.alert(datetime(2026, 11, 3, 21, 0, tzinfo=AZ)) if m["key"].startswith(("urgent", "nudges"))], [])
+
+    def test_older_items_leave_reminders_but_stay_findable(self):
+        self.post("m1", "How much for brakes on a 2011 Ford Focus?")
+        self.set_updated(datetime(2026, 10, 25, 12, 0, tzinfo=AZ))
+        keys = [m["key"] for m in self.alert(datetime(2026, 11, 3, 13, 0, tzinfo=AZ))]
+        self.assertFalse([k for k in keys if k.startswith("nudges")])
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            self.assertIn("#1", self.owner_text("o1", "OLD")["ownerReply"])
+
+    def test_done_closes_several_items_without_sending(self):
+        self.post("m1", "How much for brakes on a 2011 Ford Focus?", "CN1")
+        self.post("m2", "How much for a 2012 Ford Escape tune up?", "CN2")
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            reply = self.owner_text("o1", "DONE 1, 2 99")
+        self.assertIn("Closed #1, #2", reply["ownerReply"])
+        self.assertIn("#99 not open", reply["ownerReply"])
+        self.assertNotIn("customerReply", reply)
+        self.assertEqual([i.status for i in self.items()], ["closed", "closed"])
+
+    def test_later_snoozes_until_the_time_passes(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        self.mark_sent(self.alert()[0]["key"])
+        now = datetime.now(AZ).replace(hour=12, minute=0, second=0, microsecond=0)
+        if now.weekday() == 6:
+            now += timedelta(days=1)
+        self.set_updated(now - timedelta(hours=1))
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            self.assertIn("remind you", self.owner_text("o1", "LATER 1")["ownerReply"])
+        with self.Session() as db:
+            row = db.query(DispatchAudit).filter(DispatchAudit.action == "follow_up_due").one()
+            row.detail = (now + timedelta(hours=2)).isoformat()
+            row.created_at = now.astimezone(timezone.utc)
+            db.commit()
+        due = lambda when: [m for m in self.alert(when) if m["key"].startswith(("urgent", "nudges"))]
+        self.assertEqual(due(now + timedelta(minutes=30)), [])
+        self.assertEqual(len(due(now + timedelta(hours=3))), 1)
+
+    def test_a_promise_comes_back_as_a_reminder(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        self.draft(1, "m1", body="I'll check on the cost and get back to you shortly.")
+        self.mark_sent(self.alert()[0]["key"])
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            self.assertIn("customerReply", self.owner_text("o1", "YES 1"))
+        with self.Session() as db:
+            due = db.query(DispatchAudit).filter(DispatchAudit.action == "follow_up_due").one()
+            self.assertIsNotNone(due.detail)
+            due.detail = datetime(2026, 11, 3, 12, 0, tzinfo=AZ).isoformat()
+            due.created_at = datetime(2026, 11, 3, 10, 0, tzinfo=AZ).astimezone(timezone.utc)
+            db.commit()
+        self.set_updated(datetime(2026, 11, 3, 10, 0, tzinfo=AZ))
+        due = [m for m in self.alert(datetime(2026, 11, 3, 12, 5, tzinfo=AZ)) if m["key"].startswith("urgent")]
+        self.assertIn("you promised a reply", due[0]["text"])
+
+    def test_a_plain_answer_needs_no_follow_up(self):
+        self.post("m1", "How much for brakes on a 2011 Ford Focus?")
+        self.draft(1, "m1", body="A basic diagnostic screening is $75.")
+        self.mark_sent(self.alert(datetime.now(AZ) + timedelta(seconds=40))[0]["key"])
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            self.owner_text("o1", "YES 1")
+        with self.Session() as db:
+            self.assertEqual(db.query(DispatchAudit).filter(DispatchAudit.action == "follow_up_due").count(), 0)
+
+    def test_burst_of_texts_becomes_one_alert(self):
+        self.post("m1", "How much for brakes on a 2011 Ford Focus?")
+        self.draft(1, "m1")
+        alerts = lambda when: [m for m in self.alert(when) if m["key"].startswith("alert")]
+        self.assertEqual(alerts(datetime.now(AZ) + timedelta(seconds=5)), [])
+        self.assertEqual(len(alerts(datetime.now(AZ) + timedelta(seconds=40))), 1)
 
     def test_a_question_gets_a_read_only_snapshot(self):
         self.post("m1", "2013 Ford Fusion fuel leak")
@@ -503,6 +593,11 @@ class QueueWorkflowTests(unittest.TestCase):
         self.assertEqual(parse_owner_command("no #7."), ("decline", 7))
         self.assertEqual(parse_owner_command("y"), ("approve", None))
         self.assertEqual(parse_owner_command("OPEN"), ("list", None))
+        self.assertEqual(parse_owner_command("done 5, 9 #10"), ("done", [5, 9, 10]))
+        self.assertEqual(parse_owner_command("later 5"), ("later", 5, 120))
+        self.assertEqual(parse_owner_command("LATER 5 4"), ("later", 5, 240))
+        self.assertEqual(parse_owner_command("later 5 30 min"), ("later", 5, 30))
+        self.assertIsNone(parse_owner_command("done with that one yet?"))
         self.assertEqual(parse_owner_command("Edit #4 On my way"), ("edit", 4, "On my way"))
         self.assertIsNone(parse_owner_command("yes I think so but call them"))
 
