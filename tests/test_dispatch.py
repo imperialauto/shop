@@ -345,6 +345,10 @@ class QueueWorkflowTests(unittest.TestCase):
         text = self.alert()[0]["text"]
         self.assertTrue(text.startswith("URGENT #1: 2011 Mitsubishi Eclipse Inspection\n"))
 
+    def test_intake_reports_details_for_contact_saving(self):
+        result = self.post("m1", "2013 Ford Fusion fuel leak").json()
+        self.assertEqual((result["vehicleText"], result["category"]), ("2013 Ford Fusion", "repair"))
+
     def test_replayed_message_labels_an_older_item(self):
         data = {**message("m1", "hello", "CNold"), "phone": "+16025550111"}
         self.client.post(INTAKE, headers=HEADERS, json=data)
