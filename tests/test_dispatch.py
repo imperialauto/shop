@@ -130,6 +130,9 @@ class QueueWorkflowTests(unittest.TestCase):
     def post(self, *args):
         return self.client.post(INTAKE, json=message(*args), headers=HEADERS)
 
+    def post_auto(self, *args):
+        return self.client.post(INTAKE, json={**message(*args), "autoRepliesOn": True}, headers=HEADERS)
+
     def test_intake_works_in_read_only_and_requires_the_key(self):
         app.state.read_only = True
         self.assertEqual(self.client.post(INTAKE, json=message("m1", "hi")).status_code, 503)
@@ -280,7 +283,7 @@ class QueueWorkflowTests(unittest.TestCase):
         with self.Session() as db:
             counts = {view: len(dispatch.dashboard_context(db, view)["dispatch_items"]) for view in dispatch.VIEWS}
             self.assertEqual(dispatch.dashboard_context(db, "nonsense")["dispatch_view"], "open")
-        self.assertEqual(counts, {"open": 2, "urgent": 1, "approval": 1, "customer": 1, "scheduled": 0, "completed": 0})
+        self.assertEqual(counts, {"open": 2, "urgent": 1, "approval": 2, "customer": 1, "scheduled": 0, "completed": 0})
 
     def test_dashboard_renders_cards(self):
         app.state.read_only = True
@@ -293,16 +296,16 @@ class QueueWorkflowTests(unittest.TestCase):
         self.assertIn("Nothing priced yet", page.text)
 
     def test_hours_question_gets_one_reply_a_week(self):
-        first = self.post("m1", "what are your hours?").json()
+        first = self.post_auto("m1", "what are your hours?").json()
         self.assertIn("Suite 508", first["autoReply"]["text"])
         self.assertIn("Mon-Fri 11 AM-7 PM and Sat 12-5 PM", first["autoReply"]["text"])
-        self.assertIsNone(self.post("m2", "what are your hours?").json()["autoReply"])
+        self.assertIsNone(self.post_auto("m2", "what are your hours?").json()["autoReply"])
 
     def test_vehicle_question_is_only_asked_once_and_only_when_missing(self):
-        reply = self.post("m1", "I have a noise when I brake").json()["autoReply"]
+        reply = self.post_auto("m1", "I have a noise when I brake").json()["autoReply"]
         self.assertIn("year, make and model", reply["text"])
-        self.assertIsNone(self.post("m2", "It's getting worse, there's a noise").json()["autoReply"])
-        known = self.post("m3", "2011 Ford Focus has a noise", "CNother").json()
+        self.assertIsNone(self.post_auto("m2", "It's getting worse, there's a noise").json()["autoReply"])
+        known = self.post_auto("m3", "2011 Ford Focus has a noise", "CNother").json()
         self.assertIsNone(known["autoReply"])
 
     def test_sensitive_messages_never_get_an_auto_reply(self):
@@ -393,9 +396,10 @@ class QueueWorkflowTests(unittest.TestCase):
 
     def test_non_urgent_alert_waits_briefly_for_its_draft(self):
         self.post("m1", "How much for brakes on a 2011 Ford Focus?")
-        self.assertEqual(self.alert(datetime.now(AZ)), [])
+        alerts = lambda: [m for m in self.alert(datetime.now(AZ)) if m["key"].startswith("alert")]
+        self.assertEqual(alerts(), [])
         self.draft(1, "m1")
-        self.assertIn("Draft reply", self.alert(datetime.now(AZ))[0]["text"])
+        self.assertIn("Draft reply", alerts()[0]["text"])
 
     def test_contact_label_shows_in_alerts_and_is_not_repeated(self):
         data = {**message("m1", "2011 Mitsubishi Eclipse has a fuel leak", "CNlabel"), "phone": "+16025550111", "contactName": "2011 Mitsubishi Eclipse Inspection"}

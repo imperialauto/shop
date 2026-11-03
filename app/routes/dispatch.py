@@ -75,6 +75,12 @@ def _auto_choice(db: Session, message: IntakeMessage, result, has_vehicle: bool)
     return choice
 
 
+def _auto_key(conversation_id: str, template: str) -> str:
+    # Hours can repeat a week later; the vehicle question is only asked once.
+    period = datetime.now(PHOENIX).strftime("%G-%V") if template == "hours" else "once"
+    return f"auto:{conversation_id}:{template}:{period}"
+
+
 def _rule_answers(db: Session, message: IntakeMessage, result, item, customer) -> bool:
     """True when an automatic reply will really cover this message."""
     if not message.autoRepliesOn or message.recovery:
@@ -85,8 +91,8 @@ def _rule_answers(db: Session, message: IntakeMessage, result, item, customer) -
     choice = _auto_choice(db, message, result, has_vehicle)
     if choice is None:
         return False
-    asked = db.query(DispatchOutbound).filter(DispatchOutbound.dedupe_key == f"auto:{message.conversationId}:vehicle:once").first()
-    return choice[0] != "vehicle" or asked is None
+    key = _auto_key(message.conversationId, choice[0])
+    return db.query(DispatchOutbound).filter(DispatchOutbound.dedupe_key == key).first() is None
 
 
 def _record(db: Session, message: IntakeMessage, result) -> DispatchItem:
@@ -101,9 +107,10 @@ def _record(db: Session, message: IntakeMessage, result) -> DispatchItem:
     ).first()
     earlier = json.loads(item.approval_reasons) if item else []
     reasons = sorted(set(earlier) | set(result.reasons) | ({"missed_call"} if message.kind == "call" else set()))
-    if message.kind == "message" and "customer_reply" not in reasons and not _rule_answers(db, message, result, item, customer):
-        reasons = sorted(set(reasons) | {"customer_reply"})  # nothing goes quiet just because no rule fits
     needs_owner = apply_policies(reasons, policy_modes(db))
+    if message.kind == "message" and not needs_owner and not _rule_answers(db, message, result, item, customer):
+        reasons = sorted(set(reasons) | {"customer_reply"})  # nothing goes quiet just because no rule fits
+        needs_owner = apply_policies(reasons, policy_modes(db))
     if item is None:
         item = DispatchItem(quo_conversation_id=message.conversationId, customer_phone=message.phone,
                             last_message_id=message.messageId, category=result.category,
@@ -157,9 +164,7 @@ def _auto_reply_for(db: Session, item: DispatchItem, message: IntakeMessage, res
     if choice is None:
         return None
     template, text = choice
-    # Hours can repeat a week later; the vehicle question is only asked once.
-    period = datetime.now(PHOENIX).strftime("%G-%V") if template == "hours" else "once"
-    key = f"auto:{message.conversationId}:{template}:{period}"
+    key = _auto_key(message.conversationId, template)
     if not reserve(db, key, "customer", item.id):
         return None
     audit(db, item.id, "system", "auto_reply_reserved", template)
