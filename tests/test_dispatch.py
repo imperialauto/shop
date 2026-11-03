@@ -289,6 +289,56 @@ class QueueWorkflowTests(unittest.TestCase):
         self.assertEqual(self.items()[0].status, "approved")
         self.assertEqual(len(self.items()), 1)
 
+    def draft(self, item_id, ident, conversation="CNfixture", body="We can take a look today."):
+        return self.client.post("/internal/dispatch/draft", headers=HEADERS, json={"conversationId": conversation, "messageId": ident, "body": body}).json()
+
+    def test_alert_shows_the_draft_and_yes_sends_it_once(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        item = self.items()[0]
+        self.assertTrue(self.draft(item.id, "m1")["recorded"])
+        due = self.alert()[0]
+        self.assertIn("TEST ONLY - 2013 Ford Fusion", due["text"])
+        self.assertIn("Draft reply: We can take a look today.", due["text"])
+        self.assertIn(f"YES {item.id} sends it", due["text"])
+        self.mark_sent(due["key"])
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            reply = self.owner_text("o1", f"YES {item.id}")
+            again = self.owner_text("o2", f"YES {item.id}")
+        self.assertEqual(reply["customerReply"]["text"], "We can take a look today.")
+        self.assertEqual(reply["customerReply"]["messageId"], "m1")
+        self.assertNotIn("customerReply", again)
+
+    def test_edit_sends_the_owner_version(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        item = self.items()[0]
+        self.draft(item.id, "m1")
+        self.mark_sent(self.alert()[0]["key"])
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            reply = self.owner_text("o1", f"edit {item.id} Don't drive it, I'll call you in 10.")
+        self.assertEqual(reply["customerReply"]["text"], "Don't drive it, I'll call you in 10.")
+        self.assertEqual(self.items()[0].status, "approved")
+
+    def test_no_sends_nothing_and_stale_drafts_are_dropped(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        item = self.items()[0]
+        self.draft(item.id, "m1")
+        self.mark_sent(self.alert()[0]["key"])
+        self.post("m2", "it got worse")
+        self.assertIsNone(self.items()[0].draft_reply)
+        self.assertFalse(self.draft(item.id, "m1")["recorded"])
+        self.draft(item.id, "m2")
+        self.mark_sent(self.alert()[0]["key"])
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            reply = self.owner_text("o1", f"NO {item.id}")
+        self.assertNotIn("customerReply", reply)
+        self.assertIn("Nothing was sent", reply["ownerReply"])
+
+    def test_non_urgent_alert_waits_briefly_for_its_draft(self):
+        self.post("m1", "How much for brakes on a 2011 Ford Focus?")
+        self.assertEqual(self.alert(datetime.now(AZ)), [])
+        self.draft(1, "m1")
+        self.assertIn("Draft reply", self.alert(datetime.now(AZ))[0]["text"])
+
     def test_yes_is_refused_after_a_newer_customer_message(self):
         self.post("m1", "2013 Ford Fusion fuel leak")
         item = self.items()[0]
@@ -341,6 +391,7 @@ class QueueWorkflowTests(unittest.TestCase):
         self.assertEqual(parse_owner_command("no #7."), ("decline", 7))
         self.assertEqual(parse_owner_command("y"), ("approve", None))
         self.assertEqual(parse_owner_command("OPEN"), ("list", None))
+        self.assertEqual(parse_owner_command("Edit #4 On my way"), ("edit", 4, "On my way"))
         self.assertIsNone(parse_owner_command("yes I think so but call them"))
 
     def test_reasons_are_stored_as_json(self):

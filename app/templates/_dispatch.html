@@ -30,6 +30,7 @@
         {% for entry in row.history %}<p style="margin:6px 0 0; overflow-wrap:anywhere;">{{ entry.direction|capitalize }}: {{ (entry.body or '')[:160] }}</p>{% endfor %}
       </details>{% endif %}
       {% if item.status in ('routine', 'needs_owner') %}
+      {% if item.draft_reply %}<p style="margin:0 0 8px; overflow-wrap:anywhere;">Drafted reply: {{ item.draft_reply }}</p>{% endif %}
       <form method="post" action="/dispatch/{{ item.id }}/decide">
         <input type="hidden" name="expected_message_id" value="{{ item.last_message_id }}">
         <label style="display:block; margin-bottom:8px;">Proposed action

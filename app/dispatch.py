@@ -141,12 +141,16 @@ def auto_reply(result: Assessment, has_vehicle: bool, modes: dict[str, str]):
     return None
 
 
+OWNER_EDIT = re.compile(r"^\s*edit\s*#?\s*(\d+)\s+(.+)$", re.I | re.S)
 OWNER_COMMAND = re.compile(r"^\s*(yes|y|approve|approved|no|n|decline)\s*#?\s*(\d+)?\s*[.!]?\s*$", re.I)
 
 
 def parse_owner_command(body: str):
-    """("approve"|"decline", item id or None), ("list", None), or None."""
+    """("approve"|"decline", id or None), ("list", None), ("edit", id, text), or None."""
     text = (body or "").strip()
+    edited = OWNER_EDIT.match(text)
+    if edited:
+        return "edit", int(edited.group(1)), edited.group(2).strip()
     if re.fullmatch(r"(open|list|queue)\??", text, re.I):
         return "list", None
     match = OWNER_COMMAND.match(text)

@@ -54,6 +54,28 @@ async function deliverOwnerMessages({ quo, shopClient }) {
   return { sent };
 }
 
+// An owner-approved reply. It stops if anything newer is in the thread, including
+// a reply sent from Quo, and a failed send is never retried automatically.
+async function sendApprovedReply({ reply, ownerPhone, quo, shopClient }) {
+  let status = "skipped";
+  let notice = `#${reply.itemId} was not sent. There's a newer message in that thread, so check Quo.`;
+  try {
+    if ((await latestMessageId(quo, reply.phone)) === reply.messageId) {
+      status = "failed";
+      notice = `#${reply.itemId} failed to send. Please reply in Quo.`;
+      await quo.sendMessage({ to: reply.phone, content: reply.text });
+      status = "sent";
+      notice = `Sent #${reply.itemId} to the customer.`;
+      await shopClient.logCommunication({ phone: reply.phone, direction: "outbound", body: reply.text, externalId: null });
+    }
+  } catch (err) {
+    console.error("Approved reply failed:", err.message);
+  }
+  await shopClient.dispatchOutbound({ key: reply.key, status });
+  await quo.sendMessage({ to: ownerPhone, content: notice }).catch((err) => console.error("Owner notice failed:", err.message));
+  return status === "sent";
+}
+
 async function handleIntakeResult({ result, messageId, phone, quo, shopClient }) {
   if (result.ownerReply && enabled("OWNER_TEXTS_ENABLED")) {
     try {
@@ -62,10 +84,18 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
       console.error("Owner reply failed:", err.message); // pending alerts must still go out
     }
   }
+  let customerSent = false;
+  if (result.customerReply) {
+    if (enabled("OWNER_TEXTS_ENABLED")) {
+      customerSent = await sendApprovedReply({ reply: result.customerReply, ownerPhone: phone, quo, shopClient });
+    } else {
+      await shopClient.dispatchOutbound({ key: result.customerReply.key, status: "skipped" });
+    }
+  }
   if (result.autoReply) {
     await sendAutoReply({ autoReply: result.autoReply, messageId, phone, quo, shopClient });
   }
-  await deliverOwnerMessages({ quo, shopClient });
+  return { customerSent };
 }
 
 module.exports = { handleIntakeResult, deliverOwnerMessages };

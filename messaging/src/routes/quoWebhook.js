@@ -43,7 +43,7 @@ const { generateDraftReply } = require("../lib/generateDraftReply");
 const { getJobContextForConversation } = require("../lib/getJobContext");
 const shopClient = require("../lib/shopClient");
 const quo = require("../lib/quoClient");
-const { handleIntakeResult } = require("../lib/dispatchActions");
+const { handleIntakeResult, deliverOwnerMessages } = require("../lib/dispatchActions");
 
 const router = express.Router();
 
@@ -148,14 +148,34 @@ async function handleMessageEvent(event) {
     phone: customerPhone,
     body: msg.body || "",
   });
-  await handleIntakeResult({ result: dispatched, messageId: msg.id, phone: customerPhone, quo, shopClient })
-    .catch((err) => console.error("Dispatch action failed:", err.message));
-  if (dispatched.owner) return; // the owner's own texts are commands, not customer messages
+  const action = await handleIntakeResult({ result: dispatched, messageId: msg.id, phone: customerPhone, quo, shopClient })
+    .catch((err) => {
+      console.error("Dispatch action failed:", err.message);
+      return {};
+    });
+  const deliverAlerts = () =>
+    deliverOwnerMessages({ quo, shopClient }).catch((err) => console.error("Owner texts failed:", err.message));
+
+  if (dispatched.owner) {
+    // The owner's own texts are commands, not customer messages.
+    if (action.customerSent) {
+      await prisma.draftReply.updateMany({
+        where: { status: "PENDING", conversation: { quoConversationId: dispatched.customerReply.conversationId } },
+        data: { status: "SENT", approvedAt: new Date() },
+      }).catch((err) => console.error("Draft update failed:", err.message));
+    }
+    await deliverAlerts();
+    return;
+  }
 
   const existingPending = await prisma.draftReply.findFirst({
     where: { conversationId: conversation.id, status: "PENDING" },
   });
-  if (existingPending) return;
+  // Approval alerts always need a draft that answers the newest message.
+  if (existingPending && dispatched.status !== "needs_owner") {
+    await deliverAlerts();
+    return;
+  }
 
   try {
     const history = await prisma.message.findMany({
@@ -172,20 +192,29 @@ async function handleMessageEvent(event) {
     });
 
     if (draftBody) {
-      await prisma.draftReply.create({
-        data: {
-          conversationId: conversation.id,
-          body: draftBody,
-          basedOnMessageId: stored.id,
-          status: "PENDING",
-        },
-      });
+      if (existingPending) {
+        await prisma.draftReply.update({
+          where: { id: existingPending.id },
+          data: { body: draftBody, basedOnMessageId: stored.id },
+        });
+      } else {
+        await prisma.draftReply.create({
+          data: {
+            conversationId: conversation.id,
+            body: draftBody,
+            basedOnMessageId: stored.id,
+            status: "PENDING",
+          },
+        });
+      }
+      await shopClient.dispatchDraft({ conversationId: msg.conversationId, messageId: msg.id, body: draftBody });
     }
   } catch (err) {
     // A failed AI draft should never block message storage or the webhook
     // ack — the coordinator can still hit "Regenerate draft" manually.
     console.error("Draft generation failed for conversation", conversation.id, err);
   }
+  await deliverAlerts();
 }
 
 module.exports = router;

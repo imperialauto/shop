@@ -51,17 +51,41 @@ test("a failed customer text is reported, not retried", async () => {
   assert.deepEqual(f.outcomes, [{ key: autoReply.key, status: "failed" }]);
 });
 
-test("a failed owner reply does not stop pending alerts", async () => {
+const reply = { key: "reply:5:m1", itemId: 5, phone: PHONE, text: "We can help.", messageId: "m1", conversationId: "CN" };
+
+test("YES sends the approved reply and confirms to the owner", async () => {
   process.env.OWNER_TEXTS_ENABLED = "true";
-  const f = fixture({ tick: [{ key: "alert:1:m1", text: "Approval #1" }] });
-  const send = f.quo.sendMessage;
-  let first = true;
-  f.quo.sendMessage = async (m) => {
-    if (first) { first = false; throw new Error("quo down"); }
-    return send(m);
-  };
+  const f = fixture();
+  f.shopClient.logCommunication = async () => ({});
+  const action = await handleIntakeResult({ result: { customerReply: reply }, messageId: "o1", phone: OWNER, ...f });
+  assert.deepEqual(f.sends, [{ to: PHONE, content: "We can help." }, { to: OWNER, content: "Sent #5 to the customer." }]);
+  assert.equal(f.outcomes[0].status, "sent");
+  assert.equal(action.customerSent, true);
+});
+
+test("YES stops if anything newer is in the thread", async () => {
+  process.env.OWNER_TEXTS_ENABLED = "true";
+  const f = fixture({ newest: "m2" });
+  await handleIntakeResult({ result: { customerReply: reply }, messageId: "o1", phone: OWNER, ...f });
+  assert.equal(f.sends.length, 1);
+  assert.equal(f.sends[0].to, OWNER);
+  assert.match(f.sends[0].content, /not sent/);
+  assert.equal(f.outcomes[0].status, "skipped");
+});
+
+test("a failed customer send tells the owner and is not retried", async () => {
+  process.env.OWNER_TEXTS_ENABLED = "true";
+  const f = fixture({ sendError: true });
+  const action = await handleIntakeResult({ result: { customerReply: reply }, messageId: "o1", phone: OWNER, ...f });
+  assert.equal(f.outcomes[0].status, "failed");
+  assert.equal(action.customerSent, false);
+});
+
+test("a failed owner reply does not throw", async () => {
+  process.env.OWNER_TEXTS_ENABLED = "true";
+  const f = fixture({ sendError: true });
   await handleIntakeResult({ result: { ownerReply: "Nothing is waiting on you." }, messageId: "m1", phone: OWNER, ...f });
-  assert.deepEqual(f.outcomes, [{ key: "alert:1:m1", status: "sent" }]);
+  assert.deepEqual(f.outcomes, []);
 });
 
 test("owner texts go only to the owner and report each result", async () => {
