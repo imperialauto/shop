@@ -76,7 +76,7 @@ function createCallEvents({ quo, shopClient, contacts, runPass, deliver, phoneNu
       threadMessageId: "none", contactName: contacts ? await contacts.nameFor(phone) : null,
     });
     if (result.recorded && !result.owner) {
-      const reply = await draft({ history: [{ direction: "INBOUND", body: `[${body}]` }], jobContext: { summary: body } });
+      const reply = await draft({ history: [{ direction: "INBOUND", body: `[${body}]` }], jobContext: { summary: body }, allowNoReply: true });
       if (reply) await shopClient.dispatchDraft({ conversationId, messageId: `summary:${callId}`, body: reply });
     }
     await deliver();

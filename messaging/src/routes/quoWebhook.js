@@ -217,6 +217,7 @@ async function handleMessageEvent(event) {
     const draftBody = await generateDraftReply({
       history: history.reverse(),
       customerName: customer?.name,
+      allowNoReply: true,
       jobContext: summary ? { ...jobContext, summary } : jobContext,
     });
 

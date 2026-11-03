@@ -20,7 +20,7 @@ const SCENARIOS = [
 
 async function runDraftSelfCheck() {
   for (const [name, history, summary] of SCENARIOS) {
-    const reply = await generateDraftReply({ history, jobContext: summary ? { summary } : null });
+    const reply = await generateDraftReply({ history, jobContext: summary ? { summary } : null, allowNoReply: true });
     console.log(`DRAFT_CHECK ${name} => ${String(reply).replace(/\s+/g, " ")}`);
   }
 }

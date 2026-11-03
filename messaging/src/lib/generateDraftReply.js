@@ -43,7 +43,7 @@ Rules:
  * }} args
  * @returns {Promise<string|null>} draft text, or null if nothing useful could be generated
  */
-async function generateDraftReply({ history, customerName, jobContext }) {
+async function generateDraftReply({ history, customerName, jobContext, allowNoReply = false }) {
   if (!history?.length) return null;
   if (!process.env.GROQ_API_KEY) {
     console.error("generateDraftReply: Missing GROQ_API_KEY env var");
@@ -92,6 +92,8 @@ async function generateDraftReply({ history, customerName, jobContext }) {
     const data = await res.json();
     const text = data.choices?.[0]?.message?.content?.trim();
 
+    // Callers that show a draft for sending must never receive the marker as text.
+    if (text?.includes(NO_REPLY)) return allowNoReply ? NO_REPLY : null;
     return text || null;
   } catch (err) {
     console.error("generateDraftReply: Groq call failed:", err);
