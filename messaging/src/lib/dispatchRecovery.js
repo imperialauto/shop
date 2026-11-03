@@ -43,7 +43,7 @@ async function offerMissedCall({ quo, shopClient, contacts, phoneNumberId, conve
   }));
   history.push({ direction: "INBOUND", body: `[${call.body}]` });
   const summary = await callContext({ quo, phone, phoneNumberId });
-  const body = await draft({ history, jobContext: summary ? { summary } : null });
+  const body = await draft({ history, jobContext: summary ? { summary } : null, allowNoReply: true });
   if (body) await shopClient.dispatchDraft({ conversationId: conversation.id, messageId: call.id, body });
 }
 
