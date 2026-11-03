@@ -1,6 +1,6 @@
-"""Read-only view of the owner's Google Calendar through its private iCal address.
+"""Read-only view of the owner's calendars through their private iCal addresses.
 
-CALENDAR_ICS_URL is a secret: anyone holding it can read the calendar, so it is
+CALENDAR_ICS_URL is a secret (Apple or Google; comma-separated for both): anyone holding it can read the calendar, so it is
 never logged and errors record only their type. Nothing here writes to Google.
 """
 import logging
@@ -146,21 +146,31 @@ def events_between(text: str, start: datetime, end: datetime) -> list[dict]:
     return sorted(found, key=lambda row: row["start"])
 
 
+def feed_urls() -> list[str]:
+    """Accepts one or more comma-separated addresses; Apple shares use webcal://."""
+    urls = [part.strip() for part in os.getenv("CALENDAR_ICS_URL", "").split(",") if part.strip()]
+    return ["https://" + url[len("webcal://"):] if url.lower().startswith("webcal://") else url for url in urls]
+
+
 def _feed_text() -> str | None:
-    url = os.getenv("CALENDAR_ICS_URL", "").strip()
-    if not url:
+    urls = feed_urls()
+    if not urls:
         return None
     age = time.monotonic() - _cache["at"]
     if _cache["text"] is not None and age < FRESH_SECONDS:
         return _cache["text"]
     try:
         import httpx
-        response = httpx.get(url, timeout=6, follow_redirects=True)
-        response.raise_for_status()
-        if "BEGIN:VCALENDAR" not in response.text:
-            raise ValueError("not a calendar")
-        _cache.update(at=time.monotonic(), text=response.text)
-        return response.text
+        texts = []
+        for url in urls:
+            response = httpx.get(url, timeout=6, follow_redirects=True)
+            response.raise_for_status()
+            if "BEGIN:VCALENDAR" not in response.text:
+                raise ValueError("not a calendar")
+            texts.append(response.text)
+        text = "\n".join(texts)  # only VEVENT blocks are read, so feeds can sit end to end
+        _cache.update(at=time.monotonic(), text=text)
+        return text
     except Exception as error:  # never str(error): it can contain the secret URL
         log.warning("calendar_feed_failed %s", type(error).__name__)
         return _cache["text"] if _cache["text"] is not None and age < STALE_SECONDS else None
