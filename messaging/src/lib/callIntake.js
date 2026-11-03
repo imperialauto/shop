@@ -4,7 +4,7 @@
 const NOT_LEADS = /google (business|listing)|business listing|business insurance|past due|delinquent|your (car'?s )?extended warranty|your (requested )?(print|order|prescription|package)\b.{0,60}ready for pickup/i;
 
 function isMissed(call) {
-  if (call.direction !== "incoming") return false;
+  if (call.direction !== "incoming" || call.aiHandled) return false;
   if (["missed", "no-answer", "abandoned"].includes(call.status)) return true;
   return call.status === "completed" && !call.duration && !call.answeredAt;
 }

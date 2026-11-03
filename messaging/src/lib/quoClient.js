@@ -117,6 +117,34 @@ async function listCalls({ phoneNumberId, participants, maxResults = 10, created
   return quoFetch(`/v1/calls?${params.toString()}`);
 }
 
+async function getCall(callId) {
+  const { data } = await quoFetch(`/v1/calls/${callId}`);
+  return data;
+}
+
+async function getCallSummary(callId) {
+  const { data } = await quoFetch(`/v1/call-summaries/${callId}`);
+  return data;
+}
+
+async function listWebhooks() {
+  const { data = [] } = await quoFetch("/v1/webhooks");
+  return data;
+}
+
+async function createCallWebhook({ url, phoneNumberId }) {
+  return quoFetch("/webhooks", {
+    method: "POST",
+    headers: { "Quo-Api-Version": "2026-03-30" },
+    body: JSON.stringify({
+      url,
+      label: "Imperial Operations calls",
+      resourceIds: phoneNumberId ? [phoneNumberId] : ["*"],
+      events: ["call.completed", "call.missed", "call.voicemail.completed", "call.summary.completed"],
+    }),
+  });
+}
+
 async function getVoicemail(callId) {
   const { data } = await quoFetch(`/v1/call-voicemails/${callId}`);
   return data;
@@ -164,6 +192,10 @@ module.exports = {
   listMessages,
   listConversations,
   listCalls,
+  getCall,
+  getCallSummary,
+  listWebhooks,
+  createCallWebhook,
   getVoicemail,
   getTranscript,
   listContacts,

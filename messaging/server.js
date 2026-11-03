@@ -31,8 +31,24 @@ if (process.env.DISPATCH_RECOVERY_ENABLED === "true") {
   const shopClient = require("./src/lib/shopClient");
   const { startRecovery } = require("./src/lib/dispatchRecovery");
   const { createContactLookup } = require("./src/lib/quoContacts");
-  startRecovery({ quo, shopClient, contacts: createContactLookup({ quo }), phoneNumberId: process.env.QUO_PHONE_NUMBER_ID,
-    skip: new Set((process.env.CONTACT_SYNC_SKIP || "").split(",").filter(Boolean).map((n) => n.replace(/\D/g, "").slice(-10))) });
+  const options = { quo, shopClient, contacts: createContactLookup({ quo }), phoneNumberId: process.env.QUO_PHONE_NUMBER_ID,
+    skip: new Set((process.env.CONTACT_SYNC_SKIP || "").split(",").filter(Boolean).map((n) => n.replace(/\D/g, "").slice(-10))) };
+  startRecovery(options);
+
+  // Real-time call alerts. Timed recovery above stays on as the safety net.
+  if (process.env.CALL_HOOK_TOKEN && process.env.PUBLIC_URL) {
+    const { runRecovery } = require("./src/lib/dispatchRecovery");
+    const { deliverOwnerMessages } = require("./src/lib/dispatchActions");
+    const { createCallEvents, ensureCallWebhook } = require("./src/lib/callEvents");
+    app.set("callEvents", createCallEvents({
+      ...options,
+      runPass: () => runRecovery(options),
+      deliver: () => deliverOwnerMessages({ quo, shopClient }),
+    }));
+    ensureCallWebhook({ quo, url: `${process.env.PUBLIC_URL}/webhooks/quo-calls/${process.env.CALL_HOOK_TOKEN}`, phoneNumberId: options.phoneNumberId })
+      .then((state) => console.log(`Quo call webhook ${state}`))
+      .catch((err) => console.error(`Quo call webhook setup failed: ${err.status || err.message}`));
+  }
 }
 
 // Off unless explicitly enabled. Approvals, nudges and the morning summary.
