@@ -39,7 +39,7 @@
 const express = require("express");
 const prisma = require("../db/prisma");
 const { verifyQuoWebhook } = require("../lib/verifyQuoWebhookSignature");
-const { generateDraftReply } = require("../lib/generateDraftReply");
+const { generateDraftReply, NO_REPLY } = require("../lib/generateDraftReply");
 const { getJobContextForConversation } = require("../lib/getJobContext");
 const shopClient = require("../lib/shopClient");
 const quo = require("../lib/quoClient");
@@ -220,7 +220,9 @@ async function handleMessageEvent(event) {
       jobContext: summary ? { ...jobContext, summary } : jobContext,
     });
 
-    if (draftBody) {
+    const noReply = draftBody?.includes(NO_REPLY);
+    if (noReply) await shopClient.dispatchDraft({ conversationId: msg.conversationId, messageId: msg.id, body: NO_REPLY });
+    if (draftBody && !noReply) {
       if (existingPending) {
         await prisma.draftReply.update({
           where: { id: existingPending.id },

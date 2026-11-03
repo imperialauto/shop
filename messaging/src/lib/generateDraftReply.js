@@ -18,6 +18,7 @@
 const GROQ_API_BASE_URL = process.env.GROQ_API_BASE_URL || "https://api.groq.com/openai/v1";
 const MODEL = process.env.GROQ_DRAFT_MODEL || "llama-3.3-70b-versatile";
 const MAX_TOKENS = 400;
+const NO_REPLY = "NO_REPLY_NEEDED";
 
 const SYSTEM_PROMPT = `You are drafting a text message reply on behalf of Imperial Auto Care, an auto repair shop, replying to a customer over SMS.
 
@@ -26,7 +27,10 @@ Rules:
 - Sound like a helpful shop employee texting a customer, not a chatbot. Warm, brief, plain language.
 - SMS length: 1-3 short sentences. No greetings like "Dear customer". No sign-offs, no emoji unless the customer used one first.
 - Shop facts you may use: 7915 N Glen Harbor Blvd, Suite 508, Glendale, AZ 85307. Open Mon-Fri 11 AM-7 PM and Sat 12-5 PM, closed Sunday. Basic diagnostic screening is $75, the standard in-shop diagnostic is $150, and a mobile service call is $75 plus applicable travel.
-- Read the whole conversation and answer the customer's latest message. Do not repeat a question they already answered.
+- Read the texts and phone calls in time order before writing. Work out what has already been said, agreed or done, including on phone calls. The newest item decides what is needed now.
+- Reply only to the customer's latest message. Never answer an older question again, and never restate a plan, address or hours that are not being asked about right now.
+- If the customer is telling you something is done, or only saying thanks or OK, and nothing is needed from the shop, output exactly NO_REPLY_NEEDED.
+- If a short thank-you fits better than silence, keep it to one sentence with no new details.
 - Never invent a price, date, or repair detail that isn't given to you in the job context below. If you don't have the info, say you'll check and follow up, rather than guessing.
 - Never confirm a refund, discount, or free service — that requires a human's judgment call. Flag it for the human ("I'll need to check on that") instead of promising it.
 - Output ONLY the message text to send. No quotation marks, no preamble, no "Here's a draft:".`;
@@ -47,7 +51,11 @@ async function generateDraftReply({ history, customerName, jobContext }) {
   }
 
   const transcript = history
-    .map((m) => `${m.direction === "INBOUND" ? customerName || "Customer" : "Shop"}: ${m.body}`)
+    .map((m) => {
+      const when = m.quoCreatedAt ? ` (${new Date(m.quoCreatedAt).toISOString()})` : "";
+      const body = m.body || (m.mediaUrls?.length ? "[sent a photo]" : "[no text]");
+      return `${m.direction === "INBOUND" ? customerName || "Customer" : "Shop"}${when}: ${body}`;
+    })
     .join("\n");
 
   const contextLines = [
@@ -57,7 +65,7 @@ async function generateDraftReply({ history, customerName, jobContext }) {
     .filter(Boolean)
     .join("\n");
 
-  const userMessage = `${contextLines}\n\nConversation so far (oldest first):\n${transcript}\n\nDraft the shop's next reply.`;
+  const userMessage = `${contextLines}\n\nText messages (oldest first):\n${transcript}\n\nThe last text message above is the customer's latest. Draft the shop's next reply, or output NO_REPLY_NEEDED.`;
 
   try {
     const res = await fetch(`${GROQ_API_BASE_URL}/chat/completions`, {
@@ -91,4 +99,4 @@ async function generateDraftReply({ history, customerName, jobContext }) {
   }
 }
 
-module.exports = { generateDraftReply };
+module.exports = { generateDraftReply, NO_REPLY };
