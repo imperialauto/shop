@@ -18,7 +18,7 @@ const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function offerMissedCall({ quo, shopClient, contacts, phoneNumberId, conversation, since, messages, totals, draft, skip }) {
   const phone = conversation.participants?.[0];
   if (!phone) return;
-  const call = await missedCall({ quo, phone, phoneNumberId, since, skip });
+  const call = await missedCall({ quo, phone, phoneNumberId, since, messages, skip });
   if (!call) return;
   const newest = [...messages].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
   const result = await shopClient.dispatchIntake({

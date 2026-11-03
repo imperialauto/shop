@@ -1,6 +1,6 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { answerOwner, recentTurns, FALLBACK } = require("../src/lib/ownerAssistant");
+const { answerOwner, recentTurns, mentionedItems, FALLBACK } = require("../src/lib/ownerAssistant");
 
 test("sends the snapshot, history and question to the model", async () => {
   let sent;
@@ -28,4 +28,11 @@ test("history is ordered and skips the current text", () => {
     { id: "3", direction: "incoming", text: "any task?", createdAt: "2026-11-02T03:00:00Z" },
   ], "3");
   assert.deepEqual(turns, [{ role: "user", content: "open" }, { role: "assistant", content: "Nothing waiting." }]);
+});
+
+test("finds the customers a question names", () => {
+  const snapshot = { waitingOnYou: [{ id: 9, who: "2005 GMC Yukon" }, { id: 5, who: "2013 Ford Fusion" }] };
+  assert.deepEqual(mentionedItems("what did the yukon customer say?", snapshot).map((i) => i.id), [9]);
+  assert.deepEqual(mentionedItems("update on #5", snapshot).map((i) => i.id), [5]);
+  assert.deepEqual(mentionedItems("any tasks?", snapshot), []);
 });

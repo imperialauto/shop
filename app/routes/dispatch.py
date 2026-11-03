@@ -167,6 +167,21 @@ def _snapshot_item(db: Session, item: DispatchItem) -> dict:
             "updatedPhoenix": _utc(item.updated_at).astimezone(PHOENIX).strftime("%a %b %-d %-I:%M %p")}
 
 
+def _today_activity(db: Session, start: datetime) -> dict:
+    since = start.astimezone(timezone.utc)
+    audits = db.query(DispatchAudit.action, DispatchAudit.detail).filter(DispatchAudit.created_at >= since).all()
+    count = lambda action: sum(1 for row in audits if row.action == action)
+    return {
+        "customerMessagesAndCalls": count("message_received"),
+        "newItems": db.query(DispatchItem).filter(DispatchItem.created_at >= since).count(),
+        "textsSent": count("text_sent"),
+        "textsFailed": count("text_failed"),
+        "approvedByOwner": count("owner_approve") + count("owner_edit"),
+        "declinedByOwner": count("owner_decline"),
+        "collectedRevenue": "Not available yet: payments are not recorded in the app.",
+    }
+
+
 def _owner_snapshot(db: Session) -> dict:
     now = datetime.now(PHOENIX)
     def rows(status, limit):
@@ -188,6 +203,7 @@ def _owner_snapshot(db: Session) -> dict:
             {"time": _utc(a.starts_at).astimezone(PHOENIX).strftime("%a %-I:%M %p"), "resource": a.resource_id, "status": a.status}
             for a in booked
         ],
+        "todaySoFar": _today_activity(db, start),
         "notInThisSnapshot": "Google Calendar events, invoices, and website forms.",
     }
 
