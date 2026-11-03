@@ -207,6 +207,7 @@ def _owner_snapshot(db: Session) -> dict:
             for a in booked
         ],
         "calendarNext7Days": [calendar_feed.describe(e) for e in calendar[:30]] if calendar is not None else "Calendar is not connected or could not be read.",
+        "calendarCoverage": "Only calendars linked to this assistant. Others can hold appointments this list cannot see.",
         "todaySoFar": _today_activity(db, start),
         "notInThisSnapshot": "Invoices and website forms.",
     }

@@ -76,6 +76,25 @@ class AssessmentTests(unittest.TestCase):
         self.assertEqual(apply_policies(["refund", "high_risk", "discount_credit"], modes), ["refund", "high_risk"])
 
 
+class OwnerTermsTests(unittest.TestCase):
+    def test_firm_words_work_with_or_without_a_number(self):
+        for text in ("send it", "go ahead", "yes please", "approve", "Do it."):
+            self.assertEqual(parse_owner_command(text), ("approve", None))
+        self.assertEqual(parse_owner_command("send 12"), ("approve", 12))
+        for text in ("skip", "don't send", "decline"):
+            self.assertEqual(parse_owner_command(text), ("decline", None))
+
+    def test_casual_words_need_a_number(self):
+        for text in ("ok", "okay", "sure", "yeah", "looks good", "ok thanks", "cancel"):
+            self.assertIsNone(parse_owner_command(text))
+        self.assertEqual(parse_owner_command("ok 12"), ("approve", 12))
+        self.assertEqual(parse_owner_command("nope #12"), ("decline", 12))
+
+    def test_questions_stay_questions(self):
+        for text in ("no calls today?", "yes what did he say", "send what", "any task?"):
+            self.assertIsNone(parse_owner_command(text))
+
+
 class QueueWorkflowTests(unittest.TestCase):
     def setUp(self):
         self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
