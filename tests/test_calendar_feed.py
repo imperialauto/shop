@@ -1,9 +1,11 @@
 """Calendar parsing, on synthetic events only."""
 import unittest
+import os
 from datetime import datetime
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-from app.calendar_feed import describe, events_between, parse_events
+from app.calendar_feed import describe, events_between, feed_urls, parse_events
 
 PHX = ZoneInfo("America/Phoenix")
 FEED = """BEGIN:VCALENDAR
@@ -85,6 +87,13 @@ class CalendarFeedTests(unittest.TestCase):
     def test_bad_event_does_not_hide_others(self):
         bad = FEED.replace("BEGIN:VCALENDAR\n", "BEGIN:VCALENDAR\nBEGIN:VEVENT\nDTSTART:garbage\nEND:VEVENT\n")
         self.assertEqual(len(parse_events(bad)), len(parse_events(FEED)))
+
+    def test_apple_and_google_addresses_are_accepted_together(self):
+        with patch.dict(os.environ, {"CALENDAR_ICS_URL": "webcal://apple.example/a , https://google.example/b.ics"}):
+            self.assertEqual(feed_urls(), ["https://apple.example/a", "https://google.example/b.ics"])
+
+    def test_two_feeds_end_to_end_both_count(self):
+        self.assertEqual(len(parse_events(FEED + FEED)), 2 * len(parse_events(FEED)))
 
 
 if __name__ == "__main__":
