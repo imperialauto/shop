@@ -136,6 +136,45 @@ class QueueWorkflowTests(unittest.TestCase):
         self.assertEqual(self.post("m1", "2013 Ford Fusion fuel leak").json()["status"], "needs_owner")
         self.assertEqual(self.items()[0].customer_id, 1)
 
+    def test_reaction_is_not_a_customer_message(self):
+        result = self.post("m1", "\u200b👍\u200b to “ Perfect, see you for your appointment Tuesday ”").json()
+        self.assertTrue(result["reaction"])
+        self.assertEqual(self.items(), [])
+        self.assertTrue(self.post("m2", "Loved “See you then”").json()["reaction"])
+
+    def test_arrival_reaches_the_owner_right_away(self):
+        response = self.post("m1", "I'm here").json()
+        item = self.items()[0]
+        self.assertEqual((response["status"], item.urgency, item.category), ("needs_owner", "urgent", "arrival"))
+        self.assertNotIn("year, make", item.proposed_action)
+        self.assertIsNone(response["autoReply"])
+
+    def test_unmatched_message_is_never_silent(self):
+        self.assertEqual(self.post("m1", "sounds good thank you").json()["status"], "needs_owner")
+
+    def test_known_customer_is_never_asked_for_a_vehicle(self):
+        body = message("m1", "can I book an appointment")
+        body.update(autoRepliesOn=True, knownCustomer=True)
+        response = self.client.post(INTAKE, json=body, headers=HEADERS).json()
+        self.assertIsNone(response["autoReply"])
+        self.assertEqual(response["status"], "needs_owner")
+
+    def test_new_lead_can_still_get_the_vehicle_question(self):
+        body = message("m1", "can I book an appointment")
+        body.update(autoRepliesOn=True)
+        response = self.client.post(INTAKE, json=body, headers=HEADERS).json()
+        self.assertEqual(response["status"], "routine")
+        self.assertIn("year, make and model", response["autoReply"]["text"])
+
+    def test_reply_in_quo_closes_the_item(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        conversation = self.items()[0].quo_conversation_id
+        old = self.client.post("/internal/dispatch/handled", json={"conversationId": conversation, "at": "2020-01-01T00:00:00Z"}, headers=HEADERS)
+        self.assertFalse(old.json()["closed"])
+        new = self.client.post("/internal/dispatch/handled", json={"conversationId": conversation, "at": "2099-01-01T00:00:00Z"}, headers=HEADERS)
+        self.assertTrue(new.json()["closed"])
+        self.assertEqual(self.items()[0].status, "closed")
+
     def test_replayed_message_changes_nothing(self):
         self.post("m1", "2013 Ford Fusion fuel leak")
         self.assertTrue(self.post("m1", "2013 Ford Fusion fuel leak").json()["duplicate"])
@@ -153,7 +192,7 @@ class QueueWorkflowTests(unittest.TestCase):
 
     def test_routine_policy_choice_is_honored(self):
         with self.Session() as db:
-            db.add(DispatchPolicy(key="discount_credit", mode="notify"))
+            db.add_all([DispatchPolicy(key="discount_credit", mode="notify"), DispatchPolicy(key="customer_reply", mode="notify")])
             db.commit()
         self.assertEqual(self.post("m1", "any discount for a 2011 Ford Focus?").json()["status"], "routine")
 
@@ -180,7 +219,7 @@ class QueueWorkflowTests(unittest.TestCase):
         with self.login:
             self.client.post(f"/dispatch/{item.id}/decide", data={"decision": "decline", "expected_message_id": "m1"})
         self.post("m2", "please call me")
-        self.assertEqual([i.status for i in self.items()], ["declined", "routine"])
+        self.assertEqual([i.status for i in self.items()], ["declined", "needs_owner"])
 
     def test_nothing_is_sent(self):
         with patch("app.routes.webhooks.send_sms") as send:
@@ -193,7 +232,7 @@ class QueueWorkflowTests(unittest.TestCase):
         item = self.items()[0]
         response = self.client.post(f"/dispatch/{item.id}/decide", data={"decision": "approve", "expected_message_id": "m1"})
         self.assertEqual(response.status_code, 401)
-        self.assertEqual(self.items()[0].status, "routine")
+        self.assertEqual(self.items()[0].status, "needs_owner")
 
     def test_policy_form_keeps_locked_rules(self):
         app.state.read_only = False
@@ -415,7 +454,7 @@ class QueueWorkflowTests(unittest.TestCase):
         monday = datetime(2026, 11, 2, 10, 5, tzinfo=AZ)
         due = self.alert(monday)
         self.assertEqual([m["key"] for m in due], ["daily:2026-11-02"])
-        self.assertIn("Today: 0 booked", due[0]["text"])
+        self.assertIn("App bookings today: 0", due[0]["text"])
         self.assertEqual(self.alert(monday), [])
         self.assertEqual(self.alert(datetime(2026, 11, 1, 10, 5, tzinfo=AZ)), [])
 
@@ -429,7 +468,8 @@ class QueueWorkflowTests(unittest.TestCase):
         late = datetime(2026, 11, 3, 16, 0, tzinfo=AZ)
         nudges = [m for m in self.alert(late) if m["key"].startswith("nudge")]
         self.assertEqual(len(nudges), 1)
-        self.assertIn("Still waiting on you", nudges[0]["text"])
+        self.assertIn("Still open (1)", nudges[0]["text"])
+        self.assertNotIn("year, make", nudges[0]["text"])
         self.assertEqual([m for m in self.alert(late) if m["key"].startswith("nudge")], [])
         self.assertEqual([m for m in self.alert(datetime(2026, 11, 4, 21, 0, tzinfo=AZ)) if m["key"].startswith("nudge")], [])
 

@@ -28,6 +28,7 @@ POLICIES = {
     "additional_authorization": "Repairs needing more customer authorization",
     "high_risk": "High-risk customer or operational exceptions",
     "missed_call": "Missed calls and voicemails",
+    "customer_reply": "Customer messages no rule can answer",
 }
 # The owner can relax the others to notify-only. These two never relax.
 LOCKED_POLICIES = {"high_risk", "refund"}
@@ -42,6 +43,10 @@ TOW = re.compile(r"\b(tow\w*|flatbed|roadside)\b", re.I)
 SCHEDULE = re.compile(r"\b(appointment|schedule\w*|reschedule\w*|book\w*|available|availability|what time|come in|drop (it )?off)\b", re.I)
 PRICE = re.compile(r"\b(how much|price|pricing|quote|estimate|cost)\b", re.I)
 INFO = re.compile(r"\b(your hours|what are (your|the) hours|hours\?|what time do you|when do you (open|close)|are you open|your address|what'?s the address|where are you|where'?s the shop|your location)\b", re.I)
+ARRIVAL = re.compile(r"\b(i'?m here|i am here|we'?re here|we are here|just (got here|arrived|pulled up)|pulled up|i'?m outside|anyone there|are you (there|here|coming))\b", re.I)
+WAITING = re.compile(r"^\W*(\?+|hello\W*|hey\W*|hi\W*)$", re.I)
+# Phone tapbacks arrive as text, such as: 👍 to “See you then!”
+REACTION = re.compile(r"^[\s\u200b]*(?:reacted\s+)?[^\w\s]{1,8}[\s\u200b]*to[\s\u200b]+[“\"]|^[\s\u200b]*(?:liked|loved|disliked|laughed at|emphasized|questioned)\s+[“\"]", re.I)
 STATUS = re.compile(r"\b(status|is it ready|ready yet|done yet|any update|update on)\b", re.I)
 REASONS = {
     "discount_credit": re.compile(r"\b(discount|credit|coupon|cheaper|price match|waive)\b", re.I),
@@ -72,12 +77,19 @@ class Assessment:
     proposed_action: str = ""
 
 
+def is_reaction(body: str) -> bool:
+    return bool(REACTION.match(body or ""))
+
+
 def assess(body: str) -> Assessment:
     text = (body or "").strip()
     safety = bool(SAFETY.search(text))
-    urgency = "safety" if safety else "urgent" if URGENT.search(text) else "normal"
+    arrival = bool(ARRIVAL.search(text) or (WAITING.match(text) and "?" in text))
+    urgency = "safety" if safety else "urgent" if arrival or URGENT.search(text) else "normal"
 
-    if INFO.search(text) and not (TOW.search(text) or PRICE.search(text) or safety):
+    if arrival and not safety:
+        category = "arrival"
+    elif INFO.search(text) and not (TOW.search(text) or PRICE.search(text) or safety):
         category = "info"
     elif TOW.search(text):
         category = "towing"
@@ -103,7 +115,7 @@ def assess(body: str) -> Assessment:
     vehicle_text = " ".join(match.group(0).split()) if match else None
     vin_match = VIN.search(text.upper())
     missing = []
-    if not vehicle_text and not vin_match:
+    if not vehicle_text and not vin_match and category != "arrival":
         missing.append("year, make and model")
     if category in ("towing", "repair") and not ADDRESS_HINT.search(text):
         missing.append("vehicle location")
@@ -116,6 +128,7 @@ def propose(category: str, urgency: str, missing: list[str]) -> str:
     if urgency == "safety":
         steps.append("Call or reply first: possible safety issue, advise before any driving.")
     steps.append({
+        "arrival": "The customer is here or waiting. Respond now.",
         "info": "Share the shop hours and address.",
         "towing": "Confirm the vehicle rolls and steers, then the tow timing.",
         "status": "Check the job status, then send an approved update.",
