@@ -15,6 +15,7 @@ const express = require("express");
 const quoWebhookRouter = require("./routes/quoWebhook");
 const messagesApiRouter = require("./routes/messagesApi");
 const { requireDashboardAuth } = require("./lib/basicAuth");
+const { tokenMatches } = require("./lib/callEvents");
 
 /**
  * Mounts the messaging module's routes onto an Express app.
@@ -30,6 +31,14 @@ function mountMessagingRoutes(app) {
     generateDraftReply: require("./lib/generateDraftReply").generateDraftReply,
     shopClient: require("./lib/shopClient"),
   }));
+
+  // Quo call events: only a hint to look the call up, so the URL token is enough.
+  app.post("/webhooks/quo-calls/:token", express.json({ limit: "256kb" }), (req, res) => {
+    const events = req.app.get("callEvents");
+    if (!events || !tokenMatches(req.params.token, process.env.CALL_HOOK_TOKEN)) return res.status(404).end();
+    res.status(200).json({ received: true });
+    events.handle(req.body).catch((err) => console.error("Call event failed:", err.message));
+  });
 
   // 1. Webhook — raw body, no auth (Quo signs the request instead).
   app.use("/webhooks/quo", quoWebhookRouter);
