@@ -10,7 +10,7 @@ function isInbound(message) {
   return /^(in|inbound|incoming)$/i.test(message.direction || "");
 }
 
-async function runRecovery({ quo, shopClient, phoneNumberId, now = Date.now, lookbackHours = DEFAULT_LOOKBACK_HOURS }) {
+async function runRecovery({ quo, shopClient, contacts, phoneNumberId, now = Date.now, lookbackHours = DEFAULT_LOOKBACK_HOURS }) {
   const since = new Date(now() - lookbackHours * 3600 * 1000).toISOString();
   const totals = { conversations: 0, offered: 0, recorded: 0, failed: 0 };
   try {
@@ -24,10 +24,12 @@ async function runRecovery({ quo, shopClient, phoneNumberId, now = Date.now, loo
       });
       for (const message of messages.filter(isInbound)) {
         totals.offered += 1;
+        const phone = message.from || conversation.participants?.[0];
         const result = await shopClient.dispatchIntake({
           conversationId: conversation.id,
           messageId: message.id,
-          phone: message.from || conversation.participants?.[0],
+          phone,
+          contactName: contacts ? await contacts.nameFor(phone) : null,
           body: message.text || message.body || "",
           recovery: true,
         });

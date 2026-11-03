@@ -43,9 +43,11 @@ const { generateDraftReply } = require("../lib/generateDraftReply");
 const { getJobContextForConversation } = require("../lib/getJobContext");
 const shopClient = require("../lib/shopClient");
 const quo = require("../lib/quoClient");
+const { createContactLookup } = require("../lib/quoContacts");
 const { handleIntakeResult, deliverOwnerMessages } = require("../lib/dispatchActions");
 
 const router = express.Router();
+const contacts = createContactLookup({ quo });
 
 // How many prior messages to hand the AI as thread context.
 const DRAFT_HISTORY_LIMIT = 15;
@@ -147,6 +149,7 @@ async function handleMessageEvent(event) {
     messageId: msg.id,
     phone: customerPhone,
     body: msg.body || "",
+    contactName: await contacts.nameFor(customerPhone),
   });
   const action = await handleIntakeResult({ result: dispatched, messageId: msg.id, phone: customerPhone, quo, shopClient })
     .catch((err) => {

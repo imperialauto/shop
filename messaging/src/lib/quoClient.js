@@ -101,6 +101,13 @@ async function listConversations({ phoneNumbers, maxResults = 50, pageToken, upd
   return quoFetch(`/v1/conversations?${params.toString()}`); // { data, totalItems, nextPageToken }
 }
 
+async function listContacts({ maxResults = 50, pageToken } = {}) {
+  const params = new URLSearchParams();
+  params.set("maxResults", String(Math.min(maxResults, 50)));
+  if (pageToken) params.set("pageToken", pageToken);
+  return quoFetch(`/v1/contacts?${params.toString()}`); // { data, totalItems, nextPageToken }
+}
+
 /** List the Quo phone numbers on this workspace — handy for finding phoneNumberId once, by hand or in a setup script. */
 async function listPhoneNumbers() {
   return quoFetch("/v1/phone-numbers");
@@ -122,6 +129,7 @@ module.exports = {
   sendMessage,
   listMessages,
   listConversations,
+  listContacts,
   listPhoneNumbers,
   markConversationRead,
   markConversationDone,

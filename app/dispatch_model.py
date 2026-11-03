@@ -19,6 +19,7 @@ class DispatchItem(Base):
     customer_id = Column(Integer, ForeignKey("customers.id"))
     vehicle_id = Column(Integer, ForeignKey("vehicles.id"))
     vehicle_text = Column(String(120))
+    contact_name = Column(String(120))  # Quo label, often a job name: owner views only
     category = Column(String(24), nullable=False, default="general")
     urgency = Column(String(12), nullable=False, default="normal")
     summary = Column(Text, nullable=False, default="")

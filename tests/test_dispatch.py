@@ -339,6 +339,18 @@ class QueueWorkflowTests(unittest.TestCase):
         self.draft(1, "m1")
         self.assertIn("Draft reply", self.alert(datetime.now(AZ))[0]["text"])
 
+    def test_contact_label_shows_in_alerts_and_is_not_repeated(self):
+        data = {**message("m1", "2011 Mitsubishi Eclipse has a fuel leak", "CNlabel"), "phone": "+16025550111", "contactName": "2011 Mitsubishi Eclipse Inspection"}
+        self.client.post(INTAKE, headers=HEADERS, json=data)
+        text = self.alert()[0]["text"]
+        self.assertTrue(text.startswith("URGENT #1: 2011 Mitsubishi Eclipse Inspection\n"))
+
+    def test_replayed_message_labels_an_older_item(self):
+        data = {**message("m1", "hello", "CNold"), "phone": "+16025550111"}
+        self.client.post(INTAKE, headers=HEADERS, json=data)
+        self.client.post(INTAKE, headers=HEADERS, json={**data, "contactName": "Melo Pontiac G6"})
+        self.assertEqual(self.items()[0].contact_name, "Melo Pontiac G6")
+
     def test_yes_is_refused_after_a_newer_customer_message(self):
         self.post("m1", "2013 Ford Fusion fuel leak")
         item = self.items()[0]
