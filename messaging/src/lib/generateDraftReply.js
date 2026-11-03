@@ -35,6 +35,52 @@ Rules:
 - Never confirm a refund, discount, or free service — that requires a human's judgment call. Flag it for the human ("I'll need to check on that") instead of promising it.
 - Output ONLY the message text to send. No quotation marks, no preamble, no "Here's a draft:".`;
 
+async function groqDraft(userMessage) {
+  const res = await fetch(`${GROQ_API_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: MAX_TOKENS,
+      messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: userMessage }],
+    }),
+  });
+  if (!res.ok) throw new Error(`Groq API ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`);
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content?.trim();
+}
+
+async function anthropicDraft(userMessage) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": process.env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: process.env.ANTHROPIC_DRAFT_MODEL || "claude-sonnet-5-5",
+      max_tokens: MAX_TOKENS,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: "user", content: userMessage }],
+    }),
+  });
+  if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`);
+  const data = await res.json();
+  return data.content?.find((part) => part.type === "text")?.text?.trim();
+}
+
+// A failed primary model falls back to the other one, so an alert still gets a draft.
+async function completeDraft(userMessage) {
+  if (process.env.DRAFT_PROVIDER !== "anthropic") return groqDraft(userMessage);
+  try {
+    return await anthropicDraft(userMessage);
+  } catch (err) {
+    console.error("Primary draft model failed:", err.message);
+    return groqDraft(userMessage);
+  }
+}
+
 /**
  * @param {{
  *   history: Array<{direction: "INBOUND"|"OUTBOUND", body: string, quoCreatedAt: Date}>,
@@ -45,8 +91,8 @@ Rules:
  */
 async function generateDraftReply({ history, customerName, jobContext, allowNoReply = false }) {
   if (!history?.length) return null;
-  if (!process.env.GROQ_API_KEY) {
-    console.error("generateDraftReply: Missing GROQ_API_KEY env var");
+  if (!process.env.GROQ_API_KEY && !process.env.ANTHROPIC_API_KEY) {
+    console.error("generateDraftReply: no drafting API key is set");
     return null;
   }
 
@@ -68,35 +114,12 @@ async function generateDraftReply({ history, customerName, jobContext, allowNoRe
   const userMessage = `${contextLines}\n\nText messages (oldest first):\n${transcript}\n\nThe last text message above is the customer's latest. Draft the shop's next reply, or output NO_REPLY_NEEDED.`;
 
   try {
-    const res = await fetch(`${GROQ_API_BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: MAX_TOKENS,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userMessage },
-        ],
-      }),
-    });
-
-    if (!res.ok) {
-      const errBody = await res.text().catch(() => "");
-      throw new Error(`Groq API ${res.status}: ${errBody.slice(0, 500)}`);
-    }
-
-    const data = await res.json();
-    const text = data.choices?.[0]?.message?.content?.trim();
-
+    const text = await completeDraft(userMessage);
     // Callers that show a draft for sending must never receive the marker as text.
     if (text?.includes(NO_REPLY)) return allowNoReply ? NO_REPLY : null;
     return text || null;
   } catch (err) {
-    console.error("generateDraftReply: Groq call failed:", err);
+    console.error("generateDraftReply: draft failed:", err.message);
     return null; // caller treats a null/failed draft as "no draft this time", never blocks message storage
   }
 }
