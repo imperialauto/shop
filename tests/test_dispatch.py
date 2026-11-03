@@ -349,6 +349,18 @@ class QueueWorkflowTests(unittest.TestCase):
         result = self.post("m1", "2013 Ford Fusion fuel leak").json()
         self.assertEqual((result["vehicleText"], result["category"]), ("2013 Ford Fusion", "repair"))
 
+    def test_missed_call_needs_the_owner_and_yes_checks_the_text_thread(self):
+        data = {**message("call1", "Voicemail: please call me"), "kind": "call", "threadMessageId": "text9", "recovery": True}
+        result = self.client.post(INTAKE, headers=HEADERS, json=data).json()
+        self.assertEqual(result["status"], "needs_owner")
+        self.assertIsNone(result["autoReply"])
+        item = self.items()[0]
+        self.draft(item.id, "call1")
+        self.mark_sent(self.alert()[0]["key"])
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            reply = self.owner_text("o1", f"YES {item.id}")
+        self.assertEqual(reply["customerReply"]["messageId"], "text9")
+
     def test_replayed_message_labels_an_older_item(self):
         data = {**message("m1", "hello", "CNold"), "phone": "+16025550111"}
         self.client.post(INTAKE, headers=HEADERS, json=data)

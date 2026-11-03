@@ -31,7 +31,8 @@ if (process.env.DISPATCH_RECOVERY_ENABLED === "true") {
   const shopClient = require("./src/lib/shopClient");
   const { startRecovery } = require("./src/lib/dispatchRecovery");
   const { createContactLookup } = require("./src/lib/quoContacts");
-  startRecovery({ quo, shopClient, contacts: createContactLookup({ quo }), phoneNumberId: process.env.QUO_PHONE_NUMBER_ID });
+  startRecovery({ quo, shopClient, contacts: createContactLookup({ quo }), phoneNumberId: process.env.QUO_PHONE_NUMBER_ID,
+    skip: new Set((process.env.CONTACT_SYNC_SKIP || "").split(",").filter(Boolean).map((n) => n.replace(/\D/g, "").slice(-10))) });
 }
 
 // Off unless explicitly enabled. Approvals, nudges and the morning summary.

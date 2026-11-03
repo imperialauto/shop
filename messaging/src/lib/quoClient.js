@@ -108,6 +108,25 @@ async function listContacts({ maxResults = 50, pageToken } = {}) {
   return quoFetch(`/v1/contacts?${params.toString()}`); // { data, totalItems, nextPageToken }
 }
 
+async function listCalls({ phoneNumberId, participants, maxResults = 10, createdAfter } = {}) {
+  const params = new URLSearchParams();
+  params.set("phoneNumberId", phoneNumberId || process.env.QUO_PHONE_NUMBER_ID);
+  participants.forEach((p) => params.append("participants", p));
+  params.set("maxResults", String(maxResults));
+  if (createdAfter) params.set("createdAfter", createdAfter);
+  return quoFetch(`/v1/calls?${params.toString()}`);
+}
+
+async function getVoicemail(callId) {
+  const { data } = await quoFetch(`/v1/call-voicemails/${callId}`);
+  return data;
+}
+
+async function getTranscript(callId) {
+  const { data } = await quoFetch(`/v1/call-transcripts/${callId}`);
+  return data;
+}
+
 async function createContact({ firstName, lastName, phone, externalId }) {
   const body = {
     defaultFields: { firstName, lastName, phoneNumbers: [{ name: "primary", value: phone }] },
@@ -144,6 +163,9 @@ module.exports = {
   sendMessage,
   listMessages,
   listConversations,
+  listCalls,
+  getVoicemail,
+  getTranscript,
   listContacts,
   createContact,
   updateContact,
