@@ -32,6 +32,7 @@ class IntakeMessage(BaseModel):
     messageId: str = Field(min_length=1, max_length=128)
     phone: str = Field(min_length=1, max_length=32)
     body: str = Field(default="", max_length=4000)
+    contactName: str | None = Field(default=None, max_length=120)
     recovery: bool = False  # replayed by the catch-up job: never reply or act on it
 
 
@@ -86,6 +87,7 @@ def _record(db: Session, message: IntakeMessage, result) -> DispatchItem:
     item.customer_id = customer.id if customer else item.customer_id
     item.vehicle_id = vehicle.id if vehicle else item.vehicle_id
     item.vehicle_text = result.vehicle_text or item.vehicle_text
+    item.contact_name = message.contactName or item.contact_name
     item.summary = message.body.strip()[:SUMMARY_LIMIT]
     item.draft_reply = None  # any earlier draft answered an older message
     item.proposed_action = propose(item.category, item.urgency, list(result.missing))
@@ -145,10 +147,13 @@ def _open_approvals(db: Session) -> list[DispatchItem]:
 def _label(db: Session, item: DispatchItem) -> str:
     customer = db.get(Customer, item.customer_id) if item.customer_id else None
     name = f"{customer.first_name or ''} {customer.last_name or ''}".strip() if customer else ""
+    name = name or item.contact_name or ""
     vehicle = item.vehicle_text
     if not vehicle and item.vehicle_id:
         row = db.get(Vehicle, item.vehicle_id)
         vehicle = f"{row.year or ''} {row.make or ''} {row.model or ''}".strip() if row else None
+    if vehicle and vehicle.casefold() in name.casefold():
+        vehicle = None  # contact labels often already include the vehicle
     return " - ".join(part for part in (name, vehicle) if part) or item.customer_phone
 
 
@@ -194,6 +199,15 @@ def _owner_command(db: Session, message: IntakeMessage) -> dict:
 @internal_router.post("/intake")
 def intake(message: IntakeMessage, db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
     if db.query(DispatchEvent).filter(DispatchEvent.quo_message_id == message.messageId).first():
+        if message.contactName:  # lets recovery label items queued before contacts were read
+            item = db.query(DispatchItem).filter(
+                DispatchItem.quo_conversation_id == message.conversationId,
+                DispatchItem.status.in_(OPEN_STATUSES),
+                DispatchItem.contact_name.is_(None),
+            ).first()
+            if item:
+                item.contact_name = message.contactName
+                db.commit()
         return {"recorded": False, "duplicate": True}
     if _is_owner(message.phone):
         if message.recovery:
@@ -478,7 +492,7 @@ def _card(db: Session, item: DispatchItem, scheduled: dict[int, datetime]) -> di
             estimate = sum(line.quantity * line.unit_price for line in open_ro.line_items)
     return {
         "item": item,
-        "customer_name": f"{customer.first_name or ''} {customer.last_name or ''}".strip() if customer else None,
+        "customer_name": (f"{customer.first_name or ''} {customer.last_name or ''}".strip() if customer else None) or item.contact_name,
         "reasons": [POLICIES.get(r, r) for r in json.loads(item.approval_reasons)],
         "history": history,
         "open_ro": open_ro,

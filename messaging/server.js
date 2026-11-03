@@ -30,7 +30,8 @@ if (process.env.DISPATCH_RECOVERY_ENABLED === "true") {
   const quo = require("./src/lib/quoClient");
   const shopClient = require("./src/lib/shopClient");
   const { startRecovery } = require("./src/lib/dispatchRecovery");
-  startRecovery({ quo, shopClient, phoneNumberId: process.env.QUO_PHONE_NUMBER_ID });
+  const { createContactLookup } = require("./src/lib/quoContacts");
+  startRecovery({ quo, shopClient, contacts: createContactLookup({ quo }), phoneNumberId: process.env.QUO_PHONE_NUMBER_ID });
 }
 
 // Off unless explicitly enabled. Approvals, nudges and the morning summary.
