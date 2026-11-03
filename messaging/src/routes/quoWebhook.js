@@ -44,6 +44,7 @@ const { getJobContextForConversation } = require("../lib/getJobContext");
 const shopClient = require("../lib/shopClient");
 const quo = require("../lib/quoClient");
 const { createContactLookup } = require("../lib/quoContacts");
+const { callContext } = require("../lib/callIntake");
 const { handleIntakeResult, deliverOwnerMessages } = require("../lib/dispatchActions");
 
 const router = express.Router();
@@ -197,10 +198,13 @@ async function handleMessageEvent(event) {
     });
     const jobContext = await getJobContextForConversation(prisma, conversation).catch(() => null);
 
+    // Drafts must know what was said on calls with this same phone number.
+    const calls = await callContext({ quo, phone: customerPhone });
+    const summary = [jobContext?.summary, calls].filter(Boolean).join("\n") || null;
     const draftBody = await generateDraftReply({
       history: history.reverse(),
       customerName: customer?.name,
-      jobContext,
+      jobContext: summary ? { ...jobContext, summary } : jobContext,
     });
 
     if (draftBody) {

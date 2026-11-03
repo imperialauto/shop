@@ -33,6 +33,8 @@ class IntakeMessage(BaseModel):
     phone: str = Field(min_length=1, max_length=32)
     body: str = Field(default="", max_length=4000)
     contactName: str | None = Field(default=None, max_length=120)
+    kind: str = Field(default="message", pattern="^(message|call)$")
+    threadMessageId: str | None = Field(default=None, max_length=128)
     recovery: bool = False  # replayed by the catch-up job: never reply or act on it
 
 
@@ -72,7 +74,7 @@ def _record(db: Session, message: IntakeMessage, result) -> DispatchItem:
         DispatchItem.status.in_(OPEN_STATUSES),
     ).first()
     earlier = json.loads(item.approval_reasons) if item else []
-    reasons = sorted(set(earlier) | set(result.reasons))
+    reasons = sorted(set(earlier) | set(result.reasons) | ({"missed_call"} if message.kind == "call" else set()))
     needs_owner = apply_policies(reasons, policy_modes(db))
     if item is None:
         item = DispatchItem(quo_conversation_id=message.conversationId, customer_phone=message.phone,
@@ -89,6 +91,7 @@ def _record(db: Session, message: IntakeMessage, result) -> DispatchItem:
     item.vehicle_text = result.vehicle_text or item.vehicle_text
     item.contact_name = message.contactName or item.contact_name
     item.summary = message.body.strip()[:SUMMARY_LIMIT]
+    item.thread_message_id = message.threadMessageId
     item.draft_reply = None  # any earlier draft answered an older message
     item.proposed_action = propose(item.category, item.urgency, list(result.missing))
     item.approval_reasons = json.dumps(reasons)
@@ -193,7 +196,7 @@ def _owner_command(db: Session, message: IntakeMessage) -> dict:
     if not reserve(db, key, "customer", item.id):
         return {"ownerReply": f"#{item.id} was already sent."}
     return {"customerReply": {"key": key, "itemId": item.id, "phone": item.customer_phone, "text": text,
-                              "messageId": item.last_message_id, "conversationId": item.quo_conversation_id}}
+                              "messageId": item.thread_message_id or item.last_message_id, "conversationId": item.quo_conversation_id}}
 
 
 @internal_router.post("/intake")

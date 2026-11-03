@@ -23,6 +23,6 @@ jobs:
       - name: Install test dependencies
         run: python -m pip install pytest fastapi sqlalchemy python-dotenv python-multipart jinja2 passlib bcrypt httpx
       - name: Dispatch recovery tests
-        run: node --test messaging/tests/dispatchRecovery.test.js messaging/tests/dispatchActions.test.js messaging/tests/quoContacts.test.js
+        run: node --test messaging/tests/dispatchRecovery.test.js messaging/tests/dispatchActions.test.js messaging/tests/quoContacts.test.js messaging/tests/callIntake.test.js
       - name: Run isolated Quo tests
         run: python -m pytest tests/test_quo_idempotency.py -q

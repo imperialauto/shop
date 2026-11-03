@@ -27,6 +27,7 @@ POLICIES = {
     "scheduling_conflict": "Scheduling conflicts",
     "additional_authorization": "Repairs needing more customer authorization",
     "high_risk": "High-risk customer or operational exceptions",
+    "missed_call": "Missed calls and voicemails",
 }
 # The owner can relax the others to notify-only. These two never relax.
 LOCKED_POLICIES = {"high_risk", "refund"}

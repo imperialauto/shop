@@ -16,6 +16,7 @@ function fixture({ listError = false, intake = async () => ({ recorded: true }) 
       ],
     }),
     sendMessage: async () => { calls.sends += 1; },
+    listCalls: async () => ({ data: [] }),
   };
   const shopClient = {
     dispatchIntake: async (message) => { calls.intake.push(message); return intake(message); },
@@ -31,6 +32,22 @@ test("offers only inbound messages and never sends", async () => {
   assert.equal(totals.recorded, 1);
   assert.equal(f.calls.sends, 0);
   assert.equal(f.calls.sync[0].ok, true);
+});
+
+test("a missed call is queued with a draft and sends nothing", async () => {
+  const f = fixture();
+  f.quo.listCalls = async () => ({ data: [{ id: "call1", direction: "incoming", status: "no-answer", createdAt: "2026-11-02T20:00:00Z" }] });
+  f.quo.getVoicemail = async () => ({ transcript: "Please call me about my 2003 Acura" });
+  f.quo.getTranscript = async () => { throw new Error("none"); };
+  const drafts = [];
+  f.shopClient.dispatchDraft = async (d) => { drafts.push(d); };
+  await runRecovery({ ...f, phoneNumberId: "PNtest", pauseMs: 0, draft: async () => "Sorry we missed you." });
+  const queued = f.calls.intake.find((m) => m.kind === "call");
+  assert.equal(queued.messageId, "call1");
+  assert.equal(queued.threadMessageId, "m1");
+  assert.equal(queued.recovery, true);
+  assert.equal(drafts[0].body, "Sorry we missed you.");
+  assert.equal(f.calls.sends, 0);
 });
 
 test("messages already queued count as healthy", async () => {

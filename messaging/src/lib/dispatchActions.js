@@ -60,7 +60,7 @@ async function sendApprovedReply({ reply, ownerPhone, quo, shopClient }) {
   let status = "skipped";
   let notice = `#${reply.itemId} was not sent. There's a newer message in that thread, so check Quo.`;
   try {
-    if ((await latestMessageId(quo, reply.phone)) === reply.messageId) {
+    if (((await latestMessageId(quo, reply.phone)) || "none") === reply.messageId) {
       status = "failed";
       notice = `#${reply.itemId} failed to send. Please reply in Quo.`;
       await quo.sendMessage({ to: reply.phone, content: reply.text });

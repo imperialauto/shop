@@ -25,6 +25,7 @@ class DispatchItem(Base):
     summary = Column(Text, nullable=False, default="")
     proposed_action = Column(Text, nullable=False, default="")
     draft_reply = Column(Text)
+    thread_message_id = Column(String(128))  # newest text when a call opened or updated this item
     approval_reasons = Column(Text, nullable=False, default="[]")
     status = Column(String(16), nullable=False, default="routine")
     last_message_id = Column(String(128), nullable=False)

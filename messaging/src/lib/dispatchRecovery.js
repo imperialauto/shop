@@ -2,6 +2,9 @@
 // and re-offering them to the Operations queue. The queue ignores any message
 // it already has, so repeats are safe. This module never sends a message.
 
+const { missedCall, callContext } = require("./callIntake");
+const { generateDraftReply } = require("./generateDraftReply");
+
 const SOURCE = "quo_recovery";
 const DEFAULT_LOOKBACK_HOURS = 6;
 const DEFAULT_INTERVAL_MINUTES = 15;
@@ -12,9 +15,41 @@ function isInbound(message) {
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function runRecovery({ quo, shopClient, contacts, phoneNumberId, now = Date.now, lookbackHours = DEFAULT_LOOKBACK_HOURS, pauseMs = 300 }) {
+async function offerMissedCall({ quo, shopClient, contacts, phoneNumberId, conversation, since, messages, totals, draft, skip }) {
+  const phone = conversation.participants?.[0];
+  if (!phone) return;
+  const call = await missedCall({ quo, phone, phoneNumberId, since, skip });
+  if (!call) return;
+  const newest = [...messages].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+  const result = await shopClient.dispatchIntake({
+    conversationId: conversation.id,
+    messageId: call.id,
+    phone,
+    body: call.body,
+    recovery: true,
+    kind: "call",
+    threadMessageId: newest?.id || "none",
+    contactName: contacts ? await contacts.nameFor(phone) : null,
+  });
+  if (!result.recorded || result.owner) return;
+  totals.calls += 1;
+  if (contacts && process.env.CONTACT_SYNC_ENABLED === "true") {
+    await contacts.syncContact({ phone, vehicleText: result.vehicleText, category: result.category })
+      .catch((err) => console.error("Quo contact sync failed:", err.message));
+  }
+  const history = [...messages].reverse().map((m) => ({
+    direction: isInbound(m) ? "INBOUND" : "OUTBOUND",
+    body: m.text || m.body || "",
+  }));
+  history.push({ direction: "INBOUND", body: `[${call.body}]` });
+  const summary = await callContext({ quo, phone, phoneNumberId });
+  const body = await draft({ history, jobContext: summary ? { summary } : null });
+  if (body) await shopClient.dispatchDraft({ conversationId: conversation.id, messageId: call.id, body });
+}
+
+async function runRecovery({ quo, shopClient, contacts, phoneNumberId, now = Date.now, lookbackHours = DEFAULT_LOOKBACK_HOURS, pauseMs = 300, draft = generateDraftReply, skip = new Set() }) {
   const since = new Date(now() - lookbackHours * 3600 * 1000).toISOString();
-  const totals = { conversations: 0, offered: 0, recorded: 0, failed: 0 };
+  const totals = { conversations: 0, offered: 0, recorded: 0, failed: 0, calls: 0 };
   try {
     const { data: conversations = [] } = await quo.listConversations({ updatedAfter: since });
     for (const conversation of conversations) {
@@ -25,6 +60,7 @@ async function runRecovery({ quo, shopClient, contacts, phoneNumberId, now = Dat
         participants: conversation.participants,
         createdAfter: since,
       });
+      await offerMissedCall({ quo, shopClient, contacts, phoneNumberId, conversation, since, messages, totals, draft, skip });
       for (const message of messages.filter(isInbound)) {
         totals.offered += 1;
         const phone = message.from || conversation.participants?.[0];
@@ -44,7 +80,7 @@ async function runRecovery({ quo, shopClient, contacts, phoneNumberId, now = Dat
     totals.failed += 1;
     console.error("Dispatch recovery failed:", err.message);
   }
-  const detail = `checked ${totals.conversations}, recovered ${totals.recorded}, failed ${totals.failed}`;
+  const detail = `checked ${totals.conversations}, recovered ${totals.recorded}, calls ${totals.calls}, failed ${totals.failed}`;
   await shopClient.dispatchSync({ source: SOURCE, ok: totals.failed === 0, detail });
   return totals;
 }
