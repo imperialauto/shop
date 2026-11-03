@@ -40,6 +40,13 @@ async function missedCall({ quo, phone, phoneNumberId, since, messages = [], ski
   return NOT_LEADS.test(body) ? null : { id: newest.id, body };
 }
 
+// The newest moment a person at the shop spoke with this customer by phone.
+function lastConversationAt(calls = []) {
+  const talked = calls.filter((c) => !c.aiHandled && (c.duration > 0) && (c.direction === "outgoing" || c.answeredAt));
+  const times = talked.map((c) => c.completedAt || c.answeredAt || c.createdAt).sort();
+  return times[times.length - 1] || null;
+}
+
 async function callContext({ quo, phone, phoneNumberId }) {
   try {
     const { data = [] } = await quo.listCalls({ phoneNumberId, participants: [phone], maxResults: 3 });
@@ -58,4 +65,4 @@ async function callContext({ quo, phone, phoneNumberId }) {
   }
 }
 
-module.exports = { missedCall, callContext, isMissed };
+module.exports = { lastConversationAt, missedCall, callContext, isMissed };

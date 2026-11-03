@@ -133,6 +133,10 @@ async function handleMessageEvent(event) {
   // status-update replay of one we've already processed), and only if
   // there isn't already a PENDING draft waiting for review.
   const isNewInbound = direction === "INBOUND" && event.type === "message.received";
+  if (direction === "OUTBOUND") {
+    // A text to the customer from Quo answers the open item right away.
+    await shopClient.dispatchHandled({ conversationId: msg.conversationId, at: msg.createdAt });
+  }
   if (!isNewInbound) return;
 
   // Best-effort mirror into the shop app's native Communication log, so

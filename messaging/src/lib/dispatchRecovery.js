@@ -2,7 +2,7 @@
 // and re-offering them to the Operations queue. The queue ignores any message
 // it already has, so repeats are safe. This module never sends a message.
 
-const { missedCall, callContext } = require("./callIntake");
+const { lastConversationAt, missedCall, callContext } = require("./callIntake");
 const { generateDraftReply } = require("./generateDraftReply");
 
 const SOURCE = "quo_recovery";
@@ -62,6 +62,12 @@ async function runRecovery({ quo, shopClient, contacts, phoneNumberId, now = Dat
       });
       const latest = [...messages].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
       if (latest && !isInbound(latest)) await shopClient.dispatchHandled({ conversationId: conversation.id, at: latest.createdAt });
+      const callPhone = conversation.participants?.[0];
+      if (callPhone) {
+        const { data: calls = [] } = await quo.listCalls({ phoneNumberId, participants: [callPhone], createdAfter: since, maxResults: 10 });
+        const talkedAt = lastConversationAt(calls);
+        if (talkedAt) await shopClient.dispatchHandled({ conversationId: conversation.id, at: talkedAt });
+      }
       await offerMissedCall({ quo, shopClient, contacts, phoneNumberId, conversation, since, messages, totals, draft, skip });
       for (const message of messages.filter(isInbound)) {
         totals.offered += 1;
