@@ -4,12 +4,14 @@ Nothing here sends a customer message. Approving records the decision; texts
 still go out through the human-approved send path in the messaging service.
 """
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
+from app import calendar_feed
 from app.appointments import PHOENIX
 from app.auth import get_current_user, require_admin
 from app.database import get_db
@@ -193,6 +195,7 @@ def _owner_snapshot(db: Session) -> dict:
         Appointment.starts_at >= start.astimezone(timezone.utc),
         Appointment.starts_at < (start + timedelta(days=2)).astimezone(timezone.utc),
     ).order_by(Appointment.starts_at).limit(20).all()
+    calendar = calendar_feed.upcoming(now)
     return {
         "nowPhoenix": now.strftime("%a %b %-d %-I:%M %p"),
         "shop": "Open Mon-Fri 11-7, Sat 12-5, closed Sunday. Suite 508.",
@@ -203,8 +206,9 @@ def _owner_snapshot(db: Session) -> dict:
             {"time": _utc(a.starts_at).astimezone(PHOENIX).strftime("%a %-I:%M %p"), "resource": a.resource_id, "status": a.status}
             for a in booked
         ],
+        "calendarNext7Days": [calendar_feed.describe(e) for e in calendar[:30]] if calendar is not None else "Calendar is not connected or could not be read.",
         "todaySoFar": _today_activity(db, start),
-        "notInThisSnapshot": "Google Calendar events, invoices, and website forms.",
+        "notInThisSnapshot": "Invoices and website forms.",
     }
 
 
@@ -322,6 +326,12 @@ def _daily_text(db: Session, now: datetime) -> str:
         f"Waiting on customers: {customers}",
         f"Other open messages: {routine}",
     ]
+    calendar = calendar_feed.upcoming(now, days=1)
+    if calendar is None:
+        if os.getenv("CALENDAR_ICS_URL"):
+            lines.insert(1, "Calendar: could not be read")
+    else:
+        lines.insert(1, "Calendar: " + ("; ".join(calendar_feed.describe(e, False) for e in calendar[:5]) or "nothing today"))
     lines += [f"#{i.id} {_label(db, i)}" for i in waiting[:4]]
     return "\n".join(lines)
 
@@ -578,7 +588,9 @@ def dashboard_context(db: Session, view: str = "open") -> dict:
         db.rollback()
         return {"dispatch_ready": False, "dispatch_items": [], "dispatch_policies": [],
                 "dispatch_view": view, "dispatch_views": VIEWS, "dispatch_health": [], "dispatch_auto_policies": []}
+    calendar = calendar_feed.upcoming(datetime.now(PHOENIX))
     return {
+        "calendar_events": [calendar_feed.describe(e) for e in calendar[:10]] if calendar is not None else None,
         "dispatch_ready": True,
         "dispatch_items": cards,
         "dispatch_view": view,

@@ -1,3 +1,10 @@
+{% if calendar_events is defined %}
+<div class="card" style="padding:12px 16px; margin-bottom:12px; font-size:13px; color:#a1a1aa;">
+  <div style="font-size:13.5px; font-weight:600; color:#e4e4e7; margin-bottom:6px;">Calendar, next 7 days</div>
+  {% if calendar_events is none %}Not connected or could not be read.
+  {% else %}{% for line in calendar_events %}<div style="overflow-wrap:anywhere;">{{ line }}</div>{% else %}Nothing scheduled.{% endfor %}{% endif %}
+</div>
+{% endif %}
 <div class="card" style="padding:0; overflow:hidden; margin-bottom:20px;">
   <div style="padding:14px 16px 12px; border-bottom:1px solid rgba(255,255,255,0.06); display:flex; justify-content:space-between; gap:12px;">
     <span style="font-size:13.5px; font-weight:600; color:#e4e4e7;">Needs attention</span>
