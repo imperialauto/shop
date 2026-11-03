@@ -152,9 +152,12 @@ async function handleMessageEvent(event) {
     conversationId: msg.conversationId,
     messageId: msg.id,
     phone: customerPhone,
-    body: msg.body || "",
+    body: msg.body || (msg.media?.length ? "[Customer sent a photo]" : ""),
     contactName: await contacts.nameFor(customerPhone),
+    autoRepliesOn: process.env.AUTO_REPLIES_ENABLED === "true",
+    knownCustomer: (await prisma.message.count({ where: { conversationId: conversation.id, id: { not: stored.id } } }).catch(() => 1)) > 0,
   });
+  if (dispatched.reaction) return; // a tapback needs no reply, draft or alert
   const action = await handleIntakeResult({ result: dispatched, messageId: msg.id, phone: customerPhone, quo, shopClient })
     .catch((err) => {
       console.error("Dispatch action failed:", err.message);

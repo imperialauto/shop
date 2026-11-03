@@ -98,16 +98,26 @@ async function logCommunication({ phone, direction, body, externalId }) {
  * Best-effort hand-off of an inbound SMS to the Operations queue. Records work
  * for the owner only; it never sends anything and never throws.
  */
-async function dispatchIntake({ conversationId, messageId, phone, body, recovery = false, contactName = null, kind = "message", threadMessageId = null }) {
+async function dispatchIntake({ conversationId, messageId, phone, body, recovery = false, contactName = null, kind = "message", threadMessageId = null, autoRepliesOn = false, knownCustomer = false }) {
   if (!configured()) return { recorded: false, reason: "not_configured" };
   try {
     return await request("/internal/dispatch/intake", {
       method: "POST",
-      body: JSON.stringify({ conversationId, messageId, phone, body, recovery, contactName, kind, threadMessageId }),
+      body: JSON.stringify({ conversationId, messageId, phone, body, recovery, contactName, kind, threadMessageId, autoRepliesOn, knownCustomer }),
     });
   } catch (err) {
     console.error("shopClient.dispatchIntake failed:", err.message);
     return { recorded: false, reason: "error" };
+  }
+}
+
+async function dispatchHandled({ conversationId, at }) {
+  if (!configured()) return { closed: false };
+  try {
+    return await request("/internal/dispatch/handled", { method: "POST", body: JSON.stringify({ conversationId, at }) });
+  } catch (err) {
+    console.error("shopClient.dispatchHandled failed:", err.message);
+    return { closed: false };
   }
 }
 
@@ -151,6 +161,6 @@ async function dispatchOutbound({ key, status }) {
 
 module.exports = {
   configured, getContext, getContextStrict, getSigningLink, logCommunication,
-  dispatchIntake, dispatchSync, dispatchTick, dispatchOutbound, dispatchDraft,
+  dispatchIntake, dispatchHandled, dispatchSync, dispatchTick, dispatchOutbound, dispatchDraft,
 };
 

@@ -60,6 +60,8 @@ async function runRecovery({ quo, shopClient, contacts, phoneNumberId, now = Dat
         participants: conversation.participants,
         createdAfter: since,
       });
+      const latest = [...messages].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+      if (latest && !isInbound(latest)) await shopClient.dispatchHandled({ conversationId: conversation.id, at: latest.createdAt });
       await offerMissedCall({ quo, shopClient, contacts, phoneNumberId, conversation, since, messages, totals, draft, skip });
       for (const message of messages.filter(isInbound)) {
         totals.offered += 1;
@@ -69,7 +71,7 @@ async function runRecovery({ quo, shopClient, contacts, phoneNumberId, now = Dat
           messageId: message.id,
           phone,
           contactName: contacts ? await contacts.nameFor(phone) : null,
-          body: message.text || message.body || "",
+          body: message.text || message.body || (message.media?.length ? "[Customer sent a photo]" : ""),
           recovery: true,
         });
         if (result.recorded) totals.recorded += 1;

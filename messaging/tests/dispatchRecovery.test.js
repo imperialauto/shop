@@ -20,6 +20,7 @@ function fixture({ listError = false, intake = async () => ({ recorded: true }) 
   };
   const shopClient = {
     dispatchIntake: async (message) => { calls.intake.push(message); return intake(message); },
+    dispatchHandled: async () => ({ closed: true }),
     dispatchSync: async (report) => { calls.sync.push(report); return { recorded: true }; },
   };
   return { quo, shopClient, calls };

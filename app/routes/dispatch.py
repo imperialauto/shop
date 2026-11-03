@@ -5,6 +5,7 @@ still go out through the human-approved send path in the messaging service.
 """
 import json
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -16,7 +17,7 @@ from app.appointments import PHOENIX
 from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.config import OWNER_PHONE
-from app.dispatch import AUTO_POLICIES, LOCKED_POLICIES, POLICIES, apply_policies, assess, auto_reply, parse_owner_command, propose
+from app.dispatch import AUTO_POLICIES, LOCKED_POLICIES, MAKES, POLICIES, apply_policies, assess, auto_reply, is_reaction, parse_owner_command, propose
 from app.appointment_model import Appointment
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync, OPEN_STATUSES
 from app.models import Communication, Customer, RepairOrder, Vehicle
@@ -38,6 +39,8 @@ class IntakeMessage(BaseModel):
     kind: str = Field(default="message", pattern="^(message|call)$")
     threadMessageId: str | None = Field(default=None, max_length=128)
     recovery: bool = False  # replayed by the catch-up job: never reply or act on it
+    autoRepliesOn: bool = False
+    knownCustomer: bool = False  # the conversation already has earlier messages
 
 
 class DraftInput(BaseModel):
@@ -65,6 +68,33 @@ def policy_modes(db: Session) -> dict[str, str]:
     return {p.key: p.mode for p in db.query(DispatchPolicy).all()}
 
 
+def _auto_choice(db: Session, message: IntakeMessage, result, has_vehicle: bool):
+    choice = auto_reply(result, has_vehicle, policy_modes(db))
+    if choice and choice[0] == "vehicle" and message.knownCustomer:
+        return None  # only a brand-new lead gets asked what they drive
+    return choice
+
+
+def _auto_key(conversation_id: str, template: str) -> str:
+    # Hours can repeat a week later; the vehicle question is only asked once.
+    period = datetime.now(PHOENIX).strftime("%G-%V") if template == "hours" else "once"
+    return f"auto:{conversation_id}:{template}:{period}"
+
+
+def _rule_answers(db: Session, message: IntakeMessage, result, item, customer) -> bool:
+    """True when an automatic reply will really cover this message."""
+    if not message.autoRepliesOn or message.recovery:
+        return False
+    has_vehicle = bool(result.vehicle_text or (item and item.vehicle_text)) or (
+        customer is not None and db.query(Vehicle).filter(Vehicle.customer_id == customer.id).first() is not None
+    )
+    choice = _auto_choice(db, message, result, has_vehicle)
+    if choice is None:
+        return False
+    key = _auto_key(message.conversationId, choice[0])
+    return db.query(DispatchOutbound).filter(DispatchOutbound.dedupe_key == key).first() is None
+
+
 def _record(db: Session, message: IntakeMessage, result) -> DispatchItem:
     customer = _find_customer_by_phone(db, message.phone)
     vehicle = None
@@ -78,6 +108,9 @@ def _record(db: Session, message: IntakeMessage, result) -> DispatchItem:
     earlier = json.loads(item.approval_reasons) if item else []
     reasons = sorted(set(earlier) | set(result.reasons) | ({"missed_call"} if message.kind == "call" else set()))
     needs_owner = apply_policies(reasons, policy_modes(db))
+    if message.kind == "message" and not needs_owner and not _rule_answers(db, message, result, item, customer):
+        reasons = sorted(set(reasons) | {"customer_reply"})  # nothing goes quiet just because no rule fits
+        needs_owner = apply_policies(reasons, policy_modes(db))
     if item is None:
         item = DispatchItem(quo_conversation_id=message.conversationId, customer_phone=message.phone,
                             last_message_id=message.messageId, category=result.category,
@@ -127,13 +160,11 @@ def _auto_reply_for(db: Session, item: DispatchItem, message: IntakeMessage, res
         item.customer_id is not None
         and db.query(Vehicle).filter(Vehicle.customer_id == item.customer_id).first() is not None
     )
-    choice = auto_reply(result, has_vehicle, policy_modes(db))
+    choice = _auto_choice(db, message, result, has_vehicle)
     if choice is None:
         return None
     template, text = choice
-    # Hours can repeat a week later; the vehicle question is only asked once.
-    period = datetime.now(PHOENIX).strftime("%G-%V") if template == "hours" else "once"
-    key = f"auto:{message.conversationId}:{template}:{period}"
+    key = _auto_key(message.conversationId, template)
     if not reserve(db, key, "customer", item.id):
         return None
     audit(db, item.id, "system", "auto_reply_reserved", template)
@@ -152,7 +183,8 @@ def _open_approvals(db: Session) -> list[DispatchItem]:
 def _label(db: Session, item: DispatchItem) -> str:
     customer = db.get(Customer, item.customer_id) if item.customer_id else None
     name = f"{customer.first_name or ''} {customer.last_name or ''}".strip() if customer else ""
-    name = name or item.contact_name or ""
+    contact = item.contact_name or ""
+    name = name or ("" if contact.casefold().startswith("new lead") else contact)
     vehicle = item.vehicle_text
     if not vehicle and item.vehicle_id:
         row = db.get(Vehicle, item.vehicle_id)
@@ -162,9 +194,17 @@ def _label(db: Session, item: DispatchItem) -> str:
     return " - ".join(part for part in (name, vehicle) if part) or item.customer_phone
 
 
+def _next_step(db: Session, item: DispatchItem) -> str:
+    """Drops the vehicle question once the record already shows the vehicle."""
+    text = item.proposed_action or ""
+    if item.vehicle_text or item.vehicle_id or re.search(rf"\b((19|20)\d\d|{MAKES})\b", _label(db, item), re.I):
+        text = text.replace("Ask for: year, make and model, ", "Ask for: ").replace(" Ask for: year, make and model.", "")
+    return text
+
+
 def _snapshot_item(db: Session, item: DispatchItem) -> dict:
     return {"id": item.id, "who": _label(db, item), "phone": item.customer_phone, "type": item.category,
-            "urgency": item.urgency, "lastMessage": item.summary[:200], "nextStep": item.proposed_action[:160],
+            "urgency": item.urgency, "lastMessage": item.summary[:200], "nextStep": _next_step(db, item)[:160],
             "draftReply": (item.draft_reply or "")[:200] or None,
             "updatedPhoenix": _utc(item.updated_at).astimezone(PHOENIX).strftime("%a %b %-d %-I:%M %p")}
 
@@ -275,6 +315,13 @@ def intake(message: IntakeMessage, db: Session = Depends(get_db), _auth: bool = 
             db.rollback()
             return {"recorded": False, "duplicate": True, "owner": True}
         return {"recorded": True, "owner": True, **_owner_command(db, message)}
+    if is_reaction(message.body):  # a thumbs-up is not a new request
+        db.add(DispatchEvent(quo_message_id=message.messageId))
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+        return {"recorded": False, "reaction": True}
     result = assess(message.body)
     for attempt in (1, 2):  # a concurrent delivery can win the unique index once
         try:
@@ -294,7 +341,7 @@ NUDGE_AFTER = {"needs_owner": timedelta(hours=2), "approved": timedelta(hours=24
 TICK_LIMIT = 10
 DAILY_HOUR = 10
 DRAFT_GRACE = timedelta(seconds=90)
-NUDGE_HOURS = range(10, 19)
+NUDGE_HOURS = range(15, 19)  # the 10 AM summary covers the morning
 
 
 def _alert_text(db: Session, item: DispatchItem) -> str:
@@ -322,7 +369,7 @@ def _daily_text(db: Session, now: datetime) -> str:
     customers = db.query(DispatchItem).filter(DispatchItem.status == "approved").count()
     routine = db.query(DispatchItem).filter(DispatchItem.status == "routine").count()
     lines = [
-        f"Today: {len(appointments)} booked" + (f" ({times})" if times else ""),
+        f"App bookings today: {len(appointments)}" + (f" ({times})" if times else ""),
         f"Waiting on you: {len(waiting)}",
         f"Waiting on customers: {customers}",
         f"Other open messages: {routine}",
@@ -330,9 +377,9 @@ def _daily_text(db: Session, now: datetime) -> str:
     calendar = calendar_feed.upcoming(now, days=1)
     if calendar is None:
         if os.getenv("CALENDAR_ICS_URL"):
-            lines.insert(1, "Calendar: could not be read")
+            lines.insert(1, "Linked calendar: could not be read")
     else:
-        lines.insert(1, "Calendar: " + ("; ".join(calendar_feed.describe(e, False) for e in calendar[:5]) or "nothing today"))
+        lines.insert(1, "Linked calendar: " + ("; ".join(calendar_feed.describe(e, False) for e in calendar[:5]) or "nothing today"))
     lines += [f"#{i.id} {_label(db, i)}" for i in waiting[:4]]
     return "\n".join(lines)
 
@@ -351,11 +398,11 @@ def due_owner_messages(db: Session, now: datetime) -> list[dict]:
                 continue
             due.append((f"alert:{item.id}:{item.last_message_id}", "owner_alert", item.id, _alert_text(db, item)))
     if now.hour in NUDGE_HOURS:
-        for item in db.query(DispatchItem).filter(DispatchItem.status.in_(tuple(NUDGE_AFTER))).all():
-            if now - _utc(item.updated_at).astimezone(PHOENIX) >= NUDGE_AFTER[item.status]:
-                what = "Still waiting on you" if item.status == "needs_owner" else "No customer follow-up yet"
-                due.append((f"nudge:{item.id}:{now.date()}", "owner_nudge", item.id,
-                            f"{what}: #{item.id} {_label(db, item)}. {item.proposed_action[:120]}"))
+        stale = [item for item in db.query(DispatchItem).filter(DispatchItem.status.in_(tuple(NUDGE_AFTER))).order_by(DispatchItem.id).all()
+                 if now - _utc(item.updated_at).astimezone(PHOENIX) >= NUDGE_AFTER[item.status]]
+        if stale:
+            rows = [f"#{i.id} {_label(db, i)}: {_next_step(db, i)[:80]}" for i in stale[:6]]
+            due.append((f"nudges:{now.date()}", "owner_nudge", None, f"Still open ({len(stale)}):\n" + "\n".join(rows)))
     if now.weekday() != 6 and DAILY_HOUR <= now.hour < DAILY_HOUR + 3:
         due.append((f"daily:{now.date()}", "owner_daily", None, _daily_text(db, now)))
 
@@ -407,6 +454,27 @@ def outbound_result(result: OutboundResult, db: Session = Depends(get_db), _auth
     audit(db, row.item_id, "system", f"text_{result.status}", row.kind)
     db.commit()
     return {"recorded": True}
+
+
+class HandledInput(BaseModel):
+    conversationId: str = Field(min_length=1, max_length=64)
+    at: datetime
+
+
+@internal_router.post("/handled")
+def handled(report: HandledInput, db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
+    """Closes an open item once someone has answered the customer in Quo."""
+    item = db.query(DispatchItem).filter(
+        DispatchItem.quo_conversation_id == report.conversationId,
+        DispatchItem.status.in_(OPEN_STATUSES),
+    ).first()
+    if item is None or _is_owner(item.customer_phone) or _utc(report.at) <= _utc(item.updated_at):
+        return {"closed": False}
+    item.status = "closed"
+    item.decided_at = item.updated_at = datetime.now().astimezone()
+    audit(db, item.id, "system", "replied_in_quo")
+    db.commit()
+    return {"closed": True}
 
 
 @internal_router.post("/sync")
