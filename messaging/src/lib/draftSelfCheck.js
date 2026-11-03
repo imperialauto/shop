@@ -21,6 +21,7 @@ const SCENARIOS = [
 async function runDraftSelfCheck() {
   for (const [name, history, summary] of SCENARIOS) {
     const reply = await generateDraftReply({ history, jobContext: summary ? { summary } : null, allowNoReply: true });
+    await new Promise((resolve) => setTimeout(resolve, 1500));
     console.log(`DRAFT_CHECK ${name} => ${String(reply).replace(/\s+/g, " ")}`);
   }
 }
