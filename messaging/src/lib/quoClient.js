@@ -108,6 +108,21 @@ async function listContacts({ maxResults = 50, pageToken } = {}) {
   return quoFetch(`/v1/contacts?${params.toString()}`); // { data, totalItems, nextPageToken }
 }
 
+async function createContact({ firstName, lastName, phone, externalId }) {
+  const body = {
+    defaultFields: { firstName, lastName, phoneNumbers: [{ name: "primary", value: phone }] },
+    externalId,
+  };
+  const { data } = await quoFetch("/v1/contacts", { method: "POST", body: JSON.stringify(body) });
+  return data;
+}
+
+// Sends every default field back, since a partial update could drop the rest.
+async function updateContact(id, defaultFields) {
+  const { data } = await quoFetch(`/v1/contacts/${id}`, { method: "PATCH", body: JSON.stringify({ defaultFields }) });
+  return data;
+}
+
 /** List the Quo phone numbers on this workspace — handy for finding phoneNumberId once, by hand or in a setup script. */
 async function listPhoneNumbers() {
   return quoFetch("/v1/phone-numbers");
@@ -130,6 +145,8 @@ module.exports = {
   listMessages,
   listConversations,
   listContacts,
+  createContact,
+  updateContact,
   listPhoneNumbers,
   markConversationRead,
   markConversationDone,

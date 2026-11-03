@@ -224,6 +224,7 @@ def intake(message: IntakeMessage, db: Session = Depends(get_db), _auth: bool = 
         try:
             item = _record(db, message, result)
             return {"recorded": True, "itemId": item.id, "status": item.status,
+                    "vehicleText": item.vehicle_text, "category": item.category,
                     "autoReply": _auto_reply_for(db, item, message, result)}
         except IntegrityError:
             db.rollback()

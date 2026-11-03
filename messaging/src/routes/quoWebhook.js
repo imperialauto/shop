@@ -47,7 +47,10 @@ const { createContactLookup } = require("../lib/quoContacts");
 const { handleIntakeResult, deliverOwnerMessages } = require("../lib/dispatchActions");
 
 const router = express.Router();
-const contacts = createContactLookup({ quo });
+const contacts = createContactLookup({
+  quo,
+  skipNumbers: (process.env.CONTACT_SYNC_SKIP || "").split(",").filter(Boolean),
+});
 
 // How many prior messages to hand the AI as thread context.
 const DRAFT_HISTORY_LIMIT = 15;
@@ -158,6 +161,12 @@ async function handleMessageEvent(event) {
     });
   const deliverAlerts = () =>
     deliverOwnerMessages({ quo, shopClient }).catch((err) => console.error("Owner texts failed:", err.message));
+
+  if (process.env.CONTACT_SYNC_ENABLED === "true" && dispatched.recorded && !dispatched.owner) {
+    await contacts
+      .syncContact({ phone: customerPhone, vehicleText: dispatched.vehicleText, category: dispatched.category })
+      .catch((err) => console.error("Quo contact sync failed:", err.message));
+  }
 
   if (dispatched.owner) {
     // The owner's own texts are commands, not customer messages.
