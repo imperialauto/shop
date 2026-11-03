@@ -24,7 +24,7 @@ function titleCase(word) {
   return word ? word[0].toUpperCase() + word.slice(1) : "";
 }
 
-function createContactLookup({ quo, now = Date.now, skipNumbers = [] }) {
+function createContactLookup({ quo, now = Date.now, skipNumbers = [], pageDelayMs = 250 }) {
   let names = new Map();
   let contacts = new Map();
   let loadedAt = 0;
@@ -49,6 +49,7 @@ function createContactLookup({ quo, now = Date.now, skipNumbers = [] }) {
       }
       if (!nextPageToken) break;
       pageToken = nextPageToken;
+      await new Promise((resolve) => setTimeout(resolve, pageDelayMs)); // stay under Quo's rate limit
     }
     names = nextNames;
     contacts = nextContacts;

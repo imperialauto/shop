@@ -26,7 +26,7 @@ function fixture({ listError = false, intake = async () => ({ recorded: true }) 
 
 test("offers only inbound messages and never sends", async () => {
   const f = fixture();
-  const totals = await runRecovery({ ...f, phoneNumberId: "PNtest" });
+  const totals = await runRecovery({ ...f, phoneNumberId: "PNtest", pauseMs: 0 });
   assert.deepEqual(f.calls.intake.map((m) => m.messageId), ["m1"]);
   assert.equal(totals.recorded, 1);
   assert.equal(f.calls.sends, 0);
@@ -35,16 +35,16 @@ test("offers only inbound messages and never sends", async () => {
 
 test("messages already queued count as healthy", async () => {
   const f = fixture({ intake: async () => ({ recorded: false, duplicate: true }) });
-  const totals = await runRecovery({ ...f, phoneNumberId: "PNtest" });
+  const totals = await runRecovery({ ...f, phoneNumberId: "PNtest", pauseMs: 0 });
   assert.equal(totals.failed, 0);
   assert.equal(f.calls.sync[0].ok, true);
 });
 
 test("failed intake and Quo errors are reported", async () => {
   const rejected = fixture({ intake: async () => ({ recorded: false, reason: "error" }) });
-  await runRecovery({ ...rejected, phoneNumberId: "PNtest" });
+  await runRecovery({ ...rejected, phoneNumberId: "PNtest", pauseMs: 0 });
   assert.equal(rejected.calls.sync[0].ok, false);
   const down = fixture({ listError: true });
-  await runRecovery({ ...down, phoneNumberId: "PNtest" });
+  await runRecovery({ ...down, phoneNumberId: "PNtest", pauseMs: 0 });
   assert.equal(down.calls.sync[0].ok, false);
 });

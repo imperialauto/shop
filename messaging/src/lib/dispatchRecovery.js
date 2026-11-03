@@ -10,13 +10,16 @@ function isInbound(message) {
   return /^(in|inbound|incoming)$/i.test(message.direction || "");
 }
 
-async function runRecovery({ quo, shopClient, contacts, phoneNumberId, now = Date.now, lookbackHours = DEFAULT_LOOKBACK_HOURS }) {
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function runRecovery({ quo, shopClient, contacts, phoneNumberId, now = Date.now, lookbackHours = DEFAULT_LOOKBACK_HOURS, pauseMs = 300 }) {
   const since = new Date(now() - lookbackHours * 3600 * 1000).toISOString();
   const totals = { conversations: 0, offered: 0, recorded: 0, failed: 0 };
   try {
     const { data: conversations = [] } = await quo.listConversations({ updatedAfter: since });
     for (const conversation of conversations) {
       totals.conversations += 1;
+      await pause(pauseMs); // Quo rate-limits bursts, which would also block customer texts
       const { data: messages = [] } = await quo.listMessages({
         phoneNumberId,
         participants: conversation.participants,
