@@ -37,6 +37,31 @@ function recentTurns(rows, currentId) {
     .map((m) => ({ role: /^(in|incoming)/i.test(m.direction) ? "user" : "assistant", content: (m.text || m.body).slice(0, 500) }));
 }
 
+// Pulls full detail for customers the question names, matched against the snapshot.
+function mentionedItems(question, snapshot) {
+  const words = question.toLowerCase().match(/#\d+|[a-z0-9]{3,}/g) || [];
+  const ignored = new Set(["the", "and", "what", "did", "say", "any", "new", "for", "with", "customer", "about"]);
+  const wanted = words.filter((w) => !ignored.has(w));
+  const items = [...(snapshot.waitingOnYou || []), ...(snapshot.otherOpenMessages || []), ...(snapshot.approvedAwaitingFollowUp || [])];
+  return items
+    .filter((item) => wanted.includes(`#${item.id}`) || wanted.some((w) => String(item.who).toLowerCase().includes(w)))
+    .slice(0, 2);
+}
+
+async function customerDetail({ question, snapshot, quo, callContext }) {
+  const detail = [];
+  for (const item of mentionedItems(question, snapshot)) {
+    const { data = [] } = await quo.listMessages({ participants: [item.phone], maxResults: 12 }).catch(() => ({ data: [] }));
+    detail.push({
+      id: item.id,
+      who: item.who,
+      messages: data.map((m) => `${/^in/i.test(m.direction) ? "Customer" : "Shop"}: ${(m.text || m.body || "").slice(0, 240)}`).reverse(),
+      calls: await callContext({ quo, phone: item.phone }),
+    });
+  }
+  return detail;
+}
+
 async function answerOwner({ question, snapshot, history = [], complete = groqComplete }) {
   try {
     const text = await complete([
@@ -51,4 +76,4 @@ async function answerOwner({ question, snapshot, history = [], complete = groqCo
   }
 }
 
-module.exports = { answerOwner, recentTurns, FALLBACK };
+module.exports = { answerOwner, recentTurns, customerDetail, mentionedItems, FALLBACK };

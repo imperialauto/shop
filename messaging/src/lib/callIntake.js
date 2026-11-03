@@ -19,11 +19,18 @@ function callBody(voicemail) {
   return voicemail ? "Left a voicemail with no transcript." : "Missed call, no voicemail.";
 }
 
-async function missedCall({ quo, phone, phoneNumberId, since, skip = new Set() }) {
+function reachedAfter(call, calls, messages) {
+  const missedAt = new Date(call.createdAt);
+  const talked = calls.some((c) => c.id !== call.id && new Date(c.createdAt) > missedAt && !isMissed(c) && (c.duration || c.answeredAt));
+  const texted = messages.some((m) => /^out/i.test(m.direction || "") && new Date(m.createdAt) > missedAt);
+  return talked || texted;
+}
+
+async function missedCall({ quo, phone, phoneNumberId, since, messages = [], skip = new Set() }) {
   if (skip.has(String(phone).replace(/\D/g, "").slice(-10))) return null;
   const { data = [] } = await quo.listCalls({ phoneNumberId, participants: [phone], createdAfter: since, maxResults: 10 });
   const newest = data.filter(isMissed).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
-  if (!newest) return null;
+  if (!newest || reachedAfter(newest, data, messages)) return null;
   const voicemail = await quo.getVoicemail(newest.id).catch(() => null);
   if (!voicemail && isTollFree(phone)) return null;
   const body = callBody(voicemail);

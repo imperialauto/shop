@@ -40,3 +40,12 @@ test("call context reads voicemail and transcript text", async () => {
   assert.match(context, /Need a tow/);
   assert.match(context, /About twenty minutes/);
 });
+
+test("a missed call you already returned is not a lead", async () => {
+  const missed = call("a");
+  const later = "2026-11-02T20:10:00Z";
+  const called = quo([missed, call("b", { direction: "outgoing", duration: 35, createdAt: later })]);
+  assert.equal(await missedCall({ quo: called, phone: "+16025550100", since: "x" }), null);
+  const texted = [{ direction: "outgoing", createdAt: later }];
+  assert.equal(await missedCall({ quo: quo([missed]), phone: "+16025550100", since: "x", messages: texted }), null);
+});
