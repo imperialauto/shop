@@ -39,7 +39,7 @@ function recentTurns(rows, currentId) {
 
 // Pulls full detail for customers the question names, matched against the snapshot.
 function mentionedItems(question, snapshot) {
-  const words = question.toLowerCase().match(/[a-z0-9#]{3,}/g) || [];
+  const words = question.toLowerCase().match(/#\d+|[a-z0-9]{3,}/g) || [];
   const ignored = new Set(["the", "and", "what", "did", "say", "any", "new", "for", "with", "customer", "about"]);
   const wanted = words.filter((w) => !ignored.has(w));
   const items = [...(snapshot.waitingOnYou || []), ...(snapshot.otherOpenMessages || []), ...(snapshot.approvedAwaitingFollowUp || [])];
