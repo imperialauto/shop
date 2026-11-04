@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}Finances — Imperial Auto Care{% endblock %}
+{% block content %}
+<style>
+.fin-tabs{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid rgba(255,255,255,.07);margin-bottom:16px}
+.fin-tabs a{padding:8px 12px;font-size:13px;color:#71717a;text-decoration:none;white-space:nowrap;border-bottom:2px solid transparent}
+.fin-tabs a.on{color:#d4a853;border-color:#d4a853}
+.fin-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px}
+.fin-num{font-size:22px;font-weight:700;color:#fafafa;margin-top:2px;font-variant-numeric:tabular-nums}
+.fin-lab{font-size:11px;font-weight:600;color:#71717a;text-transform:uppercase;letter-spacing:.05em}
+.fin-note{font-size:12px;color:#71717a;margin-top:3px}
+.fin-warn{background:rgba(249,115,22,.09);border:1px solid rgba(249,115,22,.25);color:#fdba74;border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:14px}
+.fin-ok{color:#4ade80}.fin-bad{color:#f87171}.fin-mid{color:#fbbf24}
+.fin-right{text-align:right;font-variant-numeric:tabular-nums}
+.fin-filter{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;align-items:end}
+.fin-filter select,.fin-filter input{width:auto;min-width:104px}
+.fin-cov td{padding:3px 6px;font-size:11px;text-align:center}
+.cell-tied{background:rgba(74,222,128,.18);color:#4ade80}.cell-ocr{background:rgba(251,191,36,.14);color:#fbbf24}.cell-missing{color:#3f3f46}
+.fin-bars{display:flex;align-items:flex-end;gap:6px;height:170px;margin-top:10px}
+.fin-bar{flex:1;min-width:14px;display:flex;flex-direction:column;justify-content:flex-end;height:100%;gap:2px}
+.fin-bar i{display:block;border-radius:3px 3px 0 0}
+.fin-bar span{font-size:10px;color:#71717a;text-align:center;white-space:nowrap}
+.fin-h{font-size:14px;font-weight:600;color:#fafafa;margin-bottom:8px}
+details.fin-q{border-bottom:1px solid rgba(255,255,255,.06);padding:8px 0}
+details.fin-q summary{cursor:pointer;font-size:13.5px;color:#e4e4e7}
+.src{font-size:11px;color:#52525b}
+</style>
+<div class="flex items-center justify-between mb-4"><h1 class="text-2xl font-bold" style="color:#d4a853">Finances</h1>
+<span class="fin-note">{{ open_exceptions }} open question{{ '' if open_exceptions==1 else 's' }} · {{ closed_months|length }} fully tied month{{ '' if closed_months|length==1 else 's' }}</span></div>
+<nav class="fin-tabs">{% for k,l in tabs %}<a class="{{ 'on' if tab==k }}" href="?tab={{k}}">{{l}}</a>{% endfor %}</nav>
+
+{% macro filterbar(extra=False) %}
+<form class="fin-filter" method="get"><input type="hidden" name="tab" value="{{tab}}">
+<select class="form-select" name="basis" aria-label="Basis"><option value="verified" {{'selected' if f.basis=='verified'}}>Statement-tied only</option><option value="all" {{'selected' if f.basis=='all'}}>Include unverified OCR</option></select>
+<select class="form-select" name="scope" aria-label="Scope">{% for v,l in [('business','Business'),('personal','Personal'),('all','All accounts')] %}<option value="{{v}}" {{'selected' if f.scope==v}}>{{l}}</option>{% endfor %}</select>
+<select class="form-select" name="year" aria-label="Year"><option value="">All years</option>{% for y in years %}<option {{'selected' if f.year==y}}>{{y}}</option>{% endfor %}</select>
+<select class="form-select" name="month" aria-label="Month"><option value="">All months</option>{% for m in range(1,13) %}<option value="{{m}}" {{'selected' if f.month==m}}>{{ '%02d'|format(m) }}</option>{% endfor %}</select>
+<select class="form-select" name="account" aria-label="Account"><option value="">All accounts</option>{% for a in accounts %}<option value="{{a.last4}}" {{'selected' if f.account==a.last4}}>{{a.name}}</option>{% endfor %}</select>
+<select class="form-select" name="division" aria-label="Division"><option value="">All divisions</option>{% for d in ['repair','towing','rental','nvzn','unassigned'] %}<option {{'selected' if f.division==d}}>{{d}}</option>{% endfor %}</select>
+{% if extra %}<select class="form-select" name="group" aria-label="Type"><option value="">All types</option>{% for g in groups %}<option {{'selected' if f.group==g}}>{{g}}</option>{% endfor %}</select>
+<select class="form-select" name="status" aria-label="Status"><option value="">Counted rows</option><option value="excluded" {{'selected' if f.status=='excluded'}}>Excluded rows</option><option value="all" {{'selected' if f.status=='all'}}>Everything</option></select>
+<input class="form-input" name="q" placeholder="Search" value="{{f.q}}">{% endif %}
+<button class="btn-secondary">Apply</button></form>{% endmacro %}
+
+{% macro covgrid(c) %}
+<div class="table-wrap"><table class="fin-cov"><thead><tr><th>Month</th>{% for a in c.accounts %}<th>{{a.last4}}</th>{% endfor %}</tr></thead><tbody>
+{% for m in c.months %}<tr><td style="color:#a1a1aa">{{m}}</td>{% for a in c.accounts %}{% set s=c.grid[m][a.last4] %}<td class="cell-{{s}}">{{ {'tied':'Tied','ocr':'OCR','missing':'No records'}[s] }}</td>{% endfor %}</tr>{% endfor %}
+</tbody></table></div>{% endmacro %}
+
+{% if tab=='overview' %}
+{{ filterbar() }}
+{% if f.basis=='all' %}<div class="fin-warn">Includes unverified OCR rows. About one in ten checked OCR rows disagreed with the bank statement. Don't share these figures.</div>{% endif %}
+<div class="fin-warn">Cash basis, not audited. Net profit is before anything still unclassified, and no shop rent payment appears in the records so far. {% if f.scope=='business' %}Only {{ closed_months|join(', ') or 'no month' }} covers every business account, so other months and any totals across them are partial.{% endif %}</div>
+<div class="fin-grid">
+<div class="card-sm"><div class="fin-lab">Revenue</div><div class="fin-num">{{money(total.revenue)}}</div><div class="fin-note">Unconfirmed receipts are left out</div></div>
+<div class="card-sm"><div class="fin-lab">Gross profit</div><div class="fin-num">{{money(total.gross)}}</div><div class="fin-note">{{ total.gross_margin if total.gross_margin is not none else '—' }}% margin</div></div>
+<div class="card-sm"><div class="fin-lab">Expenses</div><div class="fin-num">{{money(total.cogs+total.opex)}}</div><div class="fin-note">Parts plus overhead</div></div>
+<div class="card-sm"><div class="fin-lab">Net profit</div><div class="fin-num">{{money(total.net)}}</div><div class="fin-note">{{ total.net_margin if total.net_margin is not none else '—' }}% margin, provisional</div></div>
+<div class="card-sm"><div class="fin-lab">Cash flow</div><div class="fin-num">{{money(total.cash_in-total.cash_out)}}</div><div class="fin-note">{{money(total.cash_in)}} in, {{money(total.cash_out)}} out</div></div>
+<div class="card-sm"><div class="fin-lab">Not yet classified</div><div class="fin-num fin-mid">{{money(total.unclassified)}}</div><div class="fin-note"><a href="?tab=recon" style="color:#d4a853">Answer in Reconciliation</a></div></div>
+<div class="card-sm"><div class="fin-lab">Unconfirmed receipts</div><div class="fin-num fin-mid">{{money(total.unconfirmed)}}</div><div class="fin-note">Cash and unknown deposits</div></div>
+<div class="card-sm"><div class="fin-lab">Personal on business accounts</div><div class="fin-num">{{money(total.personal)}}</div><div class="fin-note">Kept out of expenses</div></div>
+</div>
+<div class="card"><div class="fin-h">Revenue and expenses by month</div>
+{% if months %}{% set top=(months.values()|map(attribute='revenue')|max,months.values()|map(attribute='cash_out')|max,1)|max %}
+<div class="fin-bars">{% for m,p in months.items() %}<div class="fin-bar" title="{{m}}: revenue {{money(p.revenue)}}, expenses {{money(p.cogs+p.opex)}}">
+<i style="height:{{ (p.revenue|abs)*125/top }}px;background:#d4a853"></i><i style="height:{{ ((p.cogs+p.opex)|abs)*125/top }}px;background:#52525b"></i><span>{{m[2:]}}</span></div>{% endfor %}</div>
+<div class="fin-note">Gold is revenue, gray is expenses. Months without records are left off, not drawn as zero.</div>
+{% else %}<p class="fin-note">No records match. That means nothing is on file, not that nothing happened.</p>{% endif %}</div>
+
+{% elif tab=='ledger' %}
+{{ filterbar(True) }}
+<div class="flex justify-between mb-2"><span class="fin-note">{{count}} rows</span><a class="btn-secondary" href="/finance/export/ledger.csv?{{request.url.query}}">Export CSV</a></div>
+<div class="card table-wrap"><table><thead><tr><th>Date</th><th>Account</th><th>Description</th><th>Category</th><th class="fin-right">Amount</th><th>Status</th><th>Source</th><th></th></tr></thead><tbody>
+{% for r in rows %}<tr><td>{{r.posted_date}}</td><td>{{names[r.account_id].last4}}</td><td>{{r.description[:64]}}</td><td>{{r.category}}<div class="src">{{r.report_group}} · {{r.designation}} · {{r.division}}</div></td>
+<td class="fin-right {{'fin-ok' if r.amount_cents>0}}">{{money(r.amount_cents)}}</td>
+<td><span class="{{'fin-ok' if r.verification_status=='statement_tied' else 'fin-mid'}}">{{ 'Tied' if r.verification_status=='statement_tied' else 'Unverified' }}</span>{% if r.duplicate_status!='unique' %}<div class="src">{{r.duplicate_status}}</div>{% endif %}{% if r.transfer_status!='none' %}<div class="src">transfer: {{r.transfer_status}}</div>{% endif %}</td>
+<td class="src">{{r.source_file or ''}}{% if r.source_page %} p.{{r.source_page}}{% endif %}</td>
+<td><form method="post" action="/finance/txn/{{r.id}}/duplicate"><input type="hidden" name="action" value="{{ 'restore' if r.duplicate_status in ('confirmed_duplicate','amount_conflict','superseded') else 'exclude' }}"><button class="btn-secondary" style="padding:3px 8px;font-size:11px">{{ 'Restore' if r.duplicate_status in ('confirmed_duplicate','amount_conflict','superseded') else 'Exclude' }}</button></form></td></tr>
+{% else %}<tr><td colspan="8">No rows match.</td></tr>{% endfor %}</tbody></table></div>
+<div class="flex gap-2 mt-3">{% if page>1 %}<a class="btn-secondary" href="?{{request.url.include_query_params(page=page-1).query}}">Newer</a>{% endif %}{% if count>page*100 %}<a class="btn-secondary" href="?{{request.url.include_query_params(page=page+1).query}}">Older</a>{% endif %}</div>
+
+{% elif tab=='recon' %}
+<div class="fin-grid">
+<div class="card-sm"><div class="fin-lab">Statement-tied rows</div><div class="fin-num">{{recon.tied}}</div></div>
+<div class="card-sm"><div class="fin-lab">OCR rows, unverified</div><div class="fin-num">{{recon.ocr_kept}}</div></div>
+<div class="card-sm"><div class="fin-lab">OCR replaced by statements</div><div class="fin-num">{{recon.superseded}}</div></div>
+<div class="card-sm"><div class="fin-lab">Duplicates excluded</div><div class="fin-num">{{recon.dupes+recon.conflicts}}</div><div class="fin-note">{{recon.conflicts}} had conflicting amounts</div></div>
+<div class="card-sm"><div class="fin-lab">Transfers matched</div><div class="fin-num">{{recon.matched}}</div><div class="fin-note">{{recon.missing}} legs lack the other account</div></div>
+</div>
+<div class="card mb-4"><div class="fin-h">Statements: beginning + deposits − withdrawals = ending</div><div class="table-wrap"><table><thead><tr><th>Account</th><th>Period</th><th class="fin-right">Beginning</th><th class="fin-right">Deposits</th><th class="fin-right">Withdrawals</th><th class="fin-right">Ending</th><th class="fin-right">Variance</th><th>Rows</th><th>Status</th></tr></thead><tbody>
+{% for s in statements %}<tr><td>{{names[s.statement.account_id].last4}}</td><td>{{s.statement.period_start}} to {{s.statement.period_end}}</td><td class="fin-right">{{money(s.statement.beginning_cents)}}</td><td class="fin-right">{{money(s.statement.deposits_cents)}}</td><td class="fin-right">{{money(s.statement.withdrawals_cents)}}</td><td class="fin-right">{{money(s.statement.ending_cents)}}</td><td class="fin-right">{{money(s.variance) if s.rows else '—'}}</td><td>{{s.rows}}</td><td class="{{'fin-ok' if s.status=='Tied' else ('fin-mid' if s.status=='Controls only' else 'fin-bad')}}">{{s.status}}</td></tr>
+{% else %}<tr><td colspan="9">No statements imported yet.</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="card mb-4"><div class="fin-h">Questions for you</div><p class="fin-note mb-2">Ordinary shop expenses are filed automatically. Only these need an answer. Biggest dollar amounts come first.</p>
+{% for reason,items in queue %}<details class="fin-q"><summary>{{reason}} <span class="fin-note">({{items|length}}, {{money(items|map(attribute='amount_cents')|map('abs')|sum)}})</span></summary>
+{% for r in items[:30] %}<form method="post" action="/finance/txn/{{r.id}}/review" class="fin-filter" style="margin:8px 0">
+<span class="fin-note" style="flex-basis:100%">{{r.posted_date}} · {{names[r.account_id].last4}} · {{money(r.amount_cents)}} · {{r.description[:80]}}</span>
+<select class="form-select" name="report_group" aria-label="Type">{% for g in groups %}<option {{'selected' if g==r.report_group}}>{{g}}</option>{% endfor %}</select>
+<select class="form-select" name="category" aria-label="Category">{% for c in categories %}<option {{'selected' if c==r.category}}>{{c}}</option>{% endfor %}</select>
+<select class="form-select" name="designation" aria-label="Business or personal">{% for d in ['business','personal','mixed'] %}<option {{'selected' if d==r.designation}}>{{d}}</option>{% endfor %}</select>
+<input type="hidden" name="division" value="{{r.division}}"><input class="form-input" name="note" placeholder="Note">
+<input class="form-input" name="apply_pattern" placeholder="Apply to all containing…"><button class="btn-primary">Save</button></form>{% endfor %}
+{% if items|length>30 %}<p class="fin-note">{{items|length-30}} more. Use “Apply to all containing” to clear them together.</p>{% endif %}</details>
+{% else %}<p class="fin-note">Nothing is waiting on you.</p>{% endfor %}</div>
+<div class="card"><div class="fin-h">Monthly close status</div>{{ covgrid(coverage) }}<p class="fin-note mt-2">Tied means the rows sum to the bank's totals. OCR means rows exist but can't be proven. No records means nothing is on file, which isn't the same as zero.</p></div>
+
+{% elif tab=='reports' %}
+{{ filterbar() }}
+<div class="flex gap-2 mb-3"><a class="btn-secondary" href="/finance/export/pnl.csv?{{request.url.query}}">Export P&amp;L CSV</a></div>
+<div class="card table-wrap mb-4"><div class="fin-h">Profit and loss, cash basis</div><table><thead><tr><th>Month</th><th class="fin-right">Revenue</th><th class="fin-right">Parts and subs</th><th class="fin-right">Gross profit</th><th class="fin-right">Margin</th><th class="fin-right">Overhead</th><th class="fin-right">Net*</th><th class="fin-right">Unclassified</th><th class="fin-right">Unconfirmed in</th><th class="fin-right">Net cash</th></tr></thead><tbody>
+{% for m,p in months.items() %}<tr><td>{{m}}{% if m not in closed_months and f.scope=='business' %}<div class="src">partial accounts</div>{% endif %}</td><td class="fin-right">{{money(p.revenue)}}</td><td class="fin-right">{{money(p.cogs)}}</td><td class="fin-right">{{money(p.gross)}}</td><td class="fin-right">{{p.gross_margin if p.gross_margin is not none else '—'}}%</td><td class="fin-right">{{money(p.opex)}}</td><td class="fin-right">{{money(p.net)}}</td><td class="fin-right fin-mid">{{money(p.unclassified)}}</td><td class="fin-right fin-mid">{{money(p.unconfirmed)}}</td><td class="fin-right">{{money(p.cash_in-p.cash_out)}}</td></tr>
+{% else %}<tr><td colspan="10">No records match this filter.</td></tr>{% endfor %}
+{% if months %}<tr><td><b>On file</b></td><td class="fin-right"><b>{{money(total.revenue)}}</b></td><td class="fin-right">{{money(total.cogs)}}</td><td class="fin-right"><b>{{money(total.gross)}}</b></td><td class="fin-right">{{total.gross_margin}}%</td><td class="fin-right">{{money(total.opex)}}</td><td class="fin-right"><b>{{money(total.net)}}</b></td><td class="fin-right">{{money(total.unclassified)}}</td><td class="fin-right">{{money(total.unconfirmed)}}</td><td class="fin-right">{{money(total.cash_in-total.cash_out)}}</td></tr>{% endif %}
+</tbody></table><p class="fin-note mt-2">*Before unclassified spending. Totals cover only what's on file, so a year isn't complete just because it has a total.</p></div>
+<div class="grid md:grid-cols-2 gap-4"><div class="card"><div class="fin-h">Where the money went</div>
+{% if expense %}{% set palette=['#d4a853','#60a5fa','#4ade80','#f87171','#c084fc','#fb923c','#2dd4bf','#a1a1aa'] %}{% set tot=expense|map(attribute=1)|sum %}{% set ns=namespace(a=0,g=[]) %}
+{% for n,v in expense %}{% set e=ns.a+v*100/tot %}{% set ns.g=ns.g+[palette[loop.index0%8]~' '~ns.a~'% '~e~'%'] %}{% set ns.a=e %}{% endfor %}
+<div style="width:170px;height:170px;border-radius:50%;margin:8px auto;background:conic-gradient({{ns.g|join(',')}})" role="img" aria-label="Pie chart of expenses by category"></div>
+{% for n,v in expense %}<div class="flex justify-between fin-note"><span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:{{palette[loop.index0%8]}}"></span> {{n}}</span><span>{{money(v)}} · {{(v*100/tot)|round(1)}}%</span></div>{% endfor %}
+{% else %}<p class="fin-note">No expenses on file for this filter.</p>{% endif %}</div>
+<div class="card"><div class="fin-h">Below the line</div>{% for l,v in [('Capital purchases',total.capex),('Debt principal',total.debt),('Interest',total.interest),('Owner contributions',total.owner_contrib),('Owner withdrawals',total.owner_draw),('Personal spending',total.personal),('Transfers, net',total.transfers)] %}<div class="flex justify-between fin-note" style="padding:4px 0"><span>{{l}}</span><span>{{money(v)}}</span></div>{% endfor %}</div></div>
+
+{% elif tab=='accounts' %}
+<div class="card table-wrap"><table><thead><tr><th>Account</th><th>Institution</th><th>Type</th><th>Status</th><th>Rows on file</th><th>Statement-tied</th><th>From</th><th>To</th></tr></thead><tbody>
+{% for a in accounts %}{% set s=stats[a.id] %}<tr><td>{{a.name}}</td><td>{{a.institution}}</td><td>{{a.designation}}</td><td>{{a.status}}</td><td>{{s.count}}</td><td>{{s.tied}}</td><td>{{s.first or '—'}}</td><td>{{s.last or '—'}}</td></tr>{% else %}<tr><td colspan="8">No accounts yet.</td></tr>{% endfor %}</tbody></table></div>
+<p class="fin-note mt-2">Only the last four digits are stored. Bank logins and tokens are never kept here.</p>
+
+{% elif tab=='investor' %}
+{% set i=inv %}
+<div class="fin-warn">Not audited. Historical figures come only from months where every business account ties to its statements. Everything under Assumptions and Projections is an estimate. Have an attorney review any terms before offering them.</div>
+<div class="grid md:grid-cols-2 gap-4 mb-4"><div class="card"><div class="fin-h">Historical actual</div>
+{% if i.actual %}<p class="fin-note mb-2">Based on {{i.closed|join(', ')}}. {% if i.closed|length<3 %}<b class="fin-mid">{{i.closed|length}} month{{'' if i.closed|length==1 else 's'}} isn't a trend.</b>{% endif %}</p>
+{% for l,v in [('Revenue',i.actual.revenue),('Gross profit',i.actual.gross),('Overhead',i.actual.opex),('Net before unclassified',i.actual.net),('Not yet classified',i.actual.unclassified),('Unconfirmed receipts',i.actual.unconfirmed)] %}<div class="flex justify-between fin-note" style="padding:3px 0"><span>{{l}}</span><span>{{money(v)}}</span></div>{% endfor %}
+{% else %}<p class="fin-note">No month is fully tied yet, so no history can be shown.</p>{% endif %}</div>
+<div class="card"><div class="fin-h">Assumptions</div><form class="fin-filter" method="get"><input type="hidden" name="tab" value="investor">
+<label class="form-label">Premium %<input class="form-input" name="premium" value="{{i.premium}}"></label>
+<label class="form-label">Monthly overhead $<input class="form-input" name="overhead" value="{{i.overhead/100}}"></label>
+<label class="form-label">Gross margin %<input class="form-input" name="margin" value="{{i.margin}}"></label><button class="btn-secondary">Recalculate</button></form>
+<a class="btn-secondary" href="/finance/export/investor.pdf?{{request.url.query}}">Export PDF</a></div></div>
+{% macro plan(title,rows) %}<div class="card table-wrap mb-4"><div class="fin-h">{{title}}</div><table><thead><tr><th>Amount</th><th>Months</th><th class="fin-right">Payment</th><th class="fin-right">Total repaid</th><th class="fin-right">Est. APR</th><th class="fin-right">% of revenue</th><th class="fin-right">Revenue needed/mo</th><th class="fin-right">Above actual</th></tr></thead><tbody>
+{% for r in rows %}<tr><td>{{money(r.principal)}}</td><td>{{r.months}}</td><td class="fin-right">{{money(r.payment)}}</td><td class="fin-right">{{money(r.total)}}</td><td class="fin-right">{{r.apr}}%</td><td class="fin-right">{{r.share if r.share is not none else '—'}}%</td><td class="fin-right">{{money(r.needed)}}</td><td class="fin-right {{'fin-bad' if r.gap>0 else 'fin-ok'}}">{{money(r.gap)}}</td></tr>{% endfor %}</tbody></table></div>{% endmacro %}
+{{ plan('Projection: small investments, $5,000 to $10,000', i.small) }}
+{{ plan('Projection: major funding, $30,000 to $50,000', i.major) }}
+<div class="card"><div class="fin-h">Use of funds (assumption, replace with real quotes)</div>{% for n,v in i.uses %}<div class="flex justify-between fin-note" style="padding:3px 0"><span>{{n}}</span><span>{{money(v)}} · {{(v*100/i.uses_total)|round(0)}}%</span></div>{% endfor %}<div class="flex justify-between fin-note" style="padding:3px 0"><b>Total</b><b>{{money(i.uses_total)}}</b></div></div>
+
+{% elif tab=='import' %}
+<div class="card mb-4"><div class="fin-h">Import a CSV</div><form method="post" action="/finance/import" enctype="multipart/form-data" class="fin-filter">
+<input class="form-input" type="file" name="file" accept=".csv" required>
+<select class="form-select" name="account" aria-label="Account for bank export"><option value="">Account (bank exports only)</option>{% for a in accounts %}<option value="{{a.last4}}">{{a.name}}</option>{% endfor %}</select><button class="btn-primary">Import</button></form>
+<p class="fin-note">Takes the account list, statement lines, statement controls, OCR trace files, private rules and bank exports with date, description and amount columns. Importing the same file twice adds nothing.</p></div>
+<div class="card table-wrap mb-4"><div class="fin-h">Import history</div><table><thead><tr><th>When</th><th>File</th><th>Type</th><th>Read</th><th>Added</th><th>Already present</th></tr></thead><tbody>{% for b in batches %}<tr><td>{{b.created_at.strftime('%Y-%m-%d %H:%M')}}</td><td>{{b.filename}}</td><td>{{b.kind}}</td><td>{{b.rows_read}}</td><td>{{b.rows_added}}</td><td>{{b.rows_skipped}}</td></tr>{% else %}<tr><td colspan="6">Nothing imported yet.</td></tr>{% endfor %}</tbody></table></div>
+<div class="card table-wrap"><div class="fin-h">Activity log</div><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead><tbody>{% for a in activity %}<tr><td>{{a.created_at.strftime('%Y-%m-%d %H:%M')}}</td><td>{{a.actor}}</td><td class="{{'' if a.allowed else 'fin-bad'}}">{{a.action}}</td><td>{{a.detail}}</td></tr>{% endfor %}</tbody></table></div>
+{% endif %}
+{% endblock %}

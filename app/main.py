@@ -9,7 +9,7 @@ from app.config import SECRET_KEY
 from app.database import get_db, init_db
 from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user
-from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, appointments, dispatch, live
+from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, appointments, dispatch, live, finance
 from app.scheduler import start_scheduler
 
 import os
@@ -30,6 +30,7 @@ app.include_router(appointments.router, prefix="/appointments", tags=["appointme
 app.include_router(dispatch.router, prefix="/dispatch", tags=["dispatch"])
 app.include_router(dispatch.internal_router, prefix="/internal/dispatch", tags=["internal"])
 app.include_router(live.router, prefix="/live", tags=["live"])
+app.include_router(finance.router, prefix="/finance", tags=["finance"])
 app.include_router(vehicles.router, prefix="/vehicles", tags=["vehicles"])
 app.include_router(repair_orders.router, prefix="/ro", tags=["repair_orders"])
 app.include_router(invoices.router, prefix="/invoices", tags=["invoices"])
@@ -73,6 +74,9 @@ def read_only_exempt(request: Request) -> bool:
     Dispatch routes touch only the queue tables, never jobs, invoices or payments.
     """
     if request.url.path == "/login":
+        return True
+    # Finance writes touch only fin_* tables and each route re-checks the owner.
+    if request.url.path.startswith("/finance/"):
         return True
     return (
         request.method == "POST"

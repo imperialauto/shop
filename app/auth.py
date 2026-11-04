@@ -1,3 +1,5 @@
+import os
+
 import bcrypt
 from fastapi import Request, HTTPException
 from sqlalchemy.orm import Session
@@ -30,9 +32,17 @@ def require_admin(user: User):
         raise HTTPException(status_code=403, detail="Admin access required")
 
 
+def is_finance_owner(username: str) -> bool:
+    """Deny by default: only usernames named in FINANCE_OWNER_USERNAMES qualify.
+    Holding the admin role is deliberately not enough."""
+    allowed = {u.strip().lower() for u in os.getenv("FINANCE_OWNER_USERNAMES", "").split(",") if u.strip()}
+    return bool(username) and username.lower() in allowed
+
+
 def login_user(request: Request, user: User):
     request.session["user_id"] = user.id
     request.session["username"] = user.username
+    request.session["finance_owner"] = is_finance_owner(user.username)
 
 
 def logout_user(request: Request):
