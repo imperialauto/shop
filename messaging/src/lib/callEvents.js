@@ -40,6 +40,17 @@ function createCallEvents({ quo, shopClient, contacts, runPass, deliver, phoneNu
   let running = false;
   let again = false;
 
+  // A caller may have no text thread yet, which is fine: the alert still goes out.
+  async function conversationFor(phone) {
+    try {
+      const { data = [] } = await quo.listMessages({ phoneNumberId, participants: [phone], maxResults: 1 });
+      return data[0]?.conversationId || null;
+    } catch (err) {
+      console.error("Conversation lookup failed:", err.message);
+      return null;
+    }
+  }
+
   async function pass() {
     if (running) {
       again = true;
@@ -68,8 +79,7 @@ function createCallEvents({ quo, shopClient, contacts, runPass, deliver, phoneNu
     if (!phone || skip.has(phone.replace(/\D/g, "").slice(-10))) return;
     const summary = await quo.getCallSummary(callId);
     if (!textList(summary?.summary) || SPAM.test(textList(summary.summary))) return;
-    const { data: conversations = [] } = await quo.listConversations({ phoneNumbers: [phone], maxResults: 1 });
-    const conversationId = conversations[0]?.id || `CALL${phone.replace(/\D/g, "")}`;
+    const conversationId = (await conversationFor(phone)) || `CALL${phone.replace(/\D/g, "")}`;
     const body = summaryBody(summary);
     const result = await shopClient.dispatchIntake({
       conversationId, messageId: `summary:${callId}`, phone, body, recovery: true, kind: "call",
@@ -88,8 +98,8 @@ function createCallEvents({ quo, shopClient, contacts, runPass, deliver, phoneNu
     const at = call && lastConversationAt([call]);
     const phone = (call?.participants || []).find((p) => p !== ownNumber);
     if (!at || !phone) return;
-    const { data: conversations = [] } = await quo.listConversations({ phoneNumbers: [phone], maxResults: 1 });
-    if (conversations[0]?.id) await shopClient.dispatchHandled({ conversationId: conversations[0].id, at });
+    const conversationId = await conversationFor(phone);
+    if (conversationId) await shopClient.dispatchHandled({ conversationId, at });
   }
 
   async function handle(body) {
