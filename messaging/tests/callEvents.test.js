@@ -7,7 +7,7 @@ function fixture(call = {}) {
   const quo = {
     getCall: async () => ({ direction: "incoming", aiHandled: true, participants: ["+16025550100"], ...call }),
     getCallSummary: async () => ({ summary: ["Customer is at the front door."], nextSteps: ["Call back"], jobs: [{ result: { data: [{ name: "Vehicle", value: "Sample car" }] } }] }),
-    listConversations: async () => ({ data: [{ id: "CNfixture" }] }),
+    listMessages: async () => ({ data: [{ conversationId: "CNfixture" }] }),
   };
   const shopClient = {
     dispatchIntake: async (m) => { log.intake.push(m); return { recorded: true }; },
@@ -90,7 +90,7 @@ test("the shop's own number is never treated as the caller", async () => {
   process.env.QUO_DEFAULT_FROM_NUMBER = "+14809144144";
   const fresh = createCallEvents({
     quo: { getCall: async () => ({ direction: "incoming", aiHandled: true, participants: ["+14809144144", "+16025550100"] }),
-      getCallSummary: async () => ({ summary: ["Wants brakes"] }), listConversations: async () => ({ data: [] }) },
+      getCallSummary: async () => ({ summary: ["Wants brakes"] }), listMessages: async () => ({ data: [] }) },
     shopClient: { dispatchIntake: async (m) => { log.intake.push(m); return {}; } },
     runPass: async () => {}, deliver: async () => {},
   });
@@ -116,7 +116,7 @@ test("a call you took closes the item as soon as it ends", async () => {
   const handled = [];
   const events = createCallEvents({
     quo: { getCall: async () => ({ direction: "outgoing", duration: 90, completedAt: "2026-11-03T22:30:00Z", participants: ["+16025550100"] }),
-      listConversations: async () => ({ data: [{ id: "CNfixture" }] }) },
+      listMessages: async () => ({ data: [{ conversationId: "CNfixture" }] }) },
     shopClient: { dispatchHandled: async (h) => { handled.push(h); } },
     runPass: async () => {}, deliver: async () => {}, schedule: () => {},
   });
@@ -129,4 +129,17 @@ test("an AI call or an unanswered call does not count as you answering", async (
   assert.equal(lastConversationAt([{ aiHandled: true, duration: 60, answeredAt: "x", direction: "incoming" }]), null);
   assert.equal(lastConversationAt([{ duration: 0, direction: "incoming" }]), null);
   assert.equal(lastConversationAt([{ duration: 30, direction: "incoming" }]), null);
+});
+
+test("a caller with no text thread still reaches the owner", async () => {
+  const log = [];
+  const events = createCallEvents({
+    quo: { getCall: async () => ({ direction: "incoming", aiHandled: true, participants: ["+16025550100"] }),
+      getCallSummary: async () => ({ summary: ["Needs an oil change"] }),
+      listMessages: async () => { throw new Error("Phone number not found"); } },
+    shopClient: { dispatchIntake: async (m) => { log.push(m); return {}; } },
+    runPass: async () => {}, deliver: async () => {},
+  });
+  await events.handle(summaryEvent);
+  assert.equal(log[0].conversationId, "CALL16025550100");
 });
