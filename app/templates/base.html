@@ -175,6 +175,12 @@
       Invoices
     </a>
 
+    {% if request.session.get('finance_owner') %}
+    <a href="/finance/" class="nav-item {% if '/finance/' in request.url.path %}active{% endif %}" onclick="closeSidebar()">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 19h16M7 16V9m5 7V5m5 11v-4"/></svg>
+      Finances
+    </a>
+    {% endif %}
     <div class="nav-section">Customers</div>
     <a href="/customers/" class="nav-item {% if '/customers/' in request.url.path and 'fleet' not in request.url.query %}active{% endif %}" onclick="closeSidebar()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
