@@ -1,0 +1,38 @@
+name: App walkthrough
+on:
+  workflow_dispatch:
+  push:
+    branches: ['claude/launch-audit']
+jobs:
+  walkthrough:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: |
+          pip install -r requirements.txt playwright
+          playwright install --with-deps chromium
+      - name: Seed made-up data and start the app
+        env:
+          DATABASE_URL: sqlite:///./walkthrough.db
+          SECRET_KEY: walkthrough-only-key
+          APP_READ_ONLY: 'false'
+        run: |
+          PYTHONPATH=. python tests/e2e/seed.py
+          nohup python -m uvicorn app.main:app --port 8099 > server.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8099/healthz && break; sleep 1; done
+      - name: Walk through phone and desktop
+        run: python tests/e2e/walkthrough.py
+      - name: Show server errors
+        if: always()
+        run: grep -nE "Traceback|Error|error" server.log | head -40 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: walkthrough
+          path: |
+            walkthrough-output
+            server.log
