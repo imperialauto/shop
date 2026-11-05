@@ -170,6 +170,7 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
     return templates.TemplateResponse("repair_orders/detail.html", {
         "request": request, "user": user, "ro": ro, "techs": techs,
         "statuses": RO_STATUSES, "subtotal": subtotal, "comms": comms,
+        "open_invoice": next((i for i in ro.invoices if i.status != "void"), None),
     })
 
 
@@ -203,7 +204,7 @@ def update_status(
     db.commit()
 
     # Auto-send review request when marked delivered (only once)
-    if status == "delivered" and prev_status != "delivered":
+    if status == "delivered" and prev_status != "delivered" and os.getenv("REVIEW_REQUESTS_ENABLED") == "true":
         if ro.customer and ro.customer.phone and GOOGLE_REVIEW_LINK:
             background_tasks.add_task(
                 _send_review_request,

@@ -101,6 +101,16 @@ def startup():
     app.state.database_audit = audit
     logging.getLogger("uvicorn.error").info("imperial_database_audit %s", json.dumps(audit, sort_keys=True))
 
+@app.exception_handler(404)
+def not_found(request: Request, exc):
+    if "text/html" not in request.headers.get("accept", ""):
+        return JSONResponse({"detail": "Not found"}, status_code=404)
+    return HTMLResponse('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Not found</title>'
+                        '<body style="background:#09090b;color:#e4e4e7;font-family:-apple-system,sans-serif;text-align:center;padding:64px 20px">'
+                        '<h1 style="font-size:20px">That page could not be found</h1><p style="color:#a1a1aa">It may have moved or been removed.</p>'
+                        '<a href="/" style="color:#d4a853">Back to Imperial Operations</a></body>', status_code=404)
+
+
 @app.get("/healthz")
 def healthz():
     return {"status": "ok", "mode": "read-only" if app.state.read_only else "active"}
@@ -146,7 +156,9 @@ def dashboard(request: Request, view: str = "open", db: Session = Depends(get_db
     except HTTPException:
         return RedirectResponse("/login", status_code=302)
 
-    from app.models import RepairOrder, Customer
+    from datetime import datetime
+    from app.appointments import PHOENIX
+    from app.models import Customer, Invoice, RepairOrder
     open_ros = db.query(RepairOrder).filter(RepairOrder.status != "delivered").order_by(RepairOrder.created_at.desc()).limit(10).all()
     total_customers = db.query(Customer).count()
     total_ros = db.query(RepairOrder).count()
@@ -159,6 +171,8 @@ def dashboard(request: Request, view: str = "open", db: Session = Depends(get_db
         "total_customers": total_customers,
         "total_ros": total_ros,
         "open_count": open_count,
+        "total_invoices": db.query(Invoice).filter(Invoice.status == "sent").count(),
+        "now": datetime.now(PHOENIX),
         **dispatch.dashboard_context(db, view),
         "read_only": app.state.read_only,
     })

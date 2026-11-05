@@ -22,16 +22,16 @@
     body { background: #09090b; color: #e4e4e7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
 
     /* ── Sidebar ───────────────────────────────────── */
-    .sidebar { width: 220px; min-height: 100vh; background: #111113; border-right: 1px solid rgba(255,255,255,0.06); position: fixed; top: 0; left: 0; display: flex; flex-direction: column; z-index: 50; transition: transform 0.25s ease; }
+    .sidebar { width: 220px; height: 100vh; background: #111113; border-right: 1px solid rgba(255,255,255,0.06); position: fixed; top: 0; left: 0; display: flex; flex-direction: column; z-index: 50; transition: transform 0.25s ease; }
     .sidebar-logo { padding: 20px 16px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); }
     .sidebar-logo .brand { font-size: 15px; font-weight: 700; color: #d4a853; letter-spacing: -0.3px; }
-    .sidebar-logo .sub { font-size: 11px; color: #52525b; margin-top: 2px; }
+    .sidebar-logo .sub { font-size: 11px; color: #71717a; margin-top: 2px; }
     .sidebar-nav { padding: 12px 8px; flex: 1; overflow-y: auto; }
     .nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; font-size: 13.5px; font-weight: 500; color: #71717a; text-decoration: none; margin-bottom: 2px; transition: all 0.15s; }
     .nav-item:hover { background: rgba(255,255,255,0.05); color: #e4e4e7; }
     .nav-item.active { background: rgba(212,168,83,0.12); color: #d4a853; }
     .nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
-    .nav-section { font-size: 10px; font-weight: 600; color: #3f3f46; text-transform: uppercase; letter-spacing: 0.08em; padding: 12px 10px 4px; }
+    .nav-section { font-size: 10px; font-weight: 600; color: #71717a; text-transform: uppercase; letter-spacing: 0.08em; padding: 12px 10px 4px; }
     .sidebar-footer { padding: 12px 16px; border-top: 1px solid rgba(255,255,255,0.06); }
     .sidebar-footer a { font-size: 12px; color: #52525b; text-decoration: none; display: block; }
     .sidebar-footer a:hover { color: #71717a; }
@@ -39,6 +39,9 @@
 
     /* ── Main content ──────────────────────────────── */
     .main-content { margin-left: 220px; min-height: 100vh; }
+    .main-content:not(:has(.page-body)) { padding: 24px 28px 32px; }
+    .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+    .bottom-nav { display: none; }
     .page-header { padding: 24px 28px 0; display: flex; align-items: center; justify-content: space-between; }
     .page-title { font-size: 20px; font-weight: 700; color: #fafafa; }
     .page-body { padding: 20px 28px 32px; }
@@ -60,13 +63,13 @@
     .form-input:focus { border-color: #d4a853; }
     .form-select { background: #09090b; border: 1px solid rgba(255,255,255,0.1); color: #e4e4e7; border-radius: 8px; padding: 7px 12px; width: 100%; font-size: 13.5px; outline: none; }
     .form-select:focus { border-color: #d4a853; }
-    .form-label { display: block; font-size: 11.5px; font-weight: 600; color: #52525b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px; }
+    .form-label { display: block; font-size: 11.5px; font-weight: 600; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px; }
     textarea.form-input { resize: vertical; }
 
     /* ── Tables ────────────────────────────────────── */
     .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
     table { width: 100%; font-size: 13.5px; border-collapse: collapse; }
-    thead th { text-align: left; font-size: 11px; font-weight: 600; color: #52525b; text-transform: uppercase; letter-spacing: 0.06em; padding: 0 12px 8px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    thead th { text-align: left; font-size: 11px; font-weight: 600; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.06em; padding: 0 12px 8px; border-bottom: 1px solid rgba(255,255,255,0.06); }
     tbody td { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.04); color: #a1a1aa; vertical-align: middle; }
     tbody tr:last-child td { border-bottom: none; }
     tbody tr:hover td { background: rgba(255,255,255,0.02); }
@@ -84,7 +87,7 @@
     .badge-delivered      { background: rgba(20,184,166,0.15);  color: #2dd4bf; }
 
     /* ── Misc ──────────────────────────────────────── */
-    .section-label { font-size: 11px; font-weight: 600; color: #52525b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
+    .section-label { font-size: 11px; font-weight: 600; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
     .htmx-indicator { display: none; }
     .htmx-request .htmx-indicator { display: inline; }
     .htmx-request.htmx-indicator { display: inline; }
@@ -120,7 +123,36 @@
       .sidebar.open { transform: translateX(0); }
       .sidebar-backdrop { display: block; opacity: 0; pointer-events: none; transition: opacity 0.25s; }
       .sidebar-backdrop.open { opacity: 1; pointer-events: all; }
-      .main-content { margin-left: 0 !important; padding-top: 56px; }
+      .main-content { margin-left: 0 !important; padding-top: 56px; padding-bottom: calc(68px + env(safe-area-inset-bottom)); }
+      .main-content:not(:has(.page-body)) { padding: 70px 14px calc(84px + env(safe-area-inset-bottom)); }
+      .stat-row { grid-template-columns: repeat(2, 1fr); }
+      .grid > * { grid-column: auto !important; min-width: 0; }
+      .form-input, .form-select, textarea, input, select { font-size: 16px !important; min-height: 44px; }
+      input[type=radio], input[type=checkbox] { min-height: 0; }
+      .btn-primary, .btn-secondary, .btn-danger { min-height: 44px; justify-content: center; font-size: 14px; }
+      .nav-item { min-height: 44px; }
+      .sidebar-footer a { padding: 10px 0; }
+      .main-content .flex.items-start.justify-between { flex-direction: column; gap: 12px; }
+      /* Tables become readable cards instead of sideways scrolling */
+      .main-content thead { display: none; }
+      .main-content table, .main-content tbody, .main-content tr { display: block; width: 100%; }
+      .main-content tbody tr { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; margin-bottom: 10px; padding: 6px 12px; }
+      .main-content tbody td { display: flex; justify-content: space-between; gap: 16px; padding: 7px 0; border: 0; text-align: right; max-width: none !important; white-space: normal !important; overflow-wrap: anywhere; }
+      .main-content tbody td[data-label]::before { content: attr(data-label); color: #71717a; font-size: 12px; text-align: left; flex-shrink: 0; }
+      .main-content form.flex { flex-wrap: wrap; }
+      .main-content form.flex > div { flex: 1 1 100%; }
+      .main-content form.flex .w-32, .main-content form.flex .w-44 { width: 100%; }
+      .main-content form.flex > button { width: 100%; }
+      .hamburger { min-width: 44px; min-height: 44px; }
+      .queue-filter { display: inline-flex; align-items: center; min-height: 40px; padding: 0 6px; }
+      .main-content a.text-sm, .main-content a.text-xs { display: inline-flex; align-items: center; min-height: 40px; }
+      .main-content button.text-red-400, .main-content td button { min-width: 44px; min-height: 44px; }
+      .main-content tbody td[data-label="Date"], .main-content tbody td[data-label="Created"] { display: none; }
+      .main-content tbody td:first-child { font-weight: 600; }
+      .bottom-nav { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 47; background: #111113; border-top: 1px solid rgba(255,255,255,0.08); padding-bottom: env(safe-area-inset-bottom); }
+      .bottom-nav a, .bottom-nav button { flex: 1; min-height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 11px; color: #a1a1aa; text-decoration: none; background: none; border: 0; }
+      .bottom-nav .active { color: #d4a853; }
+      .bottom-nav svg { width: 20px; height: 20px; }
       .page-header { padding: 14px 14px 0; flex-wrap: wrap; gap: 8px; }
       .page-body { padding: 14px 14px 32px; }
       .page-title { font-size: 17px; }
@@ -208,12 +240,37 @@
   {% block content %}{% endblock %}
 </div>
 
+{% if user is defined and user %}
+<nav class="bottom-nav" aria-label="Quick navigation">
+  <a href="/dashboard" class="{% if request.url.path == '/dashboard' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Home</a>
+  <a href="/ro/" class="{% if request.url.path.startswith('/ro/') %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Jobs</a>
+  <a href="/appointments/calendar" class="{% if request.url.path.startswith('/appointments') %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Calendar</a>
+  <a href="/invoices/" class="{% if request.url.path.startswith('/invoices') %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>Invoices</a>
+  <button type="button" onclick="toggleSidebar()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>More</button>
+</nav>
+{% endif %}
+
 <script>
   function toggleSidebar() {
     const s = document.getElementById('sidebar');
     const b = document.getElementById('sidebar-backdrop');
     if (s) s.classList.toggle('open');
     if (b) b.classList.toggle('open');
+  }
+  document.querySelectorAll('.main-content table').forEach((table) => {
+    const heads = [...table.querySelectorAll('thead th')].map((th) => th.textContent.trim());
+    table.querySelectorAll('tbody tr').forEach((row) => {
+      [...row.children].forEach((cell, index) => { if (heads[index]) cell.dataset.label = heads[index]; });
+    });
+  });
+  if (window.matchMedia('(max-width: 767px)').matches) {
+    // On a phone the whole card opens the record, not just the small number.
+    document.querySelectorAll('.main-content tbody tr').forEach((row) => {
+      const link = row.querySelector('a[href]');
+      if (!link || row.querySelector('form')) return;
+      row.style.cursor = 'pointer';
+      row.addEventListener('click', (event) => { if (!event.target.closest('a,button')) window.location = link.href; });
+    });
   }
   function closeSidebar() {
     const s = document.getElementById('sidebar');

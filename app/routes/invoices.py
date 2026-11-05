@@ -58,6 +58,10 @@ def list_invoices(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("invoices/list.html", {"request": request, "user": user, "invoices": invoices})
 
 
+SHOP_TAX_RATE = 0.092  # Glendale combined retail TPT: state 5.6, Maricopa 0.7, city 2.9 (ADOR table, June 2026).
+# Parts only: separately stated repair labor is not taxed (TPR 93-31).
+
+
 @router.post("/create/{ro_id}")
 def create_invoice(request: Request, ro_id: int, db: Session = Depends(get_db)):
     user = require_user(request, db)
@@ -67,9 +71,15 @@ def create_invoice(request: Request, ro_id: int, db: Session = Depends(get_db)):
     if not ro:
         raise HTTPException(status_code=404)
 
+    existing = db.query(Invoice).filter(Invoice.repair_order_id == ro_id, Invoice.status != "void").first()
+    if existing:
+        return RedirectResponse(f"/invoices/{existing.id}", status_code=303)
+    if not ro.line_items:
+        return RedirectResponse(f"/ro/{ro_id}", status_code=303)
+
     subtotal = sum(li.total for li in ro.line_items)
-    tax_rate = 0.0875
-    tax_amount = sum(li.total for li in ro.line_items if li.taxable) * tax_rate
+    tax_rate = SHOP_TAX_RATE
+    tax_amount = round(sum(li.total for li in ro.line_items if li.item_type == "part") * tax_rate, 2)
     total = subtotal + tax_amount
 
     invoice = Invoice(

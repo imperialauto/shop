@@ -445,6 +445,7 @@ STALE_AFTER = timedelta(days=3)
 URGENT_WINDOW = timedelta(hours=4)  # after this an item moves to the regular digests
 NO_REPLY = "NO_REPLY_NEEDED"
 DIGEST_HOURS = (13, 15, 17)
+DASHBOARD_REPLY = "dashboard_reply"
 QUIET = timedelta(seconds=30)  # lets a burst of customer texts become one alert
 TICK_LIMIT = 10
 DAILY_HOUR = 10
@@ -551,9 +552,26 @@ def due_owner_messages(db: Session, now: datetime) -> list[dict]:
     return messages
 
 
+def queued_replies(db: Session) -> list[dict]:
+    """Replies approved on the dashboard. Each is handed over once and never retried."""
+    replies = []
+    rows = db.query(DispatchOutbound).filter(DispatchOutbound.kind == DASHBOARD_REPLY, DispatchOutbound.status == "queued").all()
+    for row in rows:
+        item = db.get(DispatchItem, row.item_id)
+        row.status = "reserved"
+        if item is None or not item.customer_phone or not item.draft_reply:
+            row.status = "skipped"
+            continue
+        replies.append({"key": row.dedupe_key, "itemId": item.id, "phone": item.customer_phone,
+                        "text": item.draft_reply, "messageId": item.thread_message_id or item.last_message_id})
+    db.commit()
+    return replies
+
+
 @internal_router.post("/tick")
 def tick(db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
-    return {"ownerPhone": OWNER_PHONE or None, "messages": due_owner_messages(db, datetime.now(timezone.utc))}
+    return {"ownerPhone": OWNER_PHONE or None, "messages": due_owner_messages(db, datetime.now(timezone.utc)),
+            "customerReplies": queued_replies(db)}
 
 
 @internal_router.post("/draft")
@@ -637,6 +655,7 @@ def decide(
     decision: str = Form(...),
     expected_message_id: str = Form(...),
     proposed_action: str = Form(default=""),
+    reply_text: str = Form(default=""),
     db: Session = Depends(get_db),
 ):
     user = get_current_user(request, db)
@@ -656,7 +675,16 @@ def decide(
     item.decided_at = datetime.now().astimezone()
     item.updated_at = item.decided_at
     audit(db, item.id, user.username, f"owner_{decision}")
-    db.commit()
+    text = reply_text.strip()[:1500]
+    if decision == "approve" and text:
+        item.draft_reply = text  # the messaging service sends it on its next tick
+        db.add(DispatchOutbound(dedupe_key=f"dashboard:{item.id}:{item.last_message_id}", kind=DASHBOARD_REPLY, item_id=item.id, status="queued"))
+        if PROMISE.search(text):
+            audit(db, item.id, "system", "follow_up_due", (item.decided_at + PROMISE_AFTER).isoformat())
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
     return RedirectResponse("/dashboard", status_code=303)
 
 
