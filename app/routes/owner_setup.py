@@ -42,15 +42,22 @@ def existing_unclaimed_user(db: Session, lock: bool = False):
     return users[0]
 
 
+def setup_form(request: Request, error: str | None = None, status_code: int = 200):
+    csrf = secrets.token_urlsafe(32)
+    request.session["owner_setup_csrf"] = csrf
+    return templates.TemplateResponse(
+        "owner_setup.html", {"request": request, "csrf": csrf, "error": error},
+        status_code=status_code,
+    )
+
+
 @router.get("/owner-setup", response_class=HTMLResponse)
 def owner_setup_page(request: Request, db: Session = Depends(get_db)):
     if not setup_enabled():
         raise HTTPException(status_code=404, detail="Owner setup is not enabled.")
     if existing_unclaimed_user(db) is None:
         raise HTTPException(status_code=410, detail="One-time owner setup is unavailable.")
-    csrf = secrets.token_urlsafe(32)
-    request.session["owner_setup_csrf"] = csrf
-    return templates.TemplateResponse("owner_setup.html", {"request": request, "csrf": csrf})
+    return setup_form(request)
 
 
 @router.post("/owner-setup", response_class=HTMLResponse)
@@ -67,21 +74,21 @@ def claim_owner_setup(
         raise HTTPException(status_code=404, detail="Owner setup is not enabled.")
     expected_csrf = request.session.get("owner_setup_csrf", "")
     if not expected_csrf or not hmac.compare_digest(expected_csrf, csrf):
-        raise HTTPException(status_code=403, detail="Invalid form session. Reload and try again.")
+        return setup_form(request, "The form expired. Please try again.", 403)
     expected_token = os.environ.get("IMPERIAL_OWNER_SETUP_TOKEN", "")
     if not hmac.compare_digest(expected_token, setup_token):
-        raise HTTPException(status_code=403, detail="Owner verification code is incorrect.")
+        return setup_form(request, "The owner verification code is incorrect.", 403)
 
     normalized = username.strip().lower()
     if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{2,63}", normalized):
-        raise HTTPException(status_code=422, detail="Choose a username of 3 to 64 letters, digits, dots, dashes or underscores.")
+        return setup_form(request, "Choose a username of 3 to 64 letters, digits, dots, dashes or underscores.", 422)
     encoded_password = password.encode("utf-8")
     if not MIN_PASSWORD_LENGTH <= len(password) or len(encoded_password) > MAX_PASSWORD_BYTES:
-        raise HTTPException(status_code=422, detail="Use a passphrase of at least 14 characters (maximum 72 UTF-8 bytes).")
+        return setup_form(request, "Use a password of at least 14 characters (maximum 72 UTF-8 bytes).", 422)
     if password != confirm_password:
-        raise HTTPException(status_code=422, detail="Passwords do not match.")
+        return setup_form(request, "Passwords do not match.", 422)
     if password == setup_token or password == normalized:
-        raise HTTPException(status_code=422, detail="Choose a different account password.")
+        return setup_form(request, "Choose a password different from the username and verification code.", 422)
 
     user = existing_unclaimed_user(db, lock=True)
     if user is None:
