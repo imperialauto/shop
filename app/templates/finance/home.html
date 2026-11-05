@@ -64,6 +64,7 @@
     Missing payments must not be interpreted as zero business activity.
   </div>
 
+  {% if recorded_count or sent_invoice_count %}
   <div class="finance-stats">
     <div class="card finance-metric">
       <div class="name">Recorded payments · {{ period_label }}</div>
@@ -81,6 +82,14 @@
       <div class="hint">{{ sent_invoice_count }} sent invoices. This is not verified accounts receivable or remaining balance due.</div>
     </div>
   </div>
+
+  {% else %}
+  <div class="card" role="status" style="margin:18px 0;padding:18px;border-color:rgba(212,168,83,.24);">
+    <div style="font-size:15px;font-weight:650;color:#fafafa;">No shop payments have been entered into Imperial Operations yet</div>
+    <p class="finance-caption" style="margin-top:8px;">This is a data-coverage gap, <strong>not $0 business revenue</strong>. Your historical Chase, Bank of America, Square, PayPal and Apple Cash evidence remains outside the dashboard until the secure transaction import and reconciliation are completed.</p>
+    <p class="finance-caption" style="margin-top:8px;">Use this page to access finance activity once payments are recorded. Do not make tax or investor decisions from these incomplete operational totals.</p>
+  </div>
+  {% endif %}
 
   <div class="finance-layout">
     <section class="card finance-section" aria-labelledby="finance-payments-heading">
