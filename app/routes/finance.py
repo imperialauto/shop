@@ -6,7 +6,8 @@ Finance imports need a separate, idempotent database migration and source audit.
 """
 import re
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
+from app.appointments import PHOENIX
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -23,13 +24,16 @@ templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent
 
 def month_boundaries(period: str | None):
     """Return an inclusive start and exclusive end for a YYYY-MM month."""
-    now = datetime.utcnow()
+    now = datetime.now(PHOENIX)
     if not period or not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", period):
         year, month = now.year, now.month
     else:
         year, month = map(int, period.split("-"))
-    start = datetime(year, month, 1)
-    end = datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
+    local_start = datetime(year, month, 1, tzinfo=PHOENIX)
+    local_end = datetime(year + 1, 1, 1, tzinfo=PHOENIX) if month == 12 else datetime(year, month + 1, 1, tzinfo=PHOENIX)
+    # Existing Payment.paid_at values are naive UTC timestamps.
+    start = local_start.astimezone(timezone.utc).replace(tzinfo=None)
+    end = local_end.astimezone(timezone.utc).replace(tzinfo=None)
     return start, end
 
 
@@ -48,6 +52,7 @@ def finance_home(
     require_admin(user)
 
     start, end = month_boundaries(period)
+    local_start = start.replace(tzinfo=timezone.utc).astimezone(PHOENIX)
     amount, count = (
         db.query(func.coalesce(func.sum(Payment.amount), 0), func.count(Payment.id))
         .filter(Payment.paid_at >= start, Payment.paid_at < end)
@@ -80,7 +85,7 @@ def finance_home(
             if customer else "Customer not linked"
         )
         activity.append({
-            "date": payment.paid_at,
+            "date": ((payment.paid_at.replace(tzinfo=timezone.utc) if payment.paid_at.tzinfo is None else payment.paid_at).astimezone(PHOENIX) if payment.paid_at else None),
             "amount": float(payment.amount or 0),
             "method": payment.method or "Unspecified",
             "customer": display_name,
@@ -92,8 +97,8 @@ def finance_home(
         {
             "request": request,
             "user": user,
-            "period": start.strftime("%Y-%m"),
-            "period_label": start.strftime("%B %Y"),
+            "period": local_start.strftime("%Y-%m"),
+            "period_label": local_start.strftime("%B %Y"),
             "recorded_amount": float(amount or 0),
             "recorded_count": int(count or 0),
             "sent_invoice_amount": float(unpaid_total or 0),
