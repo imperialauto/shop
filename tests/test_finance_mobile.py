@@ -38,6 +38,18 @@ class FinanceMobileViewTests(unittest.TestCase):
         self.db.commit.assert_not_called()
         self.db.add.assert_not_called()
 
+    def test_empty_ledger_does_not_imply_zero_revenue(self):
+        user = SimpleNamespace(role="admin", full_name="Owner", username="owner")
+        self.db.query.return_value.filter.return_value.one.side_effect = [
+            (0.0, 0),
+            (0.0, 0),
+        ]
+        with patch("app.routes.finance.get_current_user", return_value=user):
+            response = self.client.get("/finance/?period=2026-11")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("not $0 business revenue", response.text.lower())
+        self.assertNotIn("Recorded payments · November 2026</div>", response.text)
+
     def test_service_advisor_cannot_view_financial_page(self):
         user = SimpleNamespace(role="tech", full_name="Advisor", username="advisor")
         with patch("app.routes.finance.get_current_user", return_value=user):
