@@ -32,7 +32,7 @@ for n, (status, urgency, category, summary, draft) in enumerate([
     ("approved", "normal", "scheduling", "Can I come Tuesday?", "Yes, Tuesday works."),
     ("routine", "normal", "general", "Thanks", ""),
 ], 1):
-    db.add(DispatchItem(id=n, quo_conversation_id=f"CNsample{n}", customer_phone=f"+1602555010{n}", status=status, urgency=urgency,
+    db.add(DispatchItem(id=n, quo_conversation_id=f"CNsample{n}", last_message_id=f"MSGsample{n}", customer_phone=f"+1602555010{n}", status=status, urgency=urgency,
                         category=category, summary=summary, proposed_action="Review the message and reply.", draft_reply=draft,
                         approval_reasons='["customer_reply"]', contact_name=f"Sample Contact {n}", updated_at=now - timedelta(hours=n), created_at=now - timedelta(hours=n)))
 db.commit()
