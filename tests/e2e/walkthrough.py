@@ -173,11 +173,16 @@ def flows(page, device):
 
     def queue_reply():
         page.goto(BASE + "/dashboard?view=urgent")
-        page.locator("details summary", has_text="Sample Contact 1").first.click()
+        before = page.locator("button[value=approve]").count()
+        name = "Sample Contact 1" if device == "phone" else "Sample Contact 2"
+        if device == "desktop":
+            page.goto(BASE + "/dashboard")
+            before = page.locator("button[value=approve]").count()
+        page.locator("details summary", has_text=name).first.click()
         page.locator("details[open] textarea[name=reply_text]").first.fill("Edited test reply")
         page.locator("details[open] button[value=approve]").first.click()
         page.wait_for_load_state("networkidle")
-        assert "Sample Contact 1" not in page.inner_text("body") or device == "desktop"
+        assert page.locator("button[value=approve]").count() < before, "item still waiting after sending"
 
     def signature():
         page.goto(f"{BASE}/ro/{context['ro']}")
@@ -197,13 +202,21 @@ def flows(page, device):
         assert "sign" in page.inner_text("body").lower() or "thank" in page.inner_text("body").lower()
 
     def booking():
-        page.goto(BASE + "/appointments/calendar")
-        page.fill("[name=repair_order_id]", str(context["ro"]))
-        page.fill("[name=starts_at]", "2027-01-05T11:00")
-        page.fill("[name=ends_at]", "2027-01-05T12:00")
+        day = "2027-01-05" if device == "phone" else "2027-01-06"
+        page.goto(f"{BASE}/ro/{context['ro']}")
+        page.click("a[href*='/appointments/calendar?ro=']")
+        page.wait_for_load_state("networkidle")
+        assert page.input_value("[name=repair_order_id]") == str(context["ro"])
+        page.fill("[name=starts_at]", f"{day}T11:00")
+        page.fill("[name=ends_at]", f"{day}T12:00")
         page.click("#appointment-form button[type=submit]")
-        page.wait_for_timeout(1200)
-        context["booking_text"] = page.inner_text("body")[:600]
+        page.wait_for_function("document.getElementById('booking-message').textContent.length > 0")
+        message = page.inner_text("#booking-message")
+        assert "already" not in message and "fail" not in message.lower(), message
+        page.fill("[name=starts_at]", f"{day}T12:30")
+        page.fill("[name=ends_at]", f"{day}T13:30")
+        page.click("#appointment-form button[type=submit]")
+        page.wait_for_function("document.getElementById('booking-message').textContent.includes('already')")
         page.screenshot(path=str(OUT / f"{device}-booked.png"), full_page=True)
 
     for name, action in [("wrong password", wrong_password), ("login", login), ("new customer", customer), ("new vehicle", vehicle), ("new repair order", repair_order),
@@ -214,7 +227,6 @@ def flows(page, device):
                          ("tech cannot open finance", tech_blocked_from_finance)]:
         step(name, device, action)
     results.append({"device": device, "flow": "where new vehicle lands", "ok": True, "url": context.get("after_vehicle", "")})
-    results.append({"device": device, "flow": "booking result", "ok": True, "url": context.get("booking_text", "")[:400]})
 
     def menu():
         if device == "phone":

@@ -36,5 +36,10 @@ for n, (status, urgency, category, summary, draft) in enumerate([
                         category=category, summary=summary, proposed_action="Review the message and reply.", draft_reply=draft,
                         approval_reasons='["customer_reply"]', contact_name=f"Sample Contact {n}", updated_at=now - timedelta(hours=n), created_at=now - timedelta(hours=n)))
 db.commit()
+if engine.dialect.name == "postgresql":
+    from sqlalchemy import text
+    for table in ("users", "customers", "vehicles", "repair_orders", "invoices", "dispatch_items"):
+        db.execute(text(f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), (SELECT max(id) FROM {table}))"))
+    db.commit()
 db.close()
 print("seeded")

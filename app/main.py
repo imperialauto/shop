@@ -101,6 +101,16 @@ def startup():
     app.state.database_audit = audit
     logging.getLogger("uvicorn.error").info("imperial_database_audit %s", json.dumps(audit, sort_keys=True))
 
+@app.exception_handler(404)
+def not_found(request: Request, exc):
+    if "text/html" not in request.headers.get("accept", ""):
+        return JSONResponse({"detail": "Not found"}, status_code=404)
+    return HTMLResponse('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Not found</title>'
+                        '<body style="background:#09090b;color:#e4e4e7;font-family:-apple-system,sans-serif;text-align:center;padding:64px 20px">'
+                        '<h1 style="font-size:20px">That page could not be found</h1><p style="color:#a1a1aa">It may have moved or been removed.</p>'
+                        '<a href="/" style="color:#d4a853">Back to Imperial Operations</a></body>', status_code=404)
+
+
 @app.get("/healthz")
 def healthz():
     return {"status": "ok", "mode": "read-only" if app.state.read_only else "active"}

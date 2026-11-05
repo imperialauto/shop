@@ -29,6 +29,17 @@
   const error = document.getElementById('calendar-error');
   const message = document.getElementById('booking-message');
   const form = document.getElementById('appointment-form');
+  const presetRo = new URLSearchParams(location.search).get('ro');
+  if (presetRo) form.elements.repair_order_id.value = presetRo;
+  if (!form.elements.resource_id.value) form.elements.resource_id.value = 'Bay 1';
+  form.elements.starts_at.addEventListener('change', () => {
+    // Default to a one-hour job, stated in Phoenix wall-clock time.
+    const value = form.elements.starts_at.value;
+    if (!value || form.elements.ends_at.value) return;
+    const [date, clock] = value.split('T');
+    const hour = String(Number(clock.slice(0, 2)) + 1).padStart(2, '0');
+    if (Number(hour) < 24) form.elements.ends_at.value = `${date}T${hour}${clock.slice(2)}`;
+  });
   const phoenixTime = iso => new Intl.DateTimeFormat('en-US', {timeZone:'America/Phoenix',dateStyle:'medium',timeStyle:'short'}).format(new Date(iso));
   async function request(path, options={}) {
     const response = await fetch(path, {credentials:'same-origin', ...options});

@@ -19,6 +19,7 @@
         {% endfor %}
       </select>
     </form>
+    <a href="/appointments/calendar?ro={{ ro.id }}" class="btn-secondary">Schedule</a>
     {% if open_invoice %}
     <a href="/invoices/{{ open_invoice.id }}" class="btn-primary">View Invoice</a>
     {% elif ro.line_items %}
