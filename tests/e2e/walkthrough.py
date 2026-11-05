@@ -117,7 +117,7 @@ def flows(page, device):
         page.wait_for_url(re.compile(r"/invoices/\d+$"))
         context["invoice"] = int(page.url.rsplit("/", 1)[1])
         text = page.inner_text("body")
-        assert "$8.60" in text and "$258.60" in text, "tax should be 8.6% of the $100 part only"
+        assert "$9.20" in text and "$259.20" in text, "tax should be 9.2% of the $100 part only"
 
     def duplicate_invoice():
         page.goto(f"{BASE}/ro/{context['ro']}")

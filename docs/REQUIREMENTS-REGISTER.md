@@ -30,7 +30,7 @@ The AI assistant is named **Imperial**.
 | R09 | Jobs | Repair orders and line items | tested | Walkthrough |
 | R10 | Jobs | Estimates | partial | AI estimate page exists. Full flow still to test |
 | R11 | Jobs | Invoices | tested | Create was broken and is fixed on `claude/launch-audit` |
-| R12 | Jobs | Parts-only 8.6% tax | tested | Needs owner confirmation of rate. Older code charged 8.75% on all items |
+| R12 | Jobs | Parts taxed at 9.2%, labor itemized and untaxed | tested | ADOR June 2026 table and TPR 93-31. Accountant to confirm city labor treatment, sublet and shop fees. Older code charged 8.75% on all items |
 | R13 | Scheduling | Booking, buffers, conflicts on PostgreSQL | tested | Walkthrough and PostgreSQL tests |
 | R14 | Scheduling | Calendar reading | partial | Apple linked. Google link not provided. No calendar writes |
 | R15 | Quo | Message and call intake, alerts, drafts | deployed | Live since Nov 3. `YES` and FYI seen working |

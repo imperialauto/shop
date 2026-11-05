@@ -58,7 +58,8 @@ def list_invoices(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("invoices/list.html", {"request": request, "user": user, "invoices": invoices})
 
 
-SHOP_TAX_RATE = 0.086  # Arizona TPT, charged on parts only: labor is not taxed
+SHOP_TAX_RATE = 0.092  # Glendale combined retail TPT: state 5.6, Maricopa 0.7, city 2.9 (ADOR table, June 2026).
+# Parts only: separately stated repair labor is not taxed (TPR 93-31).
 
 
 @router.post("/create/{ro_id}")
