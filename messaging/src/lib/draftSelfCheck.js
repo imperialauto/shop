@@ -19,6 +19,12 @@ const SCENARIOS = [
 ];
 
 async function runDraftSelfCheck() {
+  if (process.env.OPENAI_API_KEY) {
+    const res = await fetch("https://api.openai.com/v1/models", { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } });
+    const body = await res.json().catch(() => ({}));
+    const names = (body.data || []).map((m) => m.id).filter((id) => /^gpt-/.test(id) && !/audio|realtime|search|transcribe|tts|image/.test(id)).sort();
+    console.log(`DRAFT_CHECK models ${res.status}: ${names.join(" ")}`.slice(0, 1500));
+  }
   for (const [name, history, summary] of SCENARIOS) {
     const reply = await generateDraftReply({ history, jobContext: summary ? { summary } : null, allowNoReply: true });
     await new Promise((resolve) => setTimeout(resolve, 1500));

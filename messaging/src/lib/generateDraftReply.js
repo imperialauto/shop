@@ -50,6 +50,20 @@ async function groqDraft(userMessage) {
   return data.choices?.[0]?.message?.content?.trim();
 }
 
+async function openaiDraft(userMessage) {
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+    body: JSON.stringify({
+      model: process.env.OPENAI_DRAFT_MODEL || "gpt-4o-mini",
+      messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: userMessage }],
+    }),
+  });
+  if (!res.ok) throw new Error(`OpenAI API ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`);
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content?.trim();
+}
+
 async function anthropicDraft(userMessage) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -72,9 +86,10 @@ async function anthropicDraft(userMessage) {
 
 // A failed primary model falls back to the other one, so an alert still gets a draft.
 async function completeDraft(userMessage) {
-  if (process.env.DRAFT_PROVIDER !== "anthropic") return groqDraft(userMessage);
+  const primary = { anthropic: anthropicDraft, openai: openaiDraft }[process.env.DRAFT_PROVIDER];
+  if (!primary) return groqDraft(userMessage);
   try {
-    return await anthropicDraft(userMessage);
+    return await primary(userMessage);
   } catch (err) {
     console.error("Primary draft model failed:", err.message);
     return groqDraft(userMessage);
@@ -91,7 +106,7 @@ async function completeDraft(userMessage) {
  */
 async function generateDraftReply({ history, customerName, jobContext, allowNoReply = false }) {
   if (!history?.length) return null;
-  if (!process.env.GROQ_API_KEY && !process.env.ANTHROPIC_API_KEY) {
+  if (!process.env.GROQ_API_KEY && !process.env.ANTHROPIC_API_KEY && !process.env.OPENAI_API_KEY) {
     console.error("generateDraftReply: no drafting API key is set");
     return null;
   }
