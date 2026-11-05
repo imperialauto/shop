@@ -78,7 +78,7 @@
     const values=Object.fromEntries(new FormData(form));
     const asPhoenix = v => v + ':00-07:00'; // Arizona does not observe DST.
     const payload={repair_order_id:Number(values.repair_order_id),resource_id:values.resource_id,starts_at:asPhoenix(values.starts_at),ends_at:asPhoenix(values.ends_at),location:values.location,travel_minutes:Number(values.travel_minutes||0)};
-    try {await request('/appointments/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});message.textContent='Tentative appointment saved.';form.reset();await load();}
+    try {await request('/appointments/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});message.textContent='Tentative appointment saved.';const keepRo=form.elements.repair_order_id.value,keepBay=form.elements.resource_id.value;form.reset();form.elements.repair_order_id.value=keepRo;form.elements.resource_id.value=keepBay;await load();}
     catch(e){message.textContent=e.message;}
   });
   load();
