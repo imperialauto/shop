@@ -5,6 +5,7 @@ treat invoice payments as an audited historical P&L or import external bank data
 Finance imports need a separate, idempotent database migration and source audit.
 """
 import re
+from pathlib import Path
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -17,7 +18,7 @@ from app.database import get_db
 from app.models import Invoice, Payment, RepairOrder
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
+templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
 
 def month_boundaries(period: str | None):
