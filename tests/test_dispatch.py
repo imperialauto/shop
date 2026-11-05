@@ -592,6 +592,26 @@ class QueueWorkflowTests(unittest.TestCase):
         self.set_updated(datetime(2026, 11, 3, 11, 0, tzinfo=AZ))
         self.assertEqual([m for m in self.alert(datetime(2026, 11, 3, 16, 10, tzinfo=AZ)) if m["key"].startswith("urgent")], [])
 
+    def test_dashboard_reply_is_queued_once_with_the_edit(self):
+        self.post("m1", "How much for brakes on a 2011 Ford Focus?")
+        self.draft(1, "m1")
+        with self.login:
+            response = self.client.post("/dispatch/1/decide", data={"decision": "approve", "expected_message_id": "m1",
+                                                                     "reply_text": "Edited reply"}, follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        with self.Session() as db:
+            first = dispatch.queued_replies(db)
+            self.assertEqual([r["text"] for r in first], ["Edited reply"])
+            self.assertEqual(dispatch.queued_replies(db), [])
+
+    def test_declined_dashboard_item_sends_nothing(self):
+        self.post("m1", "How much for brakes on a 2011 Ford Focus?")
+        self.draft(1, "m1")
+        with self.login:
+            self.client.post("/dispatch/1/decide", data={"decision": "decline", "expected_message_id": "m1", "reply_text": "No"}, follow_redirects=False)
+        with self.Session() as db:
+            self.assertEqual(dispatch.queued_replies(db), [])
+
     def test_burst_of_texts_becomes_one_alert(self):
         self.post("m1", "How much for brakes on a 2011 Ford Focus?")
         self.draft(1, "m1")

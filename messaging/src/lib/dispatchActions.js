@@ -42,8 +42,11 @@ async function sendAutoReply({ autoReply, messageId, phone, quo, shopClient }) {
 
 async function deliverOwnerMessages({ quo, shopClient }) {
   if (!enabled("OWNER_TEXTS_ENABLED")) return { sent: 0 };
-  const { ownerPhone, messages = [] } = await shopClient.dispatchTick();
+  const { ownerPhone, messages = [], customerReplies = [] } = await shopClient.dispatchTick();
   let sent = 0;
+  for (const reply of customerReplies) {
+    await sendApprovedReply({ reply, ownerPhone, quo, shopClient });
+  }
   for (const message of messages) {
     try {
       await quo.sendMessage({ to: ownerPhone, content: message.text });

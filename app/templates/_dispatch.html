@@ -18,7 +18,7 @@
   {% endif %}
   <nav aria-label="Queue filters" style="display:flex; flex-wrap:wrap; gap:6px; padding:10px 16px; border-bottom:1px solid rgba(255,255,255,0.06);">
     {% for key, label in dispatch_views.items() %}
-    <a href="/dashboard?view={{ key }}" style="font-size:12px; text-decoration:none; color:{{ '#d4a853' if key == dispatch_view else '#a1a1aa' }};"{% if key == dispatch_view %} aria-current="true"{% endif %}>{{ label }}</a>
+    <a class="queue-filter" href="/dashboard?view={{ key }}" style="font-size:12px; text-decoration:none; color:{{ '#d4a853' if key == dispatch_view else '#a1a1aa' }};"{% if key == dispatch_view %} aria-current="true"{% endif %}>{{ label }}</a>
     {% endfor %}
   </nav>
   {% for row in dispatch_items %}{% set item = row.item %}
@@ -37,15 +37,18 @@
         {% for entry in row.history %}<p style="margin:6px 0 0; overflow-wrap:anywhere;">{{ entry.direction|capitalize }}: {{ (entry.body or '')[:160] }}</p>{% endfor %}
       </details>{% endif %}
       {% if item.status in ('routine', 'needs_owner') %}
-      {% if item.draft_reply %}<p style="margin:0 0 8px; overflow-wrap:anywhere;">Drafted reply: {{ item.draft_reply }}</p>{% endif %}
       <form method="post" action="/dispatch/{{ item.id }}/decide">
         <input type="hidden" name="expected_message_id" value="{{ item.last_message_id }}">
-        <label style="display:block; margin-bottom:8px;">Proposed action
-          <textarea name="proposed_action" rows="2" maxlength="2000" class="form-input" style="display:block; margin-top:4px;">{{ item.proposed_action }}</textarea>
+        {% if item.draft_reply %}
+        <label style="display:block; margin-bottom:8px;">Reply to customer
+          <textarea name="reply_text" rows="3" maxlength="1500" class="form-input" style="display:block; margin-top:4px;">{{ item.draft_reply }}</textarea>
         </label>
+        {% else %}
+        <p style="margin:0 0 8px; overflow-wrap:anywhere;">Next step: {{ item.proposed_action }}</p>
+        {% endif %}
         <div style="display:flex; flex-wrap:wrap; gap:8px;">
-          <button class="btn-primary" name="decision" value="approve">Approve</button>
-          <button class="btn-secondary" name="decision" value="decline">Decline</button>
+          <button class="btn-primary" name="decision" value="approve">{{ 'Send reply' if item.draft_reply else 'Mark handled' }}</button>
+          <button class="btn-secondary" name="decision" value="decline">{{ 'Skip' if item.draft_reply else 'Close' }}</button>
           <a class="btn-secondary" href="tel:{{ item.customer_phone }}">Call</a>
         </div>
       </form>

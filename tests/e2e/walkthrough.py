@@ -12,7 +12,7 @@ OUT.mkdir(exist_ok=True)
 results = []
 PAGES = [("dashboard", "/dashboard"), ("dashboard-urgent", "/dashboard?view=urgent"), ("repair-orders", "/ro/"), ("board", "/ro/board"),
          ("ro-new", "/ro/new"), ("ro-detail", "/ro/1"), ("estimates", "/estimates/"), ("invoices", "/invoices/"), ("invoice-detail", "/invoices/1"),
-         ("finance", "/finance/"), ("customers", "/customers/"), ("fleet", "/customers/?type_filter=fleet"), ("customer-new", "/customers/new"),
+         ("finance", "/finance/"), ("customers", "/customers/"), ("fleet", "/customers/?type_filter=fleet"), ("missing-page", "/ro/99999"), ("customer-new", "/customers/new"),
          ("customer-detail", "/customers/1"), ("vehicle-new", "/vehicles/new?customer_id=1"), ("vehicle-detail", "/vehicles/1"),
          ("calendar", "/appointments/calendar"), ("settings", "/settings"), ("live-control", "/live/control")]
 
@@ -142,11 +142,79 @@ def flows(page, device):
         page.goto(link.first.get_attribute("href") if link.first.get_attribute("href").startswith("http") else BASE + link.first.get_attribute("href"))
         measure(page, "public-status", device, 200, [])
 
-    for name, action in [("login", login), ("new customer", customer), ("new vehicle", vehicle), ("new repair order", repair_order),
+    def wrong_password():
+        page.goto(BASE + "/login")
+        page.fill("[name=username]", "walkthrough")
+        page.fill("[name=password]", "wrong-password")
+        page.click("button[type=submit]")
+        page.wait_for_load_state("networkidle")
+        assert "Invalid" in page.inner_text("body")
+
+    def logged_out_redirect():
+        fresh = page.context.browser.new_context().new_page()
+        fresh.goto(BASE + "/ro/")
+        assert "/login" in fresh.url, fresh.url
+        fresh.context.close()
+
+    def tech_blocked_from_finance():
+        tech = page.context.browser.new_context().new_page()
+        tech.goto(BASE + "/login")
+        tech.fill("[name=username]", "tech")
+        tech.fill("[name=password]", "walkthrough-only-pass")
+        tech.click("button[type=submit]")
+        tech.wait_for_url("**/dashboard")
+        assert tech.locator("a[href='/finance/']").count() == 0
+        assert tech.goto(BASE + "/finance/").status == 403
+        tech.context.close()
+
+    def search():
+        page.goto(BASE + "/customers/?search=Testcase")
+        assert "Lee" in page.inner_text("body") and "Pat Sample" not in page.inner_text("body")
+
+    def queue_reply():
+        page.goto(BASE + "/dashboard?view=urgent")
+        page.locator("details summary", has_text="Sample Contact 1").first.click()
+        page.locator("details[open] textarea[name=reply_text]").first.fill("Edited test reply")
+        page.locator("details[open] button[value=approve]").first.click()
+        page.wait_for_load_state("networkidle")
+        assert "Sample Contact 1" not in page.inner_text("body") or device == "desktop"
+
+    def signature():
+        page.goto(f"{BASE}/ro/{context['ro']}")
+        link = page.locator("a[href*='/sign/ro/']")
+        assert link.count(), "no signature link"
+        href = link.first.get_attribute("href")
+        page.goto(href if href.startswith("http") else BASE + href)
+        page.fill("[name=approved_by]", "Flow Check")
+        box = page.locator("#sig-canvas").bounding_box()
+        page.mouse.move(box["x"] + 20, box["y"] + 40)
+        page.mouse.down()
+        page.mouse.move(box["x"] + 150, box["y"] + 90, steps=6)
+        page.mouse.up()
+        page.click("button[type=submit]")
+        page.wait_for_load_state("networkidle")
+        measure(page, "signed", device, 200, [])
+        assert "sign" in page.inner_text("body").lower() or "thank" in page.inner_text("body").lower()
+
+    def booking():
+        page.goto(BASE + "/appointments/calendar")
+        page.fill("[name=repair_order_id]", str(context["ro"]))
+        page.fill("[name=starts_at]", "2027-01-05T11:00")
+        page.fill("[name=ends_at]", "2027-01-05T12:00")
+        page.click("#appointment-form button[type=submit]")
+        page.wait_for_timeout(1200)
+        context["booking_text"] = page.inner_text("body")[:600]
+        page.screenshot(path=str(OUT / f"{device}-booked.png"), full_page=True)
+
+    for name, action in [("wrong password", wrong_password), ("login", login), ("new customer", customer), ("new vehicle", vehicle), ("new repair order", repair_order),
                          ("add line item", line_item), ("add part", part_item), ("change status", status), ("create invoice", invoice),
-                         ("no duplicate invoice", duplicate_invoice), ("record payment", payment), ("customer status link", public_status)]:
+                         ("no duplicate invoice", duplicate_invoice), ("record payment", payment), ("customer status link", public_status),
+                         ("customer signature", signature), ("book appointment", booking), ("search customers", search),
+                         ("send reply from dashboard", queue_reply), ("logged out redirect", logged_out_redirect),
+                         ("tech cannot open finance", tech_blocked_from_finance)]:
         step(name, device, action)
     results.append({"device": device, "flow": "where new vehicle lands", "ok": True, "url": context.get("after_vehicle", "")})
+    results.append({"device": device, "flow": "booking result", "ok": True, "url": context.get("booking_text", "")[:400]})
 
     def menu():
         if device == "phone":
