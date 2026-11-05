@@ -50,10 +50,15 @@ class FinanceMobileViewTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["location"], "/login")
 
-    def test_month_bounds_are_exclusive(self):
+    def test_month_bounds_are_exclusive_and_phoenix_local(self):
+        # Arizona is UTC-7 year-round. November and December start at 07:00 UTC.
+        self.assertEqual(
+            month_boundaries("2026-11"),
+            (datetime(2026, 11, 1, 7), datetime(2026, 12, 1, 7)),
+        )
         self.assertEqual(
             month_boundaries("2026-12"),
-            (datetime(2026, 12, 1), datetime(2027, 1, 1)),
+            (datetime(2026, 12, 1, 7), datetime(2027, 1, 1, 7)),
         )
 
 
