@@ -26,7 +26,7 @@ def require_admin(user: User):
     """Raise 403 unless the given user has the admin role. Use inside routes
     that manage other user accounts (creating/removing logins, resetting
     passwords for someone else)."""
-    if user.role != "admin":
+    if user.role not in {"admin", "owner"}:
         raise HTTPException(status_code=403, detail="Admin access required")
 
 
