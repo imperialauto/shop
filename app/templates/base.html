@@ -175,7 +175,7 @@
       Invoices
     </a>
 
-    {% if user.role == 'admin' %}
+    {% if user.role in ['admin', 'owner'] %}
     <div class="nav-section">Owner</div>
     <a href="/finance/" class="nav-item {% if request.url.path.startswith('/finance') %}active{% endif %}" onclick="closeSidebar()" aria-label="Finance command center">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
