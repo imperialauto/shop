@@ -17,6 +17,7 @@ The production service has one existing `users` row but no self-service login re
 
 - The private variable exists only in the `web` Railway service environment and is never committed to Git.
 - Claim is allowed exactly once: the existing user is marked with role `owner`, and setup remains disabled permanently for that existing account.
+- Prior authenticated sessions to that user are invalidated at first claim, or whenever the owner password changes. New sessions are bound to the current password credential.
 - Claim rejects multiple pre-existing users, already-claimed owner accounts, invalid CSRF, unconfigured or too-short secrets, and weak/oversized passwords.
 - In recovery read-only mode, **only POST /owner-setup** is exempted and still requires the private token + CSRF. No other customer, money, estimate, or dispatch mutations are unlocked.
 - Owner role is recognized by existing administrator-only pages. Non-owner accounts cannot access `/finance/`.
