@@ -11,16 +11,21 @@
     <h1 class="text-2xl font-bold text-yellow-400">RO #{{ ro.id }}</h1>
     <p class="text-stone-400 text-sm mt-0.5">Created {{ ro.created_at.strftime('%B %d, %Y') }}</p>
   </div>
-  <div class="flex gap-2">
+  <div class="flex flex-wrap gap-2">
     <form method="post" action="/ro/{{ ro.id }}/update-status" class="flex gap-2 items-center">
-      <select name="status" class="form-select w-44">
+      <select name="status" class="form-select w-44" aria-label="Job status" onchange="this.form.submit()">
         {% for val, label in statuses %}
         <option value="{{ val }}" {% if ro.status == val %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
-      <button type="submit" class="btn-secondary">Update</button>
     </form>
-    <a href="/invoices/create/{{ ro.id }}" class="btn-primary" onclick="return confirm('Create invoice from current line items?')">Create Invoice</a>
+    {% if open_invoice %}
+    <a href="/invoices/{{ open_invoice.id }}" class="btn-primary">View Invoice</a>
+    {% elif ro.line_items %}
+    <form method="post" action="/invoices/create/{{ ro.id }}"><button type="submit" class="btn-primary">Create Invoice</button></form>
+    {% else %}
+    <span class="text-stone-400 text-sm self-center">Add a line item to create an invoice</span>
+    {% endif %}
   </div>
 </div>
 

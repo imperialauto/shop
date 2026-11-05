@@ -98,21 +98,31 @@ def flows(page, device):
         page.wait_for_load_state("networkidle")
         assert "Diagnostic" in page.content()
 
-    def status():
-        page.select_option("[name=status]", "complete")
+    def part_item():
+        page.fill("#li-description", "Oil filter")
+        page.select_option("[name=item_type]", "part")
+        page.fill("[name=quantity]", "1")
+        page.fill("[name=unit_price]", "100")
+        page.click(f"form[action='/ro/{context['ro']}/add-line-item'] button[type=submit]")
         page.wait_for_load_state("networkidle")
-        page.wait_for_timeout(500)
-        page.reload()
+
+    def status():
+        with page.expect_navigation():
+            page.select_option("[name=status]", "complete")
+        page.wait_for_load_state("networkidle")
         assert page.input_value("[name=status]") == "complete"
 
     def invoice():
         page.click(f"form[action='/invoices/create/{context['ro']}'] button[type=submit]")
         page.wait_for_url(re.compile(r"/invoices/\d+$"))
         context["invoice"] = int(page.url.rsplit("/", 1)[1])
+        text = page.inner_text("body")
+        assert "$8.60" in text and "$258.60" in text, "tax should be 8.6% of the $100 part only"
 
     def duplicate_invoice():
         page.goto(f"{BASE}/ro/{context['ro']}")
         assert page.locator(f"form[action='/invoices/create/{context['ro']}']").count() == 0, "RO still offers a second invoice"
+        assert page.locator(f"a[href='/invoices/{context['invoice']}']").count() >= 1, "no link to the invoice"
 
     def payment():
         page.goto(f"{BASE}/invoices/{context['invoice']}")
@@ -123,10 +133,9 @@ def flows(page, device):
         page.select_option("[name=method]", index=0)
         page.locator(f"form[action='/invoices/{context['invoice']}/add-payment'] button[type=submit]").click()
         page.wait_for_load_state("networkidle")
-        assert "paid" in page.content().lower()
+        assert "Paid" in page.inner_text("body")
 
     def public_status():
-        token = page.evaluate("async () => 0") and ""
         page.goto(f"{BASE}/ro/1")
         link = page.locator("a[href*='/status/']")
         assert link.count(), "no customer status link on the RO"
@@ -134,7 +143,7 @@ def flows(page, device):
         measure(page, "public-status", device, 200, [])
 
     for name, action in [("login", login), ("new customer", customer), ("new vehicle", vehicle), ("new repair order", repair_order),
-                         ("add line item", line_item), ("change status", status), ("create invoice", invoice),
+                         ("add line item", line_item), ("add part", part_item), ("change status", status), ("create invoice", invoice),
                          ("no duplicate invoice", duplicate_invoice), ("record payment", payment), ("customer status link", public_status)]:
         step(name, device, action)
     results.append({"device": device, "flow": "where new vehicle lands", "ok": True, "url": context.get("after_vehicle", "")})

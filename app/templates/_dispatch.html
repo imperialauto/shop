@@ -41,7 +41,7 @@
       <form method="post" action="/dispatch/{{ item.id }}/decide">
         <input type="hidden" name="expected_message_id" value="{{ item.last_message_id }}">
         <label style="display:block; margin-bottom:8px;">Proposed action
-          <textarea name="proposed_action" rows="2" maxlength="2000" style="display:block; width:100%; margin-top:4px;">{{ item.proposed_action }}</textarea>
+          <textarea name="proposed_action" rows="2" maxlength="2000" class="form-input" style="display:block; margin-top:4px;">{{ item.proposed_action }}</textarea>
         </label>
         <div style="display:flex; flex-wrap:wrap; gap:8px;">
           <button class="btn-primary" name="decision" value="approve">Approve</button>

@@ -146,7 +146,9 @@ def dashboard(request: Request, view: str = "open", db: Session = Depends(get_db
     except HTTPException:
         return RedirectResponse("/login", status_code=302)
 
-    from app.models import RepairOrder, Customer
+    from datetime import datetime
+    from app.appointments import PHOENIX
+    from app.models import Customer, Invoice, RepairOrder
     open_ros = db.query(RepairOrder).filter(RepairOrder.status != "delivered").order_by(RepairOrder.created_at.desc()).limit(10).all()
     total_customers = db.query(Customer).count()
     total_ros = db.query(RepairOrder).count()
@@ -159,6 +161,8 @@ def dashboard(request: Request, view: str = "open", db: Session = Depends(get_db
         "total_customers": total_customers,
         "total_ros": total_ros,
         "open_count": open_count,
+        "total_invoices": db.query(Invoice).filter(Invoice.status == "sent").count(),
+        "now": datetime.now(PHOENIX),
         **dispatch.dashboard_context(db, view),
         "read_only": app.state.read_only,
     })
