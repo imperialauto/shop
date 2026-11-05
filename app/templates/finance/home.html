@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Finance — Imperial Auto Care{% endblock %}
+{% block content %}
+<style>
+  .finance-wrap { max-width: 1180px; margin: 0 auto; }
+  .finance-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  .finance-sub { color:#a1a1aa; font-size:13px; line-height:1.55; margin-top:7px; max-width:680px; }
+  .finance-period { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .finance-period input { min-height:44px; max-width:175px; }
+  .finance-period button { min-height:44px; }
+  .finance-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin:18px 0; }
+  .finance-metric { min-width:0; padding:18px; }
+  .finance-metric .name { font-size:12px; color:#a1a1aa; }
+  .finance-metric .value { font-size:clamp(23px,3vw,34px); font-weight:750; color:#fafafa; letter-spacing:-.03em; margin-top:5px; overflow-wrap:anywhere; }
+  .finance-metric .hint { color:#71717a; font-size:11px; line-height:1.55; margin-top:9px; }
+  .finance-layout { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr); gap:14px; }
+  .finance-section { min-width:0; }
+  .finance-section h2 { margin:0 0 12px; font-size:15px; color:#fafafa; font-weight:650; }
+  .finance-status { background:rgba(212,168,83,.07); border:1px solid rgba(212,168,83,.25); border-radius:10px; padding:14px 16px; line-height:1.55; font-size:13px; color:#edcc8a; margin:18px 0; }
+  .finance-caption { font-size:12px; line-height:1.6; color:#a1a1aa; }
+  .finance-payment { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:12px 0; border-bottom:1px solid rgba(255,255,255,.07); }
+  .finance-payment:last-child { border-bottom:0; }
+  .finance-payment h3 { margin:0; font-size:13.5px; font-weight:600; color:#e4e4e7; overflow-wrap:anywhere; }
+  .finance-payment p { color:#71717a; font-size:12px; margin:4px 0 0; }
+  .finance-payment .amount { color:#fafafa; white-space:nowrap; font-weight:700; font-variant-numeric:tabular-nums; }
+  .finance-step { display:flex; align-items:flex-start; gap:12px; padding:12px 0; border-bottom:1px solid rgba(255,255,255,.06); }
+  .finance-step:last-child { border-bottom:none; }
+  .finance-step .circle { width:27px; height:27px; border-radius:50%; background:rgba(212,168,83,.12); color:#d4a853; display:flex; flex-shrink:0; align-items:center; justify-content:center; font-size:12px; font-weight:700; }
+  .finance-step strong { font-size:13px; color:#e4e4e7; }
+  .finance-step p { color:#a1a1aa; margin-top:4px; font-size:12px; line-height:1.5; }
+  .finance-source { color:#71717a; font-size:12px; line-height:1.55; margin-top:12px; }
+  @media (max-width: 900px) {
+    .finance-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .finance-layout { grid-template-columns:1fr; }
+  }
+  @media (max-width: 600px) {
+    .finance-head { flex-direction:column; }
+    .finance-period { width:100%; }
+    .finance-period input { flex:1; max-width:none; }
+    .finance-period button { flex:0 0 auto; }
+    .finance-stats { grid-template-columns:1fr; gap:10px; }
+    .finance-metric { padding:14px; }
+    .finance-status { margin:14px 0; }
+    .finance-payment { gap:8px; }
+  }
+</style>
+<div class="page-body finance-wrap">
+  <div class="finance-head">
+    <div>
+      <div class="page-title">Financial Command Center</div>
+      <p class="finance-sub">Owner-only financial workspace within Imperial Operations. Operational payment records are shown below; the historical financial portfolio has not been imported into the application's ledger.</p>
+    </div>
+    <form action="/finance/" method="get" class="finance-period" aria-label="Filter finance activity by month">
+      <label for="finance-period" class="sr-only">Month</label>
+      <input id="finance-period" name="period" type="month" class="form-input" value="{{ period }}" required>
+      <button type="submit" class="btn-primary">Apply</button>
+    </form>
+  </div>
+
+  <div class="finance-status" role="status">
+    <strong>Preliminary operational view — not audited.</strong>
+    These numbers come only from payments and invoices entered in Imperial Operations.
+    They are not the reconciled bank revenue, Square revenue, accounting P&amp;L or tax liability.
+    Missing payments must not be interpreted as zero business activity.
+  </div>
+
+  <div class="finance-stats">
+    <div class="card finance-metric">
+      <div class="name">Recorded payments · {{ period_label }}</div>
+      <div class="value">${{ '{:,.2f}'.format(recorded_amount) }}</div>
+      <div class="hint">Payments logged in shop invoices only. Does not include all customer card, Zelle, cash or bank receipts.</div>
+    </div>
+    <div class="card finance-metric">
+      <div class="name">Payment entries · {{ period_label }}</div>
+      <div class="value">{{ recorded_count }}</div>
+      <div class="hint">Number of payments recorded against invoices for the selected month.</div>
+    </div>
+    <div class="card finance-metric">
+      <div class="name">Invoices marked sent · all time</div>
+      <div class="value">${{ '{:,.2f}'.format(sent_invoice_amount) }}</div>
+      <div class="hint">{{ sent_invoice_count }} sent invoices. This is not verified accounts receivable or remaining balance due.</div>
+    </div>
+  </div>
+
+  <div class="finance-layout">
+    <section class="card finance-section" aria-labelledby="finance-payments-heading">
+      <h2 id="finance-payments-heading">Recorded payments · {{ period_label }}</h2>
+      {% if activity %}
+      {% for p in activity %}
+      <div class="finance-payment">
+        <div style="min-width:0;">
+          <h3>{{ p.customer }}</h3>
+          <p>{{ p.date.strftime('%b %d, %Y') if p.date else 'Date unavailable' }} · {{ p.method }} · Invoice #{{ p.invoice_id }}</p>
+        </div>
+        <div class="amount">${{ '{:,.2f}'.format(p.amount) }}</div>
+      </div>
+      {% endfor %}
+      {% else %}
+      <p class="finance-caption">No payment entries were recorded for this month in Imperial Operations. This does not establish that the business had no income.</p>
+      {% endif %}
+      <p class="finance-source">Source: existing <em>payments</em> and <em>invoices</em> tables. Read-only; no new financial transactions are created by viewing this page.</p>
+    </section>
+
+    <section class="card finance-section" aria-labelledby="finance-next-heading">
+      <h2 id="finance-next-heading">Portfolio integration status</h2>
+      <div class="finance-step">
+        <span class="circle">1</span>
+        <div><strong>Live shop payments</strong><p>Available above from the existing database, with owner-only access.</p></div>
+      </div>
+      <div class="finance-step">
+        <span class="circle">2</span>
+        <div><strong>Historical import and deduplication</strong><p>Pending: Chase, Bank of America, PayPal, Apple Cash, SwipeSimple and Square files must load into separate traceable ledger tables with no overwritten provider records.</p></div>
+      </div>
+      <div class="finance-step">
+        <span class="circle">3</span>
+        <div><strong>Reconciled P&amp;L, cash flow and taxes</strong><p>Pending: calculate only from classified transactions and verified source coverage, with exceptions displayed separately.</p></div>
+      </div>
+      <div class="finance-step">
+        <span class="circle">4</span>
+        <div><strong>Investor reporting</strong><p>Pending: derive repayment capacity from reconciled cash flow, not gross bank deposits.</p></div>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}
