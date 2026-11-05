@@ -11,10 +11,11 @@ from unittest.mock import MagicMock, patch
 
 import fixture_environment  # noqa: F401 -- select disposable test DB first
 from fastapi.testclient import TestClient
+from fastapi import HTTPException
 
 from app.database import get_db
 from app.main import app
-from app.auth import require_admin
+from app.auth import require_admin, get_current_user, login_user
 from app.routes import owner_setup
 
 TOKEN = "railway-only-test-token-not-a-real-secret-123456789"
@@ -85,6 +86,17 @@ class OwnerSetupTests(unittest.TestCase):
         os.environ.pop("IMPERIAL_OWNER_SETUP_TOKEN", None)
         response = self.client.get("/owner-setup")
         self.assertEqual(response.status_code, 404)
+
+    def test_old_sessions_are_invalidated_by_owner_password_reset(self):
+        user = SimpleNamespace(id=1, role="owner", username="owner", password_hash="oldhash")
+        req = SimpleNamespace(session={})
+        login_user(req, user)
+        self.db.query.return_value.filter.return_value.first.return_value = user
+        self.assertIs(get_current_user(req, self.db), user)
+        user.password_hash = "newhash"
+        with self.assertRaises(HTTPException) as context:
+            get_current_user(req, self.db)
+        self.assertEqual(context.exception.status_code, 401)
 
     def test_owner_has_admin_access(self):
         require_admin(SimpleNamespace(role="owner"))
