@@ -33,9 +33,10 @@ def setup_enabled() -> bool:
     return len(os.environ.get("IMPERIAL_OWNER_SETUP_TOKEN", "")) >= MIN_TOKEN_LENGTH
 
 
-def existing_unclaimed_user(db: Session):
+def existing_unclaimed_user(db: Session, lock: bool = False):
     # Do not create a second admin, overwrite multiple accounts, or reset a claimed owner.
-    users = db.query(User).order_by(User.id.asc()).with_for_update().limit(2).all()
+    query = db.query(User).order_by(User.id.asc()).limit(2)
+    users = (query.with_for_update() if lock else query).all()
     if len(users) != 1 or users[0].role == "owner":
         return None
     return users[0]
@@ -82,7 +83,7 @@ def claim_owner_setup(
     if password == setup_token or password == normalized:
         raise HTTPException(status_code=422, detail="Choose a different account password.")
 
-    user = existing_unclaimed_user(db)
+    user = existing_unclaimed_user(db, lock=True)
     if user is None:
         raise HTTPException(status_code=410, detail="Owner access is already set up or requires an administrator.")
     user.username = normalized
