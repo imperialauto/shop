@@ -1,4 +1,7 @@
 import bcrypt
+import hashlib
+import hmac
+from app.config import SECRET_KEY
 from fastapi import Request, HTTPException
 from sqlalchemy.orm import Session
 from app.models import User
@@ -12,6 +15,12 @@ def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
 
 
+def _owner_session_tag(user: User) -> str:
+    """Bind an owner session to the current password hash without disclosing it."""
+    material = f"{user.id}:{user.password_hash}".encode("utf-8")
+    return hmac.new(SECRET_KEY.encode("utf-8"), material, hashlib.sha256).hexdigest()
+
+
 def get_current_user(request: Request, db: Session) -> User:
     user_id = request.session.get("user_id")
     if not user_id:
@@ -19,6 +28,10 @@ def get_current_user(request: Request, db: Session) -> User:
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    if user.role == "owner":
+        provided = request.session.get("owner_session_tag", "")
+        if not provided or not hmac.compare_digest(provided, _owner_session_tag(user)):
+            raise HTTPException(status_code=401, detail="Owner session expired. Sign in again.")
     return user
 
 
@@ -33,6 +46,10 @@ def require_admin(user: User):
 def login_user(request: Request, user: User):
     request.session["user_id"] = user.id
     request.session["username"] = user.username
+    if user.role == "owner":
+        request.session["owner_session_tag"] = _owner_session_tag(user)
+    else:
+        request.session.pop("owner_session_tag", None)
 
 
 def logout_user(request: Request):
