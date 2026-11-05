@@ -212,7 +212,7 @@ def flows(page, device):
         page.fill("[name=ends_at]", f"{day}T12:00")
         page.click("#appointment-form button[type=submit]")
         page.wait_for_function("document.getElementById('booking-message').textContent.includes('saved')")
-        assert page.locator("#calendar-rows tr", has_text=f"#{context['ro']}").count() >= 1, "booking is not listed"
+        page.locator("#calendar-rows tr", has_text=f"#{context['ro']}").first.wait_for(timeout=8000)
         page.fill("[name=starts_at]", f"{day}T12:30")
         page.fill("[name=ends_at]", f"{day}T13:30")
         page.click("#appointment-form button[type=submit]")

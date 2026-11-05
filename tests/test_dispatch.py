@@ -595,6 +595,8 @@ class QueueWorkflowTests(unittest.TestCase):
     def test_dashboard_reply_is_queued_once_with_the_edit(self):
         self.post("m1", "How much for brakes on a 2011 Ford Focus?")
         self.draft(1, "m1")
+        app.state.read_only = False
+        self.addCleanup(setattr, app.state, "read_only", self.read_only)
         with self.login:
             response = self.client.post("/dispatch/1/decide", data={"decision": "approve", "expected_message_id": "m1",
                                                                      "reply_text": "Edited reply"}, follow_redirects=False)
@@ -607,8 +609,11 @@ class QueueWorkflowTests(unittest.TestCase):
     def test_declined_dashboard_item_sends_nothing(self):
         self.post("m1", "How much for brakes on a 2011 Ford Focus?")
         self.draft(1, "m1")
+        app.state.read_only = False
+        self.addCleanup(setattr, app.state, "read_only", self.read_only)
         with self.login:
-            self.client.post("/dispatch/1/decide", data={"decision": "decline", "expected_message_id": "m1", "reply_text": "No"}, follow_redirects=False)
+            response = self.client.post("/dispatch/1/decide", data={"decision": "decline", "expected_message_id": "m1", "reply_text": "No"}, follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
         with self.Session() as db:
             self.assertEqual(dispatch.queued_replies(db), [])
 
