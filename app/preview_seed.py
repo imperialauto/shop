@@ -21,7 +21,10 @@ def seed() -> bool:
         return False
     Base.metadata.create_all(engine)
     with SessionLocal() as db:
-        if db.query(User).count():
+        owner = db.query(User).filter(User.username == "preview-owner").first()
+        if owner is not None:  # lets a test password be replaced without rebuilding the data
+            owner.password_hash = hash_password(password)
+            db.commit()
             return False
         db.add(User(username="preview-owner", full_name="Preview Owner", password_hash=hash_password(password), role="owner"))
         for n, (first, last) in enumerate([("Pat", "Sample"), ("Lee", "Testcase"), ("Sam", "Example")], 1):
