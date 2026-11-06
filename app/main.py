@@ -18,7 +18,7 @@ import time
 
 from app.security import limiter
 from app.permissions import ROLES, role_gate
-from app import preview_seed
+from app import preview_check, preview_seed
 from app.public_site import preview_code
 import hashlib
 import hmac
@@ -175,6 +175,7 @@ async def recovery_mode(request: Request, call_next):
 @app.on_event("startup")
 def startup():
     preview_seed.seed()
+    preview_check.start()
     audit = database_audit()
     app.state.database_audit = audit
     logging.getLogger("uvicorn.error").info("imperial_database_audit %s", json.dumps(audit, sort_keys=True))
