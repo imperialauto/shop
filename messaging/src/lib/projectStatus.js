@@ -161,4 +161,37 @@ async function answerProjectQuestion({ question, history = [], token = process.e
   return rendered.slice(0, MAX_SMS);
 }
 
-module.exports = { answerProjectQuestion, projectTopic, checkedState, listedBlockers, loadPr };
+// GitHub Issues are the currently supported *development* task source.
+// Do not imply this is the shop task queue, Claude session, or full task engine.
+async function answerDevelopmentTasks({ question = "", token = process.env.PROJECT_STATUS_GITHUB_TOKEN,
+  fetchImpl = fetch } = {}) {
+  if (process.env.PROJECT_STATUS_ENABLED !== "true") return null;
+  if (!token) return "I can check project tasks once a read-only GitHub credential is connected to Imperial. I can't verify the current list yet.";
+  try {
+    const result = await githubGet("/issues?state=open&per_page=100", { token, fetchImpl });
+    if (!Array.isArray(result)) throw new Error("Unexpected GitHub issue response");
+    const issues = result.filter((item) => !item.pull_request);
+    const lower = String(question || "").toLowerCase();
+    const matching = /\\b(website|web ?site|preview|launch)\\b/.test(lower)
+      ? issues.filter((i) => /\\b(website|web ?site|preview|launch|booking)\\b/i.test(String(i.title || "")))
+      : /\\b(financ(?:e|es|ial)|reconcil)\\b/.test(lower)
+        ? issues.filter((i) => /\\b(financ(?:e|es|ial)|reconcil)\\b/i.test(String(i.title || "")))
+        : issues;
+    const priority = (issue) => /\\bP0\\b/i.test(String(issue.title || "")) ? 0
+      : /\\bP1\\b/i.test(String(issue.title || "")) ? 1 : 2;
+    matching.sort((a, b) => priority(a) - priority(b) ||
+      (Date.parse(b.updated_at || 0) || 0) - (Date.parse(a.updated_at || 0) || 0));
+    if (!matching.length) return "No matching open GitHub development issues were found in the retrieved page. Other task systems are not included.";
+    const lines = [`Development tasks: ${matching.length} open GitHub issues${result.length >= 100 ? " (first page only)" : ""}.`];
+    for (const issue of matching.slice(0, 5)) {
+      const title = String(issue.title || "Untitled").replace(/[\\r\\n\\t]/g, " ").slice(0, 92);
+      lines.push(`#${issue.number} ${title}`);
+    }
+    lines.push("These are development issues, not Quo customer tasks. GitHub status alone doesn't prove a task is finished.");
+    return lines.join("\\n").slice(0, MAX_SMS);
+  } catch (_) {
+    return "I couldn't verify the open development tasks from GitHub. I won't guess. Check the project's GitHub connection.";
+  }
+}
+
+module.exports = { answerProjectQuestion, answerDevelopmentTasks, projectTopic, checkedState, listedBlockers, loadPr };
