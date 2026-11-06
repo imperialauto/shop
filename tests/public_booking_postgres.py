@@ -1,4 +1,5 @@
 """Public online booking against a disposable local PostgreSQL database. Made-up data only."""
+import json
 import os
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -16,6 +17,11 @@ os.environ['SECRET_KEY'] = 'test-only-secret'
 os.environ['PUBLIC_FORMS_ENABLED'] = 'true'
 os.environ['SHOP_HOURS_JSON'] = '{"0":["10:00","18:00"],"1":["10:00","18:00"],"2":["10:00","18:00"],"3":["10:00","18:00"],"4":["10:00","18:00"]}'
 os.environ.pop('PUBLIC_BOOKING_SERVICES', None)
+os.environ['PUBLIC_SERVICE_CATALOG'] = json.dumps({
+    'diagnostic': {'price': 10, 'minutes': 60}, 'oil-service': {'price': 20, 'minutes': 60},
+    'pre-purchase': {'price': 30, 'price_type': 'starting', 'minutes': 90},
+    'battery-charging': {'price': 40, 'minutes': 30, 'mobile': True}})
+os.environ['PUBLIC_MOBILE_ZONES'] = json.dumps({'85000': {'fee': 5, 'travel_minutes': 30}})
 from zoneinfo import ZoneInfo
 from fastapi.testclient import TestClient
 from sqlalchemy import text
@@ -80,7 +86,7 @@ class PublicBooking(unittest.TestCase):
         with SessionLocal() as db:
             return db.query(model).count()
 
-    def test_booking_holds_the_time_for_staff_to_confirm(self):
+    def test_booking_is_confirmed_on_screen_with_no_message(self):
         start = weekday_at(11)
         slot_id = self.slot(start)
         page = self.client.get('/site/book?service=diagnostic')
@@ -91,11 +97,14 @@ class PublicBooking(unittest.TestCase):
         self.assertEqual(response.status_code, 303, response.text)
         received = self.client.get('/site/book/received')
         self.assertIn('Diagnostic appointment', received.text)
+        self.assertIn('booked', received.text)
+        self.assertIn('/status/', received.text)
         self.assertIn('Reference WEB-', received.text)
 
         with SessionLocal() as db:
             appointment = db.query(Appointment).one()
-            self.assertEqual(appointment.status, 'tentative')
+            self.assertEqual(appointment.status, 'confirmed')
+            self.assertEqual(float(appointment.booked_value), 10)
             self.assertEqual(appointment.location, 'shop')
             self.assertEqual(appointment.resource_id, 'bay-1')
             self.assertEqual(appointment.starts_at, start.astimezone(timezone.utc))
@@ -111,8 +120,7 @@ class PublicBooking(unittest.TestCase):
         self.assertNotIn(f'value="{slot_id}"', self.client.get('/site/book?service=diagnostic').text)
         self.client.post('/login', data={'username': 'fixture', 'password': 'fixture-pass'})
         listed = self.client.get('/appointments/').json()
-        self.assertEqual([a['status'] for a in listed], ['tentative'])
-        self.assertEqual(self.client.post(f"/appointments/{listed[0]['id']}/confirm").json()['status'], 'confirmed')
+        self.assertEqual([a['status'] for a in listed], ['confirmed'])
 
     def test_taken_removed_or_too_soon_times_are_refused(self):
         start = weekday_at(11)
@@ -147,6 +155,74 @@ class PublicBooking(unittest.TestCase):
         self.assertNotIn(f'value="{inside_buffer}"', page)
         self.assertEqual(self.client.post('/site/book', data=self.form(inside_buffer, phone='602-555-0199')).status_code, 409)
         self.assertEqual(self.client.post('/site/book', data=self.form(other_bay, phone='602-555-0199'), follow_redirects=False).status_code, 303)
+
+    def test_ninety_minute_service_reserves_ninety_plus_buffer(self):
+        first = weekday_at(11)
+        booked = self.slot(first)  # staff slots are 60 minutes, the service is 90
+        inside = self.slot(first + timedelta(minutes=120))  # ends 12:30, buffer to 1:30
+        after = self.slot(first + timedelta(minutes=150))
+        response = self.client.post('/site/book', data=self.form(booked, service='pre-purchase'), follow_redirects=False)
+        self.assertEqual(response.status_code, 303, response.text)
+        with SessionLocal() as db:
+            item = db.query(Appointment).one()
+            self.assertEqual(item.ends_at - item.starts_at, timedelta(minutes=90))
+            self.assertEqual(item.buffer_after_minutes, 60)
+        page = self.client.get('/site/book?service=diagnostic').text
+        self.assertNotIn(f'value="{inside}"', page)
+        self.assertIn(f'value="{after}"', page)
+
+    def test_long_service_is_not_offered_when_it_would_run_into_the_next_booking(self):
+        first = weekday_at(11)
+        short_gap = self.slot(first)
+        self.slot(first + timedelta(minutes=120))
+        self.assertEqual(self.client.post('/site/book', data=self.form(short_gap + 1), follow_redirects=False).status_code, 303)
+        page = self.client.get('/site/book?service=pre-purchase').text
+        self.assertNotIn(f'value="{short_gap}"', page)  # 90 minutes plus an hour runs into 1 PM
+        self.assertEqual(self.client.post('/site/book', data=self.form(short_gap, service='pre-purchase', phone='602-555-0199')).status_code, 409)
+
+    def test_service_past_closing_is_not_offered(self):
+        late = self.slot(weekday_at(17))  # closes at 6, a 90 minute job does not fit
+        self.assertNotIn(f'value="{late}"', self.client.get('/site/book?service=pre-purchase').text)
+        self.assertIn(f'value="{late}"', self.client.get('/site/book?service=diagnostic').text)
+
+    def test_mobile_booking_adds_fee_and_travel_both_ways(self):
+        first = weekday_at(12)
+        slot_id = self.slot(first)
+        form = self.form(slot_id, service='battery-charging', where='mobile', zip='85000', street='100 Test St')
+        page = self.client.get('/site/book?service=battery-charging&where=mobile&zip=85000').text
+        self.assertIn('$5.00', page)
+        self.assertIn(f'value="{slot_id}"', page)
+        self.assertEqual(self.client.post('/site/book', data=form, follow_redirects=False).status_code, 303, 'mobile')
+        with SessionLocal() as db:
+            item = db.query(Appointment).one()
+            self.assertEqual((item.location, item.travel_before_minutes, item.buffer_after_minutes, float(item.booked_value)), ('mobile', 30, 30, 45))
+            self.assertEqual(item.ends_at - item.starts_at, timedelta(minutes=30))
+            self.assertIn('100 Test St', db.get(RepairOrder, item.repair_order_id).concern)
+
+    def test_mobile_needs_a_served_zip_and_a_mobile_service(self):
+        slot_id = self.slot(weekday_at(12))
+        self.assertIn('send an estimate request', self.client.get('/site/book?service=battery-charging&where=mobile&zip=99999').text)
+        for changes in ({'service': 'battery-charging', 'zip': '99999'}, {'service': 'diagnostic', 'zip': '85000'}):
+            response = self.client.post('/site/book', data=self.form(slot_id, where='mobile', street='100 Test St', **{k: v for k, v in changes.items() if k != 'service'}, service=changes['service']))
+            self.assertEqual(response.status_code, 422)
+        self.assertEqual(self.count(Appointment), 0)
+
+    def test_status_lookup_needs_reference_and_phone(self):
+        slot_id = self.slot(weekday_at(11))
+        self.client.post('/site/book', data=self.form(slot_id), follow_redirects=False)
+        with SessionLocal() as db:
+            order = db.query(RepairOrder).one()
+            ref, token = f'WEB-{order.id}', order.public_token
+        found = self.client.post('/site/status', data={'reference': ref, 'phone': '602-555-0177'}, follow_redirects=False)
+        self.assertEqual(found.headers['location'], f'/status/{token}')
+        self.assertEqual(self.client.get(found.headers['location']).status_code, 200)
+        self.assertEqual(self.client.post('/site/status', data={'reference': ref, 'phone': '602-555-0100'}).status_code, 404)
+
+    def test_service_without_a_final_price_cannot_be_booked(self):
+        slot_id = self.slot(weekday_at(11))
+        self.assertNotIn('A/C performance check', self.client.get('/site/book').text)
+        self.assertIn('Price coming soon', self.client.get('/site/pricing').text)
+        self.assertEqual(self.client.post('/site/book', data=self.form(slot_id, service='ac-check')).status_code, 422)
 
     def test_only_approved_services_can_be_booked(self):
         slot_id = self.slot(weekday_at(11))

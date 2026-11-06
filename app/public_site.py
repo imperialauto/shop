@@ -4,19 +4,19 @@ Pure data and validation only: no database access, no network calls and no
 customer messages. Everything the public pages say about the business lives
 here so the owner can review it in one place before cutover.
 """
+import json
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
-# Owner to confirm every value in BUSINESS before cutover.
+# Suite confirmed by the owner on 2026-11-05. Phone, email and hours match the owner's records.
 BUSINESS = {
     "name": "Imperial Auto Care",
     "legal_name": "Imperial Auto Care LLC",
     "phone_display": "(480) 914-4144",
     "phone_tel": "+14809144144",
     "email": "jaelan@imperialautocarellc.com",
-    # Earlier records say Ste 417, the most recent say Suite 508. Confirm before cutover.
-    "street": os.getenv("PUBLIC_SITE_STREET", "7915 N Glen Harbor Blvd, Suite 508"),
+    "street": "7915 N Glen Harbor Blvd, Suite 508",
     "city": "Glendale",
     "region": "AZ",
     "postal": "85307",
@@ -84,6 +84,20 @@ SERVICE_LINES: tuple[ServiceLine, ...] = (
         note="Mobile and roadside work is quoted by request. Call or send an estimate request.",
     ),
     ServiceLine(
+        "towing", "Towing and roadside dispatch",
+        "Send us the location and we will review your towing or roadside request.",
+        "Broken down or need a vehicle moved? Send the location and vehicle details. If you are in danger, call 911 first.",
+        ("Towing requests", "Roadside help requests", "Vehicle bring-ins for repairs"),
+        note="Requests are reviewed by a person. Nothing is dispatched until we confirm it with you.",
+    ),
+    ServiceLine(
+        "rentals", "Vehicle rentals",
+        "Rental vehicles for gig drivers. Ask about current availability.",
+        "We rent vehicles to gig drivers. Send a request and we will go over current vehicles, rates and requirements.",
+        ("Rentals for gig drivers", "Current availability by request"),
+        note="Rental rates are shared when you ask, not published here yet.",
+    ),
+    ServiceLine(
         "nvzn-customs", "NVZN Customs",
         "Window tint, wraps, paint protection film and detailing.",
         "NVZN Customs is our appearance division for tint, wraps, paint protection film and detailing.",
@@ -103,9 +117,20 @@ class BookableService:
     name: str
     description: str
     minutes: int
+    price: float | None = None
+    price_type: str = "exact"  # "exact" for predictable work, "starting" for variable work
+    mobile: bool = False
+
+    @property
+    def price_label(self) -> str:
+        if self.price is None:
+            return "Price coming soon"
+        amount = f"${self.price:,.2f}".removesuffix(".00")
+        return f"From {amount}" if self.price_type == "starting" else amount
 
 
-# Proposed list. The owner approves which ones go live with PUBLIC_BOOKING_SERVICES.
+# Owner approved these six on 2026-11-05, subject to final prices and times.
+# Final values come from PUBLIC_SERVICE_CATALOG. No price is ever assumed here.
 BOOKABLE_SERVICES: tuple[BookableService, ...] = (
     BookableService("diagnostic", "Diagnostic appointment", "Check engine light, warning lights, noises or drivability. We find the cause and give you an estimate.", 60),
     BookableService("oil-service", "Oil and filter service", "Gas or diesel. Includes a quick look over the vehicle.", 60),
@@ -116,17 +141,61 @@ BOOKABLE_SERVICES: tuple[BookableService, ...] = (
 )
 
 
+def service_catalog() -> dict[str, dict]:
+    """PUBLIC_SERVICE_CATALOG: {"diagnostic": {"price": 0, "price_type": "exact", "minutes": 60, "mobile": false}}"""
+    try:
+        data = json.loads(os.getenv("PUBLIC_SERVICE_CATALOG") or "{}")
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _with_catalog(service: BookableService, entry: dict) -> BookableService:
+    try:
+        price = None if entry.get("price") is None else float(entry["price"])
+        minutes = int(entry.get("minutes", service.minutes))
+    except (TypeError, ValueError):
+        return service
+    if (price is not None and price < 0) or not 15 <= minutes <= 480:
+        return service
+    kind = "starting" if entry.get("price_type") == "starting" else "exact"
+    return replace(service, price=price, minutes=minutes, price_type=kind, mobile=entry.get("mobile") is True)
+
+
 def approved_bookable_services() -> list[BookableService]:
-    """PUBLIC_BOOKING_SERVICES is a comma list of slugs. Unset means every proposed service."""
+    """PUBLIC_BOOKING_SERVICES is a comma list of slugs. Unset means all six approved services."""
+    catalog = service_catalog()
     raw = os.getenv("PUBLIC_BOOKING_SERVICES")
-    if raw is None:
-        return list(BOOKABLE_SERVICES)
-    wanted = {part.strip() for part in raw.split(",") if part.strip()}
-    return [service for service in BOOKABLE_SERVICES if service.slug in wanted]
+    wanted = None if raw is None else {part.strip() for part in raw.split(",") if part.strip()}
+    return [_with_catalog(s, catalog.get(s.slug) or {}) for s in BOOKABLE_SERVICES if wanted is None or s.slug in wanted]
+
+
+def bookable_services() -> list[BookableService]:
+    """Only services with a final price can be booked."""
+    return [s for s in approved_bookable_services() if s.price is not None]
 
 
 def bookable_service(slug: str) -> BookableService | None:
-    return next((s for s in approved_bookable_services() if s.slug == slug), None)
+    return next((s for s in bookable_services() if s.slug == slug), None)
+
+
+@dataclass(frozen=True)
+class MobileZone:
+    fee: float
+    travel_minutes: int
+
+
+def mobile_zone(zip_code: str | None) -> MobileZone | None:
+    """PUBLIC_MOBILE_ZONES: {"85000": {"fee": 0, "travel_minutes": 30}}. Unlisted ZIP codes are not served online."""
+    try:
+        zones = json.loads(os.getenv("PUBLIC_MOBILE_ZONES") or "{}")
+        entry = zones.get((zip_code or "").strip())
+        if not isinstance(entry, dict):
+            return None
+        fee, travel = float(entry["fee"]), int(entry["travel_minutes"])
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return None
+    return MobileZone(fee, travel) if fee >= 0 and 0 <= travel <= 240 else None
 
 
 def forms_enabled(read_only: bool) -> bool:

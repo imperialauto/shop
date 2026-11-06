@@ -5,12 +5,14 @@ email or call. Bookings and estimate requests become ordinary customer,
 vehicle and repair order records plus a tentative appointment, so staff review
 them in the existing Operations pages before anyone contacts the customer.
 
-Online times come from the open times staff publish on /live/control
-(booking_slots). A booking only takes a time that is still open, inside the
-configured shop hours, and free of conflicts under the same PostgreSQL lock the
-staff booking API uses.
+Online times start at the open times staff publish on /live/control
+(booking_slots). A booking reserves the service's full length plus the shop
+buffer, or travel time both ways for a mobile visit. A time is only offered and
+only confirmed if all of that is free, inside shop hours, under the same
+PostgreSQL lock the staff booking API uses. Confirmation appears on screen only.
 """
 import os
+import re
 import secrets
 import time
 from collections import OrderedDict
@@ -28,8 +30,8 @@ from app.appointments import PHOENIX, AppointmentValidationError, AppointmentWin
 from app.database import get_db
 from app.models import Customer, RepairOrder, Vehicle
 from app.public_site import (BUSINESS, SERVICE_LINE_BY_SLUG, SERVICE_LINES, FormError, SubmissionLimiter,
-                             approved_bookable_services, bookable_service, clean_text, format_phone,
-                             forms_enabled, indexable, normalize_email, normalize_mileage, normalize_phone,
+                             approved_bookable_services, bookable_service, bookable_services, clean_text, format_phone,
+                             forms_enabled, indexable, mobile_zone, normalize_email, normalize_mileage, normalize_phone,
                              normalize_vin, normalize_year, phone_digits, NAME_LIMIT, TEXT_LIMIT)
 from app.routes.appointments import configured_hours, find_conflict, shop_buffer_minutes
 from app.routes.live import open_slots, phoenix_label, utc
@@ -41,6 +43,18 @@ limiter = SubmissionLimiter()
 BOOKING_DAYS = 21
 WHERE_OPTIONS = OrderedDict([("shop", "At the shop"), ("onsite", "At my location"), ("roadside", "Roadside / broken down")])
 CONTACT_OPTIONS = OrderedDict([("text", "Text"), ("call", "Call"), ("email", "Email")])
+
+
+FAQ = (
+    ("Where are you located?", "7915 N Glen Harbor Blvd, Suite 508, Glendale, AZ 85307."),
+    ("What are your hours?", "Monday to Friday 11 AM to 7 PM, Saturday 12 PM to 5 PM, closed Sunday."),
+    ("Can I book online?", "Standard services can be booked online when a time is open. Complex repairs need an estimate and your approval first."),
+    ("Do you come to me?", "Selected services can be done at your location, depending on your address. A mobile fee and travel time apply where shown."),
+    ("Will I get an estimate before repairs?", "Yes. Complex repairs start with an estimate, and work starts after you approve it."),
+    ("How do I check on my vehicle?", "Use the repair status page with your reference number and phone number."),
+    ("Do you do tint, wraps and detailing?", "Yes, through NVZN Customs, our appearance division."),
+)
+STATUS_LIMIT = SubmissionLimiter(limit=20)
 
 
 def lead_minutes() -> int:
@@ -79,7 +93,7 @@ def render(request: Request, name: str, status_code: int = 200, form_page: bool 
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    return render(request, "site/home.html", active="home", bookable=approved_bookable_services())
+    return render(request, "site/home.html", active="home", bookable=bookable_services())
 
 
 @router.get("/services", response_class=HTMLResponse)
@@ -98,6 +112,47 @@ def service_detail(request: Request, slug: str):
 @router.get("/contact", response_class=HTMLResponse)
 def contact(request: Request):
     return render(request, "site/contact.html", active="contact")
+
+
+@router.get("/pricing", response_class=HTMLResponse)
+def pricing(request: Request):
+    return render(request, "site/pricing.html", active="pricing", services=approved_bookable_services())
+
+
+@router.get("/rentals", response_class=HTMLResponse)
+def rentals(request: Request):
+    return render(request, "site/service.html", active="rentals", line=SERVICE_LINE_BY_SLUG["rentals"])
+
+
+@router.get("/faq", response_class=HTMLResponse)
+def faq(request: Request):
+    return render(request, "site/faq.html", active="faq", questions=FAQ)
+
+
+def status_page(request: Request, status_code: int = 200, error: str = ""):
+    return render(request, "site/status.html", status_code=status_code, form_page=True, active="status", error=error)
+
+
+@router.get("/status", response_class=HTMLResponse)
+def status_lookup(request: Request):
+    return status_page(request)
+
+
+@router.post("/status", response_class=HTMLResponse)
+async def status_find(request: Request, db: Session = Depends(get_db)):
+    """Read-only. The same message covers every miss, so it reveals nothing about a record."""
+    form = await request.form()
+    if not STATUS_LIMIT.allow(client_key(request), time.time()):
+        return status_page(request, 429, "Too many tries. Please call or text us.")
+    digits = re.sub(r"\D", "", str(form.get("reference", "")))
+    try:
+        phone = normalize_phone(form.get("phone"))
+    except FormError:
+        phone = ""
+    order = db.get(RepairOrder, int(digits)) if digits and len(digits) <= 9 else None
+    if order is None or not order.public_token or not phone or phone_digits(order.customer.phone) != phone:
+        return status_page(request, 404, "We could not match that reference and phone number.")
+    return RedirectResponse(f"/status/{order.public_token}", status_code=303)
 
 
 # ── Shared record creation ───────────────────────────────────────────────────
@@ -182,14 +237,30 @@ def form_values(form) -> dict:
 
 
 # ── Online booking ───────────────────────────────────────────────────────────
-def booking_times(db: Session) -> "OrderedDict[str, list[dict]]":
+def booking_window(slot: BookingSlot, service, zone) -> AppointmentWindow:
+    """The full time this booking holds. A mobile visit holds travel both ways instead of the shop buffer."""
+    start = utc(slot.starts_at)
+    travel = zone.travel_minutes if zone else 0
+    return AppointmentWindow(start, start + timedelta(minutes=service.minutes), slot.resource_id, travel,
+                             travel if zone else shop_buffer_minutes())
+
+
+def fits(db: Session, window: AppointmentWindow) -> bool:
+    try:
+        validate_slot(window, [], configured_hours())
+    except AppointmentValidationError:
+        return False
+    return find_conflict(db, window) is None
+
+
+def booking_times(db: Session, service, zone) -> "OrderedDict[str, list[dict]]":
     now = datetime.now(timezone.utc)
     earliest = now + timedelta(minutes=lead_minutes())
     latest = now + timedelta(days=BOOKING_DAYS)
     days: OrderedDict[str, list[dict]] = OrderedDict()
     for slot in open_slots(db, now):
         start = utc(slot.starts_at)
-        if not earliest <= start <= latest:
+        if not earliest <= start <= latest or not fits(db, booking_window(slot, service, zone)):
             continue
         local = start.astimezone(PHOENIX)
         hour = local.hour % 12 or 12
@@ -213,10 +284,18 @@ def booking_unavailable_reason(db: Session) -> str:
 
 def booking_page(request: Request, db: Session, status_code: int = 200, error: str = "", values: dict | None = None):
     values = values or {}
-    service = bookable_service(values.get("service") or request.query_params.get("service", ""))
+    query = request.query_params
+    service = bookable_service(values.get("service") or query.get("service", ""))
     reason = booking_unavailable_reason(db)
+    where = values.get("where") or query.get("where", "shop")
+    where = "mobile" if where == "mobile" and service and service.mobile else "shop"
+    zip_code = clean_text(values.get("zip") or query.get("zip"), 5)
+    zone = mobile_zone(zip_code) if where == "mobile" else None
+    ready = bool(service) and not reason and (where == "shop" or zone is not None)
+    total = (service.price + (zone.fee if zone else 0)) if service else None
     return render(request, "site/book.html", status_code=status_code, form_page=True, active="book",
-                  services=approved_bookable_services(), service=service, days=booking_times(db) if service and not reason else {},
+                  services=bookable_services(), service=service, days=booking_times(db, service, zone) if ready else {},
+                  where=where, zip_code=zip_code, zone=zone, total=total, ready=ready,
                   unavailable=reason, error=error, values=values, contact_options=CONTACT_OPTIONS)
 
 
@@ -244,6 +323,17 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
         person = person_fields(form)
         vehicle_details = vehicle_fields(form)
         notes = clean_text(form.get("notes"), TEXT_LIMIT)
+        where = values.get("where", "shop")
+        zone, street = None, ""
+        if where == "mobile":
+            zone = mobile_zone(values.get("zip")) if service.mobile else None
+            street = clean_text(form.get("street"), 200)
+            if zone is None:
+                raise FormError("We can't book that address online. Please send an estimate request.")
+            if not street:
+                raise FormError("Enter the street address for the visit.")
+        elif where != "shop":
+            raise FormError("Choose the shop or your location.")
         try:
             slot_id = int(values.get("slot_id", ""))
         except ValueError:
@@ -262,27 +352,26 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
         # Same transaction-scoped lock as the staff booking API, released on commit or rollback.
         db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:resource))"), {"resource": slot.resource_id})
         db.refresh(slot)
-        starts_at, ends_at = utc(slot.starts_at), utc(slot.ends_at)
+        starts_at = utc(slot.starts_at)
         if slot.removed_at is not None or starts_at < datetime.now(timezone.utc) + timedelta(minutes=lead_minutes()):
             raise FormError(taken)
-        candidate = AppointmentWindow(starts_at, ends_at, slot.resource_id, 0, shop_buffer_minutes())
-        try:
-            validate_slot(candidate, [], configured_hours())
-        except AppointmentValidationError:
-            raise FormError(taken) from None
-        if find_conflict(db, candidate):
+        candidate = booking_window(slot, service, zone)
+        if not fits(db, candidate):
             raise FormError(taken)
         customer, matched = find_or_create_customer(db, person)
         vehicle = find_or_create_vehicle(db, customer, matched, vehicle_details)
         label = phoenix_label(starts_at)
+        total = service.price + (zone.fee if zone else 0)
         concern = concern_text(f"Online booking: {service.name} on {label}.", person, matched, [
+            f"Mobile visit: {street}, {values.get('zip')}. Travel {zone.travel_minutes} minutes each way. Mobile fee ${zone.fee:,.2f}." if zone else "At the shop.",
+            f"Price shown: {service.price_label}. Total shown: ${total:,.2f}.",
             f"Customer notes: {notes}" if notes else "",
             f"Mileage given: {vehicle_details['mileage']:,}" if vehicle_details["mileage"] else "",
         ])
         order = new_repair_order(db, customer, vehicle, concern, vehicle_details["mileage"])
-        db.add(Appointment(repair_order_id=order.id, resource_id=slot.resource_id, starts_at=starts_at, ends_at=ends_at,
-                           status="tentative", booked_value=0, location="shop",
-                           travel_before_minutes=0, buffer_after_minutes=candidate.buffer_after_minutes))
+        db.add(Appointment(repair_order_id=order.id, resource_id=slot.resource_id, starts_at=starts_at, ends_at=candidate.ends_at,
+                           status="confirmed", booked_value=total, location="mobile" if zone else "shop",
+                           travel_before_minutes=candidate.travel_before_minutes, buffer_after_minutes=candidate.buffer_after_minutes))
         db.commit()
     except FormError as exc:
         db.rollback()
@@ -290,7 +379,8 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
     except Exception:
         db.rollback()
         raise
-    request.session["site_booking"] = {"ref": f"WEB-{order.id}", "service": service.name, "time": label}
+    request.session["site_booking"] = {"ref": f"WEB-{order.id}", "service": service.name, "time": label,
+                                       "price": service.price_label, "fee": zone.fee if zone else 0, "token": order.public_token}
     return RedirectResponse("/site/book/received", status_code=303)
 
 
@@ -356,7 +446,7 @@ async def estimate_submit(request: Request, db: Session = Depends(get_db)):
     except Exception:
         db.rollback()
         raise
-    request.session["site_estimate"] = {"ref": f"WEB-{order.id}"}
+    request.session["site_estimate"] = {"ref": f"WEB-{order.id}", "token": order.public_token}
     return RedirectResponse("/site/estimate/received", status_code=303)
 
 

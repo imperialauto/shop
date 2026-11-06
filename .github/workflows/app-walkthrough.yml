@@ -2,7 +2,7 @@ name: App walkthrough
 on:
   workflow_dispatch:
   push:
-    branches: ['claude/launch-audit', 'claude/login-security', 'claude/staff-accounts']
+    branches: ['claude/launch-audit', 'claude/login-security', 'claude/staff-accounts', 'claude/public-site-booking']
 jobs:
   walkthrough:
     runs-on: ubuntu-latest
@@ -37,6 +37,8 @@ jobs:
           SECRET_KEY: walkthrough-only-key
           APP_READ_ONLY: 'false'
           PUBLIC_FORMS_ENABLED: 'true'
+          PUBLIC_SERVICE_CATALOG: '{"diagnostic":{"price":10,"minutes":60},"oil-service":{"price":20,"minutes":60},"pre-purchase":{"price":30,"price_type":"starting","minutes":90},"battery-charging":{"price":40,"minutes":30,"mobile":true}}'
+          PUBLIC_MOBILE_ZONES: '{"85000":{"fee":5,"travel_minutes":30}}'
         run: |
           PYTHONPATH=. python tests/e2e/seed.py
           nohup python -m uvicorn app.main:app --port 8099 > server.log 2>&1 &

@@ -18,7 +18,7 @@ from app.models import Communication, Customer, RepairOrder, Vehicle
 from app.routes import public_site as public_routes
 
 PAGES = ["/site", "/site/", "/site/services", "/site/contact", "/site/book", "/site/book?service=diagnostic",
-         "/site/estimate", "/site/estimate?service=diesel"] + [f"/site/services/{line.slug}" for line in public_site.SERVICE_LINES]
+         "/site/estimate", "/site/estimate?service=diesel", "/site/pricing", "/site/rentals", "/site/faq", "/site/status"] + [f"/site/services/{line.slug}" for line in public_site.SERVICE_LINES]
 
 
 def no_network(*args, **kwargs):

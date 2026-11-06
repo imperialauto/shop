@@ -17,7 +17,9 @@ PAGES = [("dashboard", "/dashboard"), ("dashboard-urgent", "/dashboard?view=urge
          ("calendar", "/appointments/calendar"), ("settings", "/settings"), ("live-control", "/live/control"),
          ("site-home", "/site/"), ("site-services", "/site/services"), ("site-diesel", "/site/services/diesel"),
          ("site-nvzn", "/site/services/nvzn-customs"), ("site-contact", "/site/contact"), ("site-book", "/site/book"),
-         ("site-book-times", "/site/book?service=diagnostic"), ("site-estimate", "/site/estimate")]
+         ("site-book-times", "/site/book?service=diagnostic"), ("site-estimate", "/site/estimate"),
+         ("site-mobile", "/site/book?service=battery-charging&where=mobile&zip=85000"), ("site-pricing", "/site/pricing"),
+         ("site-rentals", "/site/rentals"), ("site-faq", "/site/faq"), ("site-status", "/site/status")]
 
 
 def measure(page, label, device, status, errors):
@@ -293,11 +295,62 @@ def flows(page, device):
         visitor.fill("[name=notes]", "Made-up walkthrough booking")
         visitor.click("form[action='/site/book'] button[type=submit]")
         visitor.wait_for_url("**/site/book/received")
-        assert "Reference WEB-" in visitor.inner_text("body")
+        body = visitor.inner_text("body")
+        assert "Reference WEB-" in body and "$10" in body and "confirmed" in body, body[:300]
         measure(visitor, "site-booked", device, 200, [])
+        reference = body.split("Reference ")[1].split(".")[0]
+        visitor.click("a:has-text('View status')")
+        assert "/status/" in visitor.url
+        measure(visitor, "site-status-result", device, 200, [])
+        visitor.goto(BASE + "/site/status")
+        visitor.fill("[name=reference]", reference)
+        visitor.fill("[name=phone]", "6025550123")
+        visitor.click("form[action='/site/status'] button[type=submit]")
+        visitor.wait_for_url("**/status/*")
+        visitor.goto(BASE + "/site/status")
+        visitor.fill("[name=reference]", reference)
+        visitor.fill("[name=phone]", "6025550100")
+        visitor.click("form[action='/site/status'] button[type=submit]")
+        assert "could not match" in visitor.inner_text("body")
         visitor.context.close()
         page.goto(BASE + "/appointments/")
-        assert "tentative" in page.inner_text("body"), "online booking not on the staff list"
+        assert "confirmed" in page.inner_text("body"), "online booking not on the staff list"
+
+    def site_mobile_booking():
+        visitor = page.context.browser.new_context(**page_options).new_page()
+        visitor.goto(BASE + "/site/book?service=battery-charging")
+        visitor.locator("label.choice", has=visitor.locator("input[value=mobile]")).click()
+        visitor.fill("[name=zip]", "85000")
+        visitor.click("button:has-text('Update times')")
+        assert "$5.00" in visitor.inner_text("body") and "$45.00" in visitor.inner_text("body")
+        visitor.locator("label.choice", has=visitor.locator("input[name=slot_id]")).last.click()
+        visitor.fill("[name=street]", "100 Test St")
+        visitor.fill("[name=year]", "2016")
+        visitor.fill("[name=make]", "Ford")
+        visitor.fill("[name=model]", "Focus")
+        visitor.fill("[name=first_name]", "Mobile" + device)
+        visitor.fill("[name=last_name]", "Visitor")
+        visitor.fill("[name=phone]", "6025550125")
+        visitor.click("form[action='/site/book'] button[type=submit]")
+        visitor.wait_for_url("**/site/book/received")
+        assert "mobile fee" in visitor.inner_text("body")
+        measure(visitor, "site-mobile-booked", device, 200, [])
+        visitor.context.close()
+
+    def site_taken_time():
+        one = page.context.browser.new_context(**page_options).new_page()
+        one.goto(BASE + "/site/book?service=pre-purchase")
+        choice = one.locator("input[name=slot_id]").first
+        slot = choice.get_attribute("value")
+        form = {"service": "pre-purchase", "slot_id": slot, "first_name": "Clash", "last_name": "Visitor", "phone": "6025550126",
+                "contact_method": "text", "make": "Ford", "model": "Focus", "where": "shop", "zip": ""}
+        first = one.request.post(BASE + "/site/book", form=form, max_redirects=0)
+        assert first.status == 303, first.status
+        second = one.request.post(BASE + "/site/book", form={**form, "phone": "6025550127"}, max_redirects=0)
+        assert second.status == 409, second.status
+        one.goto(BASE + "/site/book?service=pre-purchase")
+        assert one.locator(f"input[name=slot_id][value='{slot}']").count() == 0
+        one.context.close()
 
     def site_estimate():
         visitor = page.context.browser.new_context(**page_options).new_page()
@@ -314,7 +367,7 @@ def flows(page, device):
         measure(visitor, "site-estimate-received", device, 200, [])
         visitor.context.close()
 
-    for name, action in [("wrong password", wrong_password), ("login", login), ("public site booking", site_booking), ("public site estimate", site_estimate), ("new customer", customer), ("new vehicle", vehicle), ("new repair order", repair_order),
+    for name, action in [("wrong password", wrong_password), ("login", login), ("public site booking", site_booking), ("public mobile booking", site_mobile_booking), ("public time conflict", site_taken_time), ("public site estimate", site_estimate), ("new customer", customer), ("new vehicle", vehicle), ("new repair order", repair_order),
                          ("add line item", line_item), ("add part", part_item), ("change status", status), ("create invoice", invoice),
                          ("no duplicate invoice", duplicate_invoice), ("record payment", payment), ("customer status link", public_status),
                          ("customer signature", signature), ("book appointment", booking), ("search customers", search),

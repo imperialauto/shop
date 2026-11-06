@@ -5,7 +5,7 @@
   <div class="wrap" style="max-width:820px">
     <div class="eyebrow">Book online</div>
     <h1>Book a service</h1>
-    <p>Pick a standard service and an open time at the shop. We review every booking and confirm it with you. Bigger or unusual jobs go through an <a href="/site/estimate">estimate request</a>.</p>
+    <p>Pick a standard service and an open time. If the time is available, it is confirmed right away. Complex repairs go through an <a href="/site/estimate">estimate request</a>.</p>
 
     {% if error %}<p class="alert alert-error" role="alert">{{ error }}</p>{% endif %}
 
@@ -20,21 +20,45 @@
       {% if services %}
       <div class="service-pick">
         {% for s in services %}
-        <a href="/site/book?service={{ s.slug }}"><div class="card"><h3>{{ s.name }}</h3><p>{{ s.description }}</p><span class="more">About {{ s.minutes }} minutes · Choose →</span></div></a>
+        <a href="/site/book?service={{ s.slug }}"><div class="card"><h3>{{ s.name }}</h3><p>{{ s.description }}</p><span class="more">{{ s.price_label }} · About {{ s.minutes }} minutes · Choose →</span></div></a>
         {% endfor %}
       </div>
       {% else %}
-      <p class="alert alert-info">No services are open for online booking right now.</p>
+      <p class="alert alert-info">Online booking opens once prices are final. Call or text <a href="tel:{{ business.phone_tel }}">{{ business.phone_display }}</a>.</p>
       {% endif %}
     {% else %}
       <div class="panel chosen">
-        <div><div class="tag">Service</div><strong>{{ service.name }}</strong></div>
+        <div><div class="tag">Service</div><strong>{{ service.name }}</strong><div class="hint">{{ service.price_label }} · About {{ service.minutes }} minutes</div></div>
         <a href="/site/book">Change service</a>
       </div>
 
-      {% if forms_open and not unavailable %}
+      {% if service.mobile %}
+      <form class="form" method="get" action="/site/book" style="margin-top:18px">
+        <input type="hidden" name="service" value="{{ service.slug }}">
+        <fieldset>
+          <legend>Where should we do it?</legend>
+          <div class="choices">
+            <label class="choice"><input type="radio" name="where" value="shop" {% if where == 'shop' %}checked{% endif %}><span>At the shop</span></label>
+            <label class="choice"><input type="radio" name="where" value="mobile" {% if where == 'mobile' %}checked{% endif %}><span>At my location</span></label>
+          </div>
+          <div style="margin-top:14px">
+            <label for="zip">ZIP code <span class="hint">Needed for a visit at your location.</span></label>
+            <input id="zip" name="zip" inputmode="numeric" maxlength="5" value="{{ zip_code }}">
+          </div>
+          <button class="btn btn-light" type="submit" style="margin-top:14px">Update times</button>
+        </fieldset>
+      </form>
+      {% if where == 'mobile' and not zone %}
+      <p class="alert alert-info">{% if zip_code %}We can't book that ZIP code online.{% else %}Enter your ZIP code to see times.{% endif %} You can <a href="/site/estimate?service=mobile-roadside">send an estimate request</a>.</p>
+      {% endif %}
+      {% endif %}
+
+      {% if forms_open and ready %}
+      {% if zone %}<p class="alert alert-info">Mobile service fee: ${{ '%.2f'|format(zone.fee) }}. {{ 'Starting total' if service.price_type == 'starting' else 'Total' }}: ${{ '%.2f'|format(total) }}.</p>{% endif %}
       <form class="form" method="post" action="/site/book" style="margin-top:18px">
         <input type="hidden" name="service" value="{{ service.slug }}">
+        <input type="hidden" name="where" value="{{ where }}">
+        <input type="hidden" name="zip" value="{{ zip_code }}">
         <fieldset>
           <legend>2. Choose a time</legend>
           {% if days %}
@@ -49,10 +73,17 @@
             </div>
             {% endfor %}
           {% else %}
-            <p class="alert alert-info" id="no-times">No online times are open in the next few weeks. Call or text <a href="tel:{{ business.phone_tel }}">{{ business.phone_display }}</a>, or <a href="/site/estimate">send an estimate request</a>.</p>
+            <p class="alert alert-info" id="no-times">No online times fit this service in the next few weeks. Call or text <a href="tel:{{ business.phone_tel }}">{{ business.phone_display }}</a>, or <a href="/site/estimate">send an estimate request</a>.</p>
           {% endif %}
         </fieldset>
         {% if days %}
+          {% if zone %}
+          <fieldset>
+            <legend>Visit address</legend>
+            <label for="street">Street address</label>
+            <input id="street" name="street" maxlength="200" required value="{{ values.street or '' }}">
+          </fieldset>
+          {% endif %}
           {% set require_make = true %}
           {% include "site/_person_vehicle.html" %}
           <fieldset>
@@ -60,8 +91,8 @@
             <label for="notes">Notes <span class="hint">Optional. Symptoms, warning lights or questions.</span></label>
             <textarea id="notes" name="notes" maxlength="2000">{{ values.notes or '' }}</textarea>
           </fieldset>
-          <p class="hint">Times are Arizona time. This request holds the time until we confirm it with you. Diagnosis and repairs are quoted before any work.</p>
-          <button class="btn btn-purple" type="submit">Request this time</button>
+          <p class="hint">Times are Arizona time. Your booking is confirmed on the next screen. Additional repairs are quoted and need your approval.</p>
+          <button class="btn btn-purple" type="submit">Book this time</button>
         {% endif %}
       </form>
       {% endif %}

@@ -4,14 +4,14 @@
 <section class="section">
   <div class="wrap" style="max-width:720px">
     <div class="eyebrow">Received</div>
-    <h1>{% if kind == 'booking' %}Your time is requested{% else %}We have your request{% endif %}</h1>
+    <h1>{% if kind == 'booking' %}You're booked{% else %}We have your request{% endif %}</h1>
     <p class="alert alert-ok" role="status">
       {% if kind == 'booking' and item.time %}{{ item.service }} on {{ item.time }} (Arizona time).{% else %}Thanks. Your request is in.{% endif %}
-      {% if item.ref %}Reference {{ item.ref }}.{% endif %}
+      {% if item.ref %}Reference {{ item.ref }}.{% endif %}{% if kind == 'booking' and item.price %} Price: {{ item.price }}{% if item.fee %}, plus a ${{ '%.2f'|format(item.fee) }} mobile fee{% endif %}.{% endif %}
     </p>
-    <p>{% if kind == 'booking' %}We review every online booking and will reach out to confirm it.{% else %}We will review the details and get back to you with next steps.{% endif %}
+    <p>{% if kind == 'booking' %}Your booking is confirmed. Save your reference, because no text or email confirmation is sent.{% else %}We will review the details and get back to you with next steps. Save your reference to check on it.{% endif %}
        If it is urgent, call or text <a href="tel:{{ business.phone_tel }}">{{ business.phone_display }}</a>.</p>
-    <div class="actions"><a class="btn btn-purple" href="/site/">Back to home</a></div>
+    <div class="actions">{% if item.token %}<a class="btn btn-purple" href="/status/{{ item.token }}">View status</a>{% endif %}<a class="btn btn-light" href="/site/">Back to home</a></div>
   </div>
 </section>
 {% endblock %}
