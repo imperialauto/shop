@@ -5,6 +5,7 @@
 // uncertain send cannot reach a customer twice.
 
 const { answerOwner, interpretOwner, recentTurns, customerDetail } = require("./ownerAssistant");
+const { answerProjectQuestion } = require("./projectStatus");
 const { callContext } = require("./callIntake");
 
 function enabled(name) {
@@ -93,8 +94,11 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
   if (result.ownerQuestion && enabled("OWNER_TEXTS_ENABLED")) {
     const thread = await quo.listMessages({ participants: [phone], maxResults: 12 }).catch(() => ({ data: [] }));
     const history = recentTurns(thread.data || [], messageId);
-    const action = await interpretOwner({ question: result.ownerQuestion, snapshot: result.snapshot, history });
-    const content = action
+    // Project progress is sourced from current GitHub data, not from the
+    // customer queue or LLM guesses. It is strictly read-only and flag-gated.
+    const projectReply = await answerProjectQuestion({ question: result.ownerQuestion, history });
+    const action = projectReply ? null : await interpretOwner({ question: result.ownerQuestion, snapshot: result.snapshot, history });
+    const content = projectReply || (action
       ? (await shopClient.dispatchOwnerAction(action)).ownerReply
       : await answerOwner({
           question: result.ownerQuestion,
@@ -103,7 +107,7 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
             customerDetail: await customerDetail({ question: result.ownerQuestion, snapshot: result.snapshot, quo, callContext }),
           },
           history,
-        });
+        }));
     await quo.sendMessage({ to: phone, content }).catch((err) => console.error("Owner answer failed:", err.message));
   }
   let customerSent = false;
