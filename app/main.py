@@ -63,6 +63,7 @@ READ_ONLY_INTERNAL_WRITES = (
     "/internal/dispatch/outbound",
     "/internal/dispatch/draft",
     "/internal/dispatch/handled",
+    "/internal/dispatch/owner-action",
 )
 
 
