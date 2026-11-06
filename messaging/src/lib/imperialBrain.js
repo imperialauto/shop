@@ -13,6 +13,7 @@ function developmentTasksIntent(question) {
 
 function shopTasksIntent(question) {
   const q = String(question || "").toLowerCase().trim();
+  if (/\b(?:what(?:'s| is)|show|list|tell me|anything|any)\b.{0,30}\b(?:my|our)\s+(?:to.?do\s*list|task\s*list|list of tasks)\b/.test(q)) return true;
   if (/\b(create|add|assign|delegate|make|schedule|remind)\b/.test(q) &&
       /\b(a task|to my (?:list|tasks)|to.?do|someone|my mom|mother)\b/.test(q)) return false;
   if (/\b(customers?|service|shop|staff|estimates?|appointments?|repairs?|inbox|follow.?ups?)\b/.test(q) &&
@@ -118,7 +119,7 @@ async function answerImperialBrain({
   // to contact customers, delegate or change software remains approval-gated.
   if (taskWriteIntent(q)) {
     const title = taskCaptureTitle(q);
-    if (!title) return "I understand the assignment, but haven't created anything. I can save a specific internal task when you say 'Add [task] to my list'; delegation and external actions still need approval.";
+    if (!title) return "I understand the assignment, but haven't created or assigned anything. I can save a specific internal task when you say 'Add [task] to my list'; delegation and external actions still need approval.";
     if (process.env.IMPERIAL_TASKS_ENABLED !== "true" || !messageId || typeof taskWriter !== "function") {
       return "I understood the to-do, but task storage hasn't been activated yet. Nothing was saved.";
     }
