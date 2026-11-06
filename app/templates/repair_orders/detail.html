@@ -23,7 +23,7 @@
     {% if open_invoice %}
     <a href="/invoices/{{ open_invoice.id }}" class="btn-primary">View Invoice</a>
     {% elif ro.line_items %}
-    <form method="post" action="/invoices/create/{{ ro.id }}"><button type="submit" class="btn-primary">Create Invoice</button></form>
+    {% if user.role != 'tech' %}<form method="post" action="/invoices/create/{{ ro.id }}"><button type="submit" class="btn-primary">Create Invoice</button></form>{% endif %}
     {% else %}
     <span class="text-stone-400 text-sm self-center">Add a line item to create an invoice</span>
     {% endif %}

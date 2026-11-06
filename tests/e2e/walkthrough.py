@@ -162,10 +162,65 @@ def flows(page, device):
         tech.fill("[name=username]", "tech")
         tech.fill("[name=password]", "walkthrough-only-pass")
         tech.click("button[type=submit]")
-        tech.wait_for_url("**/dashboard")
+        tech.wait_for_url("**/ro/")
         assert tech.locator("a[href='/finance/']").count() == 0
         assert tech.goto(BASE + "/finance/").status == 403
+        assert tech.goto(BASE + "/invoices/").status == 403
+        assert tech.goto(BASE + "/customers/").status == 403
+        assert tech.goto(BASE + "/ro/1").status == 200
+        assert tech.goto(BASE + "/appointments/calendar").status == 200
         tech.context.close()
+
+    def sign_in(name, password="walkthrough-only-pass"):
+        staff = page.context.browser.new_context().new_page()
+        staff.goto(BASE + "/login")
+        staff.fill("[name=username]", name)
+        staff.fill("[name=password]", password)
+        staff.click("button[type=submit]")
+        staff.wait_for_load_state()
+        return staff
+
+    def admin_limits():
+        admin = sign_in("manager")
+        assert admin.goto(BASE + "/invoices/").status == 200
+        assert admin.goto(BASE + "/finance/").status == 403
+        assert "Add a Team Member" not in admin.goto(BASE + "/settings").text()
+        admin.context.close()
+
+    def office_limits():
+        office = sign_in("office")
+        assert office.goto(BASE + "/dashboard").status == 200
+        assert office.goto(BASE + "/customers/").status == 200
+        assert office.goto(BASE + "/finance/").status == 403
+        assert office.goto(BASE + "/live/control").status == 403
+        office.context.close()
+
+    def new_login_must_change_password():
+        name = "newhire" + device[0]
+        temporary, chosen = "temporary-pass-only", "my-own-new-password"
+        page.goto(BASE + "/settings")
+        page.fill("form[action='/settings/users/create'] [name=full_name]", "New Hire")
+        page.fill("form[action='/settings/users/create'] [name=username]", name)
+        page.fill("form[action='/settings/users/create'] [name=password]", temporary)
+        page.click("form[action='/settings/users/create'] button[type=submit]")
+        assert "Login created" in page.inner_text("body")
+        hire = sign_in(name, temporary)
+        assert "/settings" in hire.url, hire.url
+        hire.goto(BASE + "/ro/")
+        assert "/settings" in hire.url, hire.url
+        hire.fill("[name=current_password]", temporary)
+        hire.fill("[name=new_password]", chosen)
+        hire.click("form[action='/settings/change-password'] button[type=submit]")
+        assert "Password updated" in hire.inner_text("body")
+        assert hire.goto(BASE + "/ro/").status == 200
+        hire.context.close()
+        row = page.locator("tr", has_text=name)
+        page.goto(BASE + "/settings")
+        row.locator("button", has_text="Turn off").click()
+        assert "turned off" in page.inner_text("body")
+        off = sign_in(name, chosen)
+        assert "/login" in off.url, off.url
+        off.context.close()
 
     def search():
         page.goto(BASE + "/customers/?search=Testcase")
@@ -224,7 +279,8 @@ def flows(page, device):
                          ("no duplicate invoice", duplicate_invoice), ("record payment", payment), ("customer status link", public_status),
                          ("customer signature", signature), ("book appointment", booking), ("search customers", search),
                          ("send reply from dashboard", queue_reply), ("logged out redirect", logged_out_redirect),
-                         ("tech cannot open finance", tech_blocked_from_finance)]:
+                         ("tech limits", tech_blocked_from_finance),
+                         ("admin limits", admin_limits), ("office limits", office_limits), ("new login", new_login_must_change_password)]:
         step(name, device, action)
     results.append({"device": device, "flow": "where new vehicle lands", "ok": True, "url": context.get("after_vehicle", "")})
 
