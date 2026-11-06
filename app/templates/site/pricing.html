@@ -1,0 +1,17 @@
+{% extends "site/_layout.html" %}
+{% block title %}Pricing — {{ business.name }}{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="wrap" style="max-width:820px">
+    <div class="eyebrow">Pricing</div>
+    <h1>Standard service prices</h1>
+    <p>Predictable services show an exact price. Variable services show a starting price. Mobile visits may add a fee based on your address.</p>
+    <div class="service-pick">
+      {% for s in services %}
+      <div class="card"><h3>{{ s.name }}</h3><p>{{ s.description }}</p><span class="more">{{ s.price_label }} · About {{ s.minutes }} minutes</span></div>
+      {% endfor %}
+    </div>
+    <p style="margin-top:18px">Complex repairs need an estimate and your approval. <a href="/site/estimate">Request an estimate</a>.</p>
+  </div>
+</section>
+{% endblock %}

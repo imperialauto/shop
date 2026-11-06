@@ -14,7 +14,12 @@ PAGES = [("dashboard", "/dashboard"), ("dashboard-urgent", "/dashboard?view=urge
          ("ro-new", "/ro/new"), ("ro-detail", "/ro/1"), ("estimates", "/estimates/"), ("invoices", "/invoices/"), ("invoice-detail", "/invoices/1"),
          ("finance", "/finance/"), ("customers", "/customers/"), ("fleet", "/customers/?type_filter=fleet"), ("missing-page", "/ro/99999"), ("customer-new", "/customers/new"),
          ("customer-detail", "/customers/1"), ("vehicle-new", "/vehicles/new?customer_id=1"), ("vehicle-detail", "/vehicles/1"),
-         ("calendar", "/appointments/calendar"), ("settings", "/settings"), ("live-control", "/live/control")]
+         ("calendar", "/appointments/calendar"), ("settings", "/settings"), ("live-control", "/live/control"),
+         ("site-home", "/site/"), ("site-services", "/site/services"), ("site-diesel", "/site/services/diesel"),
+         ("site-nvzn", "/site/services/nvzn-customs"), ("site-contact", "/site/contact"), ("site-book", "/site/book"),
+         ("site-book-times", "/site/book?service=diagnostic"), ("site-estimate", "/site/estimate"),
+         ("site-mobile", "/site/book?service=battery-charging&where=mobile&zip=85000"), ("site-pricing", "/site/pricing"),
+         ("site-rentals", "/site/rentals"), ("site-faq", "/site/faq"), ("site-status", "/site/status")]
 
 
 def measure(page, label, device, status, errors):
@@ -50,6 +55,7 @@ def step(name, device, action):
 
 
 def flows(page, device):
+    page_options = DEVICE_OPTIONS[device]
     context = {}
 
     def login():
@@ -274,7 +280,94 @@ def flows(page, device):
         page.wait_for_function("document.getElementById('booking-message').textContent.includes('already')")
         page.screenshot(path=str(OUT / f"{device}-booked.png"), full_page=True)
 
-    for name, action in [("wrong password", wrong_password), ("login", login), ("new customer", customer), ("new vehicle", vehicle), ("new repair order", repair_order),
+    def site_booking():
+        visitor = page.context.browser.new_context(**page_options).new_page()
+        visitor.goto(BASE + "/site/")
+        visitor.click(".hero a[href='/site/book']")
+        visitor.click("a[href='/site/book?service=diagnostic']")
+        visitor.locator("label.choice", has=visitor.locator("input[name=slot_id]")).first.click()
+        visitor.fill("[name=year]", "2016")
+        visitor.fill("[name=make]", "Ford")
+        visitor.fill("[name=model]", "Focus")
+        visitor.fill("[name=first_name]", "Web" + device)
+        visitor.fill("[name=last_name]", "Visitor")
+        visitor.fill("[name=phone]", "6025550123")
+        visitor.fill("[name=notes]", "Made-up walkthrough booking")
+        visitor.click("form[action='/site/book'] button[type=submit]")
+        visitor.wait_for_url("**/site/book/received")
+        body = visitor.inner_text("body")
+        assert "Reference WEB-" in body and "$10" in body and "confirmed" in body, body[:300]
+        measure(visitor, "site-booked", device, 200, [])
+        reference = body.split("Reference ")[1].split(".")[0]
+        visitor.click("a:has-text('View status')")
+        assert "/status/" in visitor.url
+        measure(visitor, "site-status-result", device, 200, [])
+        visitor.goto(BASE + "/site/status")
+        visitor.fill("[name=reference]", reference)
+        visitor.fill("[name=phone]", "6025550123")
+        visitor.click("form[action='/site/status'] button[type=submit]")
+        visitor.wait_for_url("**/status/*")
+        visitor.goto(BASE + "/site/status")
+        visitor.fill("[name=reference]", reference)
+        visitor.fill("[name=phone]", "6025550100")
+        visitor.click("form[action='/site/status'] button[type=submit]")
+        assert "could not match" in visitor.inner_text("body")
+        visitor.context.close()
+        page.goto(BASE + "/appointments/")
+        assert "confirmed" in page.inner_text("body"), "online booking not on the staff list"
+
+    def site_mobile_booking():
+        visitor = page.context.browser.new_context(**page_options).new_page()
+        visitor.goto(BASE + "/site/book?service=battery-charging")
+        visitor.locator("label.choice", has=visitor.locator("input[value=mobile]")).click()
+        visitor.fill("[name=zip]", "85000")
+        visitor.click("button:has-text('Update times')")
+        assert "$5.00" in visitor.inner_text("body") and "$45.00" in visitor.inner_text("body")
+        visitor.locator("label.choice", has=visitor.locator("input[name=slot_id]")).last.click()
+        visitor.fill("[name=street]", "100 Test St")
+        visitor.fill("[name=year]", "2016")
+        visitor.fill("[name=make]", "Ford")
+        visitor.fill("[name=model]", "Focus")
+        visitor.fill("[name=first_name]", "Mobile" + device)
+        visitor.fill("[name=last_name]", "Visitor")
+        visitor.fill("[name=phone]", "6025550125")
+        visitor.click("button:has-text('Book this time')")
+        visitor.wait_for_url("**/site/book/received")
+        assert "mobile fee" in visitor.inner_text("body")
+        measure(visitor, "site-mobile-booked", device, 200, [])
+        visitor.context.close()
+
+    def site_taken_time():
+        one = page.context.browser.new_context(**page_options).new_page()
+        one.goto(BASE + "/site/book?service=pre-purchase")
+        choice = one.locator("input[name=slot_id]").first
+        slot = choice.get_attribute("value")
+        form = {"service": "pre-purchase", "slot_id": slot, "first_name": "Clash", "last_name": "Visitor", "phone": "6025550126",
+                "contact_method": "text", "make": "Ford", "model": "Focus", "where": "shop", "zip": ""}
+        first = one.request.post(BASE + "/site/book", form=form, max_redirects=0)
+        assert first.status == 303, first.status
+        second = one.request.post(BASE + "/site/book", form={**form, "phone": "6025550127"}, max_redirects=0)
+        assert second.status == 409, second.status
+        one.goto(BASE + "/site/book?service=pre-purchase")
+        assert one.locator(f"input[name=slot_id][value='{slot}']").count() == 0
+        one.context.close()
+
+    def site_estimate():
+        visitor = page.context.browser.new_context(**page_options).new_page()
+        visitor.goto(BASE + "/site/services/diesel")
+        visitor.click("a[href='/site/estimate?service=diesel']")
+        assert visitor.input_value("[name=service_line]") == "diesel"
+        visitor.fill("textarea[name=description]", "Made-up walkthrough: hard start when cold")
+        visitor.fill("[name=vin]", "1FTFW1ET5DFC10312")
+        visitor.fill("[name=first_name]", "Est" + device)
+        visitor.fill("[name=last_name]", "Visitor")
+        visitor.fill("[name=phone]", "6025550124")
+        visitor.click("form[action='/site/estimate'] button[type=submit]")
+        visitor.wait_for_url("**/site/estimate/received")
+        measure(visitor, "site-estimate-received", device, 200, [])
+        visitor.context.close()
+
+    for name, action in [("wrong password", wrong_password), ("login", login), ("public site booking", site_booking), ("public mobile booking", site_mobile_booking), ("public time conflict", site_taken_time), ("public site estimate", site_estimate), ("new customer", customer), ("new vehicle", vehicle), ("new repair order", repair_order),
                          ("add line item", line_item), ("add part", part_item), ("change status", status), ("create invoice", invoice),
                          ("no duplicate invoice", duplicate_invoice), ("record payment", payment), ("customer status link", public_status),
                          ("customer signature", signature), ("book appointment", booking), ("search customers", search),
@@ -292,6 +385,9 @@ def flows(page, device):
             page.screenshot(path=str(OUT / "phone-menu.png"))
     step("open menu", device, menu)
 
+
+DEVICE_OPTIONS = {"phone": {"viewport": {"width": 390, "height": 844}, "has_touch": True, "is_mobile": True, "device_scale_factor": 2},
+                  "desktop": {"viewport": {"width": 1440, "height": 900}}}
 
 with sync_playwright() as p:
     browser = p.chromium.launch()
@@ -313,4 +409,4 @@ with sync_playwright() as p:
 bad = [r for r in results if r.get("ok") is False or r.get("status", 200) >= 400 or r.get("overflow", 0) > 2]
 print(json.dumps(bad, indent=1))
 print(f"{len(results)} checks, {len(bad)} failures")
-sys.exit(0)
+sys.exit(1 if [r for r in bad if r.get("page") != "missing-page"] else 0)

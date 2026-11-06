@@ -1,0 +1,21 @@
+{% extends "site/_layout.html" %}
+{% block title %}Services — {{ business.name }}{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="wrap">
+    <div class="eyebrow">Services</div>
+    <h1>What we work on</h1>
+    <p class="lead">Most work is done at our Glendale shop. Every job starts with finding the cause, and you approve a written estimate before work begins.</p>
+    <div class="grid" style="margin-top:24px">
+      {% for line in service_lines %}
+      <div class="card{% if line.division != business.name %} division{% endif %}">
+        {% if line.division != business.name %}<span class="tag">{{ line.division }}</span>{% endif %}
+        <h3>{{ line.name }}</h3>
+        <p>{{ line.short }}</p>
+        <a class="more" href="/site/services/{{ line.slug }}">Details →</a>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}
