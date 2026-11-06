@@ -1,6 +1,6 @@
 const { test, beforeEach } = require("node:test");
 const assert = require("node:assert/strict");
-const { verifyApprovedReplyContext } = require("../src/lib/replyContext");
+const { verifyApprovedReplyContext, verifyDashboardDraftContext } = require("../src/lib/replyContext");
 const { handleIntakeResult } = require("../src/lib/dispatchActions");
 
 const OWNER = "+16025550199";
@@ -63,6 +63,37 @@ test("Quo outage or missing timestamp fails closed", async () => {
     quo: fakeQuo({ messages: [{ id: message.id }] }), phone: CUSTOMER, messageId: message.id,
   });
   assert.equal(unknown.reason, "unavailable");
+});
+
+test("dashboard draft belongs to the same conversation and has a verified source", async () => {
+  const quo = fakeQuo();
+  const source = { id: "db-id-1", quoMessageId: message.id, conversationId: "db-conversation" };
+  const prisma = { message: { findUnique: async () => source } };
+  const conversation = { id: "db-conversation", customerPhone: CUSTOMER };
+  const draft = { id: "draft-1", conversationId: "db-conversation",
+                  status: "PENDING", basedOnMessageId: source.id };
+  assert.equal((await verifyDashboardDraftContext({ quo, prisma, conversation, draft })).ok, true);
+  const wrong = await verifyDashboardDraftContext({
+    quo, prisma, conversation: { ...conversation, id: "another-conversation" }, draft,
+  });
+  assert.equal(wrong.reason, "wrong_draft");
+  const absent = await verifyDashboardDraftContext({
+    quo, prisma, conversation, draft: { ...draft, basedOnMessageId: null },
+  });
+  assert.equal(absent.ok, false);
+});
+
+test("dashboard approval is blocked if a call arrived after its draft source", async () => {
+  const quo = fakeQuo({ calls: [{ id: "call-later", createdAt: "2026-11-06T18:02:00Z" }] });
+  const prisma = { message: { findUnique: async () => ({
+    id: "db-message", quoMessageId: message.id, conversationId: "C1",
+  }) } };
+  const result = await verifyDashboardDraftContext({
+    quo, prisma, conversation: { id: "C1", customerPhone: CUSTOMER },
+    draft: { status: "PENDING", conversationId: "C1", basedOnMessageId: "db-message" },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "new_call");
 });
 
 test("owner approved reply is not sent after a newer call; owner receives explanation", async () => {
