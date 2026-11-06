@@ -53,4 +53,32 @@ async function verifyDashboardDraftContext({ quo, prisma, conversation, draft })
   });
 }
 
-module.exports = { verifyApprovedReplyContext, verifyDashboardDraftContext };
+// A manually composed dashboard reply has no AI draft to validate. Require
+// a verified latest *local* message seen by the coordinator, then compare
+// against the real Quo thread and calls. A stale UI must never send silently.
+// This does not establish that the coordinator reviewed call content.
+async function verifyManualComposeContext({ quo, prisma, conversation, lastSeenQuoMessageId }) {
+  if (!conversation?.id || !conversation.customerPhone || !lastSeenQuoMessageId ||
+      typeof lastSeenQuoMessageId !== "string" || lastSeenQuoMessageId.length > 128) {
+    return { ok: false, reason: "missing_anchor",
+      notice: "refresh this conversation before sending a manually typed reply" };
+  }
+  try {
+    const localLatest = await prisma.message.findFirst({
+      where: { conversationId: conversation.id },
+      orderBy: { quoCreatedAt: "desc" },
+    });
+    if (!localLatest || localLatest.quoMessageId !== lastSeenQuoMessageId) {
+      return { ok: false, reason: "stale_local",
+        notice: "newer conversation activity was recorded; refresh before sending" };
+    }
+    return verifyApprovedReplyContext({
+      quo, phone: conversation.customerPhone, messageId: lastSeenQuoMessageId,
+    });
+  } catch (_) {
+    return { ok: false, reason: "unavailable",
+      notice: "the latest conversation history could not be verified" };
+  }
+}
+
+module.exports = { verifyApprovedReplyContext, verifyDashboardDraftContext, verifyManualComposeContext };
