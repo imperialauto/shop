@@ -12,7 +12,7 @@ const MAX_SMS = 900;
 function projectTopic(question, history = []) {
   const q = String(question || "").toLowerCase().trim();
   if (!q) return null;
-  const askedForStatus = /\b(update|progress|status|ready|launch|launched|finished|done|built|working|fixed|fixes|issues?|bugs?|test(?:ing|s)?|block(?:ed|ers|ing)?|next|left|remaining|how(?:'s| is)|what(?:'s| is)|did|can we)\b/.test(q);
+  const askedForStatus = /\b(update|progress|status|ready|launch|launched|finished|done|built|working|fixed|fixes|issues?|bugs?|test(?:ing|s)?|block(?:ed|ers|ing)?|next|left|remaining|how(?:'s| is)|what(?:'s| is| about)|did|can we)\b/.test(q);
   const context = (Array.isArray(history) ? history.slice(-4) : [])
     .map((turn) => String(turn?.content || "").toLowerCase())
     .join(" ");
