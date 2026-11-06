@@ -10,7 +10,7 @@
 | Store | Evidence | Role / unresolved checks |
 |---|---|---|
 | Postgres-Tvkp | Node startup explicitly reports postgres-tvkp.railway.internal:5432, database railway, schema public. | Confirmed messaging Prisma connection; do not assume this is the shop's authoritative customer/RO database. Runtime read/write test messages were already stored here. |
-| Postgres | Deployment SUCCESS, persistent 5 GB volume. | Web DATABASE_URL is configured but OAuth variable values/references are withheld. Actual web host/table counts must be read from recovery diagnostic before declaring authority. Do not repoint or delete either database. |
+| Postgres | Deployment SUCCESS, persistent 5 GB volume. | Web DATABASE_URL is configured but OAuth variable values/references are withheld. Recovery diagnostic now confirms web uses postgres.railway.internal, database railway. Counts: customers 6, vehicles 7, repair_orders 6, line_items 7, estimate_sessions 12, communications 6, users 1; invoices/payments/parts_orders 0. Authoritative for existing Python shop records; not the separate Sites data. Do not repoint or delete either database. |
 | Operations Sites D1/R2 | Separate owner-private project appgprj_6ada8262800c8191864e1199944de8d6, customer gateway appgprj_6adce339f8cc819196e4db4dcbac4629. | Recent intake, notes, clocks, attendance and approval implementation lives here, not automatically in this GitHub repository or PostgreSQL. No migration/sync has been established. |
 | Quo | Live messages/transcripts accessible through connected service; funded owner test delivered October 26. | Authoritative provider message/delivery history; local caches do not replace provider receipt evidence. |
 
@@ -52,3 +52,11 @@ No database has been reset, merged, moved, repointed or given new credentials. N
 - Five unittest groups: non-mutating startup; existing authenticated/customer token read screens; recovery write/outbound blocks; invoice token scope and signature-vs-payment separation; credential-free read-only audit.
 - All Python modules compile and all Jinja templates compile.
 - Tests use only an explicit disposable SQLite database. They do not assert PostgreSQL identity, production login, provider calls or complete launch readiness.
+
+## Production recovery verification
+- PR7 merged to main as 52c10725802702a780e30e1ca9e9341025225aa5.
+- Web deployment 3dff9d86-6e14-4da3-b1d7-c618d1d8d6ba SUCCESS; messaging deployment 6882f807-0bc5-47ee-acd5-a9b731c8eaa4 SUCCESS.
+- Live HTTP GET /healthz and /readyz both 200, mode read-only; database connected. /login renders; unauthenticated / redirects to login.
+- Web database audit: connected true, no missing tables or columns. Node startup: database already in sync with Prisma schema, listener started.
+- No authenticated production session or complete provider/customer workflow has been verified by these health checks. Existing legacy default credentials are rejected; no credentials were rotated or seeded.
+- Both PostgreSQL services are in use. Sites remains a third separate operational store. There is no single complete unified system of record yet.
