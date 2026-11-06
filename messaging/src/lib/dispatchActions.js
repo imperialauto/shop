@@ -6,6 +6,7 @@
 
 const { answerOwner, interpretOwner, recentTurns, customerDetail } = require("./ownerAssistant");
 const { answerProjectQuestion } = require("./projectStatus");
+const { answerImperialBrain } = require("./imperialBrain");
 const { callContext } = require("./callIntake");
 
 function enabled(name) {
@@ -96,7 +97,10 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
     const history = recentTurns(thread.data || [], messageId);
     // Project progress is sourced from current GitHub data, not from the
     // customer queue or LLM guesses. It is strictly read-only and flag-gated.
-    const projectReply = await answerProjectQuestion({ question: result.ownerQuestion, history });
+    const brainReply = await answerImperialBrain({
+      question: result.ownerQuestion, snapshot: result.snapshot, history,
+    });
+    const projectReply = brainReply || await answerProjectQuestion({ question: result.ownerQuestion, history });
     const action = projectReply ? null : await interpretOwner({ question: result.ownerQuestion, snapshot: result.snapshot, history });
     const content = projectReply || (action
       ? (await shopClient.dispatchOwnerAction(action)).ownerReply
