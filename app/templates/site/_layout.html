@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ business.name }} — Auto and Diesel Repair in Glendale, AZ{% endblock %}</title>
+  <meta name="description" content="{% block description %}Auto, diesel, European and Sprinter repair at our Glendale, AZ shop. Fleet service, roadside help and NVZN Customs tint, wraps and detailing.{% endblock %}">
+  {% if not indexable %}<meta name="robots" content="noindex, nofollow">{% endif %}
+  <meta name="theme-color" content="#2D0245">
+  <link rel="stylesheet" href="/static/site.css">
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@type":"AutoRepair","name":{{ business.name|tojson }},"telephone":{{ business.phone_tel|tojson }},"email":{{ business.email|tojson }},
+   "address":{"@type":"PostalAddress","streetAddress":{{ business.street|tojson }},"addressLocality":{{ business.city|tojson }},"addressRegion":{{ business.region|tojson }},"postalCode":{{ business.postal|tojson }},"addressCountry":"US"},
+   "openingHoursSpecification":[{"@type":"OpeningHoursSpecification","dayOfWeek":["Monday","Tuesday","Wednesday","Thursday","Friday"],"opens":"11:00","closes":"19:00"},{"@type":"OpeningHoursSpecification","dayOfWeek":"Saturday","opens":"12:00","closes":"17:00"}]}
+  </script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+{% if not indexable %}<div class="preview-bar">Preview of the new website. The current site stays live until launch.</div>{% endif %}
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="/site/"><span class="brand-name">Imperial Auto Care</span><span class="brand-sub">Glendale, Arizona</span></a>
+    <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-nav" onclick="var n=document.getElementById('site-nav');var o=n.classList.toggle('open');this.setAttribute('aria-expanded',o)">Menu</button>
+    <nav class="nav" id="site-nav" aria-label="Main">
+      <a href="/site/" {% if active == 'home' %}aria-current="page"{% endif %}>Home</a>
+      <a href="/site/services" {% if active == 'services' %}aria-current="page"{% endif %}>Services</a>
+      <a href="/site/book" {% if active == 'book' %}aria-current="page"{% endif %}>Book online</a>
+      <a href="/site/estimate" {% if active == 'estimate' %}aria-current="page"{% endif %}>Get an estimate</a>
+      <a href="/site/contact" {% if active == 'contact' %}aria-current="page"{% endif %}>Contact</a>
+      <a class="call" href="tel:{{ business.phone_tel }}">Call {{ business.phone_display }}</a>
+    </nav>
+  </div>
+</header>
+<main id="main">
+{% block content %}{% endblock %}
+</main>
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-grid">
+      <div>
+        <h3>{{ business.name }}</h3>
+        <p>{{ business.street }}<br>{{ business.city }}, {{ business.region }} {{ business.postal }}</p>
+        <a href="tel:{{ business.phone_tel }}">{{ business.phone_display }}</a><br>
+        <a href="mailto:{{ business.email }}">{{ business.email }}</a>
+      </div>
+      <div>
+        <h3>Hours</h3>
+        <ul>{% for day, hrs in business.hours %}<li>{{ day }}: {{ hrs }}</li>{% endfor %}</ul>
+      </div>
+      <div>
+        <h3>Services</h3>
+        <ul>{% for line in service_lines %}<li><a href="/site/services/{{ line.slug }}">{{ line.name }}</a></li>{% endfor %}</ul>
+      </div>
+    </div>
+    <div class="legal">© {{ year }} {{ business.legal_name }}. NVZN Customs is a division of {{ business.legal_name }}.</div>
+  </div>
+</footer>
+</body>
+</html>

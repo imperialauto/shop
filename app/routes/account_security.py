@@ -130,3 +130,12 @@ def security_disable(request: Request, password: str = Form(...), code: str = Fo
     db.commit()
     log.info("mfa_disabled user=%s", user.id)
     return RedirectResponse("/settings/security", status_code=303)
+
+
+# The replacement public website (/site/...) is attached here because this
+# router is already included without a prefix and app/main.py stays unchanged
+# until the owner approves cutover. At cutover, include public_site.router in
+# app/main.py directly and remove these lines.
+from app.routes import public_site  # noqa: E402
+
+router.include_router(public_site.router)

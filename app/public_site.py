@@ -1,0 +1,226 @@
+"""Public website content and input rules for the replacement imperialautophx.com.
+
+Pure data and validation only: no database access, no network calls and no
+customer messages. Everything the public pages say about the business lives
+here so the owner can review it in one place before cutover.
+"""
+import os
+import re
+from dataclasses import dataclass, field
+
+# Owner to confirm every value in BUSINESS before cutover.
+BUSINESS = {
+    "name": "Imperial Auto Care",
+    "legal_name": "Imperial Auto Care LLC",
+    "phone_display": "(480) 914-4144",
+    "phone_tel": "+14809144144",
+    "email": "jaelan@imperialautocarellc.com",
+    # Earlier records say Ste 417, the most recent say Suite 508. Confirm before cutover.
+    "street": os.getenv("PUBLIC_SITE_STREET", "7915 N Glen Harbor Blvd, Suite 508"),
+    "city": "Glendale",
+    "region": "AZ",
+    "postal": "85307",
+    "hours": [
+        ("Monday – Friday", "11 AM – 7 PM"),
+        ("Saturday", "12 PM – 5 PM"),
+        ("Sunday", "Closed"),
+    ],
+}
+
+
+@dataclass(frozen=True)
+class ServiceLine:
+    slug: str
+    name: str
+    short: str
+    intro: str
+    points: tuple[str, ...]
+    note: str = ""
+    division: str = "Imperial Auto Care"
+
+
+SERVICE_LINES: tuple[ServiceLine, ...] = (
+    ServiceLine(
+        "auto-repair", "Auto repair and diagnostics",
+        "Check engine lights, drivability, electrical and everyday repairs on gas cars, trucks and SUVs.",
+        "Bring it to the shop and we find the cause before we replace parts. You get a written estimate before work starts.",
+        ("Check engine light and drivability diagnostics", "Electrical and wiring faults",
+         "Brakes, steering and suspension", "Cooling system, A/C and heating", "Maintenance and inspections"),
+    ),
+    ServiceLine(
+        "diesel", "Diesel repair",
+        "Powerstroke, Cummins and Duramax pickups, including the jobs other shops send away.",
+        "We take on diesel work that other shops turn down, from fuel system faults to no-starts.",
+        ("6.0L and 6.7L Powerstroke", "Cummins", "Duramax", "Fuel system and injection diagnostics",
+         "Cooling, electrical and starting problems"),
+    ),
+    ServiceLine(
+        "european-sprinter", "European and Sprinter",
+        "Mercedes Sprinter vans and European vehicles, diagnosed with the right tools.",
+        "Sprinter vans and European vehicles get the same diagnose-first approach, with an estimate before any work.",
+        ("Mercedes-Benz Sprinter, gas and diesel", "BMW and Mercedes-Benz", "Module and network diagnostics",
+         "Cooling, turbo and fuel system repairs"),
+    ),
+    ServiceLine(
+        "dps6-transmission", "Ford DPS6 PowerShift",
+        "Clutch and shudder repairs for the Focus and Fiesta dual-clutch transmission.",
+        "DPS6 work is done in the shop and starts with a diagnostic so we quote the right repair.",
+        ("Shudder, slipping and hesitation diagnosis", "Clutch replacement", "Shop-only repair"),
+        note="A diagnostic comes first on every DPS6 job.",
+    ),
+    ServiceLine(
+        "fleet", "Fleet service",
+        "Maintenance and repairs for work trucks, vans and rental fleets.",
+        "Keep vehicles earning. We work with fleet and rental owners on scheduled service, inspections and repairs.",
+        ("Fleet maintenance and inspections", "Rental and car-share fleet vehicles", "Work trucks and vans",
+         "One account for every vehicle"),
+    ),
+    ServiceLine(
+        "mobile-roadside", "Mobile and roadside",
+        "Selected on-site repairs and Class 8 roadside calls when a vehicle cannot come to the shop.",
+        "Most work is done at the shop. When a vehicle cannot get here, ask us about an on-site visit or a bring-in.",
+        ("Class 8 semi roadside: starters, alternators, belts, water pumps and air systems",
+         "Selected on-site repairs", "Shop transport for vehicles coming in for major repairs"),
+        note="Mobile and roadside work is quoted by request. Call or send an estimate request.",
+    ),
+    ServiceLine(
+        "nvzn-customs", "NVZN Customs",
+        "Window tint, wraps, paint protection film and detailing.",
+        "NVZN Customs is our appearance division for tint, wraps, paint protection film and detailing.",
+        ("Window tint", "Vinyl wraps", "Paint protection film (PPF)", "Detailing and paint correction",
+         "Ceramic coating"),
+        division="NVZN Customs",
+    ),
+)
+
+SERVICE_LINE_BY_SLUG = {line.slug: line for line in SERVICE_LINES}
+
+
+@dataclass(frozen=True)
+class BookableService:
+    """A standard service a customer may book online without talking to us first."""
+    slug: str
+    name: str
+    description: str
+    minutes: int
+
+
+# Proposed list. The owner approves which ones go live with PUBLIC_BOOKING_SERVICES.
+BOOKABLE_SERVICES: tuple[BookableService, ...] = (
+    BookableService("diagnostic", "Diagnostic appointment", "Check engine light, warning lights, noises or drivability. We find the cause and give you an estimate.", 60),
+    BookableService("oil-service", "Oil and filter service", "Gas or diesel. Includes a quick look over the vehicle.", 60),
+    BookableService("brake-inspection", "Brake inspection", "Pads, rotors, fluid and hardware checked, with an estimate if anything needs work.", 60),
+    BookableService("ac-check", "A/C performance check", "We check how the A/C is cooling and look for leaks.", 60),
+    BookableService("battery-charging", "Battery and charging test", "Battery, starter and alternator tested.", 30),
+    BookableService("pre-purchase", "Pre-purchase inspection", "A full look over a vehicle before you buy it.", 90),
+)
+
+
+def approved_bookable_services() -> list[BookableService]:
+    """PUBLIC_BOOKING_SERVICES is a comma list of slugs. Unset means every proposed service."""
+    raw = os.getenv("PUBLIC_BOOKING_SERVICES")
+    if raw is None:
+        return list(BOOKABLE_SERVICES)
+    wanted = {part.strip() for part in raw.split(",") if part.strip()}
+    return [service for service in BOOKABLE_SERVICES if service.slug in wanted]
+
+
+def bookable_service(slug: str) -> BookableService | None:
+    return next((s for s in approved_bookable_services() if s.slug == slug), None)
+
+
+def forms_enabled(read_only: bool) -> bool:
+    """Public forms only write when the app is writable and the owner switched them on."""
+    return not read_only and os.getenv("PUBLIC_FORMS_ENABLED", "").strip().lower() == "true"
+
+
+def indexable() -> bool:
+    """Search engines stay out until cutover so the live Squarespace site keeps its ranking."""
+    return os.getenv("PUBLIC_SITE_INDEXABLE", "").strip().lower() == "true"
+
+
+# ── Input rules ──────────────────────────────────────────────────────────────
+VIN_PATTERN = re.compile(r"^[A-HJ-NPR-Z0-9]{17}$")
+NAME_LIMIT = 64
+TEXT_LIMIT = 2000
+
+
+class FormError(ValueError):
+    pass
+
+
+def clean_text(value: str | None, limit: int) -> str:
+    text = " ".join((value or "").split()) if limit <= 128 else (value or "").strip()
+    return text[:limit]
+
+
+def normalize_phone(value: str | None) -> str:
+    digits = re.sub(r"\D", "", value or "")
+    if len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
+    if len(digits) != 10 or digits[0] in "01":
+        raise FormError("Enter a 10-digit US phone number.")
+    return digits
+
+
+def phone_digits(value: str | None) -> str:
+    """Comparable digits for an already stored phone. Never raises."""
+    digits = re.sub(r"\D", "", value or "")
+    return digits[1:] if len(digits) == 11 and digits.startswith("1") else digits
+
+
+def format_phone(digits: str) -> str:
+    return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
+
+
+def normalize_vin(value: str | None) -> str:
+    vin = re.sub(r"[\s-]", "", value or "").upper()
+    if not vin:
+        return ""
+    if not VIN_PATTERN.match(vin):
+        raise FormError("A VIN is 17 letters and numbers and never uses I, O or Q. Leave it blank if you are not sure.")
+    return vin
+
+
+def normalize_email(value: str | None) -> str:
+    email = (value or "").strip()
+    if not email:
+        return ""
+    if len(email) > 128 or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        raise FormError("Check the email address.")
+    return email
+
+
+def normalize_year(value: str | None, this_year: int) -> int | None:
+    text = (value or "").strip()
+    if not text:
+        return None
+    if not text.isdigit() or not 1950 <= int(text) <= this_year + 1:
+        raise FormError("Check the vehicle year.")
+    return int(text)
+
+
+def normalize_mileage(value: str | None) -> int | None:
+    text = re.sub(r"[,\s]", "", value or "")
+    if not text:
+        return None
+    if not text.isdigit() or int(text) > 2_000_000:
+        raise FormError("Check the mileage.")
+    return int(text)
+
+
+@dataclass
+class SubmissionLimiter:
+    """Caps public form submissions per address. In memory, like the login limiter."""
+    limit: int = 5
+    window_seconds: int = 3600
+    seen: dict[str, list[float]] = field(default_factory=dict)
+
+    def allow(self, key: str, now: float) -> bool:
+        recent = [t for t in self.seen.get(key, []) if now - t < self.window_seconds]
+        if len(recent) >= self.limit:
+            self.seen[key] = recent
+            return False
+        recent.append(now)
+        self.seen[key] = recent
+        return True

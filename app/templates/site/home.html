@@ -1,0 +1,69 @@
+{% extends "site/_layout.html" %}
+{% block content %}
+<section class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Auto · Diesel · European · Fleet</div>
+    <h1>Repairs done right, <em>including the ones other shops turn away.</em></h1>
+    <p class="lead">Our Glendale shop works on gas and diesel trucks, cars, Sprinter vans and fleet vehicles. We find the cause first and give you an estimate before any work starts.</p>
+    <div class="actions">
+      <a class="btn btn-gold" href="/site/book">Book a service</a>
+      <a class="btn btn-outline" href="/site/estimate">Get an estimate</a>
+    </div>
+    <div class="hero-facts"><span>Written estimate before work</span><span>Powerstroke, Cummins, Duramax</span><span>Sprinter and European</span></div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <div class="eyebrow">What we do</div>
+    <h2>Services</h2>
+    <div class="grid">
+      {% for line in service_lines %}
+      <div class="card{% if line.division != business.name %} division{% endif %}">
+        {% if line.division != business.name %}<span class="tag">{{ line.division }}</span>{% endif %}
+        <h3>{{ line.name }}</h3>
+        <p>{{ line.short }}</p>
+        <a class="more" href="/site/services/{{ line.slug }}">Learn more →</a>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="section alt">
+  <div class="wrap">
+    <div class="eyebrow">How it works</div>
+    <h2>Getting your vehicle in</h2>
+    <div class="steps">
+      <div><h3>Book or ask</h3><p>Book a standard service online, or send an estimate request for bigger jobs.</p></div>
+      <div><h3>We confirm</h3><p>We review it and confirm your time or follow up with questions.</p></div>
+      <div><h3>Diagnose and quote</h3><p>We find the cause and give you a written estimate before work starts.</p></div>
+      <div><h3>Repair and update</h3><p>You get status updates until the vehicle is ready.</p></div>
+    </div>
+  </div>
+</section>
+
+{% if bookable %}
+<section class="section">
+  <div class="wrap">
+    <div class="eyebrow">Book online</div>
+    <h2>Standard services you can book now</h2>
+    <div class="grid">
+      {% for s in bookable %}
+      <div class="card"><h3>{{ s.name }}</h3><p>{{ s.description }}</p><a class="more" href="/site/book?service={{ s.slug }}">Pick a time →</a></div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<section class="band">
+  <div class="wrap split">
+    <div>
+      <h2>Not sure what it needs?</h2>
+      <p>Tell us what the vehicle is doing. Add the VIN if you have it and we will get back to you with next steps.</p>
+    </div>
+    <div class="actions"><a class="btn btn-gold" href="/site/estimate">Request an estimate</a><a class="btn btn-outline" href="tel:{{ business.phone_tel }}">Call {{ business.phone_display }}</a></div>
+  </div>
+</section>
+{% endblock %}

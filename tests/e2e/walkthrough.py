@@ -14,7 +14,10 @@ PAGES = [("dashboard", "/dashboard"), ("dashboard-urgent", "/dashboard?view=urge
          ("ro-new", "/ro/new"), ("ro-detail", "/ro/1"), ("estimates", "/estimates/"), ("invoices", "/invoices/"), ("invoice-detail", "/invoices/1"),
          ("finance", "/finance/"), ("customers", "/customers/"), ("fleet", "/customers/?type_filter=fleet"), ("missing-page", "/ro/99999"), ("customer-new", "/customers/new"),
          ("customer-detail", "/customers/1"), ("vehicle-new", "/vehicles/new?customer_id=1"), ("vehicle-detail", "/vehicles/1"),
-         ("calendar", "/appointments/calendar"), ("settings", "/settings"), ("live-control", "/live/control")]
+         ("calendar", "/appointments/calendar"), ("settings", "/settings"), ("live-control", "/live/control"),
+         ("site-home", "/site/"), ("site-services", "/site/services"), ("site-diesel", "/site/services/diesel"),
+         ("site-nvzn", "/site/services/nvzn-customs"), ("site-contact", "/site/contact"), ("site-book", "/site/book"),
+         ("site-book-times", "/site/book?service=diagnostic"), ("site-estimate", "/site/estimate")]
 
 
 def measure(page, label, device, status, errors):
@@ -50,6 +53,7 @@ def step(name, device, action):
 
 
 def flows(page, device):
+    page_options = DEVICE_OPTIONS[device]
     context = {}
 
     def login():
@@ -219,7 +223,43 @@ def flows(page, device):
         page.wait_for_function("document.getElementById('booking-message').textContent.includes('already')")
         page.screenshot(path=str(OUT / f"{device}-booked.png"), full_page=True)
 
-    for name, action in [("wrong password", wrong_password), ("login", login), ("new customer", customer), ("new vehicle", vehicle), ("new repair order", repair_order),
+    def site_booking():
+        visitor = page.context.browser.new_context(**page_options).new_page()
+        visitor.goto(BASE + "/site/")
+        visitor.click("a[href='/site/book']")
+        visitor.click("a[href='/site/book?service=diagnostic']")
+        visitor.locator("label.choice", has=visitor.locator("input[name=slot_id]")).first.click()
+        visitor.fill("[name=year]", "2016")
+        visitor.fill("[name=make]", "Ford")
+        visitor.fill("[name=model]", "Focus")
+        visitor.fill("[name=first_name]", "Web" + device)
+        visitor.fill("[name=last_name]", "Visitor")
+        visitor.fill("[name=phone]", "6025550123")
+        visitor.fill("[name=notes]", "Made-up walkthrough booking")
+        visitor.click("form[action='/site/book'] button[type=submit]")
+        visitor.wait_for_url("**/site/book/received")
+        assert "Reference WEB-" in visitor.inner_text("body")
+        measure(visitor, "site-booked", device, 200, [])
+        visitor.context.close()
+        page.goto(BASE + "/appointments/")
+        assert "tentative" in page.inner_text("body"), "online booking not on the staff list"
+
+    def site_estimate():
+        visitor = page.context.browser.new_context(**page_options).new_page()
+        visitor.goto(BASE + "/site/services/diesel")
+        visitor.click("a[href='/site/estimate?service=diesel']")
+        assert visitor.input_value("[name=service_line]") == "diesel"
+        visitor.fill("[name=description]", "Made-up walkthrough: hard start when cold")
+        visitor.fill("[name=vin]", "1FTFW1ET5DFC10312")
+        visitor.fill("[name=first_name]", "Est" + device)
+        visitor.fill("[name=last_name]", "Visitor")
+        visitor.fill("[name=phone]", "6025550124")
+        visitor.click("form[action='/site/estimate'] button[type=submit]")
+        visitor.wait_for_url("**/site/estimate/received")
+        measure(visitor, "site-estimate-received", device, 200, [])
+        visitor.context.close()
+
+    for name, action in [("wrong password", wrong_password), ("login", login), ("public site booking", site_booking), ("public site estimate", site_estimate), ("new customer", customer), ("new vehicle", vehicle), ("new repair order", repair_order),
                          ("add line item", line_item), ("add part", part_item), ("change status", status), ("create invoice", invoice),
                          ("no duplicate invoice", duplicate_invoice), ("record payment", payment), ("customer status link", public_status),
                          ("customer signature", signature), ("book appointment", booking), ("search customers", search),
@@ -236,6 +276,9 @@ def flows(page, device):
             page.screenshot(path=str(OUT / "phone-menu.png"))
     step("open menu", device, menu)
 
+
+DEVICE_OPTIONS = {"phone": {"viewport": {"width": 390, "height": 844}, "has_touch": True, "is_mobile": True, "device_scale_factor": 2},
+                  "desktop": {"viewport": {"width": 1440, "height": 900}}}
 
 with sync_playwright() as p:
     browser = p.chromium.launch()

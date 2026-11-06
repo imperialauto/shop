@@ -1,0 +1,17 @@
+{% extends "site/_layout.html" %}
+{% block title %}Request received — {{ business.name }}{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="wrap" style="max-width:720px">
+    <div class="eyebrow">Received</div>
+    <h1>{% if kind == 'booking' %}Your time is requested{% else %}We have your request{% endif %}</h1>
+    <p class="alert alert-ok" role="status">
+      {% if kind == 'booking' and item.time %}{{ item.service }} on {{ item.time }} (Arizona time).{% else %}Thanks. Your request is in.{% endif %}
+      {% if item.ref %}Reference {{ item.ref }}.{% endif %}
+    </p>
+    <p>{% if kind == 'booking' %}We review every online booking and will reach out to confirm it.{% else %}We will review the details and get back to you with next steps.{% endif %}
+       If it is urgent, call or text <a href="tel:{{ business.phone_tel }}">{{ business.phone_display }}</a>.</p>
+    <div class="actions"><a class="btn btn-purple" href="/site/">Back to home</a></div>
+  </div>
+</section>
+{% endblock %}
