@@ -6,6 +6,7 @@ from app.appointment_model import Appointment  # noqa: F401
 from app.auth import hash_password
 from app.database import Base, SessionLocal, engine
 from app.dispatch_model import DispatchItem
+from app.security import UserMfa  # noqa: F401
 from app.models import Customer, Invoice, LineItem, Payment, RepairOrder, User, Vehicle
 
 Base.metadata.create_all(engine)
