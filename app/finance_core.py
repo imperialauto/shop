@@ -6,6 +6,7 @@ from difflib import SequenceMatcher
 from app import finance_rules as R
 
 EXCLUDED_DUPES = ("confirmed_duplicate", "superseded", "amount_conflict")
+OCR_CONFUSIONS = (set("147"), set("38"))
 
 
 def cents(text) -> int:
@@ -29,11 +30,12 @@ def _similar(a: str, b: str) -> bool:
 
 
 def _digit_misread(a: int, b: int) -> bool:
-    """OCR reads a leading 1 as 4 or 7. True when two amounts differ only that way."""
+    """Scanned statements misread 1 as 4 or 7, and 3 as 8. True when two amounts
+    differ by exactly one such digit, or one has a stray leading digit."""
     x, y = str(abs(a)), str(abs(b))
     if len(x) == len(y):
         diffs = [(p, q) for p, q in zip(x, y) if p != q]
-        return len(diffs) == 1 and set(diffs[0]) <= set("147")
+        return len(diffs) == 1 and any(set(diffs[0]) <= group for group in OCR_CONFUSIONS)
     return abs(len(x) - len(y)) == 1 and (x.endswith(y) or y.endswith(x))
 
 

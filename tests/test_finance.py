@@ -174,6 +174,9 @@ class Classify(unittest.TestCase):
     def test_digit_misread(self):
         self.assertTrue(C._digit_misread(180000, 480000))
         self.assertFalse(C._digit_misread(180000, 250000))
+        self.assertTrue(C._digit_misread(258000, 253000))   # 8 read as 3
+        self.assertFalse(C._digit_misread(258000, 252000))  # 8 vs 2 is a real difference
+        self.assertFalse(C._digit_misread(130000, 480000))  # two digits differ
 
 
 class Security(FinanceBase):

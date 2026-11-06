@@ -26,20 +26,22 @@ Anything not proven by a bank statement that ties is marked **unverified**. A mo
     (not built yet: no importer for processor reports, so these stay unverified bank deposits).
 
 ## Status
-Updated 2026-11-05. Production was not touched to produce this.
+Updated 2026-11-05 (second pass). Production was not touched. The detailed, private status report and account list are in
+the owner's Google Drive reconciliation folder, under Reports and Support. They're not in this repository.
 
 | Step | Status | Evidence or gap |
 |---|---|---|
-| Import, tie, dedupe and transfer logic | built, CI-tested on invented data | PR 38, combined with the shop payments page on `claude/finance-combine-reconciliation` |
+| Import, tie, dedupe and transfer logic | built, CI-tested on invented data | PR 51. OCR misread check now also covers 3↔8, found on real duplicate statement copies |
 | `fin_*` tables in production | not done | `migrations/20261104_finance.sql` must run after a verified backup. Owner approval required |
 | Imports in production | blocked | Recovery mode blocks every finance POST. Needs recovery mode off, or a `/finance/` exemption in `app/main.py`, which another change owns |
-| 1. Account list | not started | Owner to confirm which accounts were used, and which were business or personal |
-| 2. Statements, 2023 | missing | No 2023 statements found in the owner's Google Drive "Bank Statements" folder |
-| 2. Statements, 2024 | missing | None found there |
-| 2. Statements, 2025 | missing | None found there |
-| 2. Statements, 2026 | partial, unverified | Several months found there for two institutions. Not yet opened, matched to accounts or checked for duplicates |
-| 3–9 | not started | Waits on steps 1–2 and the migration |
-| 10. Processor payouts | not built | No processor import. Stripe is reachable by Claude read-only, not by the app |
+| Source records | organized | Owner's Drive folder: workbooks, transaction CSVs, original statements, reports, archives |
+| 1. Account list | partial | Three accounts confirmed by last four. Others are known only by name |
+| 2. Statements, 2023 | missing | No business statements. One processor aggregate starts late 2023 |
+| 2. Statements, 2024 | missing | No statements, and no linked-account rows before late 2024 |
+| 2. Statements, 2025–2026 | partial, unverified | Closed business account: most months from mid-2025 found in scans, several as repeated copies. Gaps remain. Only a sample of pages has been read |
+| 3. Statement controls | not started | Beginning and ending balances not yet transcribed for any month |
+| 4–9 | not started in the app | Earlier offline reconciliation exists as candidates and exceptions. Zero months tie |
+| 10. Processor payouts | not built | No transaction-level processor exports on file yet |
 
 "Found in Drive" means a file with a statement-like name exists. It has not been read, so its account, period and
 completeness are **unverified**.
