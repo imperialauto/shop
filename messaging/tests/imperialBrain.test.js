@@ -73,6 +73,55 @@ test("developer tasks fetch GitHub issues, not the shop queue", async () => {
   });
 });
 
+test("plain-English internal task save requires verified record ID and is idempotent", async () => {
+  let writes = 0;
+  await withFlags({ IMPERIAL_BRAIN_ENABLED: "true", IMPERIAL_TASKS_ENABLED: "true" }, async () => {
+    const writer = async ({ messageId, title, projectKey }) => {
+      writes++;
+      assert.equal(messageId, "owner-message-1");
+      assert.equal(title, "verify website booking confirmation");
+      assert.equal(projectKey, "website");
+      return { recorded: true, duplicate: writes > 1, id: 44, title };
+    };
+    const call = () => answerImperialBrain({
+      question: "Add verify website booking confirmation to my to-do list",
+      snapshot, messageId: "owner-message-1", taskWriter: writer,
+    });
+    assert.match(await call(), /Saved to Imperial tasks as #44/);
+    assert.match(await call(), /Already captured; no duplicate/);
+    assert.equal(writes, 2);
+  });
+});
+
+test("cannot falsely confirm a task when its write failed or feature is off", async () => {
+  await withFlags({ IMPERIAL_BRAIN_ENABLED: "true", IMPERIAL_TASKS_ENABLED: "true" }, async () => {
+    const answer = await answerImperialBrain({
+      question: "Create a task to check shop printer ink", snapshot, messageId: "owner-msg",
+      taskWriter: async () => ({ recorded: false }),
+    });
+    assert.match(answer, /couldn't verify/);
+  });
+  await withFlags({ IMPERIAL_BRAIN_ENABLED: "true", IMPERIAL_TASKS_ENABLED: null }, async () => {
+    const answer = await answerImperialBrain({
+      question: "Add check shop printer ink to my list", snapshot, messageId: "owner-msg",
+      taskWriter: async () => { throw Error("Must not run"); },
+    });
+    assert.match(answer, /Nothing was saved/);
+  });
+});
+
+test("saved owner to-do list stays distinct from incomplete communication task snapshot", async () => {
+  await withFlags({ IMPERIAL_BRAIN_ENABLED: "true", IMPERIAL_TASKS_ENABLED: "true" }, async () => {
+    const answer = await answerImperialBrain({
+      question: "What's on my to-do list?", snapshot,
+      taskLister: async () => ({ tasks: [{ id: 21, title: "Order test shop parts", status: "open" }] }),
+    });
+    assert.match(answer, /Saved Imperial tasks:/);
+    assert.match(answer, /#21 Order test shop parts/);
+    assert.match(answer, /Shop communication queue:/);
+  });
+});
+
 test("a task assignment cannot be claimed as done without a task writer", async () => {
   await withFlags({ IMPERIAL_BRAIN_ENABLED: "true" }, async () => {
     const answer = await answerImperialBrain({ question: "Have my mother handle that estimate", snapshot });
