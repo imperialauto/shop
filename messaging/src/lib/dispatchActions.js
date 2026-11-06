@@ -8,6 +8,7 @@ const { answerOwner, interpretOwner, recentTurns, customerDetail } = require("./
 const { answerProjectQuestion } = require("./projectStatus");
 const { answerImperialBrain } = require("./imperialBrain");
 const { callContext } = require("./callIntake");
+const { verifyApprovedReplyContext } = require("./replyContext");
 
 function enabled(name) {
   return process.env[name] === "true";
@@ -68,7 +69,13 @@ async function sendApprovedReply({ reply, ownerPhone, quo, shopClient }) {
   let status = "skipped";
   let notice = `#${reply.itemId} was not sent. There's a newer message in that thread, so check Quo.`;
   try {
-    if (((await latestMessageId(quo, reply.phone)) || "none") === reply.messageId) {
+    const current = process.env.REVALIDATE_APPROVED_REPLIES_ENABLED === "true"
+      ? await verifyApprovedReplyContext({ quo, phone: reply.phone, messageId: reply.messageId })
+      : { ok: ((await latestMessageId(quo, reply.phone)) || "none") === reply.messageId };
+    if (!current.ok && current.notice) {
+      notice = `#${reply.itemId} NOT sent: ${current.notice}. Please refresh the customer history and draft.`;
+    }
+    if (current.ok) {
       status = "failed";
       notice = `#${reply.itemId} failed to send. Please reply in Quo.`;
       await quo.sendMessage({ to: reply.phone, content: reply.text });
