@@ -166,6 +166,8 @@ OWNER_COMMAND = re.compile(rf"^\s*({APPROVE_WORDS}|{DECLINE_WORDS})\s*#?\s*(\d+)
 CASUAL_COMMAND = re.compile(rf"^\s*({CASUAL_APPROVE}|{CASUAL_DECLINE})\s*#?\s*(\d+)\s*[.!]?\s*$", re.I)
 
 
+OWNER_PAUSE = re.compile(r"^\s*(?:stop|pause)\s+(?:all|everything)\s*[.!]?\s*$", re.I)
+OWNER_RESUME = re.compile(r"^\s*(?:resume(?:\s+(?:all|everything))?|(?:re)?start\s+(?:all|everything))\s*[.!]?\s*$", re.I)
 OWNER_DONE = re.compile(r"^\s*(?:done|handled|closed?)\s+((?:#?\d+[\s,]*)+)[.!]?\s*$", re.I)
 OWNER_LATER = re.compile(r"^\s*(?:later|snooze)\s*#?\s*(\d+)(?:\s+(\d+)\s*(h|hr|hrs|hour|hours|m|min|mins|minutes)?)?\s*$", re.I)
 PROMISE = re.compile(r"\b(get back to you|follow up|i'?ll (check|look|find out|let you know|confirm|call|text)|call you back|shortly)\b", re.I)
@@ -173,8 +175,12 @@ PROMISE = re.compile(r"\b(get back to you|follow up|i'?ll (check|look|find out|l
 
 def parse_owner_command(body: str):
     """("approve"|"decline", id or None), ("list", None), ("older", None), ("edit", id, text),
-    ("done", [ids]), ("later", id, minutes), or None."""
+    ("done", [ids]), ("later", id, minutes), ("pause", None), ("resume", None), or None."""
     text = (body or "").strip()
+    if OWNER_PAUSE.match(text):
+        return "pause", None
+    if OWNER_RESUME.match(text):
+        return "resume", None
     finished = OWNER_DONE.match(text)
     if finished:
         return "done", [int(n) for n in re.findall(r"\d+", finished.group(1))]

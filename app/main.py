@@ -99,8 +99,8 @@ def read_only_exempt(request: Request) -> bool:
     blocking it silently drops customer conversations from their records.
     Dispatch routes touch only the queue tables, never jobs, invoices or payments.
     """
-    if request.url.path in ACCOUNT_WRITES:
-        return True
+    if request.url.path in ACCOUNT_WRITES or request.url.path == "/dispatch/sending":
+        return True  # the stop switch must work even while read-only
     # The one-time owner claim has its own strong Railway secret + CSRF
     # checks and only updates the sole user credential, not customer data.
     if (request.url.path == "/owner-setup"

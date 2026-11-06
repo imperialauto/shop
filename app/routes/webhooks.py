@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.config import OPENPHONE_SIGNING_SECRET, OPENPHONE_API_KEY, GROQ_API_KEY, OWNER_PHONE, OPENPHONE_PHONE_NUMBER_ID
 from app.calendar_utils import create_appointment
+from app.sending_pause import sending_allowed
 import hmac, hashlib, base64, json, httpx, secrets, datetime
 from groq import AsyncGroq
 
@@ -53,6 +54,9 @@ async def send_sms(to: str, body: str) -> dict:
     if not OPENPHONE_API_KEY:
         print(f"[SMS skipped â€” no API key] To: {to} | {body[:80]}")
         return {"error": "no api key"}
+    if not sending_allowed():
+        print("[SMS BLOCKED] Texting is stopped by the owner.")
+        return {"error": "sending paused"}
 
     # Normalize to E.164
     to = "".join(c for c in to if c.isdigit() or c == "+")
