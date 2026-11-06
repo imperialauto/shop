@@ -1,0 +1,21 @@
+name: Portal startup checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  python-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile all Python source
+        run: python -m compileall -q app
+      - name: Detect insecure default admin password
+        run: |
+          if grep -R -n 'hash_password("imperial2024")' app; then
+            echo "Remove hard-coded default admin credentials before deployment."
+            exit 1
+          fi
