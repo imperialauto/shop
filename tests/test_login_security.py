@@ -106,7 +106,7 @@ class LoginFlowTests(unittest.TestCase):
     def test_wrong_code_at_setup_leaves_it_off(self):
         self.login()
         self.client.post("/settings/security/start")
-        self.assertIn("didn't match", self.client.post("/settings/security/confirm", data={"code": "000000"}).text)
+        self.assertIn("match. Enter the current", self.client.post("/settings/security/confirm", data={"code": "000000"}).text)
         with self.Session() as db:
             self.assertIsNone(db.get(UserMfa, 1).confirmed_at)
 
