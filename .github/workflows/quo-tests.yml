@@ -29,4 +29,4 @@ jobs:
       - name: Imperial brain source routing tests (synthetic records)
         run: node --test messaging/tests/imperialBrain.test.js
       - name: Run isolated Quo tests
-        run: python -m pytest tests/test_quo_idempotency.py -q
+        run: python -m pytest tests/test_quo_idempotency.py tests/test_imperial_tasks.py -q
