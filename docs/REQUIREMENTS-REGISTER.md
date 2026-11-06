@@ -19,9 +19,9 @@ The AI assistant is named **Imperial**.
 ## Requirements
 | ID | Area | Requirement | Status | Evidence or gap |
 |---|---|---|---|---|
-| R01 | Public site | Replacement public website (auto, diesel, mobile, roadside, fleet, NVZN) | proposed | Not started. Squarespace remains live |
-| R02 | Public site | Online booking for approved standard services | proposed | Staff booking only |
-| R03 | Public site | Complex estimate requests and customer intake with VIN | partial | Unmerged guided intake on `feature/guided-customer-intake`, for staff form |
+| R01 | Public site | Replacement public website (auto, diesel, mobile, roadside, fleet, NVZN) | tested | PR 52, preview under `/site`, noindex. Rentals, pricing and FAQ pages not built. Suite number and copy need owner review. Squarespace remains live |
+| R02 | Public site | Online booking for approved standard services | tested | PR 52. Tentative shop appointments on staff-published open times. Owner to approve service list. Forms off until `PUBLIC_FORMS_ENABLED` and production is writable |
+| R03 | Public site | Complex estimate requests and customer intake with VIN | tested | PR 52 public estimate request with VIN creates intake repair order. Staff guided intake still unmerged on `feature/guided-customer-intake` |
 | R04 | Customer | Secure portal and status links | partial | Tokenized status page works in walkthrough. No login portal |
 | R05 | Customer | Drawn signatures | tested | Walkthrough: signature on phone and desktop |
 | R06 | Customer | Line-item estimate approvals | proposed | Signature approves the whole order |
@@ -74,3 +74,4 @@ The AI assistant is named **Imperial**.
 | 2026-11-05 | Owner account claimed, setup code removed, two-step login on | Railway logs `mfa_enabled user=1`, setup variable gone | Yes |
 | 2026-11-05 | STOP ALL, RESUME and dashboard stop button | PR 47, automated tests passed. Not yet tested by real text | Yes |
 | 2026-11-05 | Nightly backups of both databases at 4:17 AM Phoenix, 14 kept, restored and compared each run | First run: web 6/6/1/32, messaging 434/2376, both matched after restore | Yes |
+| 2026-11-05 | Public website preview, online booking and estimate requests under `/site` (R01, R02, R03), made-up data, no customer messages | PR 52: regression checks run 42170496534 (167 unit tests, 9 appointment and 6 public booking PostgreSQL tests passed); walkthrough run 42170483672, public booking and estimate passed on phone and desktop, no overflow | No |
