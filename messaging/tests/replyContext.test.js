@@ -1,6 +1,6 @@
 const { test, beforeEach } = require("node:test");
 const assert = require("node:assert/strict");
-const { verifyApprovedReplyContext, verifyDashboardDraftContext } = require("../src/lib/replyContext");
+const { verifyApprovedReplyContext, verifyDashboardDraftContext, verifyManualComposeContext } = require("../src/lib/replyContext");
 const { handleIntakeResult } = require("../src/lib/dispatchActions");
 
 const OWNER = "+16025550199";
@@ -94,6 +94,43 @@ test("dashboard approval is blocked if a call arrived after its draft source", a
   });
   assert.equal(result.ok, false);
   assert.equal(result.reason, "new_call");
+});
+
+test("manual composer checks the last locally displayed message and live Quo history", async () => {
+  const prisma = { message: { findFirst: async () => ({
+    id: "db-newest", quoMessageId: message.id, conversationId: "C1",
+  }) } };
+  const conversation = { id: "C1", customerPhone: CUSTOMER };
+  const verified = await verifyManualComposeContext({
+    quo: fakeQuo(), prisma, conversation, lastSeenQuoMessageId: message.id,
+  });
+  assert.equal(verified.ok, true);
+  const missing = await verifyManualComposeContext({
+    quo: fakeQuo(), prisma, conversation, lastSeenQuoMessageId: null,
+  });
+  assert.equal(missing.reason, "missing_anchor");
+  const stale = await verifyManualComposeContext({
+    quo: fakeQuo(), prisma, conversation, lastSeenQuoMessageId: "older-message",
+  });
+  assert.equal(stale.reason, "stale_local");
+});
+
+test("manual composer rejects a new call, a newer SMS, or unavailable call history", async () => {
+  const prisma = { message: { findFirst: async () => ({
+    id: "db-newest", quoMessageId: message.id, conversationId: "C1",
+  }) } };
+  const conversation = { id: "C1", customerPhone: CUSTOMER };
+  const baseline = { prisma, conversation, lastSeenQuoMessageId: message.id };
+  const call = await verifyManualComposeContext({
+    ...baseline, quo: fakeQuo({ calls: [{ id: "call-new", createdAt: "2026-11-06T18:05:00Z" }] }),
+  });
+  assert.equal(call.reason, "new_call");
+  const text = await verifyManualComposeContext({
+    ...baseline, quo: fakeQuo({ messages: [message, { id: "m2", createdAt: "2026-11-06T18:06:00Z" }] }),
+  });
+  assert.equal(text.reason, "new_message");
+  const outage = await verifyManualComposeContext({ ...baseline, quo: fakeQuo({ callFailure: true }) });
+  assert.equal(outage.reason, "unavailable");
 });
 
 test("owner approved reply is not sent after a newer call; owner receives explanation", async () => {
