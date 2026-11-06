@@ -10,6 +10,26 @@
     <span style="font-size:13.5px; font-weight:600; color:#e4e4e7;">Needs attention</span>
     <span style="font-size:12px; color:#71717a;">{{ dispatch_items|length }} open</span>
   </div>
+  {% if imperial_task_snapshot is defined and imperial_task_snapshot.enabled %}
+  <section aria-label="Saved Imperial tasks" style="padding:12px 16px; border-bottom:1px solid rgba(255,255,255,0.06);">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:6px;">
+      <strong style="font-size:13px; color:#e4e4e7;">Saved to-do tasks</strong>
+      <span style="font-size:12px; color:#71717a;">{{ imperial_task_snapshot.tasks|length }} shown</span>
+    </div>
+    {% if imperial_task_snapshot.error %}
+    <p style="color:#f87171; font-size:12px; margin:0;">{{ imperial_task_snapshot.error }}</p>
+    {% elif imperial_task_snapshot.tasks %}
+      {% for task in imperial_task_snapshot.tasks %}
+      <div style="display:flex; gap:10px; justify-content:space-between; align-items:flex-start; font-size:12.5px; padding:5px 0;">
+        <span style="color:#d4d4d8; overflow-wrap:anywhere;">#{{ task.id }} {{ task.title }}</span>
+        <span style="color:{{ '#fbbf24' if task.status == 'blocked' else '#a1a1aa' }}; white-space:nowrap;">{{ task.status.replace('_', ' ') }}</span>
+      </div>
+      {% endfor %}
+    {% else %}
+    <p style="color:#71717a; font-size:12px; margin:0;">No saved to-do tasks. Customer communications appear below.</p>
+    {% endif %}
+  </section>
+  {% endif %}
   {% if not dispatch_ready %}
   <div style="padding:16px; color:#a1a1aa; font-size:13px;">The queue is not set up on this database yet.</div>
   {% else %}
