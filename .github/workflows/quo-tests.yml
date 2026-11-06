@@ -28,5 +28,7 @@ jobs:
         run: node --test messaging/tests/projectStatus.test.js
       - name: Imperial brain source routing tests (synthetic records)
         run: node --test messaging/tests/imperialBrain.test.js
+      - name: Call and SMS draft revalidation (synthetic Quo)
+        run: node --test messaging/tests/replyContext.test.js
       - name: Run isolated Quo tests
         run: python -m pytest tests/test_quo_idempotency.py tests/test_imperial_tasks.py -q
