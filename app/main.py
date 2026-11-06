@@ -10,13 +10,19 @@ from app.database import get_db, init_db
 from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user
 from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, appointments, dispatch, live, finance, owner_setup
+from app.routes import account_security
 from app.scheduler import start_scheduler
 
 import os
+import time
+
+from app.security import limiter
 
 app = FastAPI(title="Imperial Auto Care")
 
-app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, max_age=86400 * 30)
+SESSION_DAYS = 7
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, max_age=86400 * SESSION_DAYS, same_site="lax",
+                   https_only=bool(os.getenv("RAILWAY_ENVIRONMENT")))
 
 # Static files
 app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
@@ -35,6 +41,7 @@ app.include_router(repair_orders.router, prefix="/ro", tags=["repair_orders"])
 app.include_router(invoices.router, prefix="/invoices", tags=["invoices"])
 app.include_router(finance.router, prefix="/finance", tags=["finance"])
 app.include_router(owner_setup.router, tags=["owner_setup"])
+app.include_router(account_security.router, tags=["security"])
 app.include_router(ai_assist.router, prefix="/ai", tags=["ai"])
 app.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
 app.include_router(estimate_gen.router, prefix="/estimates", tags=["estimates"])
@@ -67,6 +74,23 @@ READ_ONLY_INTERNAL_WRITES = (
 )
 
 
+# Signing in and protecting your own login never touch shop records.
+ACCOUNT_WRITES = ("/login", "/login/verify", "/settings/security/start", "/settings/security/confirm", "/settings/security/disable")
+# Service-to-service callers and public signature links do not come from a staff page.
+CROSS_SITE_ALLOWED = ("/internal/", "/webhooks/")
+
+
+def cross_site_post(request: Request) -> bool:
+    """Browsers label where a form came from. Refuse staff writes started on another site."""
+    if request.method in ("GET", "HEAD", "OPTIONS") or request.url.path.startswith(CROSS_SITE_ALLOWED):
+        return False
+    origin = request.headers.get("origin")
+    if not origin or origin == "null":
+        return origin == "null"
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+    return origin.split("://", 1)[-1] != host
+
+
 def read_only_exempt(request: Request) -> bool:
     """Writes that stay open during recovery. Keep this list as short as possible.
 
@@ -75,7 +99,7 @@ def read_only_exempt(request: Request) -> bool:
     blocking it silently drops customer conversations from their records.
     Dispatch routes touch only the queue tables, never jobs, invoices or payments.
     """
-    if request.url.path == "/login":
+    if request.url.path in ACCOUNT_WRITES:
         return True
     # The one-time owner claim has its own strong Railway secret + CSRF
     # checks and only updates the sole user credential, not customer data.
@@ -92,9 +116,16 @@ def read_only_exempt(request: Request) -> bool:
 
 @app.middleware("http")
 async def recovery_mode(request: Request, call_next):
+    if cross_site_post(request):
+        return JSONResponse({"error": "This request came from another site."}, status_code=403)
     if app.state.read_only and request.method not in ("GET", "HEAD", "OPTIONS") and not read_only_exempt(request):
         return JSONResponse({"error": "Recovery audit mode: production changes and external actions are paused.", "read_only": True}, status_code=503)
-    return await call_next(request)
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    if not request.url.path.startswith("/live/overlay"):
+        response.headers.setdefault("X-Frame-Options", "DENY")
+    return response
 
 @app.on_event("startup")
 def startup():
@@ -137,9 +168,18 @@ def login_page(request: Request):
 
 @app.post("/login")
 def login_submit(request: Request, username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+    keys = (f"user:{username.strip().lower()}", account_security.client_key(request))
+    if limiter.locked(*keys):
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Too many tries. Wait 15 minutes, then try again."}, status_code=429)
     user = db.query(User).filter(User.username == username).first()
     if password == "imperial2024" or not user or not verify_password(password, user.password_hash):
+        limiter.record(*keys)
         return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid username or password"})
+    limiter.clear(*keys)
+    if account_security.confirmed_mfa(db, user.id):
+        request.session.clear()
+        request.session["pending_mfa"] = {"user": user.id, "at": time.time()}
+        return RedirectResponse("/login/verify", status_code=303)
     login_user(request, user)
     return RedirectResponse("/dashboard", status_code=302)
 
