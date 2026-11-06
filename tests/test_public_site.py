@@ -219,5 +219,26 @@ class PublicPages(unittest.TestCase):
         self.assertEqual(self.counts(), (0, 0, 0, 0, 0))
 
 
+class PreviewGateTests(unittest.TestCase):
+    ENV = {"PUBLIC_PREVIEW_MODE": "true", "PREVIEW_ACCESS_CODE": "made-up-code", "RAILWAY_ENVIRONMENT_NAME": "preview", "RAILWAY_PROJECT_ID": "other"}
+
+    def test_gate_only_runs_in_preview(self):
+        client = TestClient(app, follow_redirects=False)
+        self.assertEqual(client.get("/site/").status_code, 200)
+        with patch.dict(os.environ, {**self.ENV, "RAILWAY_ENVIRONMENT_NAME": "production"}):
+            self.assertEqual(client.get("/site/").status_code, 200)
+
+    def test_code_is_required_in_preview(self):
+        client = TestClient(app, follow_redirects=False, base_url="https://testserver")
+        with patch.dict(os.environ, self.ENV):
+            self.assertEqual(client.get("/site/").headers["location"], "/preview-access")
+            self.assertEqual(client.get("/healthz").status_code, 200)
+            self.assertEqual(client.post("/preview-access", data={"code": "wrong"}).status_code, 403)
+            self.assertEqual(client.post("/preview-access", data={"code": "made-up-code"}).status_code, 303)
+            page = client.get("/site/")
+            self.assertEqual(page.status_code, 200)
+            self.assertIn("noindex", page.headers["x-robots-tag"])
+
+
 if __name__ == "__main__":
     unittest.main()

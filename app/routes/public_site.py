@@ -47,7 +47,7 @@ CONTACT_OPTIONS = OrderedDict([("text", "Text"), ("call", "Call"), ("email", "Em
 
 FAQ = (
     ("Where are you located?", "7915 N Glen Harbor Blvd, Suite 508, Glendale, AZ 85307."),
-    ("What are your hours?", "Monday to Friday 11 AM to 7 PM, Saturday 12 PM to 5 PM, closed Sunday."),
+    ("What are your hours?", "Monday to Friday 11 AM to 7 PM, Saturday 12 PM to 5 PM. Closed Sunday, except qualifying emergency roadside service."),
     ("Can I book online?", "Standard services can be booked online when a time is open. Complex repairs need an estimate and your approval first."),
     ("Do you come to me?", "Selected services can be done at your location, depending on your address. A mobile fee and travel time apply where shown."),
     ("Will I get an estimate before repairs?", "Yes. Complex repairs start with an estimate, and work starts after you approve it."),
@@ -254,8 +254,9 @@ def booking_window(slot: BookingSlot, service, zone) -> AppointmentWindow:
 def fits(db: Session, window: AppointmentWindow) -> bool:
     if window.starts_at.astimezone(PHOENIX).weekday() in booking_closed_days():
         return False
-    try:
-        validate_slot(window, [], configured_hours())
+    try:  # the buffer or trip back must also end inside open hours
+        held = AppointmentWindow(window.starts_at, window.blocked_until, window.resource_id)
+        validate_slot(held, [], configured_hours())
     except AppointmentValidationError:
         return False
     return find_conflict(db, window) is None

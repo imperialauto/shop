@@ -1,0 +1,31 @@
+name: preview-check
+on:
+  push:
+    branches: ['claude/preview-check']
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: |
+          pip install playwright
+          playwright install --with-deps chromium
+      - name: Check the private preview
+        env:
+          PREVIEW_URL: ${{ secrets.PREVIEW_URL }}
+          PREVIEW_ACCESS_CODE: ${{ secrets.PREVIEW_ACCESS_CODE }}
+          PREVIEW_OWNER_PASSWORD: ${{ secrets.PREVIEW_OWNER_PASSWORD }}
+        run: python tests/e2e/preview_check.py
+      - name: Save results
+        if: always()
+        run: |
+          cd preview-output
+          git init -q && git checkout -q -b preview-results
+          git config user.email actions@users.noreply.github.com && git config user.name actions
+          git add -A && git commit -qm results
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" preview-results

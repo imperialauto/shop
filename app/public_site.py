@@ -25,7 +25,7 @@ BUSINESS = {
     "hours": [
         ("Monday – Friday", "11 AM – 7 PM"),
         ("Saturday", "12 PM – 5 PM"),
-        ("Sunday", "Closed"),
+        ("Sunday", "Closed, except qualifying emergency roadside service"),
     ],
 }
 
@@ -150,9 +150,13 @@ def preview_mode() -> bool:
             and os.getenv("RAILWAY_PROJECT_ID") != PRODUCTION_PROJECT_ID)
 
 
+def preview_code() -> str:
+    return os.getenv("PREVIEW_ACCESS_CODE", "") if preview_mode() else ""
+
+
 def booking_closed_days() -> set[int]:
-    """Weekdays closed to online booking, 0 is Monday. Saturday stays closed until the owner confirms it."""
-    raw = os.getenv("PUBLIC_BOOKING_CLOSED_DAYS", "5")
+    """Weekdays closed to online booking, 0 is Monday. Shop hours already close Sunday."""
+    raw = os.getenv("PUBLIC_BOOKING_CLOSED_DAYS", "")
     return {int(day) for day in raw.split(",") if day.strip().isdigit()}
 
 

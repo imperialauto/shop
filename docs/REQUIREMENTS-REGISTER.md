@@ -67,6 +67,7 @@ The AI assistant is named **Imperial**.
 | 2026-11-05 | Login roles: tech for jobs and calendar, office for customers, jobs, invoices and queue, admin for all but Finance and logins. Finance and logins are owner-only | current |
 | 2026-11-05 | Shop address is 7915 N Glen Harbor Blvd, Suite 508, Glendale, AZ 85307 | current |
 | 2026-11-05 | Standard services book instantly when a slot fits, complex repairs need an estimate and approval. Keep the one-hour shop buffer and add mobile travel and ZIP-based fees. Exact prices for predictable work, starting prices for variable work | current |
+| 2026-11-05 | Saturday is 12 to 5 and open to online booking if the service and buffer fit. Sunday is closed except qualifying emergency roadside service. Towing stays under Imperial Auto Care with staff-confirmed dispatch. Only verified prices are published | current |
 | 2026-11-05 | Owner texts PAUSE ALL or STOP ALL to stop automated texting, RESUME to restart | current |
 
 ## Completion log

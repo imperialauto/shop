@@ -180,10 +180,11 @@ class PublicBooking(unittest.TestCase):
         self.assertNotIn(f'value="{short_gap}"', page)  # 90 minutes plus an hour runs into 1 PM
         self.assertEqual(self.client.post('/site/book', data=self.form(short_gap, service='pre-purchase', phone='602-555-0199')).status_code, 409)
 
-    def test_service_past_closing_is_not_offered(self):
-        late = self.slot(weekday_at(17))  # closes at 6, a 90 minute job does not fit
+    def test_service_and_buffer_must_end_by_closing(self):
+        late = self.slot(weekday_at(16))  # closes at 6: 60 plus 60 fits, 90 plus 60 does not
         self.assertNotIn(f'value="{late}"', self.client.get('/site/book?service=pre-purchase').text)
         self.assertIn(f'value="{late}"', self.client.get('/site/book?service=diagnostic').text)
+        self.assertEqual(self.client.post('/site/book', data=self.form(late, service='pre-purchase')).status_code, 409)
 
     def test_mobile_booking_adds_fee_and_travel_both_ways(self):
         first = weekday_at(12)
@@ -230,14 +231,18 @@ class PublicBooking(unittest.TestCase):
             start += timedelta(days=1)
         return start
 
-    def test_saturday_stays_closed_to_online_booking(self):
-        with patch.dict(os.environ, {'SHOP_HOURS_JSON': '{"0":["10:00","18:00"],"1":["10:00","18:00"],"2":["10:00","18:00"],"3":["10:00","18:00"],"4":["10:00","18:00"],"5":["12:00","17:00"]}'}):
-            slot_id = self.slot(self.saturday_slot())
-            self.assertNotIn(f'value="{slot_id}"', self.client.get('/site/book?service=diagnostic').text)
-            self.assertEqual(self.client.post('/site/book', data=self.form(slot_id)).status_code, 409)
-            with patch.dict(os.environ, {'PUBLIC_BOOKING_CLOSED_DAYS': ''}):
-                self.assertIn(f'value="{slot_id}"', self.client.get('/site/book?service=diagnostic').text)
-        self.assertEqual(self.count(Appointment), 0)
+    def test_saturday_books_when_service_and_buffer_fit(self):
+        hours = '{"0":["10:00","18:00"],"1":["10:00","18:00"],"2":["10:00","18:00"],"3":["10:00","18:00"],"4":["10:00","18:00"],"5":["12:00","17:00"]}'
+        day = self.saturday_slot()
+        with patch.dict(os.environ, {'SHOP_HOURS_JSON': hours}):
+            fits = self.slot(day)
+            late = self.slot(day.replace(hour=15))  # 90 minutes plus an hour ends at 5:30
+            page = self.client.get('/site/book?service=pre-purchase').text
+            self.assertIn(f'value="{fits}"', page)
+            self.assertNotIn(f'value="{late}"', page)
+            self.assertEqual(self.client.post('/site/book', data=self.form(fits, service='pre-purchase'), follow_redirects=False).status_code, 303)
+            self.assertEqual(self.client.post('/site/book', data=self.form(late, service='pre-purchase', phone='602-555-0199')).status_code, 409)
+        self.assertEqual(self.count(Appointment), 1)
 
     def test_preview_books_without_any_price(self):
         slot_id = self.slot(weekday_at(11))
