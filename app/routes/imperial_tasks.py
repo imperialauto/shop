@@ -75,6 +75,28 @@ def capture_owner_task(
             "status": task.status}
 
 
+def owner_dashboard_tasks(db: Session, role: str) -> dict:
+    """Owner-only snapshot for the existing Needs Attention section.
+
+    Missing migration or query errors are NOT reported as an empty task list.
+    Disabled means no query against a possibly unmigrated production database.
+    """
+    if role != "owner" or not enabled():
+        return {"enabled": False, "tasks": [], "error": None}
+    try:
+        rows = db.query(ImperialTask).filter(
+            ImperialTask.status.in_(("open", "in_progress", "blocked")),
+        ).order_by(ImperialTask.id.desc()).limit(12).all()
+    except Exception:
+        # Do not expose database exception detail through the dashboard.
+        return {"enabled": True, "tasks": [], "error": "Saved task records could not be loaded."}
+    return {"enabled": True, "tasks": [
+        {"id": row.id, "title": row.title, "status": row.status,
+         "project_key": row.project_key, "priority": row.priority}
+        for row in rows
+    ], "error": None}
+
+
 @router.get("/open")
 def open_owner_tasks(
     limit: int = 15,
