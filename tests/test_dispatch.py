@@ -351,7 +351,7 @@ class QueueWorkflowTests(unittest.TestCase):
         item = self.items()[0]
         due = self.alert()
         self.assertEqual(len(due), 1)
-        self.assertIn(f"Reply YES {item.id}", due[0]["text"])
+        self.assertIn(f"DONE {item.id}", due[0]["text"])
         self.assertTrue(due[0]["text"].startswith("URGENT"))
         self.mark_sent(due[0]["key"])
         self.assertEqual(self.alert(), [])
