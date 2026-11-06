@@ -152,6 +152,11 @@ def _record(db: Session, message: IntakeMessage, result) -> DispatchItem:
     item.last_message_id = message.messageId
     item.updated_at = datetime.now().astimezone()
     db.flush()
+    # The service lead is independent of this short-lived communication task.
+    # If the feature has not been migrated and enabled, existing intake is unchanged.
+    if os.getenv("SERVICE_LEADS_ENABLED", "").strip().lower() == "true":
+        from app.lead_lifecycle import intake_from_quo
+        intake_from_quo(db, message, result, item)
     db.add(DispatchEvent(quo_message_id=message.messageId, item_id=item.id))
     audit(db, item.id, "system", "message_received", f"{item.category}/{item.urgency}/{item.status}")
     db.commit()
@@ -571,6 +576,11 @@ def due_owner_messages(db: Session, now: datetime) -> list[dict]:
     backup_problem = _backup_problem(db, now)
     if backup_problem and now.hour >= 7:
         due.append((f"backup:{now.date()}", "owner_backup", None, backup_problem))
+    if os.getenv("SERVICE_LEADS_ENABLED", "").strip().lower() == "true":
+        from app.lead_lifecycle import due_lead_digest
+        lead_digest = due_lead_digest(db, now)
+        if lead_digest:
+            due.append((lead_digest[0], "owner_leads", None, lead_digest[1]))
     if now.weekday() != 6 and DAILY_HOUR <= now.hour < DAILY_HOUR + 3:
         due.append((f"daily:{now.date()}", "owner_daily", None, _daily_text(db, now)))
 
