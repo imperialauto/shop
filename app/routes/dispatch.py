@@ -38,6 +38,7 @@ class IntakeMessage(BaseModel):
     body: str = Field(default="", max_length=4000)
     contactName: str | None = Field(default=None, max_length=120)
     kind: str = Field(default="message", pattern="^(message|call)$")
+    callOutcome: str | None = Field(default=None, pattern="^(answered|missed|voicemail|unknown)$")
     threadMessageId: str | None = Field(default=None, max_length=128)
     recovery: bool = False  # replayed by the catch-up job: never reply or act on it
     autoRepliesOn: bool = False
@@ -115,7 +116,12 @@ def _record(db: Session, message: IntakeMessage, result) -> DispatchItem:
         DispatchItem.status.in_(OPEN_STATUSES),
     ).first()
     earlier = json.loads(item.approval_reasons) if item else []
-    reasons = sorted(set(earlier) | set(result.reasons) | ({"missed_call"} if message.kind == "call" else set()))
+    # A Sona-answered call is not a missed call. Older senders omit callOutcome;
+    # keep owner review for them without incorrectly labeling them as missed.
+    call_reasons = set()
+    if message.kind == "call":
+        call_reasons.add("missed_call" if message.callOutcome in ("missed", "voicemail") else "customer_reply")
+    reasons = sorted(set(earlier) | set(result.reasons) | call_reasons)
     needs_owner = apply_policies(reasons, policy_modes(db))
     if message.kind == "message" and not needs_owner and not _rule_answers(db, message, result, item, customer):
         reasons = sorted(set(reasons) | {"customer_reply"})  # nothing goes quiet just because no rule fits
