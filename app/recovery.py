@@ -10,6 +10,10 @@ def read_only_enabled():
 
 def database_audit(include_counts=True):
     from app import models  # register expected tables; does not create them
+    # Service lead tables must be migrated before the feature is enabled.
+    leads_enabled = os.getenv("SERVICE_LEADS_ENABLED", "").strip().lower() == "true"
+    if leads_enabled:
+        from app import lead_model  # noqa: F401; register tables for readiness audit
     result = {"connected": False, "driver": engine.url.get_backend_name(),
               "host": engine.url.host or "local", "database": engine.url.database,
               "missing_tables": [], "missing_columns": {}, "tables": {}}
@@ -23,6 +27,8 @@ def database_audit(include_counts=True):
             schema = inspect(conn)
             existing = set(schema.get_table_names())
             for name, model in sorted(Base.metadata.tables.items()):
+                if not leads_enabled and name in ("service_leads", "service_lead_audit"):
+                    continue  # WIP tables must not make existing production unready
                 if name not in existing:
                     result["missing_tables"].append(name)
                     continue
