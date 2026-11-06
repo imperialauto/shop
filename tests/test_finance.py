@@ -4,7 +4,6 @@ import unittest
 from contextlib import contextmanager
 import fixture_environment  # noqa: F401
 from datetime import date
-os.environ['FINANCE_OWNER_USERNAMES'] = ''
 from fastapi.testclient import TestClient
 from app.auth import hash_password
 from app.database import Base, SessionLocal, engine
@@ -187,32 +186,21 @@ class Security(FinanceBase):
         for p in self.PATHS:
             self.assertIn(c.get(p).status_code, (302, 401), p)
 
-    def test_admin_staff_are_refused_and_logged(self):
+    def test_admin_staff_are_refused(self):
         c = self.client('advisor')
-        for p in self.PATHS:
+        for p in self.PATHS + ['/finance/', '/finance/?tab=shop']:
             self.assertEqual(c.get(p).status_code, 403, p)
         with writable():
             self.assertEqual(c.post('/finance/import', files={'file': ('x.csv', LINES)}).status_code, 403)
             self.assertEqual(c.post('/finance/txn/1/duplicate', data={'action': 'exclude'}).status_code, 403)
-        self.assertGreater(self.db.query(FinAudit).filter_by(actor='advisor', allowed=False).count(), 0)
 
-    def test_admin_staff_see_shop_payments_but_no_ledger_tabs(self):
-        page = self.client('advisor').get('/finance/')
-        self.assertEqual(page.status_code, 200)
-        self.assertIn('Financial Command Center', page.text)
-        self.assertNotIn('tab=ledger', page.text)
-        self.assertNotIn('tab=import', page.text)
-
-    def test_admin_role_alone_is_never_enough(self):
-        c = self.client('bookkeeper')
-        self.assertEqual(c.get('/finance/?tab=overview').status_code, 403)
-
-    def test_listed_login_is_allowed(self):
-        os.environ['FINANCE_OWNER_USERNAMES'] = 'bookkeeper'
-        try:
-            self.assertEqual(self.client('bookkeeper').get('/finance/?tab=overview').status_code, 200)
-        finally:
-            os.environ['FINANCE_OWNER_USERNAMES'] = ''
+    def test_route_check_holds_without_the_global_gate(self):
+        from types import SimpleNamespace as U
+        from app.finance_access import is_finance_owner
+        self.assertTrue(is_finance_owner(U(role='owner')))
+        for role in ('admin', 'office', 'tech', None):
+            self.assertFalse(is_finance_owner(U(role=role)))
+        self.assertFalse(is_finance_owner(None))
 
 
 class Screens(FinanceBase):

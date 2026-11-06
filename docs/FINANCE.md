@@ -4,10 +4,11 @@ Owner-only section at `/finance/`. No financial data belongs in this repository:
 Bundles of real records stay out of Git and are loaded through the owner's Import tab.
 
 ## Who can open what
-- **Shop payments** (`/finance/`, the landing tab): payments and invoices already in Imperial Operations. Admin or owner. Read-only.
-- **Bank ledger** (Overview, Ledger, Reconciliation, Reports, Accounts, Investor Center, Import): the claimed owner account
-  (`role = owner`) only, plus any login named in the optional `FINANCE_OWNER_USERNAMES`. Holding the admin role is never enough.
-  The check lives in `app/finance_access.py`, not `app/auth.py`.
+Everything under `/finance` is owner-only: the claimed owner account (`role = owner`) and nobody else.
+`app/permissions.py` lists `/finance` as `OWNER_ONLY`, and each finance route and export repeats the check
+through `app/finance_access.py`. Admin, office and technician logins are refused.
+- **Shop payments** (the landing tab): payments and invoices already in Imperial Operations. Read-only.
+- **Bank ledger** (Overview, Ledger, Reconciliation, Reports, Accounts, Investor Center, Import).
 
 ## Deploy order
 1. Back up the shop database and verify a restore.
