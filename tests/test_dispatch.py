@@ -370,6 +370,35 @@ class QueueWorkflowTests(unittest.TestCase):
         with patch.object(dispatch, "OWNER_PHONE", OWNER):
             return self.client.post("/internal/dispatch/tick", headers=HEADERS).json()
 
+    def report_backup(self, ok):
+        response = self.client.post("/internal/dispatch/sync", headers=HEADERS, json={"source": "backup", "ok": ok, "detail": "x"})
+        self.assertEqual(response.status_code, 200)
+
+    def test_failed_backup_texts_the_owner_once_a_day(self):
+        now = datetime.now(AZ).replace(hour=9)
+        self.report_backup(True)
+        self.assertEqual(self.alert(now), [])
+        self.report_backup(False)
+        due = self.alert(now)
+        self.assertEqual(len(due), 1)
+        self.assertIn("backup", due[0]["text"])
+        self.mark_sent(due[0]["key"])
+        self.assertEqual(self.alert(now), [])
+
+    def test_silent_backup_counts_as_failed(self):
+        self.report_backup(True)
+        later = datetime.now(AZ).replace(hour=9) + timedelta(days=2)
+        self.assertTrue(any("backup" in row["text"] for row in self.alert(later)))
+
+    def test_older_text_intake_stays_off_by_default(self):
+        app.state.read_only = False
+        with patch("app.routes.webhooks.OPENPHONE_SIGNING_SECRET", "x"), patch("app.routes.webhooks.verify_signature", return_value=True), \
+                patch("app.routes.webhooks.send_sms") as send:
+            response = self.client.post("/webhooks/openphone", headers={"x-openphone-signature": "s"},
+                                        content=json.dumps({"type": "message.received", "data": {"object": {"from": "+16025550100", "body": "hi"}}}))
+        self.assertEqual(response.json()["status"], "ignored")
+        send.assert_not_called()
+
     def test_stop_all_holds_alerts_until_resume(self):
         self.post("m1", "2013 Ford Fusion fuel leak")
         self.assertIn("RESUME", self.stop()["ownerReply"])

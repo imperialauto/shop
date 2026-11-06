@@ -5,6 +5,7 @@ Jobs:
 """
 
 import json
+import os
 from datetime import datetime, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -13,6 +14,8 @@ scheduler = AsyncIOScheduler(timezone="America/Phoenix")
 
 async def followup_job():
     """Find stale draft_ready sessions (3+ days, no follow-up sent) and text them."""
+    if os.getenv("LEGACY_SMS_INTAKE_ENABLED") != "true":
+        return
     from app.database import SessionLocal
     from app.models import EstimateSession
     from app.routes.webhooks import send_sms

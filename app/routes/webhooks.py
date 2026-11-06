@@ -5,7 +5,7 @@ from app.database import get_db
 from app.config import OPENPHONE_SIGNING_SECRET, OPENPHONE_API_KEY, GROQ_API_KEY, OWNER_PHONE, OPENPHONE_PHONE_NUMBER_ID
 from app.calendar_utils import create_appointment
 from app.sending_pause import sending_allowed
-import hmac, hashlib, base64, json, httpx, secrets, datetime
+import hmac, hashlib, base64, json, httpx, os, secrets, datetime
 from groq import AsyncGroq
 
 router = APIRouter()
@@ -464,6 +464,11 @@ async def openphone_webhook(
         raise HTTPException(status_code=503, detail="Webhook verification unavailable")
     if not x_openphone_signature or not verify_signature(payload, x_openphone_signature, OPENPHONE_SIGNING_SECRET):
         raise HTTPException(status_code=401, detail="Invalid signature")
+
+    # The messaging service owns customer texts. This older AI intake would text
+    # customers on its own, so it stays off unless deliberately switched on.
+    if os.getenv("LEGACY_SMS_INTAKE_ENABLED") != "true":
+        return JSONResponse({"status": "ignored"})
 
     data = json.loads(payload)
     print(f"[WEBHOOK] type={data.get('type')} keys={list(data.keys())} preview={str(data)[:400]}")
