@@ -4,7 +4,7 @@
 // A customer text is checked against Quo first and is never retried, so an
 // uncertain send cannot reach a customer twice.
 
-const { answerOwner, recentTurns, customerDetail } = require("./ownerAssistant");
+const { answerOwner, interpretOwner, recentTurns, customerDetail } = require("./ownerAssistant");
 const { callContext } = require("./callIntake");
 
 function enabled(name) {
@@ -92,14 +92,18 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
   }
   if (result.ownerQuestion && enabled("OWNER_TEXTS_ENABLED")) {
     const thread = await quo.listMessages({ participants: [phone], maxResults: 12 }).catch(() => ({ data: [] }));
-    const content = await answerOwner({
-      question: result.ownerQuestion,
-      snapshot: {
-        ...result.snapshot,
-        customerDetail: await customerDetail({ question: result.ownerQuestion, snapshot: result.snapshot, quo, callContext }),
-      },
-      history: recentTurns(thread.data || [], messageId),
-    });
+    const history = recentTurns(thread.data || [], messageId);
+    const action = await interpretOwner({ question: result.ownerQuestion, snapshot: result.snapshot, history });
+    const content = action
+      ? (await shopClient.dispatchOwnerAction(action)).ownerReply
+      : await answerOwner({
+          question: result.ownerQuestion,
+          snapshot: {
+            ...result.snapshot,
+            customerDetail: await customerDetail({ question: result.ownerQuestion, snapshot: result.snapshot, quo, callContext }),
+          },
+          history,
+        });
     await quo.sendMessage({ to: phone, content }).catch((err) => console.error("Owner answer failed:", err.message));
   }
   let customerSent = false;

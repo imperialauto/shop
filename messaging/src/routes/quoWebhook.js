@@ -40,6 +40,7 @@ const express = require("express");
 const prisma = require("../db/prisma");
 const { verifyQuoWebhook } = require("../lib/verifyQuoWebhookSignature");
 const { generateDraftReply, NO_REPLY } = require("../lib/generateDraftReply");
+const { jobNote } = require("../lib/ownerAssistant");
 const { getJobContextForConversation } = require("../lib/getJobContext");
 const shopClient = require("../lib/shopClient");
 const quo = require("../lib/quoClient");
@@ -222,7 +223,10 @@ async function handleMessageEvent(event) {
     });
 
     const noReply = draftBody?.includes(NO_REPLY);
-    if (noReply) await shopClient.dispatchDraft({ conversationId: msg.conversationId, messageId: msg.id, body: NO_REPLY });
+    const note = draftBody ? await jobNote({
+      conversation: [summary, ...history.map((m) => `${m.direction === "INBOUND" ? "Customer" : "Shop"}: ${m.body || "[photo]"}`)].filter(Boolean).join("\n"),
+    }) : null;
+    if (noReply) await shopClient.dispatchDraft({ conversationId: msg.conversationId, messageId: msg.id, body: NO_REPLY, note });
     if (draftBody && !noReply) {
       if (existingPending) {
         await prisma.draftReply.update({
@@ -239,7 +243,7 @@ async function handleMessageEvent(event) {
           },
         });
       }
-      await shopClient.dispatchDraft({ conversationId: msg.conversationId, messageId: msg.id, body: draftBody });
+      await shopClient.dispatchDraft({ conversationId: msg.conversationId, messageId: msg.id, body: draftBody, note });
     }
   } catch (err) {
     // A failed AI draft should never block message storage or the webhook

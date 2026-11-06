@@ -47,6 +47,14 @@ class DraftInput(BaseModel):
     conversationId: str = Field(min_length=1, max_length=64)
     messageId: str = Field(min_length=1, max_length=128)
     body: str = Field(min_length=1, max_length=2000)
+    note: str | None = Field(default=None, max_length=300)
+
+
+class OwnerAction(BaseModel):
+    action: str = Field(pattern="^(propose|done|later)$")
+    itemId: int
+    text: str | None = Field(default=None, max_length=1500)
+    hours: int | None = Field(default=None, ge=1, le=168)
 
 
 class OutboundResult(BaseModel):
@@ -331,15 +339,10 @@ def _follow_ups(db: Session, now: datetime) -> list[tuple[DispatchItem, str]]:
     return sorted(found, key=lambda row: (row[1] != "urgent", row[0].updated_at))
 
 
-def _follow_up_text(db: Session, now: datetime, rows: list[tuple[DispatchItem, str]]) -> str:
-    lines = [f"Follow up ({len(rows)}):"]
-    for item, kind in rows[:6]:
-        what = "you promised a reply" if kind == "promised" else " ".join((item.summary or "").split())[:48]
-        lines.append(f"#{item.id} {_label(db, item)}, {_waited(now - _utc(item.updated_at))}: {what}")
-    if len(rows) > 6:
-        lines.append(f"+{len(rows) - 6} more. Text OPEN for the list.")
-    lines.append("Reply YES, EDIT, DONE or LATER with the number.")
-    return "\n".join(lines)
+def _follow_up_line(db: Session, now: datetime, item: DispatchItem, kind: str) -> str:
+    what = "You promised a reply." if kind == "promised" else _next_step(db, item)[:100]
+    return (f"#{item.id} {_label(db, item)}, waiting {_waited(now - _utc(item.updated_at))}\n{what}\n"
+            f"Tell me what to say, DONE {item.id}, or LATER {item.id}.")
 
 
 def _owner_command(db: Session, message: IntakeMessage) -> dict:
@@ -445,6 +448,7 @@ STALE_AFTER = timedelta(days=3)
 URGENT_WINDOW = timedelta(hours=4)  # after this an item moves to the regular digests
 NO_REPLY = "NO_REPLY_NEEDED"
 DIGEST_HOURS = (13, 15, 17)
+MAX_FOLLOW_UPS = 3  # per check, so a long list never floods the owner
 DASHBOARD_REPLY = "dashboard_reply"
 QUIET = timedelta(seconds=30)  # lets a burst of customer texts become one alert
 TICK_LIMIT = 10
@@ -455,18 +459,18 @@ FOLLOW_UP_HOURS = range(11, 19)
 
 
 def _alert_text(db: Session, item: DispatchItem) -> str:
-    head = "URGENT" if item.urgency != "normal" else "Approval"
-    summary = " ".join(item.summary.split())[:160]
-    lines = [f"{head} #{item.id}: {_label(db, item)}", f"Customer said: {summary}"]
+    said = " ".join(item.summary.split())[:120]
+    name = _label(db, item)
     if item.draft_reply == "":
-        return "\n".join([f"FYI #{item.id}: {_label(db, item)}", f"Customer said: {summary}",
-                          f"No reply needed. EDIT {item.id} your text if you want to answer."])
+        return f"FYI {name}: {said}\nNothing needed. Tell me if you want to answer."
+    head = f"URGENT #{item.id}" if item.urgency != "normal" else f"#{item.id}"
+    lines = [f"{head} {name}", f"They said: {said}"]
     if item.draft_reply:
-        lines.append(f"Draft reply: {item.draft_reply[:320]}")
-        lines.append(f"YES {item.id} sends it. NO {item.id} skips. EDIT {item.id} your text sends yours.")
+        lines.append(f"Send: {item.draft_reply[:240]}")
+        lines.append(f"YES {item.id} sends it, or tell me what to say.")
     else:
-        lines.append(f"Next: {item.proposed_action[:140]}")
-        lines.append(f"Reply YES {item.id} or NO {item.id}")
+        lines.append(f"Next: {_next_step(db, item)[:120]}")
+        lines.append("Tell me what to say, or DONE " + str(item.id) + ".")
     return "\n".join(lines)
 
 
@@ -513,12 +517,15 @@ def due_owner_messages(db: Session, now: datetime) -> list[dict]:
                 continue
             due.append((f"alert:{item.id}:{item.last_message_id}", "owner_alert", item.id, _alert_text(db, item)))
     if now.weekday() != 6 and now.hour in FOLLOW_UP_HOURS:
-        rows = _follow_ups(db, now)
-        urgent = [row for row in rows if row[1] != "waiting"]
-        if now.hour in DIGEST_HOURS and rows:
-            due.append((f"nudges:{now.date()}:{now.hour}", "owner_nudge", None, _follow_up_text(db, now, rows)))
-        elif urgent:
-            due.append((f"urgent:{now.date()}:{now.hour}:{now.minute // 30}", "owner_nudge", None, _follow_up_text(db, now, urgent)))
+        for item, kind in _follow_ups(db, now):
+            if kind == "waiting" and now.hour not in DIGEST_HOURS:
+                continue
+            # Urgent repeats every half hour. Everything else comes once a day.
+            key = f"urgent:{item.id}:{now.date()}:{now.hour}:{now.minute // 30}" if kind == "urgent" else f"nudges:{item.id}:{now.date()}"
+            if not db.query(DispatchOutbound).filter(DispatchOutbound.dedupe_key == key).first():
+                due.append((key, "owner_nudge", item.id, _follow_up_line(db, now, item, kind)))
+            if len(due) >= MAX_FOLLOW_UPS:
+                break
     if now.weekday() != 6 and (now.hour, now.minute) >= (18, 30):
         rows = _follow_ups(db, now)
         promised = sum(1 for row in rows if row[1] == "promised")
@@ -585,9 +592,12 @@ def save_draft(draft: DraftInput, db: Session = Depends(get_db), _auth: bool = D
     if item is None:
         return {"recorded": False}
     reasons = json.loads(item.approval_reasons or "[]")
+    if draft.note and draft.note.strip():
+        item.proposed_action = draft.note.strip()  # the job file line for this customer
     if draft.body.strip() == NO_REPLY:
         if item.urgency != "normal" or reasons != ["customer_reply"]:
-            return {"recorded": False}  # anything sensitive stays with the owner
+            db.commit()  # keep the job line; anything sensitive stays with the owner
+            return {"recorded": False}
         item.draft_reply = ""  # an empty draft means no reply is needed
         item.status = "routine"
     else:
@@ -595,6 +605,24 @@ def save_draft(draft: DraftInput, db: Session = Depends(get_db), _auth: bool = D
     audit(db, item.id, "system", "draft_saved")
     db.commit()
     return {"recorded": True, "itemId": item.id}
+
+
+@internal_router.post("/owner-action")
+def owner_action(request_: OwnerAction, db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
+    """Plain-English owner replies. Nothing here texts a customer: sending still needs YES."""
+    if request_.action == "done":
+        return {"ownerReply": _mark_done(db, [request_.itemId])}
+    if request_.action == "later":
+        return {"ownerReply": _snooze(db, request_.itemId, (request_.hours or 2) * 60)}
+    item = _active_item(db, request_.itemId)
+    text = (request_.text or "").strip()
+    if item is None or not text:
+        return {"ownerReply": "I couldn't match that to an open customer. Text OPEN for the list."}
+    item.draft_reply = text
+    item.status = "needs_owner"
+    audit(db, item.id, "owner_sms", "owner_proposed")
+    db.commit()
+    return {"ownerReply": f"Send to {_label(db, item)}:\n{text}\nReply YES {item.id} to send."}
 
 
 @internal_router.post("/outbound")

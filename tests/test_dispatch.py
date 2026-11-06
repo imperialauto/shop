@@ -488,7 +488,7 @@ class QueueWorkflowTests(unittest.TestCase):
         due = lambda now: [m for m in self.alert(now) if m["key"].startswith("urgent")]
         self.assertEqual(due(datetime(2026, 11, 3, 12, 10, tzinfo=AZ)), [])
         first = due(datetime(2026, 11, 3, 12, 25, tzinfo=AZ))
-        self.assertIn("Follow up (1)", first[0]["text"])
+        self.assertIn("waiting", first[0]["text"])
         self.mark_sent(first[0]["key"])
         self.assertEqual(due(datetime(2026, 11, 3, 12, 29, tzinfo=AZ)), [])
         self.assertEqual(len(due(datetime(2026, 11, 3, 12, 31, tzinfo=AZ))), 1)
@@ -501,8 +501,8 @@ class QueueWorkflowTests(unittest.TestCase):
                 row.updated_at = datetime(2026, 11, 3, 9, 0, tzinfo=AZ)
             db.commit()
         digest = [m for m in self.alert(datetime(2026, 11, 3, 13, 5, tzinfo=AZ)) if m["key"].startswith("nudges")]
-        self.assertEqual(len(digest), 1)
-        self.assertIn("Follow up (2)", digest[0]["text"])
+        self.assertEqual(len(digest), 2)
+        self.assertTrue(all("waiting" in m["text"] for m in digest))
         self.assertEqual([m for m in self.alert(datetime(2026, 11, 3, 14, 5, tzinfo=AZ)) if m["key"].startswith(("nudges", "urgent"))], [])
 
     def test_nothing_goes_out_when_the_shop_is_closed(self):
@@ -561,7 +561,7 @@ class QueueWorkflowTests(unittest.TestCase):
             db.commit()
         self.set_updated(datetime(2026, 11, 3, 10, 0, tzinfo=AZ))
         due = [m for m in self.alert(datetime(2026, 11, 3, 12, 5, tzinfo=AZ)) if m["key"].startswith("urgent")]
-        self.assertIn("you promised a reply", due[0]["text"])
+        self.assertIn("You promised a reply", due[0]["text"])
 
     def test_a_plain_answer_needs_no_follow_up(self):
         self.post("m1", "How much for brakes on a 2011 Ford Focus?")
@@ -578,8 +578,8 @@ class QueueWorkflowTests(unittest.TestCase):
         item = self.items()[0]
         self.assertEqual((item.status, item.draft_reply), ("routine", ""))
         message_ = self.alert(datetime.now(AZ) + timedelta(seconds=40))[0]
-        self.assertIn("FYI #1", message_["text"])
-        self.assertIn("No reply needed", message_["text"])
+        self.assertIn("FYI", message_["text"])
+        self.assertIn("Nothing needed", message_["text"])
 
     def test_sensitive_message_cannot_become_no_reply(self):
         self.post("m1", "2013 Ford Fusion fuel leak")
@@ -616,6 +616,27 @@ class QueueWorkflowTests(unittest.TestCase):
         self.assertEqual(response.status_code, 303)
         with self.Session() as db:
             self.assertEqual(dispatch.queued_replies(db), [])
+
+    def owner_action(self, **body):
+        return self.client.post("/internal/dispatch/owner-action", json=body, headers=HEADERS).json()
+
+    def test_plain_english_proposal_needs_yes_before_sending(self):
+        self.post("m1", "How much for brakes on a 2011 Ford Focus?")
+        reply = self.owner_action(action="propose", itemId=1, text="We can see you at 1.")
+        self.assertIn("Reply YES 1 to send", reply["ownerReply"])
+        self.assertNotIn("customerReply", reply)
+        self.assertEqual(self.items()[0].draft_reply, "We can see you at 1.")
+
+    def test_plain_english_done_and_later(self):
+        self.post("m1", "How much for brakes on a 2011 Ford Focus?")
+        self.assertIn("remind you", self.owner_action(action="later", itemId=1, hours=3)["ownerReply"])
+        self.assertIn("Closed #1", self.owner_action(action="done", itemId=1)["ownerReply"])
+        self.assertEqual(self.items()[0].status, "closed")
+
+    def test_job_note_replaces_the_generic_next_step(self):
+        self.post("m1", "How much for brakes on a 2011 Ford Focus?")
+        self.client.post("/internal/dispatch/draft", headers=HEADERS, json={"conversationId": self.items()[0].quo_conversation_id, "messageId": "m1", "body": "Sure", "note": "Wants brake price. Next: quote it."})
+        self.assertEqual(self.items()[0].proposed_action, "Wants brake price. Next: quote it.")
 
     def test_burst_of_texts_becomes_one_alert(self):
         self.post("m1", "How much for brakes on a 2011 Ford Focus?")

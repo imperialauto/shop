@@ -134,11 +134,15 @@ async function dispatchSync({ source, ok, detail }) {
   }
 }
 
-async function dispatchDraft({ conversationId, messageId, body }) {
+async function dispatchOwnerAction(action) {
+  return request("/internal/dispatch/owner-action", { method: "POST", body: JSON.stringify(action) });
+}
+
+async function dispatchDraft({ conversationId, messageId, body, note = null }) {
   try {
     return await request("/internal/dispatch/draft", {
       method: "POST",
-      body: JSON.stringify({ conversationId, messageId, body }),
+      body: JSON.stringify({ conversationId, messageId, body, note }),
     });
   } catch (err) {
     console.error("shopClient.dispatchDraft failed:", err.message);
@@ -161,6 +165,6 @@ async function dispatchOutbound({ key, status }) {
 
 module.exports = {
   configured, getContext, getContextStrict, getSigningLink, logCommunication,
-  dispatchIntake, dispatchHandled, dispatchSync, dispatchTick, dispatchOutbound, dispatchDraft,
+  dispatchIntake, dispatchOwnerAction, dispatchHandled, dispatchSync, dispatchTick, dispatchOutbound, dispatchDraft,
 };
 

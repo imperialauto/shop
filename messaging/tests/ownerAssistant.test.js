@@ -1,6 +1,6 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { answerOwner, recentTurns, mentionedItems, FALLBACK } = require("../src/lib/ownerAssistant");
+const { interpretOwner, jobNote, answerOwner, recentTurns, mentionedItems, FALLBACK } = require("../src/lib/ownerAssistant");
 
 test("sends the snapshot, history and question to the model", async () => {
   let sent;
@@ -35,4 +35,24 @@ test("finds the customers a question names", () => {
   assert.deepEqual(mentionedItems("what did the yukon customer say?", snapshot).map((i) => i.id), [9]);
   assert.deepEqual(mentionedItems("update on #5", snapshot).map((i) => i.id), [5]);
   assert.deepEqual(mentionedItems("any tasks?", snapshot), []);
+});
+
+const openSnapshot = { waitingOnYou: [{ id: 24, who: "Sample Altima" }] };
+
+test("a plain-English reply becomes a proposal for a known item", async () => {
+  const action = await interpretOwner({ question: "tell her tomorrow at 1", snapshot: openSnapshot,
+    complete: async () => '{"action":"propose","itemId":24,"text":"We can see you tomorrow at 1.","hours":null}' });
+  assert.deepEqual(action, { action: "propose", itemId: 24, text: "We can see you tomorrow at 1.", hours: null });
+});
+
+test("an unknown item or bad output falls back to a normal answer", async () => {
+  assert.equal(await interpretOwner({ question: "x", snapshot: openSnapshot, complete: async () => '{"action":"done","itemId":99}' }), null);
+  assert.equal(await interpretOwner({ question: "x", snapshot: openSnapshot, complete: async () => "not json" }), null);
+  assert.equal(await interpretOwner({ question: "x", snapshot: openSnapshot, complete: async () => { throw new Error("down"); } }), null);
+  assert.equal(await interpretOwner({ question: "x", snapshot: openSnapshot, complete: async () => '{"action":"propose","itemId":24,"text":""}' }), null);
+});
+
+test("job notes are one line and failures are harmless", async () => {
+  assert.equal(await jobNote({ conversation: "x", complete: async () => "Needs oil\nchange" }), "Needs oil change");
+  assert.equal(await jobNote({ conversation: "x", complete: async () => { throw new Error("down"); } }), null);
 });
