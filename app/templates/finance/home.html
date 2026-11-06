@@ -57,6 +57,8 @@
     </form>
   </div>
 
+  <div style="margin-top:14px">{% include "finance/_tabs.html" %}</div>
+
   <div class="finance-status" role="status">
     <strong>Preliminary operational view — not audited.</strong>
     These numbers come only from payments and invoices entered in Imperial Operations.
@@ -118,7 +120,7 @@
       </div>
       <div class="finance-step">
         <span class="circle">2</span>
-        <div><strong>Historical import and deduplication</strong><p>Pending: Chase, Bank of America, PayPal, Apple Cash, SwipeSimple and Square files must load into separate traceable ledger tables with no overwritten provider records.</p></div>
+        <div><strong>Historical import and deduplication</strong><p>Built in the owner-only Import and Reconciliation tabs: statements, OCR trace files and bank exports load into separate <em>fin_*</em> tables, and source rows are never overwritten. Not yet loaded. Imports stay paused while production is read-only.</p></div>
       </div>
       <div class="finance-step">
         <span class="circle">3</span>

@@ -1,0 +1,7 @@
+{# Shared by both Finances views. Finance is owner-only. #}
+<style>
+.fin-tabs{display:flex;gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;border-bottom:1px solid rgba(255,255,255,.07);margin:0 0 16px}
+.fin-tabs a{padding:10px 12px;min-height:44px;box-sizing:border-box;font-size:13px;color:#71717a;text-decoration:none;white-space:nowrap;border-bottom:2px solid transparent}
+.fin-tabs a.on{color:#d4a853;border-color:#d4a853}
+</style>
+<nav class="fin-tabs" aria-label="Finances sections">{% for k,l in tabs %}<a class="{{ 'on' if tab==k }}" href="/finance/?tab={{k}}"{% if tab==k %} aria-current="page"{% endif %}>{{l}}</a>{% endfor %}</nav>
