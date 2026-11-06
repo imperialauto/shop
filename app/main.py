@@ -9,7 +9,7 @@ from app.config import SECRET_KEY
 from app.database import get_db, init_db
 from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user
-from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, appointments, dispatch, live, finance, owner_setup
+from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, appointments, dispatch, live, finance, owner_setup, staff
 from app.routes import account_security
 from app.scheduler import start_scheduler
 
@@ -17,8 +17,9 @@ import os
 import time
 
 from app.security import limiter
+from app.permissions import ROLES, role_gate
 
-app = FastAPI(title="Imperial Auto Care")
+app = FastAPI(title="Imperial Auto Care", dependencies=[Depends(role_gate)])
 
 SESSION_DAYS = 7
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, max_age=86400 * SESSION_DAYS, same_site="lax",
@@ -42,6 +43,7 @@ app.include_router(invoices.router, prefix="/invoices", tags=["invoices"])
 app.include_router(finance.router, prefix="/finance", tags=["finance"])
 app.include_router(owner_setup.router, tags=["owner_setup"])
 app.include_router(account_security.router, tags=["security"])
+app.include_router(staff.router, tags=["staff"])
 app.include_router(ai_assist.router, prefix="/ai", tags=["ai"])
 app.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
 app.include_router(estimate_gen.router, prefix="/estimates", tags=["estimates"])
@@ -75,7 +77,7 @@ READ_ONLY_INTERNAL_WRITES = (
 
 
 # Signing in and protecting your own login never touch shop records.
-ACCOUNT_WRITES = ("/login", "/login/verify", "/settings/security/start", "/settings/security/confirm", "/settings/security/disable")
+ACCOUNT_WRITES = ("/login", "/login/verify", "/settings/change-password", "/settings/security/start", "/settings/security/confirm", "/settings/security/disable")
 # Service-to-service callers and public signature links do not come from a staff page.
 CROSS_SITE_ALLOWED = ("/internal/", "/webhooks/")
 
@@ -101,6 +103,8 @@ def read_only_exempt(request: Request) -> bool:
     """
     if request.url.path in ACCOUNT_WRITES or request.url.path == "/dispatch/sending":
         return True  # the stop switch must work even while read-only
+    if request.url.path.startswith("/settings/users/"):
+        return True  # logins only; these routes check for the owner themselves
     # The one-time owner claim has its own strong Railway secret + CSRF
     # checks and only updates the sole user credential, not customer data.
     if (request.url.path == "/owner-setup"
@@ -119,6 +123,8 @@ async def recovery_mode(request: Request, call_next):
     if cross_site_post(request):
         return JSONResponse({"error": "This request came from another site."}, status_code=403)
     if app.state.read_only and request.method not in ("GET", "HEAD", "OPTIONS") and not read_only_exempt(request):
+        if "text/html" in request.headers.get("accept", ""):
+            return _message_page("Saving is paused", "The system is in read-only mode, so nothing was changed.", 503)
         return JSONResponse({"error": "Recovery audit mode: production changes and external actions are paused.", "read_only": True}, status_code=503)
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -132,6 +138,20 @@ def startup():
     audit = database_audit()
     app.state.database_audit = audit
     logging.getLogger("uvicorn.error").info("imperial_database_audit %s", json.dumps(audit, sort_keys=True))
+
+def _message_page(title: str, detail: str, status: int) -> HTMLResponse:
+    return HTMLResponse('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">'
+                        f'<title>{title}</title><body style="background:#09090b;color:#e4e4e7;font-family:-apple-system,sans-serif;text-align:center;padding:64px 20px">'
+                        f'<h1 style="font-size:20px">{title}</h1><p style="color:#a1a1aa">{detail}</p>'
+                        '<a href="javascript:history.back()" style="color:#d4a853">Go back</a></body>', status_code=status)
+
+
+@app.exception_handler(403)
+def forbidden(request: Request, exc):
+    if "text/html" not in request.headers.get("accept", ""):
+        return JSONResponse({"detail": exc.detail}, status_code=403)
+    return _message_page("Not available on your login", "Ask the owner if you need access to this.", 403)
+
 
 @app.exception_handler(404)
 def not_found(request: Request, exc):
@@ -172,7 +192,7 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
     if limiter.locked(*keys):
         return templates.TemplateResponse("login.html", {"request": request, "error": "Too many tries. Wait 15 minutes, then try again."}, status_code=429)
     user = db.query(User).filter(User.username == username).first()
-    if password == "imperial2024" or not user or not verify_password(password, user.password_hash):
+    if password == "imperial2024" or not user or user.is_active is False or not verify_password(password, user.password_hash):
         limiter.record(*keys)
         return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid username or password"})
     limiter.clear(*keys)
@@ -181,7 +201,7 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
         request.session["pending_mfa"] = {"user": user.id, "at": time.time()}
         return RedirectResponse("/login/verify", status_code=303)
     login_user(request, user)
-    return RedirectResponse("/dashboard", status_code=302)
+    return RedirectResponse("/ro/" if user.role == "tech" else "/dashboard", status_code=302)
 
 
 @app.get("/logout")
@@ -219,13 +239,22 @@ def dashboard(request: Request, view: str = "open", db: Session = Depends(get_db
     })
 
 
+def _settings(request: Request, db: Session, user: User, **extra):
+    query = request.query_params
+    return templates.TemplateResponse("settings.html", {
+        "request": request, "user": user, "roles": ROLES,
+        "users": db.query(User).order_by(User.id).all() if user.role == "owner" else None,
+        "user_success": staff.MESSAGES.get(query.get("user_saved")), "user_error": staff.ERRORS.get(query.get("user_error")),
+        "must_change": bool(user.must_change_password), **extra})
+
+
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request, db: Session = Depends(get_db)):
     try:
         user = get_current_user(request, db)
     except HTTPException:
         return RedirectResponse("/login", status_code=302)
-    return templates.TemplateResponse("settings.html", {"request": request, "user": user})
+    return _settings(request, db, user)
 
 
 @app.post("/settings/change-password")
@@ -240,10 +269,13 @@ def change_password(
     except HTTPException:
         return RedirectResponse("/login", status_code=302)
     if not verify_password(current_password, user.password_hash):
-        return templates.TemplateResponse("settings.html", {"request": request, "user": user, "error": "Current password is incorrect"})
-    user.password_hash = hash_password(new_password)
+        return _settings(request, db, user, error="Current password is incorrect")
+    if not staff.password_ok(new_password):
+        return _settings(request, db, user, error=staff.ERRORS["password"])
+    user.password_hash, user.must_change_password = hash_password(new_password), False
     db.commit()
-    return templates.TemplateResponse("settings.html", {"request": request, "user": user, "success": "Password updated!"})
+    login_user(request, user)  # owner sessions are tied to the password
+    return _settings(request, db, user, success="Password updated!")
 
 
 @app.get("/status/{token}", response_class=HTMLResponse)

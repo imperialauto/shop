@@ -27,6 +27,8 @@ class User(Base):
     password_hash = Column(String(256), nullable=False)
     full_name = Column(String(128))
     role = Column(String(32), default="tech")
+    is_active = Column(Boolean, nullable=False, default=True, server_default="true")
+    must_change_password = Column(Boolean, nullable=False, default=False, server_default="false")
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
