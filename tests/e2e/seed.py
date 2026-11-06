@@ -13,6 +13,8 @@ Base.metadata.create_all(engine)
 db = SessionLocal()
 db.add(User(id=1, username="walkthrough", full_name="Test Owner", password_hash=hash_password("walkthrough-only-pass"), role="owner"))
 db.add(User(id=2, username="tech", full_name="Test Tech", password_hash=hash_password("walkthrough-only-pass"), role="tech"))
+db.add(User(id=3, username="office", full_name="Test Office", password_hash=hash_password("walkthrough-only-pass"), role="office"))
+db.add(User(id=4, username="manager", full_name="Test Admin", password_hash=hash_password("walkthrough-only-pass"), role="admin"))
 for n, (first, last) in enumerate([("Pat", "Sample"), ("Lee", "Testcase"), ("Sam", "Example"), ("Alex", "Placeholder")], 1):
     db.add(Customer(id=n, first_name=first, last_name=last, phone=f"602555010{n}", email=f"{first.lower()}@example.com"))
     db.add(Vehicle(id=n, customer_id=n, year=2015 + n, make="Ford", model="Fusion", vin=f"TESTVIN000000000{n}", mileage=90000 + n))

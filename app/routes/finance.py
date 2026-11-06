@@ -14,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from app.auth import get_current_user, require_admin
+from app.auth import get_current_user
 from app.database import get_db
 from app.models import Invoice, Payment, RepairOrder
 
@@ -49,7 +49,8 @@ def finance_home(
         if exc.status_code == 401:
             return RedirectResponse("/login", status_code=302)
         raise
-    require_admin(user)
+    if user.role != "owner":
+        raise HTTPException(403, "Finance is owner-only.")
 
     start, end = month_boundaries(period)
     local_start = start.replace(tzinfo=timezone.utc).astimezone(PHOENIX)

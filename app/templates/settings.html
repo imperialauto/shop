@@ -7,6 +7,9 @@
 </div>
 
 <div class="max-w-2xl space-y-6">
+  {% if must_change %}
+  <div class="bg-red-900 border border-red-700 text-red-200 text-sm rounded px-3 py-2 max-w-md">Set your own password to continue. Enter the temporary one as your current password.</div>
+  {% endif %}
   <a href="/settings/security" class="card max-w-md" style="display:block; text-decoration:none;">
     <strong>Two-step login</strong>
     <p class="text-stone-400 text-sm" style="margin:4px 0 0;">Add a code from your phone at sign-in.</p>
@@ -28,13 +31,13 @@
       </div>
       <div>
         <label class="form-label">New Password</label>
-        <input type="password" name="new_password" required class="form-input" />
+        <input type="password" name="new_password" required minlength="12" class="form-input" autocomplete="new-password" />
       </div>
       <button type="submit" class="btn-primary">Update Password</button>
     </form>
   </div>
 
-  {% if users is not none %}
+  {% if users %}
   <div class="card">
     <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-4">Team Members</h3>
 
@@ -61,22 +64,22 @@
             <td>{{ u.full_name or u.username }}</td>
             <td>{{ u.username }}</td>
             <td>
-              <span class="badge {% if u.role == 'admin' %}badge-fleet{% else %}badge-intake{% endif %}">{{ u.role }}</span>
+              <span class="badge {% if u.role == 'admin' %}badge-fleet{% else %}badge-intake{% endif %}">{{ roles.get(u.role, u.role|capitalize) }}</span>{% if not u.is_active %} <span class="text-stone-400 text-sm">Off</span>{% endif %}
             </td>
             <td>
+              {% if u.role != 'owner' %}
               <details style="display:inline-block; margin-right: 8px;">
                 <summary class="btn-secondary" style="display:inline-flex; cursor:pointer;">Reset password</summary>
                 <form method="post" action="/settings/users/{{ u.id }}/reset-password" class="flex items-end gap-2 mt-2">
                   <div>
                     <label class="form-label">New password</label>
-                    <input type="password" name="new_password" required minlength="6" class="form-input" style="width: 180px;" />
+                    <input type="password" name="new_password" required minlength="12" class="form-input" style="width: 180px;" autocomplete="new-password" />
                   </div>
                   <button type="submit" class="btn-primary">Set</button>
                 </form>
               </details>
-              {% if u.id != user.id %}
-              <form method="post" action="/settings/users/{{ u.id }}/delete" style="display:inline;" onsubmit="return confirm('Remove login for {{ u.full_name or u.username }}?');">
-                <button type="submit" class="btn-danger">Remove</button>
+              <form method="post" action="/settings/users/{{ u.id }}/{{ 'delete' if u.is_active else 'activate' }}" style="display:inline;">
+                <button type="submit" class="{{ 'btn-danger' if u.is_active else 'btn-secondary' }}">{{ 'Turn off' if u.is_active else 'Turn on' }}</button>
               </form>
               {% endif %}
             </td>
@@ -100,14 +103,14 @@
       </div>
       <div>
         <label class="form-label">Temporary Password</label>
-        <input type="password" name="password" required minlength="6" class="form-input" />
+        <input type="password" name="password" required minlength="12" class="form-input" autocomplete="new-password" />
       </div>
       <div>
         <label class="form-label">Role</label>
         <select name="role" class="form-select">
-          <option value="office">Office Coordinator</option>
-          <option value="tech">Technician</option>
-          <option value="admin">Admin (full access)</option>
+          <option value="tech">Technician (jobs and calendar)</option>
+          <option value="office">Office Coordinator (customers, jobs, invoices, messages)</option>
+          <option value="admin">Admin (everything except Finance and logins)</option>
         </select>
       </div>
       <button type="submit" class="btn-primary">Create Login</button>

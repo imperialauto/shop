@@ -28,7 +28,7 @@ class FinanceMobileViewTests(unittest.TestCase):
         app.dependency_overrides.pop(get_db, None)
 
     def test_owner_can_view_mobile_finance_page_without_mutation(self):
-        user = SimpleNamespace(role="admin", full_name="Owner", username="owner")
+        user = SimpleNamespace(role="owner", full_name="Owner", username="owner")
         with patch("app.routes.finance.get_current_user", return_value=user):
             response = self.client.get("/finance/?period=2026-11")
         self.assertEqual(response.status_code, 200)
@@ -39,7 +39,7 @@ class FinanceMobileViewTests(unittest.TestCase):
         self.db.add.assert_not_called()
 
     def test_empty_ledger_does_not_imply_zero_revenue(self):
-        user = SimpleNamespace(role="admin", full_name="Owner", username="owner")
+        user = SimpleNamespace(role="owner", full_name="Owner", username="owner")
         self.db.query.return_value.filter.return_value.one.side_effect = [
             (0.0, 0),
             (0.0, 0),
