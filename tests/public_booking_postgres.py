@@ -224,6 +224,37 @@ class PublicBooking(unittest.TestCase):
         self.assertIn('Price coming soon', self.client.get('/site/pricing').text)
         self.assertEqual(self.client.post('/site/book', data=self.form(slot_id, service='ac-check')).status_code, 422)
 
+    def saturday_slot(self):
+        start = weekday_at(12)
+        while start.weekday() != 5:
+            start += timedelta(days=1)
+        return start
+
+    def test_saturday_stays_closed_to_online_booking(self):
+        with patch.dict(os.environ, {'SHOP_HOURS_JSON': '{"0":["10:00","18:00"],"1":["10:00","18:00"],"2":["10:00","18:00"],"3":["10:00","18:00"],"4":["10:00","18:00"],"5":["12:00","17:00"]}'}):
+            slot_id = self.slot(self.saturday_slot())
+            self.assertNotIn(f'value="{slot_id}"', self.client.get('/site/book?service=diagnostic').text)
+            self.assertEqual(self.client.post('/site/book', data=self.form(slot_id)).status_code, 409)
+            with patch.dict(os.environ, {'PUBLIC_BOOKING_CLOSED_DAYS': ''}):
+                self.assertIn(f'value="{slot_id}"', self.client.get('/site/book?service=diagnostic').text)
+        self.assertEqual(self.count(Appointment), 0)
+
+    def test_preview_books_without_any_price(self):
+        slot_id = self.slot(weekday_at(11))
+        with patch.dict(os.environ, {'PUBLIC_PREVIEW_MODE': 'true', 'RAILWAY_ENVIRONMENT_NAME': 'preview', 'RAILWAY_PROJECT_ID': 'other'}):
+            page = self.client.get('/site/book?service=ac-check').text
+            self.assertIn('Price coming soon', page)
+            self.assertNotIn('$', page.split('footer')[0])
+            self.assertEqual(self.client.post('/site/book', data=self.form(slot_id, service='ac-check'), follow_redirects=False).status_code, 303)
+        with SessionLocal() as db:
+            self.assertEqual(float(db.query(Appointment).one().booked_value), 0)
+
+    def test_preview_switch_cannot_work_in_production(self):
+        with patch.dict(os.environ, {'PUBLIC_PREVIEW_MODE': 'true', 'RAILWAY_ENVIRONMENT_NAME': 'production'}):
+            self.assertNotIn('A/C performance check', self.client.get('/site/book').text)
+        with patch.dict(os.environ, {'PUBLIC_PREVIEW_MODE': 'true', 'RAILWAY_ENVIRONMENT_NAME': 'other', 'RAILWAY_PROJECT_ID': '97a71288-74a7-4405-9789-b74fda7b8939'}):
+            self.assertNotIn('A/C performance check', self.client.get('/site/book').text)
+
     def test_only_approved_services_can_be_booked(self):
         slot_id = self.slot(weekday_at(11))
         with patch.dict(os.environ, {'PUBLIC_BOOKING_SERVICES': 'oil-service'}):

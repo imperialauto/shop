@@ -54,7 +54,7 @@
       {% endif %}
 
       {% if forms_open and ready %}
-      {% if zone %}<p class="alert alert-info">Mobile service fee: ${{ '%.2f'|format(zone.fee) }}. {{ 'Starting total' if service.price_type == 'starting' else 'Total' }}: ${{ '%.2f'|format(total) }}.</p>{% endif %}
+      {% if zone and total is not none %}<p class="alert alert-info">Mobile service fee: ${{ '%.2f'|format(zone.fee) }}. {{ 'Starting total' if service.price_type == 'starting' else 'Total' }}: ${{ '%.2f'|format(total) }}.</p>{% elif zone %}<p class="alert alert-info">Mobile service fee: to be confirmed.</p>{% endif %}
       <form class="form" method="post" action="/site/book" style="margin-top:18px">
         <input type="hidden" name="service" value="{{ service.slug }}">
         <input type="hidden" name="where" value="{{ where }}">

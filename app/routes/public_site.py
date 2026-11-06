@@ -30,7 +30,7 @@ from app.appointments import PHOENIX, AppointmentValidationError, AppointmentWin
 from app.database import get_db
 from app.models import Customer, RepairOrder, Vehicle
 from app.public_site import (BUSINESS, SERVICE_LINE_BY_SLUG, SERVICE_LINES, FormError, SubmissionLimiter,
-                             approved_bookable_services, bookable_service, bookable_services, clean_text, format_phone,
+                             approved_bookable_services, bookable_service, bookable_services, booking_closed_days, clean_text, format_phone,
                              forms_enabled, indexable, mobile_zone, normalize_email, normalize_mileage, normalize_phone,
                              normalize_vin, normalize_year, phone_digits, NAME_LIMIT, TEXT_LIMIT)
 from app.routes.appointments import configured_hours, find_conflict, shop_buffer_minutes
@@ -237,6 +237,12 @@ def form_values(form) -> dict:
 
 
 # ── Online booking ───────────────────────────────────────────────────────────
+def total_price(service, zone) -> float | None:
+    if service.price is None or (zone and zone.fee is None):
+        return None
+    return service.price + (zone.fee if zone else 0)
+
+
 def booking_window(slot: BookingSlot, service, zone) -> AppointmentWindow:
     """The full time this booking holds. A mobile visit holds travel both ways instead of the shop buffer."""
     start = utc(slot.starts_at)
@@ -246,6 +252,8 @@ def booking_window(slot: BookingSlot, service, zone) -> AppointmentWindow:
 
 
 def fits(db: Session, window: AppointmentWindow) -> bool:
+    if window.starts_at.astimezone(PHOENIX).weekday() in booking_closed_days():
+        return False
     try:
         validate_slot(window, [], configured_hours())
     except AppointmentValidationError:
@@ -292,7 +300,7 @@ def booking_page(request: Request, db: Session, status_code: int = 200, error: s
     zip_code = clean_text(values.get("zip") or query.get("zip"), 5)
     zone = mobile_zone(zip_code) if where == "mobile" else None
     ready = bool(service) and not reason and (where == "shop" or zone is not None)
-    total = (service.price + (zone.fee if zone else 0)) if service else None
+    total = total_price(service, zone) if service else None
     return render(request, "site/book.html", status_code=status_code, form_page=True, active="book",
                   services=bookable_services(), service=service, days=booking_times(db, service, zone) if ready else {},
                   where=where, zip_code=zip_code, zone=zone, total=total, ready=ready,
@@ -361,16 +369,16 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
         customer, matched = find_or_create_customer(db, person)
         vehicle = find_or_create_vehicle(db, customer, matched, vehicle_details)
         label = phoenix_label(starts_at)
-        total = service.price + (zone.fee if zone else 0)
+        total = total_price(service, zone)
         concern = concern_text(f"Online booking: {service.name} on {label}.", person, matched, [
-            f"Mobile visit: {street}, {values.get('zip')}. Travel {zone.travel_minutes} minutes each way. Mobile fee ${zone.fee:,.2f}." if zone else "At the shop.",
-            f"Price shown: {service.price_label}. Total shown: ${total:,.2f}.",
+            f"Mobile visit: {street}, {values.get('zip')}. Travel {zone.travel_minutes} minutes each way." if zone else "At the shop.",
+            f"Price shown: {service.price_label}." + (f" Total shown: ${total:,.2f}." if total is not None else " No final price yet."),
             f"Customer notes: {notes}" if notes else "",
             f"Mileage given: {vehicle_details['mileage']:,}" if vehicle_details["mileage"] else "",
         ])
         order = new_repair_order(db, customer, vehicle, concern, vehicle_details["mileage"])
         db.add(Appointment(repair_order_id=order.id, resource_id=slot.resource_id, starts_at=starts_at, ends_at=candidate.ends_at,
-                           status="confirmed", booked_value=total, location="mobile" if zone else "shop",
+                           status="confirmed", booked_value=total or 0, location="mobile" if zone else "shop",
                            travel_before_minutes=candidate.travel_before_minutes, buffer_after_minutes=candidate.buffer_after_minutes))
         db.commit()
     except FormError as exc:
@@ -380,7 +388,7 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
         db.rollback()
         raise
     request.session["site_booking"] = {"ref": f"WEB-{order.id}", "service": service.name, "time": label,
-                                       "price": service.price_label, "fee": zone.fee if zone else 0, "token": order.public_token}
+                                       "price": service.price_label, "fee": (zone.fee or 0) if zone else 0, "token": order.public_token}
     return RedirectResponse("/site/book/received", status_code=303)
 
 

@@ -9,6 +9,8 @@ import os
 import re
 from dataclasses import dataclass, field, replace
 
+PRODUCTION_PROJECT_ID = "97a71288-74a7-4405-9789-b74fda7b8939"
+
 # Suite confirmed by the owner on 2026-11-05. Phone, email and hours match the owner's records.
 BUSINESS = {
     "name": "Imperial Auto Care",
@@ -85,10 +87,10 @@ SERVICE_LINES: tuple[ServiceLine, ...] = (
     ),
     ServiceLine(
         "towing", "Towing and roadside dispatch",
-        "Send us the location and we will review your towing or roadside request.",
+        "Towing is available through Imperial Auto Care. Send the location and we will confirm your request.",
         "Broken down or need a vehicle moved? Send the location and vehicle details. If you are in danger, call 911 first.",
         ("Towing requests", "Roadside help requests", "Vehicle bring-ins for repairs"),
-        note="Requests are reviewed by a person. Nothing is dispatched until we confirm it with you.",
+        note="Dispatch requests need staff confirmation. Nothing is dispatched until we confirm it with you.",
     ),
     ServiceLine(
         "rentals", "Vehicle rentals",
@@ -141,6 +143,19 @@ BOOKABLE_SERVICES: tuple[BookableService, ...] = (
 )
 
 
+def preview_mode() -> bool:
+    """A disposable preview may test unpriced booking. It never works in production."""
+    return (os.getenv("PUBLIC_PREVIEW_MODE", "").lower() == "true"
+            and os.getenv("RAILWAY_ENVIRONMENT_NAME", "").lower() != "production"
+            and os.getenv("RAILWAY_PROJECT_ID") != PRODUCTION_PROJECT_ID)
+
+
+def booking_closed_days() -> set[int]:
+    """Weekdays closed to online booking, 0 is Monday. Saturday stays closed until the owner confirms it."""
+    raw = os.getenv("PUBLIC_BOOKING_CLOSED_DAYS", "5")
+    return {int(day) for day in raw.split(",") if day.strip().isdigit()}
+
+
 def service_catalog() -> dict[str, dict]:
     """PUBLIC_SERVICE_CATALOG: {"diagnostic": {"price": 0, "price_type": "exact", "minutes": 60, "mobile": false}}"""
     try:
@@ -171,8 +186,8 @@ def approved_bookable_services() -> list[BookableService]:
 
 
 def bookable_services() -> list[BookableService]:
-    """Only services with a final price can be booked."""
-    return [s for s in approved_bookable_services() if s.price is not None]
+    """Only services with a final price can be booked, except in a disposable preview."""
+    return [s for s in approved_bookable_services() if s.price is not None or preview_mode()]
 
 
 def bookable_service(slug: str) -> BookableService | None:
@@ -181,7 +196,7 @@ def bookable_service(slug: str) -> BookableService | None:
 
 @dataclass(frozen=True)
 class MobileZone:
-    fee: float
+    fee: float | None  # None only in a preview, where no fee has been verified
     travel_minutes: int
 
 
@@ -192,10 +207,11 @@ def mobile_zone(zip_code: str | None) -> MobileZone | None:
         entry = zones.get((zip_code or "").strip())
         if not isinstance(entry, dict):
             return None
-        fee, travel = float(entry["fee"]), int(entry["travel_minutes"])
+        fee = None if entry.get("fee") is None and preview_mode() else float(entry["fee"])
+        travel = int(entry["travel_minutes"])
     except (ValueError, TypeError, KeyError, AttributeError):
         return None
-    return MobileZone(fee, travel) if fee >= 0 and 0 <= travel <= 240 else None
+    return MobileZone(fee, travel) if (fee is None or fee >= 0) and 0 <= travel <= 240 else None
 
 
 def forms_enabled(read_only: bool) -> bool:
