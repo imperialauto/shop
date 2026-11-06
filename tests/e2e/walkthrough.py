@@ -226,7 +226,7 @@ def flows(page, device):
     def site_booking():
         visitor = page.context.browser.new_context(**page_options).new_page()
         visitor.goto(BASE + "/site/")
-        visitor.click("a[href='/site/book']")
+        visitor.click(".hero a[href='/site/book']")
         visitor.click("a[href='/site/book?service=diagnostic']")
         visitor.locator("label.choice", has=visitor.locator("input[name=slot_id]")).first.click()
         visitor.fill("[name=year]", "2016")
@@ -249,7 +249,7 @@ def flows(page, device):
         visitor.goto(BASE + "/site/services/diesel")
         visitor.click("a[href='/site/estimate?service=diesel']")
         assert visitor.input_value("[name=service_line]") == "diesel"
-        visitor.fill("[name=description]", "Made-up walkthrough: hard start when cold")
+        visitor.fill("textarea[name=description]", "Made-up walkthrough: hard start when cold")
         visitor.fill("[name=vin]", "1FTFW1ET5DFC10312")
         visitor.fill("[name=first_name]", "Est" + device)
         visitor.fill("[name=last_name]", "Visitor")
