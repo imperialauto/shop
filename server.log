@@ -1,0 +1,313 @@
+INFO:     Started server process [3359]
+INFO:     Waiting for application startup.
+INFO:     imperial_database_audit {"connected": true, "database": "walkthrough", "driver": "postgresql", "host": "127.0.0.1", "missing_columns": {}, "missing_tables": [], "tables": {"appointments": {"rows": 0}, "booking_slots": {"rows": 21}, "communications": {"rows": 0}, "customers": {"rows": 4}, "dispatch_audit": {"rows": 0}, "dispatch_events": {"rows": 0}, "dispatch_items": {"rows": 5}, "dispatch_outbound": {"rows": 0}, "dispatch_policies": {"rows": 0}, "dispatch_sync": {"rows": 0}, "estimate_sessions": {"rows": 0}, "invoices": {"rows": 2}, "line_items": {"rows": 12}, "parts_orders": {"rows": 0}, "payments": {"rows": 1}, "repair_orders": {"rows": 6}, "user_mfa": {"rows": 0}, "users": {"rows": 4}, "vehicles": {"rows": 4}}}
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8099 (Press CTRL+C to quit)
+INFO:     127.0.0.1:60704 - "GET /healthz HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "POST /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "POST /login HTTP/1.1" 302 Found
+INFO:     127.0.0.1:60706 - "GET /dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60710 - "GET /site/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60710 - "GET /static/site.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60710 - "GET /site/book HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60710 - "GET /site/book?service=diagnostic HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60710 - "POST /site/book HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:60710 - "GET /site/book/received HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60710 - "GET /status/IbIfxIUlktWHHkw7mqazpJK4ws7_2ALaTNcOaq5VHEg HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60710 - "GET /site/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60710 - "POST /site/status HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:60710 - "GET /status/IbIfxIUlktWHHkw7mqazpJK4ws7_2ALaTNcOaq5VHEg HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60710 - "GET /site/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60710 - "POST /site/status HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60706 - "GET /appointments/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60726 - "GET /site/book?service=battery-charging HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60726 - "GET /static/site.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60726 - "GET /site/book?service=battery-charging&where=mobile&zip=85000 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60726 - "POST /site/book HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:60726 - "GET /site/book/received HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60738 - "GET /site/book?service=pre-purchase HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60738 - "GET /static/site.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60746 - "POST /site/book HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:60746 - "POST /site/book HTTP/1.1" 409 Conflict
+INFO:     127.0.0.1:60738 - "GET /site/book?service=pre-purchase HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60752 - "GET /site/services/diesel HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60752 - "GET /static/site.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60752 - "GET /site/estimate?service=diesel HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60752 - "POST /site/estimate HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:60752 - "GET /site/estimate/received HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /customers/new HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "POST /customers/new HTTP/1.1" 302 Found
+INFO:     127.0.0.1:60706 - "GET /customers/9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /vehicles/new?customer_id=9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "POST /vehicles/new HTTP/1.1" 302 Found
+INFO:     127.0.0.1:60706 - "GET /customers/9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /ro/new?customer_id=9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /ro/0/vehicles?customer_id=9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "POST /ro/new HTTP/1.1" 302 Found
+INFO:     127.0.0.1:60706 - "GET /ro/11 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "POST /ro/11/add-line-item HTTP/1.1" 302 Found
+INFO:     127.0.0.1:60706 - "GET /ro/11 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "POST /ro/11/add-line-item HTTP/1.1" 302 Found
+INFO:     127.0.0.1:60706 - "GET /ro/11 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "POST /ro/11/update-status HTTP/1.1" 302 Found
+INFO:     127.0.0.1:60706 - "GET /ro/11 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "POST /invoices/create/11 HTTP/1.1" 302 Found
+INFO:     127.0.0.1:60706 - "GET /invoices/3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /ro/11 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /invoices/3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "POST /invoices/3/mark-sent HTTP/1.1" 302 Found
+INFO:     127.0.0.1:60706 - "GET /invoices/3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "POST /invoices/3/add-payment HTTP/1.1" 302 Found
+INFO:     127.0.0.1:60706 - "GET /invoices/3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /ro/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /status/hKLKljsomCihWPTWgpYsBw HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /ro/11 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /sign/ro/BF6tsJxbYnclRdtf7nUjN1oMsFZsNzbLaSKo2Q0wDZ0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "POST /sign/ro/BF6tsJxbYnclRdtf7nUjN1oMsFZsNzbLaSKo2Q0wDZ0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /ro/11 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /appointments/calendar?ro=11 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /appointments/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "POST /appointments/ HTTP/1.1" 201 Created
+INFO:     127.0.0.1:60706 - "GET /appointments/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "POST /appointments/ HTTP/1.1" 409 Conflict
+INFO:     127.0.0.1:60706 - "GET /customers/?search=Testcase HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /dashboard?view=urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "POST /dispatch/3/decide HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:60706 - "GET /dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /dashboard?view=urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45390 - "GET /ro/ HTTP/1.1" 302 Found
+INFO:     127.0.0.1:45390 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45406 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45406 - "POST /login HTTP/1.1" 302 Found
+INFO:     127.0.0.1:45406 - "GET /ro/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45406 - "GET /finance/ HTTP/1.1" 403 Forbidden
+INFO:     127.0.0.1:45406 - "GET /invoices/ HTTP/1.1" 403 Forbidden
+INFO:     127.0.0.1:45406 - "GET /customers/ HTTP/1.1" 403 Forbidden
+INFO:     127.0.0.1:45406 - "GET /ro/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45406 - "GET /appointments/calendar HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45406 - "GET /appointments/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45422 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45422 - "POST /login HTTP/1.1" 302 Found
+INFO:     127.0.0.1:45422 - "GET /dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45422 - "GET /invoices/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45422 - "GET /finance/ HTTP/1.1" 403 Forbidden
+INFO:     127.0.0.1:45422 - "GET /settings HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45428 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45428 - "POST /login HTTP/1.1" 302 Found
+INFO:     127.0.0.1:45428 - "GET /dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45428 - "GET /dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45428 - "GET /customers/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45428 - "GET /finance/ HTTP/1.1" 403 Forbidden
+INFO:     127.0.0.1:45428 - "GET /live/control HTTP/1.1" 403 Forbidden
+INFO:     127.0.0.1:60706 - "GET /settings HTTP/1.1" 200 OK
+INFO:     staff_created by=1 role=tech
+INFO:     127.0.0.1:60706 - "POST /settings/users/create HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:60706 - "GET /settings?user_saved=created HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45430 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45430 - "POST /login HTTP/1.1" 302 Found
+INFO:     127.0.0.1:45430 - "GET /ro/ HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:45430 - "GET /settings?change=1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45430 - "GET /ro/ HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:45430 - "GET /settings?change=1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45430 - "POST /settings/change-password HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45430 - "GET /ro/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /settings HTTP/1.1" 200 OK
+INFO:     staff_active by=1 user=5 active=False
+INFO:     127.0.0.1:60706 - "POST /settings/users/5/delete HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:60706 - "GET /settings?user_saved=off HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33954 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33954 - "POST /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /dashboard?view=urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /ro/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /ro/board HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /ro/new HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /ro/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /estimates/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /invoices/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /invoices/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /finance/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /customers/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /customers/?type_filter=fleet HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /ro/99999 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60706 - "GET /customers/new HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /customers/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /vehicles/new?customer_id=1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /vehicles/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /appointments/calendar HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /appointments/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /settings HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /live/control HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /live/control/data HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /site/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /static/site.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /site/services HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /site/services/diesel HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /site/services/nvzn-customs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /site/contact HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /site/book HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /site/book?service=diagnostic HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /site/estimate HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /site/book?service=battery-charging&where=mobile&zip=85000 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /site/pricing HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /site/rentals HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /static/site.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:60706 - "GET /site/faq HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60706 - "GET /site/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "POST /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "POST /login HTTP/1.1" 302 Found
+INFO:     127.0.0.1:44334 - "GET /dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44346 - "GET /site/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44346 - "GET /static/site.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44346 - "GET /site/book HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44346 - "GET /site/book?service=diagnostic HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44346 - "POST /site/book HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:44346 - "GET /site/book/received HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44346 - "GET /status/Rp00bdcHdhRb-JTEyKlVpWjny2TY9rKLhT9uSSeVcxY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44346 - "GET /site/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44346 - "POST /site/status HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:44346 - "GET /status/Rp00bdcHdhRb-JTEyKlVpWjny2TY9rKLhT9uSSeVcxY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44346 - "GET /site/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44346 - "POST /site/status HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:44334 - "GET /appointments/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44358 - "GET /site/book?service=battery-charging HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44358 - "GET /static/site.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44358 - "GET /site/book?service=battery-charging&where=mobile&zip=85000 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44358 - "POST /site/book HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:44358 - "GET /site/book/received HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44360 - "GET /site/book?service=pre-purchase HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44360 - "GET /static/site.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44370 - "POST /site/book HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:44370 - "POST /site/book HTTP/1.1" 409 Conflict
+INFO:     127.0.0.1:44360 - "GET /site/book?service=pre-purchase HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44382 - "GET /site/services/diesel HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44382 - "GET /static/site.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44382 - "GET /site/estimate?service=diesel HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44382 - "POST /site/estimate HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:44382 - "GET /site/estimate/received HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /customers/new HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "POST /customers/new HTTP/1.1" 302 Found
+INFO:     127.0.0.1:44334 - "GET /customers/10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /vehicles/new?customer_id=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "POST /vehicles/new HTTP/1.1" 302 Found
+INFO:     127.0.0.1:44334 - "GET /customers/10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /ro/new?customer_id=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /ro/0/vehicles?customer_id=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "POST /ro/new HTTP/1.1" 302 Found
+INFO:     127.0.0.1:44334 - "GET /ro/16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "POST /ro/16/add-line-item HTTP/1.1" 302 Found
+INFO:     127.0.0.1:44334 - "GET /ro/16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "POST /ro/16/add-line-item HTTP/1.1" 302 Found
+INFO:     127.0.0.1:44334 - "GET /ro/16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "POST /ro/16/update-status HTTP/1.1" 302 Found
+INFO:     127.0.0.1:44334 - "GET /ro/16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "POST /invoices/create/16 HTTP/1.1" 302 Found
+INFO:     127.0.0.1:44334 - "GET /invoices/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /ro/16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /invoices/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "POST /invoices/4/mark-sent HTTP/1.1" 302 Found
+INFO:     127.0.0.1:44334 - "GET /invoices/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "POST /invoices/4/add-payment HTTP/1.1" 302 Found
+INFO:     127.0.0.1:44334 - "GET /invoices/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /ro/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /status/hKLKljsomCihWPTWgpYsBw HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /ro/16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /sign/ro/EDiaxDUDW2tAgRl5IKpfBCr9EjcjZhK0q3tRtWtxzrg HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "POST /sign/ro/EDiaxDUDW2tAgRl5IKpfBCr9EjcjZhK0q3tRtWtxzrg HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /ro/16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /appointments/calendar?ro=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /appointments/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "POST /appointments/ HTTP/1.1" 201 Created
+INFO:     127.0.0.1:44334 - "GET /appointments/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "POST /appointments/ HTTP/1.1" 409 Conflict
+INFO:     127.0.0.1:44334 - "GET /customers/?search=Testcase HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /dashboard?view=urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "POST /dispatch/2/decide HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:44334 - "GET /dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34012 - "GET /ro/ HTTP/1.1" 302 Found
+INFO:     127.0.0.1:34012 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34020 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34020 - "POST /login HTTP/1.1" 302 Found
+INFO:     127.0.0.1:34020 - "GET /ro/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34020 - "GET /finance/ HTTP/1.1" 403 Forbidden
+INFO:     127.0.0.1:34020 - "GET /invoices/ HTTP/1.1" 403 Forbidden
+INFO:     127.0.0.1:34020 - "GET /customers/ HTTP/1.1" 403 Forbidden
+INFO:     127.0.0.1:34020 - "GET /ro/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34020 - "GET /appointments/calendar HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34020 - "GET /appointments/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34032 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34032 - "POST /login HTTP/1.1" 302 Found
+INFO:     127.0.0.1:34032 - "GET /dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34032 - "GET /invoices/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34032 - "GET /finance/ HTTP/1.1" 403 Forbidden
+INFO:     127.0.0.1:34032 - "GET /settings HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34034 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34034 - "POST /login HTTP/1.1" 302 Found
+INFO:     127.0.0.1:34034 - "GET /dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34034 - "GET /dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34034 - "GET /customers/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34034 - "GET /finance/ HTTP/1.1" 403 Forbidden
+INFO:     127.0.0.1:34034 - "GET /live/control HTTP/1.1" 403 Forbidden
+INFO:     127.0.0.1:44334 - "GET /settings HTTP/1.1" 200 OK
+INFO:     staff_created by=1 role=tech
+INFO:     127.0.0.1:44334 - "POST /settings/users/create HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:44334 - "GET /settings?user_saved=created HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34046 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34046 - "POST /login HTTP/1.1" 302 Found
+INFO:     127.0.0.1:34046 - "GET /ro/ HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:34046 - "GET /settings?change=1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34046 - "GET /ro/ HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:34046 - "GET /settings?change=1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34046 - "POST /settings/change-password HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34046 - "GET /ro/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /settings HTTP/1.1" 200 OK
+INFO:     staff_active by=1 user=6 active=False
+INFO:     127.0.0.1:44334 - "POST /settings/users/6/delete HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:44334 - "GET /settings?user_saved=off HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34062 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34062 - "POST /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /dashboard?view=urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /ro/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /ro/board HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /ro/new HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /ro/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /estimates/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /invoices/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /invoices/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /finance/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /customers/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /customers/?type_filter=fleet HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /ro/99999 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:44334 - "GET /customers/new HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /customers/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /vehicles/new?customer_id=1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /vehicles/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /appointments/calendar HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /appointments/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /settings HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /live/control HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /live/control/data HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /site/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /static/site.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /site/services HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /site/services/diesel HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /site/services/nvzn-customs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /site/contact HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /site/book HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /site/book?service=diagnostic HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /site/estimate HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /site/book?service=battery-charging&where=mobile&zip=85000 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /site/pricing HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /site/rentals HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /site/faq HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44334 - "GET /site/status HTTP/1.1" 200 OK

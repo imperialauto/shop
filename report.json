@@ -1,0 +1,1594 @@
+[
+ {
+  "device": "phone",
+  "page": "login",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Login \u2014 Imperial Auto Care",
+  "h1": "Imperial Auto Care",
+  "smallTargets": 3,
+  "smallSample": [
+   "username",
+   "password",
+   "Sign In"
+  ],
+  "zoomingInputs": 2,
+  "height": 844
+ },
+ {
+  "device": "phone",
+  "flow": "wrong password",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "flow": "login",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "page": "site-booked",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Request received \u2014 Imperial Auto Care",
+  "h1": "You're booked",
+  "smallTargets": 1,
+  "smallSample": [
+   "(480) 914-4144"
+  ],
+  "zoomingInputs": 0,
+  "height": 1506
+ },
+ {
+  "device": "phone",
+  "page": "site-status-result",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Vehicle Status \u2014 Imperial Auto Care",
+  "h1": "",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 844
+ },
+ {
+  "device": "phone",
+  "flow": "public site booking",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "page": "site-mobile-booked",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Request received \u2014 Imperial Auto Care",
+  "h1": "You're booked",
+  "smallTargets": 1,
+  "smallSample": [
+   "(480) 914-4144"
+  ],
+  "zoomingInputs": 0,
+  "height": 1506
+ },
+ {
+  "device": "phone",
+  "flow": "public mobile booking",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "flow": "public time conflict",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "page": "site-estimate-received",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Request received \u2014 Imperial Auto Care",
+  "h1": "We have your request",
+  "smallTargets": 1,
+  "smallSample": [
+   "(480) 914-4144"
+  ],
+  "zoomingInputs": 0,
+  "height": 1481
+ },
+ {
+  "device": "phone",
+  "flow": "public site estimate",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "flow": "new customer",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "flow": "new vehicle",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "flow": "new repair order",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "flow": "add line item",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "flow": "add part",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "flow": "change status",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "flow": "create invoice",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "flow": "no duplicate invoice",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "flow": "record payment",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "page": "public-status",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Vehicle Status \u2014 Imperial Auto Care",
+  "h1": "",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 844
+ },
+ {
+  "device": "phone",
+  "flow": "customer status link",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "page": "signed",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Signed \u2014 Imperial Auto Care",
+  "h1": "Work Authorized",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 844
+ },
+ {
+  "device": "phone",
+  "flow": "customer signature",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "flow": "book appointment",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "flow": "search customers",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "flow": "send reply from dashboard",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "flow": "logged out redirect",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "flow": "tech limits",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "flow": "admin limits",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "flow": "office limits",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "flow": "new login",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "flow": "where new vehicle lands",
+  "ok": true,
+  "url": "http://127.0.0.1:8099/customers/9"
+ },
+ {
+  "device": "phone",
+  "flow": "open menu",
+  "ok": true
+ },
+ {
+  "device": "phone",
+  "page": "dashboard",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Dashboard \u2014 Imperial Auto Care",
+  "h1": "Dashboard",
+  "smallTargets": 1,
+  "smallSample": [
+   "View all \u2192"
+  ],
+  "zoomingInputs": 0,
+  "height": 3327
+ },
+ {
+  "device": "phone",
+  "page": "dashboard-urgent",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Dashboard \u2014 Imperial Auto Care",
+  "h1": "Dashboard",
+  "smallTargets": 1,
+  "smallSample": [
+   "View all \u2192"
+  ],
+  "zoomingInputs": 0,
+  "height": 3238
+ },
+ {
+  "device": "phone",
+  "page": "repair-orders",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Repair Orders \u2014 Imperial Auto Care",
+  "h1": "Repair Orders",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 3570
+ },
+ {
+  "device": "phone",
+  "page": "board",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Repair board \u2014 Imperial Auto Care",
+  "h1": "Repair order board",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 1066
+ },
+ {
+  "device": "phone",
+  "page": "ro-new",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "New Repair Order \u2014 Imperial Auto Care",
+  "h1": "New Repair Order",
+  "smallTargets": 16,
+  "smallSample": [
+   "\u2190 Repair Orders",
+   "Check engine light on",
+   "No start / hard start",
+   "Oil leak",
+   "Transmission slipping",
+   "Overheating",
+   "Brake inspection",
+   "Suspension noise"
+  ],
+  "zoomingInputs": 0,
+  "height": 989
+ },
+ {
+  "device": "phone",
+  "page": "ro-detail",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "RO #1 \u2014 Imperial Auto Care",
+  "h1": "RO #1",
+  "smallTargets": 2,
+  "smallSample": [
+   "Customer status page \u2192",
+   "\ud83d\udd34\nAutoZone Pro"
+  ],
+  "zoomingInputs": 0,
+  "height": 2665
+ },
+ {
+  "device": "phone",
+  "page": "estimates",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Estimate Generator \u2014 Imperial Auto Care",
+  "h1": "Estimate Generator",
+  "smallTargets": 2,
+  "smallSample": [
+   "Paste Text",
+   "Screenshot"
+  ],
+  "zoomingInputs": 0,
+  "height": 844
+ },
+ {
+  "device": "phone",
+  "page": "invoices",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Invoices \u2014 Imperial Auto Care",
+  "h1": "Invoices",
+  "smallTargets": 3,
+  "smallSample": [
+   "#11",
+   "#5",
+   "#6"
+  ],
+  "zoomingInputs": 0,
+  "height": 844
+ },
+ {
+  "device": "phone",
+  "page": "invoice-detail",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Invoice #1 \u2014 Imperial Auto Care",
+  "h1": "Invoice #1",
+  "smallTargets": 1,
+  "smallSample": [
+   "#6"
+  ],
+  "zoomingInputs": 0,
+  "height": 1486
+ },
+ {
+  "device": "phone",
+  "page": "finance",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Finance \u2014 Imperial Auto Care",
+  "h1": "Financial Command Center",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 1699
+ },
+ {
+  "device": "phone",
+  "page": "customers",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Customers \u2014 Imperial Auto Care",
+  "h1": "Customers",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 2196
+ },
+ {
+  "device": "phone",
+  "page": "fleet",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Customers \u2014 Imperial Auto Care",
+  "h1": "Customers",
+  "smallTargets": 1,
+  "smallSample": [
+   "Add one \u2192"
+  ],
+  "zoomingInputs": 0,
+  "height": 844
+ },
+ {
+  "device": "phone",
+  "page": "missing-page",
+  "status": 404,
+  "errors": [
+   "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "overflow": 0,
+  "title": "Not found",
+  "h1": "That page could not be found",
+  "smallTargets": 1,
+  "smallSample": [
+   "Back to Imperial Operations"
+  ],
+  "zoomingInputs": 0,
+  "height": 844
+ },
+ {
+  "device": "phone",
+  "page": "customer-new",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "New Customer \u2014 Imperial Auto Care",
+  "h1": "New Customer",
+  "smallTargets": 3,
+  "smallSample": [
+   "\u2190 Customers",
+   "customer_type"
+  ],
+  "zoomingInputs": 0,
+  "height": 888
+ },
+ {
+  "device": "phone",
+  "page": "customer-detail",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Pat Sample \u2014 Imperial Auto Care",
+  "h1": "Pat Sample",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 1001
+ },
+ {
+  "device": "phone",
+  "page": "vehicle-new",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Add Vehicle \u2014 Imperial Auto Care",
+  "h1": "Add Vehicle",
+  "smallTargets": 1,
+  "smallSample": [
+   "\u2190 Customers"
+  ],
+  "zoomingInputs": 0,
+  "height": 1222
+ },
+ {
+  "device": "phone",
+  "page": "vehicle-detail",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "2016 Ford Fusion \u2014 Imperial Auto Care",
+  "h1": "2016 Ford Fusion",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 1332
+ },
+ {
+  "device": "phone",
+  "page": "calendar",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Calendar \u2014 Imperial Auto Care",
+  "h1": "Shop Calendar",
+  "smallTargets": 4,
+  "smallSample": [
+   "#7",
+   "#9",
+   "#8",
+   "#11"
+  ],
+  "zoomingInputs": 0,
+  "height": 1923
+ },
+ {
+  "device": "phone",
+  "page": "settings",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Settings \u2014 Imperial Auto Care",
+  "h1": "Settings",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 2009
+ },
+ {
+  "device": "phone",
+  "page": "live-control",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "LIVE Control \u2014 Imperial Auto Care",
+  "h1": "LIVE Control",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 2505
+ },
+ {
+  "device": "phone",
+  "page": "site-home",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Imperial Auto Care \u2014 Auto and Diesel Repair in Glendale, AZ",
+  "h1": "Repairs done right, including the ones other shops turn away.",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 6091
+ },
+ {
+  "device": "phone",
+  "page": "site-services",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Services \u2014 Imperial Auto Care",
+  "h1": "What we work on",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 3281
+ },
+ {
+  "device": "phone",
+  "page": "site-diesel",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Diesel repair \u2014 Imperial Auto Care",
+  "h1": "Diesel repair",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 2145
+ },
+ {
+  "device": "phone",
+  "page": "site-nvzn",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "NVZN Customs \u2014 Imperial Auto Care",
+  "h1": "NVZN Customs",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 2145
+ },
+ {
+  "device": "phone",
+  "page": "site-contact",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Contact and hours \u2014 Imperial Auto Care",
+  "h1": "Visit the shop",
+  "smallTargets": 1,
+  "smallSample": [
+   "jaelan@imperialautocarellc.com"
+  ],
+  "zoomingInputs": 0,
+  "height": 1842
+ },
+ {
+  "device": "phone",
+  "page": "site-book",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Book online \u2014 Imperial Auto Care",
+  "h1": "Book a service",
+  "smallTargets": 1,
+  "smallSample": [
+   "estimate request"
+  ],
+  "zoomingInputs": 0,
+  "height": 2134
+ },
+ {
+  "device": "phone",
+  "page": "site-book-times",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Book online \u2014 Imperial Auto Care",
+  "h1": "Book a service",
+  "smallTargets": 20,
+  "smallSample": [
+   "estimate request",
+   "slot_id",
+   "contact_method"
+  ],
+  "zoomingInputs": 19,
+  "height": 4085
+ },
+ {
+  "device": "phone",
+  "page": "site-estimate",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Get an estimate \u2014 Imperial Auto Care",
+  "h1": "Tell us about the job",
+  "smallTargets": 6,
+  "smallSample": [
+   "where",
+   "contact_method"
+  ],
+  "zoomingInputs": 6,
+  "height": 3379
+ },
+ {
+  "device": "phone",
+  "page": "site-mobile",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Book online \u2014 Imperial Auto Care",
+  "h1": "Book a service",
+  "smallTargets": 25,
+  "smallSample": [
+   "estimate request",
+   "where",
+   "zip",
+   "slot_id",
+   "street",
+   "contact_method"
+  ],
+  "zoomingInputs": 24,
+  "height": 4630
+ },
+ {
+  "device": "phone",
+  "page": "site-pricing",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Pricing \u2014 Imperial Auto Care",
+  "h1": "Standard service prices",
+  "smallTargets": 1,
+  "smallSample": [
+   "Request an estimate"
+  ],
+  "zoomingInputs": 0,
+  "height": 2574
+ },
+ {
+  "device": "phone",
+  "page": "site-rentals",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Vehicle rentals \u2014 Imperial Auto Care",
+  "h1": "Vehicle rentals",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 2109
+ },
+ {
+  "device": "phone",
+  "page": "site-faq",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "FAQ \u2014 Imperial Auto Care",
+  "h1": "Common questions",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 2008
+ },
+ {
+  "device": "phone",
+  "page": "site-status",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Repair status \u2014 Imperial Auto Care",
+  "h1": "Check on your vehicle",
+  "smallTargets": 1,
+  "smallSample": [
+   "reference"
+  ],
+  "zoomingInputs": 1,
+  "height": 1484
+ },
+ {
+  "device": "desktop",
+  "page": "login",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Login \u2014 Imperial Auto Care",
+  "h1": "Imperial Auto Care",
+  "smallTargets": 3,
+  "smallSample": [
+   "username",
+   "password",
+   "Sign In"
+  ],
+  "zoomingInputs": 2,
+  "height": 900
+ },
+ {
+  "device": "desktop",
+  "flow": "wrong password",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "flow": "login",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "page": "site-booked",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Request received \u2014 Imperial Auto Care",
+  "h1": "You're booked",
+  "smallTargets": 1,
+  "smallSample": [
+   "(480) 914-4144"
+  ],
+  "zoomingInputs": 0,
+  "height": 1108
+ },
+ {
+  "device": "desktop",
+  "page": "site-status-result",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Vehicle Status \u2014 Imperial Auto Care",
+  "h1": "",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 900
+ },
+ {
+  "device": "desktop",
+  "flow": "public site booking",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "page": "site-mobile-booked",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Request received \u2014 Imperial Auto Care",
+  "h1": "You're booked",
+  "smallTargets": 1,
+  "smallSample": [
+   "(480) 914-4144"
+  ],
+  "zoomingInputs": 0,
+  "height": 1108
+ },
+ {
+  "device": "desktop",
+  "flow": "public mobile booking",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "flow": "public time conflict",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "page": "site-estimate-received",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Request received \u2014 Imperial Auto Care",
+  "h1": "We have your request",
+  "smallTargets": 1,
+  "smallSample": [
+   "(480) 914-4144"
+  ],
+  "zoomingInputs": 0,
+  "height": 1083
+ },
+ {
+  "device": "desktop",
+  "flow": "public site estimate",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "flow": "new customer",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "flow": "new vehicle",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "flow": "new repair order",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "flow": "add line item",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "flow": "add part",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "flow": "change status",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "flow": "create invoice",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "flow": "no duplicate invoice",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "flow": "record payment",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "page": "public-status",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Vehicle Status \u2014 Imperial Auto Care",
+  "h1": "",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 900
+ },
+ {
+  "device": "desktop",
+  "flow": "customer status link",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "page": "signed",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Signed \u2014 Imperial Auto Care",
+  "h1": "Work Authorized",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 900
+ },
+ {
+  "device": "desktop",
+  "flow": "customer signature",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "flow": "book appointment",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "flow": "search customers",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "flow": "send reply from dashboard",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "flow": "logged out redirect",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "flow": "tech limits",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "flow": "admin limits",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "flow": "office limits",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "flow": "new login",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "flow": "where new vehicle lands",
+  "ok": true,
+  "url": "http://127.0.0.1:8099/customers/10"
+ },
+ {
+  "device": "desktop",
+  "flow": "open menu",
+  "ok": true
+ },
+ {
+  "device": "desktop",
+  "page": "dashboard",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Dashboard \u2014 Imperial Auto Care",
+  "h1": "Dashboard",
+  "smallTargets": 38,
+  "smallSample": [
+   "Dashboard",
+   "Repair Orders",
+   "Estimates",
+   "Invoices",
+   "Finance",
+   "All Customers",
+   "Fleet",
+   "Settings"
+  ],
+  "zoomingInputs": 13,
+  "height": 1093
+ },
+ {
+  "device": "desktop",
+  "page": "dashboard-urgent",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Dashboard \u2014 Imperial Auto Care",
+  "h1": "Dashboard",
+  "smallTargets": 35,
+  "smallSample": [
+   "Dashboard",
+   "Repair Orders",
+   "Estimates",
+   "Invoices",
+   "Finance",
+   "All Customers",
+   "Fleet",
+   "Settings"
+  ],
+  "zoomingInputs": 13,
+  "height": 1048
+ },
+ {
+  "device": "desktop",
+  "page": "repair-orders",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Repair Orders \u2014 Imperial Auto Care",
+  "h1": "Repair Orders",
+  "smallTargets": 13,
+  "smallSample": [
+   "Dashboard",
+   "Repair Orders",
+   "Estimates",
+   "Invoices",
+   "Finance",
+   "All Customers",
+   "Fleet",
+   "Settings"
+  ],
+  "zoomingInputs": 2,
+  "height": 941
+ },
+ {
+  "device": "desktop",
+  "page": "board",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Repair board \u2014 Imperial Auto Care",
+  "h1": "Repair order board",
+  "smallTargets": 10,
+  "smallSample": [
+   "Dashboard",
+   "Repair Orders",
+   "Estimates",
+   "Invoices",
+   "Finance",
+   "All Customers",
+   "Fleet",
+   "Settings"
+  ],
+  "zoomingInputs": 0,
+  "height": 1592
+ },
+ {
+  "device": "desktop",
+  "page": "ro-new",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "New Repair Order \u2014 Imperial Auto Care",
+  "h1": "New Repair Order",
+  "smallTargets": 31,
+  "smallSample": [
+   "Dashboard",
+   "Repair Orders",
+   "Estimates",
+   "Invoices",
+   "Finance",
+   "All Customers",
+   "Fleet",
+   "Settings"
+  ],
+  "zoomingInputs": 5,
+  "height": 900
+ },
+ {
+  "device": "desktop",
+  "page": "ro-detail",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "RO #1 \u2014 Imperial Auto Care",
+  "h1": "RO #1",
+  "smallTargets": 30,
+  "smallSample": [
+   "Dashboard",
+   "Repair Orders",
+   "Estimates",
+   "Invoices",
+   "Finance",
+   "All Customers",
+   "Fleet",
+   "Settings"
+  ],
+  "zoomingInputs": 6,
+  "height": 1320
+ },
+ {
+  "device": "desktop",
+  "page": "estimates",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Estimate Generator \u2014 Imperial Auto Care",
+  "h1": "Estimate Generator",
+  "smallTargets": 12,
+  "smallSample": [
+   "Dashboard",
+   "Repair Orders",
+   "Estimates",
+   "Invoices",
+   "Finance",
+   "All Customers",
+   "Fleet",
+   "Settings"
+  ],
+  "zoomingInputs": 1,
+  "height": 900
+ },
+ {
+  "device": "desktop",
+  "page": "invoices",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Invoices \u2014 Imperial Auto Care",
+  "h1": "Invoices",
+  "smallTargets": 13,
+  "smallSample": [
+   "Dashboard",
+   "Repair Orders",
+   "Estimates",
+   "Invoices",
+   "Finance",
+   "All Customers",
+   "Fleet",
+   "Settings"
+  ],
+  "zoomingInputs": 0,
+  "height": 900
+ },
+ {
+  "device": "desktop",
+  "page": "invoice-detail",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Invoice #1 \u2014 Imperial Auto Care",
+  "h1": "Invoice #1",
+  "smallTargets": 15,
+  "smallSample": [
+   "Dashboard",
+   "Repair Orders",
+   "Estimates",
+   "Invoices",
+   "Finance",
+   "All Customers",
+   "Fleet",
+   "Settings"
+  ],
+  "zoomingInputs": 3,
+  "height": 900
+ },
+ {
+  "device": "desktop",
+  "page": "finance",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Finance \u2014 Imperial Auto Care",
+  "h1": "Financial Command Center",
+  "smallTargets": 9,
+  "smallSample": [
+   "Dashboard",
+   "Repair Orders",
+   "Estimates",
+   "Invoices",
+   "Finance",
+   "All Customers",
+   "Fleet",
+   "Settings"
+  ],
+  "zoomingInputs": 1,
+  "height": 900
+ },
+ {
+  "device": "desktop",
+  "page": "customers",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Customers \u2014 Imperial Auto Care",
+  "h1": "Customers",
+  "smallTargets": 13,
+  "smallSample": [
+   "Dashboard",
+   "Repair Orders",
+   "Estimates",
+   "Invoices",
+   "Finance",
+   "All Customers",
+   "Fleet",
+   "Settings"
+  ],
+  "zoomingInputs": 2,
+  "height": 900
+ },
+ {
+  "device": "desktop",
+  "page": "fleet",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Customers \u2014 Imperial Auto Care",
+  "h1": "Customers",
+  "smallTargets": 14,
+  "smallSample": [
+   "Dashboard",
+   "Repair Orders",
+   "Estimates",
+   "Invoices",
+   "Finance",
+   "All Customers",
+   "Fleet",
+   "Settings"
+  ],
+  "zoomingInputs": 2,
+  "height": 900
+ },
+ {
+  "device": "desktop",
+  "page": "missing-page",
+  "status": 404,
+  "errors": [
+   "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "overflow": 0,
+  "title": "Not found",
+  "h1": "That page could not be found",
+  "smallTargets": 1,
+  "smallSample": [
+   "Back to Imperial Operations"
+  ],
+  "zoomingInputs": 0,
+  "height": 900
+ },
+ {
+  "device": "desktop",
+  "page": "customer-new",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "New Customer \u2014 Imperial Auto Care",
+  "h1": "New Customer",
+  "smallTargets": 19,
+  "smallSample": [
+   "Dashboard",
+   "Repair Orders",
+   "Estimates",
+   "Invoices",
+   "Finance",
+   "All Customers",
+   "Fleet",
+   "Settings"
+  ],
+  "zoomingInputs": 6,
+  "height": 900
+ },
+ {
+  "device": "desktop",
+  "page": "customer-detail",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Pat Sample \u2014 Imperial Auto Care",
+  "h1": "Pat Sample",
+  "smallTargets": 14,
+  "smallSample": [
+   "Dashboard",
+   "Repair Orders",
+   "Estimates",
+   "Invoices",
+   "Finance",
+   "All Customers",
+   "Fleet",
+   "Settings"
+  ],
+  "zoomingInputs": 0,
+  "height": 900
+ },
+ {
+  "device": "desktop",
+  "page": "vehicle-new",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Add Vehicle \u2014 Imperial Auto Care",
+  "h1": "Add Vehicle",
+  "smallTargets": 22,
+  "smallSample": [
+   "Dashboard",
+   "Repair Orders",
+   "Estimates",
+   "Invoices",
+   "Finance",
+   "All Customers",
+   "Fleet",
+   "Settings"
+  ],
+  "zoomingInputs": 11,
+  "height": 900
+ },
+ {
+  "device": "desktop",
+  "page": "vehicle-detail",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "2016 Ford Fusion \u2014 Imperial Auto Care",
+  "h1": "2016 Ford Fusion",
+  "smallTargets": 13,
+  "smallSample": [
+   "Dashboard",
+   "Repair Orders",
+   "Estimates",
+   "Invoices",
+   "Finance",
+   "All Customers",
+   "Fleet",
+   "Settings"
+  ],
+  "zoomingInputs": 0,
+  "height": 900
+ },
+ {
+  "device": "desktop",
+  "page": "calendar",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Calendar \u2014 Imperial Auto Care",
+  "h1": "Shop Calendar",
+  "smallTargets": 41,
+  "smallSample": [
+   "Dashboard",
+   "Repair Orders",
+   "Estimates",
+   "Invoices",
+   "Finance",
+   "All Customers",
+   "Fleet",
+   "Settings"
+  ],
+  "zoomingInputs": 0,
+  "height": 900
+ },
+ {
+  "device": "desktop",
+  "page": "settings",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Settings \u2014 Imperial Auto Care",
+  "h1": "Settings",
+  "smallTargets": 32,
+  "smallSample": [
+   "Dashboard",
+   "Repair Orders",
+   "Estimates",
+   "Invoices",
+   "Finance",
+   "All Customers",
+   "Fleet",
+   "Settings"
+  ],
+  "zoomingInputs": 11,
+  "height": 1302
+ },
+ {
+  "device": "desktop",
+  "page": "live-control",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "LIVE Control \u2014 Imperial Auto Care",
+  "h1": "LIVE Control",
+  "smallTargets": 50,
+  "smallSample": [
+   "Dashboard",
+   "Repair Orders",
+   "Estimates",
+   "Invoices",
+   "Finance",
+   "All Customers",
+   "Fleet",
+   "Settings"
+  ],
+  "zoomingInputs": 0,
+  "height": 1702
+ },
+ {
+  "device": "desktop",
+  "page": "site-home",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Imperial Auto Care \u2014 Auto and Diesel Repair in Glendale, AZ",
+  "h1": "Repairs done right, including the ones other shops turn away.",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 3228
+ },
+ {
+  "device": "desktop",
+  "page": "site-services",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Services \u2014 Imperial Auto Care",
+  "h1": "What we work on",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 1606
+ },
+ {
+  "device": "desktop",
+  "page": "site-diesel",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Diesel repair \u2014 Imperial Auto Care",
+  "h1": "Diesel repair",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 1424
+ },
+ {
+  "device": "desktop",
+  "page": "site-nvzn",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "NVZN Customs \u2014 Imperial Auto Care",
+  "h1": "NVZN Customs",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 1424
+ },
+ {
+  "device": "desktop",
+  "page": "site-contact",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Contact and hours \u2014 Imperial Auto Care",
+  "h1": "Visit the shop",
+  "smallTargets": 1,
+  "smallSample": [
+   "jaelan@imperialautocarellc.com"
+  ],
+  "zoomingInputs": 0,
+  "height": 1075
+ },
+ {
+  "device": "desktop",
+  "page": "site-book",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Book online \u2014 Imperial Auto Care",
+  "h1": "Book a service",
+  "smallTargets": 1,
+  "smallSample": [
+   "estimate request"
+  ],
+  "zoomingInputs": 0,
+  "height": 1503
+ },
+ {
+  "device": "desktop",
+  "page": "site-book-times",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Book online \u2014 Imperial Auto Care",
+  "h1": "Book a service",
+  "smallTargets": 16,
+  "smallSample": [
+   "estimate request",
+   "slot_id",
+   "contact_method"
+  ],
+  "zoomingInputs": 15,
+  "height": 2609
+ },
+ {
+  "device": "desktop",
+  "page": "site-estimate",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Get an estimate \u2014 Imperial Auto Care",
+  "h1": "Tell us about the job",
+  "smallTargets": 6,
+  "smallSample": [
+   "where",
+   "contact_method"
+  ],
+  "zoomingInputs": 6,
+  "height": 2327
+ },
+ {
+  "device": "desktop",
+  "page": "site-mobile",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Book online \u2014 Imperial Auto Care",
+  "h1": "Book a service",
+  "smallTargets": 21,
+  "smallSample": [
+   "estimate request",
+   "where",
+   "zip",
+   "slot_id",
+   "street",
+   "contact_method"
+  ],
+  "zoomingInputs": 20,
+  "height": 3196
+ },
+ {
+  "device": "desktop",
+  "page": "site-pricing",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Pricing \u2014 Imperial Auto Care",
+  "h1": "Standard service prices",
+  "smallTargets": 1,
+  "smallSample": [
+   "Request an estimate"
+  ],
+  "zoomingInputs": 0,
+  "height": 1501
+ },
+ {
+  "device": "desktop",
+  "page": "site-rentals",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Vehicle rentals \u2014 Imperial Auto Care",
+  "h1": "Vehicle rentals",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 1363
+ },
+ {
+  "device": "desktop",
+  "page": "site-faq",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "FAQ \u2014 Imperial Auto Care",
+  "h1": "Common questions",
+  "smallTargets": 0,
+  "smallSample": [],
+  "zoomingInputs": 0,
+  "height": 1486
+ },
+ {
+  "device": "desktop",
+  "page": "site-status",
+  "status": 200,
+  "errors": [],
+  "overflow": 0,
+  "title": "Repair status \u2014 Imperial Auto Care",
+  "h1": "Check on your vehicle",
+  "smallTargets": 1,
+  "smallSample": [
+   "reference"
+  ],
+  "zoomingInputs": 1,
+  "height": 1136
+ }
+]
