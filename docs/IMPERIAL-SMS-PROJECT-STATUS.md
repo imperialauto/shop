@@ -26,3 +26,17 @@ Synthetic unit tests under `messaging/tests/projectStatus.test.js`. No network/p
 - https://github.com/imperialauto/shop/pull/52
 - https://github.com/imperialauto/shop/pull/51
 - https://github.com/imperialauto/shop/pull/55
+
+## Expanded prototype: unified owner tasks and reply freshness (Nov 6)
+
+The draft PR now also includes `messaging/src/lib/imperialBrain.js` and `capabilityRegistry.js` for natural-language questions about the shop dispatch queue, GitHub issues and source access. A gated `imperial_tasks` table plus an audited internal API can capture explicit low-risk instructions such as “Add verify the website booking flow to my to-do list”. The acknowledgement must include the returned saved task ID; a failed write never produces a fabricated success message.
+
+**Separate enablement gates:**
+- `IMPERIAL_BRAIN_ENABLED=true` on `shop` enables the new source-aware owner reply router.
+- `IMPERIAL_TASKS_ENABLED=true` on **both** `shop` and `web` permits internal task capture/read, but only *after* manually applying `migrations/20261106_imperial_tasks.sql`, verifying a backup/restore and completing the security release review. `web` recovery read-only mode still blocks writes. Task creation is limited to explicitly phrased internal to-dos; customer messages, delegation, billing and deployments remain gated.
+- `REVALIDATE_APPROVED_REPLIES_ENABLED=true` on `shop` blocks an owner-approved customer SMS when a newer Quo message or call occurs after the draft's referenced message, or current call history cannot be verified.
+- `REVALIDATE_DASHBOARD_DRAFTS_ENABLED=true` on `shop` blocks sending a stored draft from the dashboard if its Quo source message is unavailable, a newer text or call exists, or the Quo lookup fails. Manually typed messages without a draft ID are not covered by this gate and need a separately designed freshness check.
+
+These features are **not production-enabled**. The draft's new answer routing is not an exhaustive project/task/CRM brain, and it cannot claim full real-time access to ALLDATA, AutoZonePro, Claude sessions, personal ChatGPT history, QuickBooks or Railway merely because ChatGPT has a corresponding connector. Webhook draft generation and manual Regenerate Draft now both include available recent call context, but missing transcripts and changing appointments still need explicit per-source provenance/verification.
+
+**Regression coverage:** `messaging/tests/imperialBrain.test.js`, `messaging/tests/replyContext.test.js`, `tests/test_imperial_tasks.py`. All run with synthetic data. The next release step requires nonproduction end-to-end tests of owner identity, task persistence, call-after-draft, quoted RO change, and Quo owner notification. Keep SMS sending and task creation disabled until approved.
