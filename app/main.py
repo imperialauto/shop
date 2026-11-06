@@ -226,8 +226,13 @@ def dashboard(request: Request, view: str = "open", db: Session = Depends(get_db
     total_ros = db.query(RepairOrder).count()
     open_count = db.query(RepairOrder).filter(RepairOrder.status != "delivered").count()
 
+    # Saved internal tasks share the existing dashboard attention list.
+    # Feature remains off until its additive migration is verified.
+    task_snapshot = imperial_tasks.owner_dashboard_tasks(db, user.role)
+
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
+        "imperial_task_snapshot": task_snapshot,
         "user": user,
         "open_ros": open_ros,
         "total_customers": total_customers,
