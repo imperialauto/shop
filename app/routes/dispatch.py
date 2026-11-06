@@ -511,6 +511,17 @@ def _daily_text(db: Session, now: datetime) -> str:
     return "\n".join(lines)
 
 
+def _backup_problem(db: Session, now: datetime) -> str | None:
+    """Backups report themselves, so silence counts as failure too."""
+    row = db.get(DispatchSync, BACKUP_SOURCE)
+    if row is None:
+        return None
+    success = _utc(row.last_success_at)
+    if (row.consecutive_failures or 0) >= 1 or success is None or now - success > BACKUP_STALE_AFTER:
+        return "Nightly backup didn't finish. Your data is safe, but tell Claude so it can be checked."
+    return None
+
+
 def due_owner_messages(db: Session, now: datetime) -> list[dict]:
     """Everything owed to the owner right now. Failed texts come back next tick."""
     if not OWNER_PHONE:
@@ -551,6 +562,9 @@ def due_owner_messages(db: Session, now: datetime) -> list[dict]:
         if not event["allDay"] and timedelta(0) < lead <= APPOINTMENT_WARNING:
             due.append((f"calendar:{event['start'].isoformat()}:{event['title'][:40]}", "owner_calendar", None,
                         f"Coming up: {calendar_feed.describe(event, False)}. Be at the shop before they arrive."))
+    backup_problem = _backup_problem(db, now)
+    if backup_problem and now.hour >= 7:
+        due.append((f"backup:{now.date()}", "owner_backup", None, backup_problem))
     if now.weekday() != 6 and DAILY_HOUR <= now.hour < DAILY_HOUR + 3:
         due.append((f"daily:{now.date()}", "owner_daily", None, _daily_text(db, now)))
 
@@ -796,6 +810,8 @@ VIEWS = {
     "customer": "Awaiting customer", "scheduled": "Scheduled", "completed": "Completed",
 }
 SYNC_STALE_AFTER = timedelta(minutes=45)
+BACKUP_SOURCE = "backup"
+BACKUP_STALE_AFTER = timedelta(hours=30)
 ESCALATE_AFTER_FAILURES = 3
 
 
@@ -859,8 +875,9 @@ def _sync_health(db: Session) -> list[dict]:
     health = []
     for row in db.query(DispatchSync).order_by(DispatchSync.source).all():
         success = _utc(row.last_success_at)
-        failing = (row.consecutive_failures or 0) >= ESCALATE_AFTER_FAILURES
-        stale = success is None or now - success > SYNC_STALE_AFTER
+        nightly = row.source == BACKUP_SOURCE
+        failing = (row.consecutive_failures or 0) >= (1 if nightly else ESCALATE_AFTER_FAILURES)
+        stale = success is None or now - success > (BACKUP_STALE_AFTER if nightly else SYNC_STALE_AFTER)
         health.append({"source": row.source, "last_success_at": success, "problem": failing or stale,
                        "failures": row.consecutive_failures or 0})
     return health

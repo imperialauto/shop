@@ -6,7 +6,12 @@ KEEP=14
 stamp=$(date -u +%Y%m%d-%H%M)
 web="/backup/nightly-web-$stamp.dump"
 msg="/backup/nightly-messaging-$stamp.dump"
-fail() { echo "NIGHTLY_BACKUP_FAILED $1"; exit 1; }
+report() {
+  wget -q -O /dev/null --header "Content-Type: application/json" --header "X-Internal-Key: $INTERNAL_API_KEY" \
+    --post-data "{\"source\":\"backup\",\"ok\":$1,\"detail\":\"$2\"}" "$WEB_URL/internal/dispatch/sync" \
+    && echo "REPORTED $1" || echo "REPORT_FAILED"
+}
+fail() { echo "NIGHTLY_BACKUP_FAILED $1"; report false "$1"; exit 1; }
 count() { psql "$1" -Atc "select $2" 2>/dev/null; }
 WEB_COUNTS="(select count(*) from customers)||'/'||(select count(*) from repair_orders)||'/'||(select count(*) from users)||'/'||(select count(*) from dispatch_items)"
 MSG_COUNTS="(select count(*) from \"Conversation\")||'/'||(select count(*) from \"Message\")"
@@ -40,4 +45,5 @@ echo "COUNTS web live=$live_web restored=$test_web messaging live=$live_msg rest
 for kind in web messaging; do
   ls -1t /backup/nightly-$kind-*.dump | tail -n +$((KEEP + 1)) | while read -r old; do rm -f "$old"; done
 done
+report true "$test_web $test_msg"
 echo "NIGHTLY_BACKUP_OK $stamp web=$(wc -c < "$web") messaging=$(wc -c < "$msg") kept=$(ls /backup/nightly-*.dump | wc -l)"
