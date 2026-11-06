@@ -35,4 +35,22 @@ async function verifyApprovedReplyContext({ quo, phone, messageId }) {
   }
 }
 
-module.exports = { verifyApprovedReplyContext };
+// Dashboard drafts use the same message/call guard, plus a verified
+// conversation-local source record. This never sends a customer message.
+async function verifyDashboardDraftContext({ quo, prisma, conversation, draft }) {
+  if (!conversation || !draft || draft.conversationId !== conversation.id ||
+      draft.status !== "PENDING") {
+    return { ok: false, reason: "wrong_draft", notice: "the draft is no longer pending in this conversation" };
+  }
+  const basis = draft.basedOnMessageId
+    ? await prisma.message.findUnique({ where: { id: draft.basedOnMessageId } })
+    : null;
+  if (!basis?.quoMessageId || basis.conversationId !== conversation.id) {
+    return { ok: false, reason: "unavailable", notice: "draft's source message cannot be verified" };
+  }
+  return verifyApprovedReplyContext({
+    quo, phone: conversation.customerPhone, messageId: basis.quoMessageId,
+  });
+}
+
+module.exports = { verifyApprovedReplyContext, verifyDashboardDraftContext };
