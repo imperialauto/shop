@@ -146,7 +146,14 @@ export default function MessagingPanel() {
     try {
       await apiFetch(`/conversations/${selectedId}/send`, {
         method: "POST",
-        body: JSON.stringify({ draftId: activeDraftId || undefined, body: composeText.trim() }),
+        body: JSON.stringify({
+          draftId: activeDraftId || undefined,
+          body: composeText.trim(),
+          // A manual reply must be based on the latest Quo message the
+          // coordinator saw. Server verifies it again against Quo + calls.
+          lastSeenQuoMessageId: [...(thread?.messages || [])].reverse()
+            .find((message) => message.quoMessageId)?.quoMessageId || undefined,
+        }),
       });
       setComposeText("");
       setActiveDraftId(null);
