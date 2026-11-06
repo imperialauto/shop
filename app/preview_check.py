@@ -71,12 +71,12 @@ def run(base: str):
         query = "service=battery-charging&where=mobile&zip=85307"
         assert "to be confirmed" in client.get(f"/site/book?{query}").text
         form = {"service": "battery-charging", "where": "mobile", "zip": "85307", "street": "100 Test St",
-                "slot_id": slots(client, query)[-1], **person(phone, "Mobiler")}
+                "slot_id": slots(client, query)[-1], **person(phone[:-1] + "1", "Mobiler")}
         assert client.post("/site/book", data=form).status_code == 303
 
     def estimate(line, where, first):
         form = {"service_line": line, "where": where, "location": "" if where == "shop" else "Made-up location",
-                "description": "Made-up preview request for testing.", **person(phone, first)}
+                "description": "Made-up preview request for testing.", **person(phone[:-1] + str(len(first) % 10), first)}
         assert client.post("/site/estimate", data=form).status_code == 303
 
     def status():
