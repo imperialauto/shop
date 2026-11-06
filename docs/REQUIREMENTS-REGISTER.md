@@ -37,7 +37,7 @@ The AI assistant is named **Imperial**.
 | R16 | Quo | AI call answering | deployed | Sona live. Owner must confirm rules were added |
 | R17 | Owner SMS | YES, NO, EDIT, DONE, LATER, OLD | deployed | `YES` verified. Others unproven live |
 | R18 | Owner SMS | One short text per item and plain-English replies | approved | Owner decision. Not built |
-| R19 | Imperial AI | Job files for each customer | approved | Blocked on `OPENAI_API_KEY` or Anthropic credits |
+| R19 | Imperial AI | Job files for each customer | deployed | Texts done through OpenAI. Calls not yet covered, and not proven on real messages |
 | R20 | Imperial AI | Dashboard and SMS commands that take audited actions | proposed | Assistant is read-only |
 | R21 | Tasks | Unified task and project engine | proposed | Dispatch queue only |
 | R22 | Staff | Employee mobile portal, roles and delegation | partial | Mobile layout and tech finance block tested. No assignments portal |
@@ -53,7 +53,7 @@ The AI assistant is named **Imperial**.
 | R32 | Divisions | NVZN Customs | partial | Model on `feature/nvzn-customs-division`, unmerged |
 | R33 | Channels | Instagram, Messenger, TikTok | proposed | |
 | R34 | Other | Document generation, marketing, inventory, warranties | proposed | PDF estimates exist |
-| R35 | Security | Passkey login, separate accounts, approval levels, STOP ALL, automatic backups | proposed | Production stays read-only until done |
+| R35 | Security | Passkey login, separate accounts, approval levels, STOP ALL, automatic backups | in progress | Two-step login, STOP ALL and nightly backups deployed. Backup failure alerts, off-site copy, separate staff logins and approval levels remain. Production stays read-only until done |
 
 ## Decisions
 | Date | Decision | Status |
@@ -64,9 +64,13 @@ The AI assistant is named **Imperial**.
 | 2026-11-05 | Payments Hub is the trial processor | current |
 | 2026-11-05 | The assistant is named Imperial | current |
 | 2026-11-05 | Finished work waits for owner approval before merging to main | current |
+| 2026-11-05 | Owner texts PAUSE ALL or STOP ALL to stop automated texting, RESUME to restart | current |
 
 ## Completion log
 | Date | Change | Evidence | Deployed |
 |---|---|---|---|
 | 2026-11-05 | Walkthrough on made-up data, PostgreSQL, phone and desktop | `.github/workflows/app-walkthrough.yml` | No |
 | 2026-11-05 | Invoice creation, tax, dashboard replies, phone layouts | Branch `claude/launch-audit` | No |
+| 2026-11-05 | Owner account claimed, setup code removed, two-step login on | Railway logs `mfa_enabled user=1`, setup variable gone | Yes |
+| 2026-11-05 | STOP ALL, RESUME and dashboard stop button | PR 47, automated tests passed. Not yet tested by real text | Yes |
+| 2026-11-05 | Nightly backups of both databases at 4:17 AM Phoenix, 14 kept, restored and compared each run | First run: web 6/6/1/32, messaging 434/2376, both matched after restore | Yes |
