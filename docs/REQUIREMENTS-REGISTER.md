@@ -42,8 +42,8 @@ The AI assistant is named **Imperial**.
 | R21 | Tasks | Unified task and project engine | proposed | Dispatch queue only |
 | R22 | Staff | Employee mobile portal, roles and delegation | partial | Mobile layout and tech finance block tested. No assignments portal |
 | R23 | Staff | Inspections, photos, timers | proposed | No data model |
-| R24 | Finance | Financial Command Center | partial | Owner view on main. Fuller module in PR 38, unmerged and overlapping |
-| R25 | Finance | 2023-2026 reconciliation | in progress | PR 38 import path. Exceptions need owner review |
+| R24 | Finance | Financial Command Center | partial | Owner view on main. PR 38 combined with it on `claude/finance-combine-reconciliation`, unmerged. Needs migration, owner approval, and imports paused by recovery mode |
+| R25 | Finance | 2023-2026 reconciliation | in progress | Worklist in `docs/RECONCILIATION-2023-2026.md`. No 2023-2025 statements found in Drive. 2026 files unverified. Exceptions need owner review |
 | R26 | Finance | $500 daily target, job profit, investor reports | proposed | |
 | R27 | Alerts | Centralized Alert Center with editable rules and delivery history | partial | Owner SMS history exists. No center, rules or staff channel |
 | R28 | Settings | Editable Settings Center | partial | Password and dispatch policies only |
@@ -77,3 +77,4 @@ The AI assistant is named **Imperial**.
 | 2026-11-05 | Nightly backups of both databases at 4:17 AM Phoenix, 14 kept, restored and compared each run | First run: web 6/6/1/32, messaging 434/2376, both matched after restore | Yes |
 | 2026-11-05 | Older text intake off by default, failed-backup alerts | PR 49, automated tests and 40 of 40 walkthrough flows | Yes |
 | 2026-11-05 | Staff logins and role limits, with `users` columns added after a verified backup | PR 50, automated tests and 46 of 46 walkthrough flows on made-up accounts, counts unchanged at 6/6/1/32 | Yes |
+| 2026-11-05 | PR 38 combined with the shop payments page, ledger owner-only, reconciliation worklist | Branch `claude/finance-combine-reconciliation`, CI on the pull request | No |
