@@ -331,7 +331,7 @@ def flows(page, device):
         visitor.fill("[name=first_name]", "Mobile" + device)
         visitor.fill("[name=last_name]", "Visitor")
         visitor.fill("[name=phone]", "6025550125")
-        visitor.click("form[action='/site/book'] button[type=submit]")
+        visitor.click("button:has-text('Book this time')")
         visitor.wait_for_url("**/site/book/received")
         assert "mobile fee" in visitor.inner_text("body")
         measure(visitor, "site-mobile-booked", device, 200, [])
@@ -409,4 +409,4 @@ with sync_playwright() as p:
 bad = [r for r in results if r.get("ok") is False or r.get("status", 200) >= 400 or r.get("overflow", 0) > 2]
 print(json.dumps(bad, indent=1))
 print(f"{len(results)} checks, {len(bad)} failures")
-sys.exit(0)
+sys.exit(1 if [r for r in bad if r.get("page") != "missing-page"] else 0)

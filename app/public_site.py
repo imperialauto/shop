@@ -281,7 +281,7 @@ def normalize_mileage(value: str | None) -> int | None:
 @dataclass
 class SubmissionLimiter:
     """Caps public form submissions per address. In memory, like the login limiter."""
-    limit: int = 5
+    limit: int = field(default_factory=lambda: int(os.getenv("PUBLIC_FORM_HOURLY_LIMIT") or 5))
     window_seconds: int = 3600
     seen: dict[str, list[float]] = field(default_factory=dict)
 

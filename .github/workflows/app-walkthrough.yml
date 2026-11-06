@@ -37,6 +37,7 @@ jobs:
           SECRET_KEY: walkthrough-only-key
           APP_READ_ONLY: 'false'
           PUBLIC_FORMS_ENABLED: 'true'
+          PUBLIC_FORM_HOURLY_LIMIT: '100'
           PUBLIC_SERVICE_CATALOG: '{"diagnostic":{"price":10,"minutes":60},"oil-service":{"price":20,"minutes":60},"pre-purchase":{"price":30,"price_type":"starting","minutes":90},"battery-charging":{"price":40,"minutes":30,"mobile":true}}'
           PUBLIC_MOBILE_ZONES: '{"85000":{"fee":5,"travel_minutes":30}}'
         run: |
