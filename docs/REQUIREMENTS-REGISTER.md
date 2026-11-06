@@ -19,10 +19,10 @@ The AI assistant is named **Imperial**.
 ## Requirements
 | ID | Area | Requirement | Status | Evidence or gap |
 |---|---|---|---|---|
-| R01 | Public site | Replacement public website (auto, diesel, mobile, roadside, fleet, NVZN) | tested | PR 52, preview under `/site`, noindex. Rentals, pricing and FAQ pages not built. Suite number and copy need owner review. Squarespace remains live |
-| R02 | Public site | Online booking for approved standard services | tested | PR 52. Tentative shop appointments on staff-published open times. Owner to approve service list. Forms off until `PUBLIC_FORMS_ENABLED` and production is writable |
-| R03 | Public site | Complex estimate requests and customer intake with VIN | tested | PR 52 public estimate request with VIN creates intake repair order. Staff guided intake still unmerged on `feature/guided-customer-intake` |
-| R04 | Customer | Secure portal and status links | partial | Tokenized status page works in walkthrough. No login portal |
+| R01 | Public site | Replacement public website (auto, diesel, mobile, roadside, fleet, NVZN) | tested | PR 52 preview under `/site`, not deployed. Home, services, towing, rentals, pricing, FAQ, status and contact pass walkthrough with made-up data. Rentals needs real rates and terms. Pricing needs final prices. No cutover |
+| R02 | Public site | Online booking for approved standard services | tested | PR 52, not deployed. Six services approved subject to prices and times. Instant confirmed booking, full duration plus buffer, mobile fee and travel tested with made-up prices. Forms remain off. Needs final prices, durations, ZIP fees and published times |
+| R03 | Public site | Complex estimate requests and customer intake with VIN | tested | PR 52, not deployed. Estimate requests create records, including towing, roadside, rentals and NVZN. No owner alert yet, so requests wait in intake until seen |
+| R04 | Customer | Secure portal and status links | partial | Tokenized status page works. PR 52 adds lookup by reference and phone, not deployed. No login portal |
 | R05 | Customer | Drawn signatures | tested | Walkthrough: signature on phone and desktop |
 | R06 | Customer | Line-item estimate approvals | proposed | Signature approves the whole order |
 | R07 | Customer | Inspection photos and progress | proposed | No data model |
@@ -65,6 +65,8 @@ The AI assistant is named **Imperial**.
 | 2026-11-05 | The assistant is named Imperial | current |
 | 2026-11-05 | Finished work waits for owner approval before merging to main | replaced 2026-11-05: tested work goes live and the owner is told after. Ask first for deletion, public website changes, or new cost |
 | 2026-11-05 | Login roles: tech for jobs and calendar, office for customers, jobs, invoices and queue, admin for all but Finance and logins. Finance and logins are owner-only | current |
+| 2026-11-05 | Shop address is 7915 N Glen Harbor Blvd, Suite 508, Glendale, AZ 85307 | current |
+| 2026-11-05 | Standard services book instantly when a slot fits, complex repairs need an estimate and approval. Keep the one-hour shop buffer and add mobile travel and ZIP-based fees. Exact prices for predictable work, starting prices for variable work | current |
 | 2026-11-05 | Owner texts PAUSE ALL or STOP ALL to stop automated texting, RESUME to restart | current |
 
 ## Completion log
@@ -78,3 +80,4 @@ The AI assistant is named **Imperial**.
 | 2026-11-05 | Older text intake off by default, failed-backup alerts | PR 49, automated tests and 40 of 40 walkthrough flows | Yes |
 | 2026-11-05 | Staff logins and role limits, with `users` columns added after a verified backup | PR 50, automated tests and 46 of 46 walkthrough flows on made-up accounts, counts unchanged at 6/6/1/32 | Yes |
 | 2026-11-05 | Public website preview, online booking and estimate requests under `/site` (R01, R02, R03), made-up data, no customer messages | PR 52: regression checks run 42170496534 (167 unit tests, 9 appointment and 6 public booking PostgreSQL tests passed); walkthrough run 42170483672, public booking and estimate passed on phone and desktop, no overflow | No |
+| 2026-11-05 | PR 52 corrections: duration enforcement, instant booking, mobile fees and travel, pricing, rentals, FAQ, towing, status lookup, router moved to `app/main.py` | Automated tests, PostgreSQL booking tests and phone and desktop walkthrough passed with made-up data | No |
