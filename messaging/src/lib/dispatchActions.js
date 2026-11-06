@@ -99,6 +99,9 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
     // customer queue or LLM guesses. It is strictly read-only and flag-gated.
     const brainReply = await answerImperialBrain({
       question: result.ownerQuestion, snapshot: result.snapshot, history,
+      messageId,
+      taskWriter: shopClient.captureOwnerTask,
+      taskLister: shopClient.openOwnerTasks,
     });
     const projectReply = brainReply || await answerProjectQuestion({ question: result.ownerQuestion, history });
     const action = projectReply ? null : await interpretOwner({ question: result.ownerQuestion, snapshot: result.snapshot, history });
