@@ -22,7 +22,7 @@ const shopClient = require("../lib/shopClient");
 const { generateDraftReply } = require("../lib/generateDraftReply");
 const { getJobContextForConversation } = require("../lib/getJobContext");
 const { callContext } = require("../lib/callIntake");
-const { verifyApprovedReplyContext } = require("../lib/replyContext");
+const { verifyDashboardDraftContext } = require("../lib/replyContext");
 
 const router = express.Router();
 
@@ -226,14 +226,8 @@ router.post("/conversations/:id/send", asyncHandler(async (req, res) => {
       return res.status(409).json({ error: "That draft is not pending; refresh the conversation." });
     }
     if (process.env.REVALIDATE_DASHBOARD_DRAFTS_ENABLED === "true") {
-      const basis = originalDraft.basedOnMessageId
-        ? await prisma.message.findUnique({ where: { id: originalDraft.basedOnMessageId } })
-        : null;
-      if (!basis?.quoMessageId || basis.conversationId !== conversation.id) {
-        return res.status(409).json({ error: "Draft's source message is unavailable. Regenerate the draft before sending." });
-      }
-      const latest = await verifyApprovedReplyContext({
-        quo, phone: conversation.customerPhone, messageId: basis.quoMessageId,
+      const latest = await verifyDashboardDraftContext({
+        quo, prisma, conversation, draft: originalDraft,
       });
       if (!latest.ok) {
         return res.status(409).json({ error: `Draft needs review: ${latest.notice || "new customer activity"}. Refresh and regenerate before sending.` });
