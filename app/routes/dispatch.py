@@ -19,6 +19,7 @@ from app.database import get_db
 from app.config import OWNER_PHONE
 from app.dispatch import AUTO_POLICIES, LOCKED_POLICIES, MAKES, POLICIES, PROMISE, apply_policies, assess, auto_reply, is_reaction, parse_owner_command, propose
 from app.appointment_model import Appointment
+from app.sending_pause import is_paused, pause, resume
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync, OPEN_STATUSES
 from app.models import Communication, Customer, RepairOrder, Vehicle
 from app.routes.internal_messaging import _find_customer_by_phone, _normalize_phone, require_internal_key
@@ -350,6 +351,13 @@ def _owner_command(db: Session, message: IntakeMessage) -> dict:
     if command is None:
         return {"ownerQuestion": message.body.strip()[:1000], "snapshot": _owner_snapshot(db)}
     decision, item_id = command[:2]
+    if decision == "pause":
+        cancelled = pause(db, "owner_sms")
+        note = f" {cancelled} waiting replies were cancelled." if cancelled else ""
+        return {"ownerReply": f"Stopped. No customer texts or alerts will go out until you text RESUME.{note}"}
+    if decision == "resume":
+        resume(db, "owner_sms")
+        return {"ownerReply": "Back on. Anything that came in while stopped will reach you now."}
     if decision == "done":
         return {"ownerReply": _mark_done(db, item_id)}
     if decision == "later":
@@ -359,6 +367,8 @@ def _owner_command(db: Session, message: IntakeMessage) -> dict:
         if not rows:
             return {"ownerReply": "Nothing older is open."}
         return {"ownerReply": "\n".join(f"#{i.id} {_label(db, i)}" for i in rows[:10]) + "\nDONE with the numbers clears them."}
+    if decision in ("approve", "edit") and is_paused(db):
+        return {"ownerReply": "Texting is stopped, so nothing was sent. Text RESUME first."}
     waiting = _open_approvals(db)
     if decision == "list":
         if not waiting:
@@ -431,7 +441,7 @@ def intake(message: IntakeMessage, db: Session = Depends(get_db), _auth: bool = 
             item = _record(db, message, result)
             return {"recorded": True, "itemId": item.id, "status": item.status,
                     "vehicleText": item.vehicle_text, "category": item.category,
-                    "autoReply": _auto_reply_for(db, item, message, result)}
+                    "autoReply": None if is_paused(db) else _auto_reply_for(db, item, message, result)}
         except IntegrityError:
             db.rollback()
             if db.query(DispatchEvent).filter(DispatchEvent.quo_message_id == message.messageId).first():
@@ -579,6 +589,8 @@ def queued_replies(db: Session) -> list[dict]:
 
 @internal_router.post("/tick")
 def tick(db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
+    if is_paused(db):  # nothing is reserved, so held alerts go out after RESUME
+        return {"ownerPhone": OWNER_PHONE or None, "messages": [], "customerReplies": [], "paused": True}
     return {"ownerPhone": OWNER_PHONE or None, "messages": due_owner_messages(db, datetime.now(timezone.utc)),
             "customerReplies": queued_replies(db)}
 
@@ -678,6 +690,19 @@ def sync_report(report: SyncReport, db: Session = Depends(get_db), _auth: bool =
     return {"recorded": True}
 
 
+@router.post("/sending")
+def set_sending(request: Request, action: str = Form(...), db: Session = Depends(get_db)):
+    """The dashboard's stop switch. It works in read-only mode because it only stops things."""
+    user = get_current_user(request, db)
+    if action == "stop":
+        pause(db, user.username)
+    elif action == "resume":
+        resume(db, user.username)
+    else:
+        raise HTTPException(422, "Choose stop or resume.")
+    return RedirectResponse("/dashboard", status_code=303)
+
+
 @router.post("/{item_id}/decide")
 def decide(
     item_id: int,
@@ -691,6 +716,8 @@ def decide(
     user = get_current_user(request, db)
     if decision not in ("approve", "decline"):
         raise HTTPException(422, "Decision must be approve or decline.")
+    if decision == "approve" and reply_text.strip() and is_paused(db):
+        raise HTTPException(409, "Texting is stopped. Resume it before sending.")
     item = db.query(DispatchItem).filter(DispatchItem.id == item_id).with_for_update().first()
     if item is None:
         raise HTTPException(404, "Item not found.")
@@ -848,6 +875,7 @@ def dashboard_context(db: Session, view: str = "open") -> dict:
         items = _select(db, view, scheduled)
         cards = [_card(db, item, scheduled) for item in items]
         health = _sync_health(db)
+        paused = is_paused(db)
     except SQLAlchemyError:
         db.rollback()
         return {"dispatch_ready": False, "dispatch_items": [], "dispatch_policies": [],
@@ -856,6 +884,7 @@ def dashboard_context(db: Session, view: str = "open") -> dict:
     return {
         "calendar_events": [calendar_feed.describe(e) for e in calendar[:10]] if calendar is not None else None,
         "dispatch_ready": True,
+        "sending_paused": paused,
         "dispatch_items": cards,
         "dispatch_view": view,
         "dispatch_views": VIEWS,

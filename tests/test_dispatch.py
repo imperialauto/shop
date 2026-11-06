@@ -76,6 +76,18 @@ class AssessmentTests(unittest.TestCase):
         self.assertEqual(apply_policies(["refund", "high_risk", "discount_credit"], modes), ["refund", "high_risk"])
 
 
+class StopCommandTests(unittest.TestCase):
+    def test_stop_and_resume_words(self):
+        for body in ("STOP ALL", "stop all.", "Pause everything", "pause all"):
+            self.assertEqual(parse_owner_command(body), ("pause", None), body)
+        for body in ("RESUME", "resume all", "start all", "restart everything"):
+            self.assertEqual(parse_owner_command(body), ("resume", None), body)
+
+    def test_ordinary_words_do_not_stop_anything(self):
+        for body in ("stop", "stop by at 3", "pause", "stop all calls to Bobby", "start"):
+            self.assertNotIn(parse_owner_command(body), (("pause", None), ("resume", None)), body)
+
+
 class OwnerTermsTests(unittest.TestCase):
     def test_firm_words_work_with_or_without_a_number(self):
         for text in ("send it", "go ahead", "yes please", "approve", "Do it."):
@@ -345,6 +357,59 @@ class QueueWorkflowTests(unittest.TestCase):
 
     def mark_sent(self, key):
         self.assertEqual(self.client.post("/internal/dispatch/outbound", headers=HEADERS, json={"key": key, "status": "sent"}).status_code, 200)
+
+    def stop(self, ident="stop1"):
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            return self.owner_text(ident, "STOP ALL")
+
+    def start_again(self, ident="go1"):
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            return self.owner_text(ident, "RESUME")
+
+    def tick(self):
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            return self.client.post("/internal/dispatch/tick", headers=HEADERS).json()
+
+    def test_stop_all_holds_alerts_until_resume(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        self.assertIn("RESUME", self.stop()["ownerReply"])
+        self.assertEqual(self.tick()["messages"], [])
+        self.assertEqual(self.tick()["paused"], True)
+        self.assertIn("Back on", self.start_again()["ownerReply"])
+        self.assertEqual(len(self.alert()), 1)
+
+    def test_stop_all_blocks_yes_and_edit_and_auto_replies(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        item = self.items()[0]
+        self.mark_sent(self.alert()[0]["key"])
+        self.stop()
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            for ident, body in (("y1", f"yes {item.id}"), ("e1", f"edit {item.id} hello")):
+                reply = self.owner_text(ident, body)
+                self.assertNotIn("customerReply", reply)
+                self.assertIn("RESUME", reply["ownerReply"])
+        self.assertEqual(self.items()[0].status, item.status)
+        self.assertIsNone(self.post_auto("m2", "what are your hours?", "CNother").json()["autoReply"])
+
+    def test_stop_all_cancels_dashboard_replies_for_good(self):
+        with self.Session() as db:
+            db.add(DispatchItem(id=50, quo_conversation_id="CNq", customer_phone="+16025550100", summary="x", category="repair",
+                                urgency="normal", status="approved", draft_reply="hi", last_message_id="m9"))
+            db.add(DispatchOutbound(dedupe_key="dashboard:50:m9", kind=dispatch.DASHBOARD_REPLY, item_id=50, status="queued"))
+            db.commit()
+        self.assertIn("1 waiting", self.stop()["ownerReply"])
+        self.start_again()
+        self.assertEqual(self.tick()["customerReplies"], [])
+        with self.Session() as db:
+            self.assertEqual(db.query(DispatchOutbound).filter_by(dedupe_key="dashboard:50:m9").one().status, "skipped")
+
+    def test_dashboard_switch_works_while_read_only(self):
+        app.state.read_only = True
+        with self.login:
+            response = self.client.post("/dispatch/sending", data={"action": "stop"}, follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        with self.Session() as db:
+            self.assertTrue(dispatch.is_paused(db))
 
     def test_approval_text_is_sent_once_and_yes_approves(self):
         self.post("m1", "2013 Ford Fusion fuel leak")

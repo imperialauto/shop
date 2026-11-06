@@ -13,6 +13,10 @@
   {% if not dispatch_ready %}
   <div style="padding:16px; color:#a1a1aa; font-size:13px;">The queue is not set up on this database yet.</div>
   {% else %}
+  <form method="post" action="/dispatch/sending" style="display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 16px; font-size:12.5px; border-bottom:1px solid rgba(255,255,255,0.06); color:{{ '#f87171' if sending_paused else '#a1a1aa' }};">
+    <span>{% if sending_paused %}<strong>All texting is stopped.</strong> Nothing goes to customers or you until you resume.{% else %}Texting is on.{% endif %}</span>
+    <button class="btn-secondary" type="submit" name="action" value="{{ 'resume' if sending_paused else 'stop' }}" style="min-height:44px; white-space:nowrap;">{{ 'Resume texting' if sending_paused else 'Stop all texting' }}</button>
+  </form>
   {% if read_only %}
   <div style="padding:10px 16px; color:#d4a853; font-size:12.5px; border-bottom:1px solid rgba(255,255,255,0.06);">The system is read-only. New messages still appear here, but decisions and policy changes will not save.</div>
   {% endif %}
