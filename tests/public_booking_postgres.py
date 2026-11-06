@@ -161,7 +161,7 @@ class PublicBooking(unittest.TestCase):
     def test_missing_details_book_nothing(self):
         slot_id = self.slot(weekday_at(11))
         for changes, message in [({'phone': '123'}, '10-digit'), ({'make': ''}, 'make and model'), ({'slot_id': ''}, 'Choose a time')]:
-            response = self.client.post('/site/book', data=self.form(slot_id, **changes))
+            response = self.client.post('/site/book', data={**self.form(slot_id), **changes})
             self.assertEqual(response.status_code, 422, message)
             self.assertIn(message, response.text)
         self.assertEqual((self.count(Appointment), self.count(RepairOrder)), (0, 0))
