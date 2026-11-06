@@ -13,6 +13,7 @@ from app.database import Base, get_db
 from app.imperial_task_model import ImperialTask, ImperialTaskAudit
 from app.main import app
 from app.routes import internal_messaging
+from app.routes.imperial_tasks import owner_dashboard_tasks
 
 
 class TaskCaptureTests(unittest.TestCase):
@@ -90,6 +91,21 @@ class TaskCaptureTests(unittest.TestCase):
         self.assertEqual(len(response.json()["tasks"]), 1)
         self.assertIn("Imperial internal tasks only", response.json()["coverage"])
         self.assertNotIn("customer", str(response.json()["tasks"][0]).lower())
+
+    def test_saved_sms_task_appears_in_owner_dashboard_only(self):
+        app.state.read_only = False
+        created = self.capture(event="owner-sms-1", title="Verify website booking flow")
+        self.assertEqual(created.status_code, 200)
+        with self.Session() as db:
+            owner = owner_dashboard_tasks(db, "owner")
+            self.assertTrue(owner["enabled"])
+            self.assertIsNone(owner["error"])
+            self.assertEqual(owner["tasks"][0]["id"], created.json()["id"])
+            self.assertEqual(owner["tasks"][0]["title"], "Verify website booking flow")
+            self.assertFalse(owner_dashboard_tasks(db, "office")["enabled"])
+            self.assertFalse(owner_dashboard_tasks(db, "tech")["enabled"])
+            with patch.dict(os.environ, {"IMPERIAL_TASKS_ENABLED": "false"}):
+                self.assertFalse(owner_dashboard_tasks(db, "owner")["enabled"])
 
     def test_invalid_task_does_not_create_row(self):
         app.state.read_only = False
