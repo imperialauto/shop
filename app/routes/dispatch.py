@@ -517,6 +517,7 @@ def due_owner_messages(db: Session, now: datetime) -> list[dict]:
                 continue
             due.append((f"alert:{item.id}:{item.last_message_id}", "owner_alert", item.id, _alert_text(db, item)))
     if now.weekday() != 6 and now.hour in FOLLOW_UP_HOURS:
+        queued = 0
         for item, kind in _follow_ups(db, now):
             if kind == "waiting" and now.hour not in DIGEST_HOURS:
                 continue
@@ -524,7 +525,8 @@ def due_owner_messages(db: Session, now: datetime) -> list[dict]:
             key = f"urgent:{item.id}:{now.date()}:{now.hour}:{now.minute // 30}" if kind == "urgent" else f"nudges:{item.id}:{now.date()}"
             if not db.query(DispatchOutbound).filter(DispatchOutbound.dedupe_key == key).first():
                 due.append((key, "owner_nudge", item.id, _follow_up_line(db, now, item, kind)))
-            if len(due) >= MAX_FOLLOW_UPS:
+                queued += 1
+            if queued >= MAX_FOLLOW_UPS:
                 break
     if now.weekday() != 6 and (now.hour, now.minute) >= (18, 30):
         rows = _follow_ups(db, now)

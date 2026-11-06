@@ -371,7 +371,7 @@ class QueueWorkflowTests(unittest.TestCase):
         self.assertTrue(self.draft(item.id, "m1")["recorded"])
         due = self.alert()[0]
         self.assertIn("TEST ONLY - 2013 Ford Fusion", due["text"])
-        self.assertIn("Draft reply: We can take a look today.", due["text"])
+        self.assertIn("Send: We can take a look today.", due["text"])
         self.assertIn(f"YES {item.id} sends it", due["text"])
         self.mark_sent(due["key"])
         with patch.object(dispatch, "OWNER_PHONE", OWNER):
@@ -417,7 +417,7 @@ class QueueWorkflowTests(unittest.TestCase):
         data = {**message("m1", "2011 Mitsubishi Eclipse has a fuel leak", "CNlabel"), "phone": "+16025550111", "contactName": "2011 Mitsubishi Eclipse Inspection"}
         self.client.post(INTAKE, headers=HEADERS, json=data)
         text = self.alert()[0]["text"]
-        self.assertTrue(text.startswith("URGENT #1: 2011 Mitsubishi Eclipse Inspection\n"))
+        self.assertTrue(text.startswith("URGENT #1 2011 Mitsubishi Eclipse Inspection\n"))
 
     def test_intake_reports_details_for_contact_saving(self):
         result = self.post("m1", "2013 Ford Fusion fuel leak").json()
@@ -560,7 +560,7 @@ class QueueWorkflowTests(unittest.TestCase):
             due.created_at = datetime(2026, 11, 3, 10, 0, tzinfo=AZ).astimezone(timezone.utc)
             db.commit()
         self.set_updated(datetime(2026, 11, 3, 10, 0, tzinfo=AZ))
-        due = [m for m in self.alert(datetime(2026, 11, 3, 12, 5, tzinfo=AZ)) if m["key"].startswith("urgent")]
+        due = [m for m in self.alert(datetime(2026, 11, 3, 12, 5, tzinfo=AZ)) if m["key"].startswith("nudges")]
         self.assertIn("You promised a reply", due[0]["text"])
 
     def test_a_plain_answer_needs_no_follow_up(self):
