@@ -5,7 +5,10 @@
 // uncertain send cannot reach a customer twice.
 
 const { answerOwner, interpretOwner, recentTurns, customerDetail } = require("./ownerAssistant");
+const { answerProjectQuestion } = require("./projectStatus");
+const { answerImperialBrain } = require("./imperialBrain");
 const { callContext } = require("./callIntake");
+const { verifyApprovedReplyContext } = require("./replyContext");
 
 function enabled(name) {
   return process.env[name] === "true";
@@ -66,7 +69,13 @@ async function sendApprovedReply({ reply, ownerPhone, quo, shopClient }) {
   let status = "skipped";
   let notice = `#${reply.itemId} was not sent. There's a newer message in that thread, so check Quo.`;
   try {
-    if (((await latestMessageId(quo, reply.phone)) || "none") === reply.messageId) {
+    const current = process.env.REVALIDATE_APPROVED_REPLIES_ENABLED === "true"
+      ? await verifyApprovedReplyContext({ quo, phone: reply.phone, messageId: reply.messageId })
+      : { ok: ((await latestMessageId(quo, reply.phone)) || "none") === reply.messageId };
+    if (!current.ok && current.notice) {
+      notice = `#${reply.itemId} NOT sent: ${current.notice}. Please refresh the customer history and draft.`;
+    }
+    if (current.ok) {
       status = "failed";
       notice = `#${reply.itemId} failed to send. Please reply in Quo.`;
       await quo.sendMessage({ to: reply.phone, content: reply.text });
@@ -93,8 +102,17 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
   if (result.ownerQuestion && enabled("OWNER_TEXTS_ENABLED")) {
     const thread = await quo.listMessages({ participants: [phone], maxResults: 12 }).catch(() => ({ data: [] }));
     const history = recentTurns(thread.data || [], messageId);
-    const action = await interpretOwner({ question: result.ownerQuestion, snapshot: result.snapshot, history });
-    const content = action
+    // Project progress is sourced from current GitHub data, not from the
+    // customer queue or LLM guesses. It is strictly read-only and flag-gated.
+    const brainReply = await answerImperialBrain({
+      question: result.ownerQuestion, snapshot: result.snapshot, history,
+      messageId,
+      taskWriter: shopClient.captureOwnerTask,
+      taskLister: shopClient.openOwnerTasks,
+    });
+    const projectReply = brainReply || await answerProjectQuestion({ question: result.ownerQuestion, history });
+    const action = projectReply ? null : await interpretOwner({ question: result.ownerQuestion, snapshot: result.snapshot, history });
+    const content = projectReply || (action
       ? (await shopClient.dispatchOwnerAction(action)).ownerReply
       : await answerOwner({
           question: result.ownerQuestion,
@@ -103,7 +121,7 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
             customerDetail: await customerDetail({ question: result.ownerQuestion, snapshot: result.snapshot, quo, callContext }),
           },
           history,
-        });
+        }));
     await quo.sendMessage({ to: phone, content }).catch((err) => console.error("Owner answer failed:", err.message));
   }
   let customerSent = false;

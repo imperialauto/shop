@@ -9,7 +9,7 @@ from app.config import SECRET_KEY
 from app.database import get_db, init_db
 from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user
-from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, appointments, dispatch, live, finance, owner_setup, staff
+from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, appointments, dispatch, imperial_tasks, live, finance, owner_setup, staff
 from app.routes import account_security
 from app.scheduler import start_scheduler
 
@@ -36,6 +36,7 @@ app.include_router(customers.router, prefix="/customers", tags=["customers"])
 app.include_router(appointments.router, prefix="/appointments", tags=["appointments"])
 app.include_router(dispatch.router, prefix="/dispatch", tags=["dispatch"])
 app.include_router(dispatch.internal_router, prefix="/internal/dispatch", tags=["internal"])
+app.include_router(imperial_tasks.router, prefix="/internal/imperial/tasks", tags=["internal"])
 app.include_router(live.router, prefix="/live", tags=["live"])
 app.include_router(vehicles.router, prefix="/vehicles", tags=["vehicles"])
 app.include_router(repair_orders.router, prefix="/ro", tags=["repair_orders"])
@@ -225,8 +226,13 @@ def dashboard(request: Request, view: str = "open", db: Session = Depends(get_db
     total_ros = db.query(RepairOrder).count()
     open_count = db.query(RepairOrder).filter(RepairOrder.status != "delivered").count()
 
+    # Saved internal tasks share the existing dashboard attention list.
+    # Feature remains off until its additive migration is verified.
+    task_snapshot = imperial_tasks.owner_dashboard_tasks(db, user.role)
+
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
+        "imperial_task_snapshot": task_snapshot,
         "user": user,
         "open_ros": open_ros,
         "total_customers": total_customers,

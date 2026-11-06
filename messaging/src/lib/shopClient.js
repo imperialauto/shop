@@ -150,6 +150,19 @@ async function dispatchDraft({ conversationId, messageId, body, note = null }) {
   }
 }
 
+// Canonical internal task store. The web service enforces its own write
+// feature gate; this client never sends a customer SMS or bypasses recovery.
+async function captureOwnerTask({ messageId, title, projectKey = null }) {
+  return request("/internal/imperial/tasks/capture", {
+    method: "POST",
+    body: JSON.stringify({ messageId, title, projectKey }),
+  });
+}
+
+async function openOwnerTasks(limit = 15) {
+  return request(`/internal/imperial/tasks/open?limit=${encodeURIComponent(limit)}`);
+}
+
 async function dispatchTick() {
   return request("/internal/dispatch/tick", { method: "POST", body: "{}" });
 }
@@ -166,5 +179,6 @@ async function dispatchOutbound({ key, status }) {
 module.exports = {
   configured, getContext, getContextStrict, getSigningLink, logCommunication,
   dispatchIntake, dispatchOwnerAction, dispatchHandled, dispatchSync, dispatchTick, dispatchOutbound, dispatchDraft,
+  captureOwnerTask, openOwnerTasks,
 };
 
