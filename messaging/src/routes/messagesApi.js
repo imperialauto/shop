@@ -21,6 +21,8 @@ const quo = require("../lib/quoClient");
 const shopClient = require("../lib/shopClient");
 const { generateDraftReply } = require("../lib/generateDraftReply");
 const { getJobContextForConversation } = require("../lib/getJobContext");
+const { callContext } = require("../lib/callIntake");
+const { verifyApprovedReplyContext } = require("../lib/replyContext");
 
 const router = express.Router();
 
@@ -131,11 +133,16 @@ router.post("/conversations/:id/draft", asyncHandler(async (req, res) => {
     take: DRAFT_HISTORY_LIMIT,
   });
   const jobContext = await getJobContextForConversation(prisma, conversation).catch(() => null);
+  // Manual Regenerate Draft must use the same available call/voicemail context
+  // as inbound-webhook drafts. Never imply missing call data was reviewed.
+  const calls = await callContext({ quo, phone: conversation.customerPhone });
+  const summary = [jobContext?.summary, calls].filter(Boolean).join("\n") || null;
+  const latestSourceMessageId = history[0]?.id || null;
 
   const body = await generateDraftReply({
     history: history.reverse(),
     customerName: conversation.customer?.name,
-    jobContext,
+    jobContext: summary ? { ...(jobContext || {}), summary } : jobContext,
   });
 
   // generateDraftReply returns null (rather than throwing) when Claude
@@ -153,7 +160,7 @@ router.post("/conversations/:id/draft", asyncHandler(async (req, res) => {
   });
 
   const draft = await prisma.draftReply.create({
-    data: { conversationId: conversation.id, body, status: "PENDING" },
+    data: { conversationId: conversation.id, body, basedOnMessageId: latestSourceMessageId, status: "PENDING" },
   });
 
   res.json(draft);
@@ -186,8 +193,13 @@ router.post("/conversations/:id/signing-link", asyncHandler(async (req, res) => 
     data: { status: "DISCARDED" },
   });
 
+  const latestMessage = await prisma.message.findFirst({
+    where: { conversationId: conversation.id },
+    orderBy: { quoCreatedAt: "desc" },
+  });
   const draft = await prisma.draftReply.create({
-    data: { conversationId: conversation.id, body: link.suggestedText, status: "PENDING" },
+    data: { conversationId: conversation.id, body: link.suggestedText,
+            basedOnMessageId: latestMessage?.id || null, status: "PENDING" },
   });
 
   res.json({ draft, repairOrderId: link.repairOrderId, signingUrl: link.signingUrl });
@@ -207,6 +219,26 @@ router.post("/conversations/:id/send", asyncHandler(async (req, res) => {
   let originalDraft = null;
   if (draftId) {
     originalDraft = await prisma.draftReply.findUnique({ where: { id: draftId } });
+    if (!originalDraft || originalDraft.conversationId !== conversation.id) {
+      return res.status(404).json({ error: "That draft does not belong to this conversation." });
+    }
+    if (originalDraft.status !== "PENDING") {
+      return res.status(409).json({ error: "That draft is not pending; refresh the conversation." });
+    }
+    if (process.env.REVALIDATE_DASHBOARD_DRAFTS_ENABLED === "true") {
+      const basis = originalDraft.basedOnMessageId
+        ? await prisma.message.findUnique({ where: { id: originalDraft.basedOnMessageId } })
+        : null;
+      if (!basis?.quoMessageId || basis.conversationId !== conversation.id) {
+        return res.status(409).json({ error: "Draft's source message is unavailable. Regenerate the draft before sending." });
+      }
+      const latest = await verifyApprovedReplyContext({
+        quo, phone: conversation.customerPhone, messageId: basis.quoMessageId,
+      });
+      if (!latest.ok) {
+        return res.status(409).json({ error: `Draft needs review: ${latest.notice || "new customer activity"}. Refresh and regenerate before sending.` });
+      }
+    }
   }
 
   // TODO: derive `from` (shop's Quo number) from your phone-number config
