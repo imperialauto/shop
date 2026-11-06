@@ -26,5 +26,7 @@ jobs:
         run: node --test messaging/tests/dispatchRecovery.test.js messaging/tests/dispatchActions.test.js messaging/tests/quoContacts.test.js messaging/tests/callIntake.test.js messaging/tests/ownerAssistant.test.js
       - name: Project status natural-language tests (synthetic GitHub data)
         run: node --test messaging/tests/projectStatus.test.js
+      - name: Imperial brain source routing tests (synthetic records)
+        run: node --test messaging/tests/imperialBrain.test.js
       - name: Run isolated Quo tests
         run: python -m pytest tests/test_quo_idempotency.py -q
