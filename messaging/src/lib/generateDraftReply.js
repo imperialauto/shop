@@ -59,7 +59,11 @@ async function openaiDraft(userMessage) {
       messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: userMessage }],
     }),
   });
-  if (!res.ok) throw new Error(`OpenAI API ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`);
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    // OpenAI's reason and code only; its own error text masks the key.
+    throw new Error(`OpenAI API ${res.status}: ${detail.error?.code || "no code"} ${(detail.error?.message || "").replace(/\s+/g, " ").slice(0, 200)}`);
+  }
   const data = await res.json();
   return data.choices?.[0]?.message?.content?.trim();
 }
