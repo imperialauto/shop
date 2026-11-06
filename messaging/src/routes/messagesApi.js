@@ -22,7 +22,7 @@ const shopClient = require("../lib/shopClient");
 const { generateDraftReply } = require("../lib/generateDraftReply");
 const { getJobContextForConversation } = require("../lib/getJobContext");
 const { callContext } = require("../lib/callIntake");
-const { verifyDashboardDraftContext } = require("../lib/replyContext");
+const { verifyDashboardDraftContext, verifyManualComposeContext } = require("../lib/replyContext");
 
 const router = express.Router();
 
@@ -210,7 +210,7 @@ router.post("/conversations/:id/signing-link", asyncHandler(async (req, res) => 
 // only runs when a human hits "Send" in the dashboard UI, never
 // automatically. Body: { draftId?: string, body: string }
 router.post("/conversations/:id/send", asyncHandler(async (req, res) => {
-  const { draftId, body } = req.body || {};
+  const { draftId, body, lastSeenQuoMessageId } = req.body || {};
   if (!body || !body.trim()) return res.status(400).json({ error: "Message body is required" });
 
   const conversation = await prisma.conversation.findUnique({ where: { id: req.params.id } });
@@ -232,6 +232,18 @@ router.post("/conversations/:id/send", asyncHandler(async (req, res) => {
       if (!latest.ok) {
         return res.status(409).json({ error: `Draft needs review: ${latest.notice || "new customer activity"}. Refresh and regenerate before sending.` });
       }
+    }
+  } else if (process.env.REVALIDATE_DASHBOARD_DRAFTS_ENABLED === "true") {
+    // An individually composed message has no saved draft snapshot. Require
+    // the most recent message rendered by the UI and re-read current Quo
+    // messages/calls. Missing context blocks rather than silently sending.
+    const current = await verifyManualComposeContext({
+      quo, prisma, conversation, lastSeenQuoMessageId,
+    });
+    if (!current.ok) {
+      return res.status(409).json({
+        error: `Message needs review: ${current.notice || "source data is unavailable"}. Refresh the thread and review recent calls before sending.`,
+      });
     }
   }
 
