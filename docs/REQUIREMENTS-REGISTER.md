@@ -53,7 +53,7 @@ The AI assistant is named **Imperial**.
 | R32 | Divisions | NVZN Customs | partial | Model on `feature/nvzn-customs-division`, unmerged |
 | R33 | Channels | Instagram, Messenger, TikTok | proposed | |
 | R34 | Other | Document generation, marketing, inventory, warranties | proposed | PDF estimates exist |
-| R35 | Security | Passkey login, separate accounts, approval levels, STOP ALL, automatic backups | in progress | Two-step login, STOP ALL and nightly backups deployed. Backup failure alerts, off-site copy, separate staff logins and approval levels remain. Production stays read-only until done |
+| R35 | Security | Passkey login, separate accounts, approval levels, STOP ALL, automatic backups | in progress | Two-step login, STOP ALL, nightly backups, backup failure alerts, and staff logins with role limits deployed. Off-site copy and owner's live checks remain. Production stays read-only until done |
 
 ## Decisions
 | Date | Decision | Status |
@@ -63,7 +63,8 @@ The AI assistant is named **Imperial**.
 | 2026-11-04 | One text per follow-up item, plain-English replies | current, not built |
 | 2026-11-05 | Payments Hub is the trial processor | current |
 | 2026-11-05 | The assistant is named Imperial | current |
-| 2026-11-05 | Finished work waits for owner approval before merging to main | current |
+| 2026-11-05 | Finished work waits for owner approval before merging to main | replaced 2026-11-05: tested work goes live and the owner is told after. Ask first for deletion, public website changes, or new cost |
+| 2026-11-05 | Login roles: tech for jobs and calendar, office for customers, jobs, invoices and queue, admin for all but Finance and logins. Finance and logins are owner-only | current |
 | 2026-11-05 | Owner texts PAUSE ALL or STOP ALL to stop automated texting, RESUME to restart | current |
 
 ## Completion log
@@ -74,3 +75,5 @@ The AI assistant is named **Imperial**.
 | 2026-11-05 | Owner account claimed, setup code removed, two-step login on | Railway logs `mfa_enabled user=1`, setup variable gone | Yes |
 | 2026-11-05 | STOP ALL, RESUME and dashboard stop button | PR 47, automated tests passed. Not yet tested by real text | Yes |
 | 2026-11-05 | Nightly backups of both databases at 4:17 AM Phoenix, 14 kept, restored and compared each run | First run: web 6/6/1/32, messaging 434/2376, both matched after restore | Yes |
+| 2026-11-05 | Older text intake off by default, failed-backup alerts | PR 49, automated tests and 40 of 40 walkthrough flows | Yes |
+| 2026-11-05 | Staff logins and role limits, with `users` columns added after a verified backup | PR 50, automated tests and 46 of 46 walkthrough flows on made-up accounts, counts unchanged at 6/6/1/32 | Yes |
