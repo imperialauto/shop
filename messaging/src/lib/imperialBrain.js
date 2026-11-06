@@ -50,10 +50,10 @@ function shopTaskSummary(snapshot = {}) {
                        { safety: 0, urgent: 1, normal: 2 }[b.urgency]));
   const lines = [
     "Imperial shop queue (current app snapshot):",
-    \`Needs owner: \${waiting.length}; inbox: \${routine.length}; approved follow-ups: \${approved.length}.\`,
+    `Needs owner: ${waiting.length}; inbox: ${routine.length}; approved follow-ups: ${approved.length}.`,
   ];
   for (const task of all.slice(0, 4)) {
-    lines.push(\`#\${task.id} \${task.who} (\${task.bucket}) - \${task.nextStep}\`);
+    lines.push(`#${task.id} ${task.who} (${task.bucket}) - ${task.nextStep}`);
   }
   if (!all.length) lines.push("No items shown in this dispatch snapshot.");
   lines.push("This is the dispatch queue, not the full Quo, project or finance task list. Due dates not verified.");
