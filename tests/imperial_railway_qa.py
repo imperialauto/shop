@@ -63,7 +63,9 @@ def run_synthetic_tests():
         session.commit()
 
     headers = {"X-Internal-Key": "synthetic-qa-internal-only"}
-    with TestClient(app) as client:
+    # Railway sets Secure session cookies; the isolated test client must
+    # use HTTPS semantics or it will drop the owner's authenticated session.
+    with TestClient(app, base_url="https://qa.testserver.local") as client:
         health = client.get("/healthz")
         check(health.status_code == 200, "FastAPI started with temporary SQLite")
         check(health.json()["mode"] == "active", "only fixture database allows gated writes")
