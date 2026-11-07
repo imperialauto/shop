@@ -58,7 +58,8 @@ class PublicBooking(unittest.TestCase):
 
     def setUp(self):
         with SessionLocal() as db:
-            for model in (Appointment, BookingSlot, RepairOrder, Vehicle, Customer):
+            from app.dispatch_model import DispatchAudit, DispatchItem
+            for model in (DispatchAudit, DispatchItem, Appointment, BookingSlot, RepairOrder, Vehicle, Customer):
                 db.query(model).delete()
             db.commit()
         public_routes.limiter.seen.clear()
