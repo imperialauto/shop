@@ -260,6 +260,32 @@ class PublicBooking(unittest.TestCase):
         with patch.dict(os.environ, {'PUBLIC_PREVIEW_MODE': 'true', 'RAILWAY_ENVIRONMENT_NAME': 'other', 'RAILWAY_PROJECT_ID': '97a71288-74a7-4405-9789-b74fda7b8939'}):
             self.assertNotIn('A/C performance check', self.client.get('/site/book').text)
 
+    def test_website_booking_and_request_reach_the_owner_queue(self):
+        from app.dispatch_model import DispatchItem
+        from app.routes import dispatch
+        slot_id = self.slot(weekday_at(11))
+        self.assertEqual(self.client.post('/site/book', data=self.form(slot_id), follow_redirects=False).status_code, 303)
+        tow = {'service_line': 'towing', 'where': 'roadside', 'location': 'I-10 mile 140', 'description': 'Made-up: will not start on the shoulder.',
+               'first_name': 'Tow', 'last_name': 'Visitor', 'phone': '602-555-0144', 'contact_method': 'text', 'make': 'Ford', 'model': 'Focus'}
+        self.assertEqual(self.client.post('/site/estimate', data=tow, follow_redirects=False).status_code, 303)
+        with SessionLocal() as db:
+            booked, request = db.query(DispatchItem).order_by(DispatchItem.id).all()
+            self.assertEqual((booked.status, booked.draft_reply), ('routine', ''))
+            self.assertEqual((request.status, request.urgency), ('needs_owner', 'urgent'))
+            text = dispatch._alert_text(db, request)
+            self.assertIn('Nothing was sent to them', text)
+            self.assertIn('URGENT', text)
+            self.assertNotIn('YES', text)
+            self.assertIn('Nothing needed', dispatch._alert_text(db, booked))
+
+    def test_website_items_never_hand_a_reply_to_messaging(self):
+        from app.dispatch_model import DispatchItem
+        slot_id = self.slot(weekday_at(11))
+        self.client.post('/site/book', data=self.form(slot_id), follow_redirects=False)
+        with SessionLocal() as db:
+            item = db.query(DispatchItem).one()
+            self.assertTrue(item.last_message_id.startswith('web:'))  # never equals a Quo message id, so sends are skipped
+
     def test_only_approved_services_can_be_booked(self):
         slot_id = self.slot(weekday_at(11))
         with patch.dict(os.environ, {'PUBLIC_BOOKING_SERVICES': 'oil-service'}):

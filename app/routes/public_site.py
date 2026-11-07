@@ -12,6 +12,8 @@ only confirmed if all of that is free, inside shop hours, under the same
 PostgreSQL lock the staff booking API uses. Confirmation appears on screen only.
 """
 import logging
+
+from app import website_alerts
 import os
 import re
 import secrets
@@ -384,6 +386,9 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
         db.add(Appointment(repair_order_id=order.id, resource_id=slot.resource_id, starts_at=starts_at, ends_at=candidate.ends_at,
                            status="confirmed", booked_value=total or 0, location="mobile" if zone else "shop",
                            travel_before_minutes=candidate.travel_before_minutes, buffer_after_minutes=candidate.buffer_after_minutes))
+        db.flush()
+        website_alerts.queue(db, order, "booking", f"Booked {service.name}, {label}{', mobile visit' if zone else ''}.",
+                             vehicle_text=" ".join(str(p) for p in (vehicle_details["year"], vehicle_details["make"], vehicle_details["model"]) if p))
         db.commit()
     except FormError as exc:
         db.rollback()
@@ -455,6 +460,10 @@ async def estimate_submit(request: Request, db: Session = Depends(get_db)):
             f"Details: {description}",
         ])
         order = new_repair_order(db, customer, vehicle, concern, details["mileage"])
+        db.flush()
+        website_alerts.queue(db, order, "request", f"{line.name if line else 'Estimate'}: {WHERE_OPTIONS[where]}. {description}",
+                             service_line=line.slug if line else "",
+                             vehicle_text=" ".join(str(p) for p in (details["year"], details["make"], details["model"]) if p))
         db.commit()
     except Exception:
         db.rollback()
