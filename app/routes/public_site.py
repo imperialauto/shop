@@ -11,6 +11,7 @@ buffer, or travel time both ways for a mobile visit. A time is only offered and
 only confirmed if all of that is free, inside shop hours, under the same
 PostgreSQL lock the staff booking API uses. Confirmation appears on screen only.
 """
+import logging
 import os
 import re
 import secrets
@@ -36,6 +37,7 @@ from app.public_site import (BUSINESS, SERVICE_LINE_BY_SLUG, SERVICE_LINES, Form
 from app.routes.appointments import configured_hours, find_conflict, shop_buffer_minutes
 from app.routes.live import open_slots, phoenix_label, utc
 
+log = logging.getLogger("uvicorn.error")
 router = APIRouter(prefix="/site")
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 limiter = SubmissionLimiter()
@@ -348,6 +350,7 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
         except ValueError:
             raise FormError("Choose a time.") from None
     except FormError as exc:
+        log.info("site_form_rejected form=booking reason=%s", str(exc)[:60])  # the message only, never what was typed
         return booking_page(request, db, 422, str(exc), values)
     # Counted after validation so a typo does not use up a visitor's tries.
     if not limiter.allow(client_key(request), time.time()):
@@ -438,6 +441,7 @@ async def estimate_submit(request: Request, db: Session = Depends(get_db)):
         if where != "shop" and not location:
             raise FormError("Tell us where the vehicle is.")
     except FormError as exc:
+        log.info("site_form_rejected form=estimate reason=%s", str(exc)[:60])
         return estimate_page(request, 422, str(exc), values)
     if not limiter.allow(client_key(request), time.time()):
         return estimate_page(request, 429, "Too many requests from this connection. Please call or text us.", values)
