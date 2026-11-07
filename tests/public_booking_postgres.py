@@ -57,11 +57,18 @@ class PublicBooking(unittest.TestCase):
             db.commit()
 
     def setUp(self):
-        with SessionLocal() as db:
-            from app.dispatch_model import DispatchAudit, DispatchItem
-            for model in (DispatchAudit, DispatchItem, Appointment, BookingSlot, RepairOrder, Vehicle, Customer):
-                db.query(model).delete()
-            db.commit()
+        # Run ONLY against the disposable CI database validated at module load.
+        # Website requests create dispatch items that reference vehicles; an
+        # ORM delete sequence can race with those app writes and leave a FK
+        # reference behind. Clear all dependent fixture rows atomically rather
+        # than weakening or dropping the real database constraints.
+        assert url.host in ('localhost', '127.0.0.1') and url.database == 'appointment_test'
+        with engine.begin() as conn:
+            conn.execute(text(
+                'TRUNCATE TABLE dispatch_items, dispatch_events, dispatch_audit, '
+                'dispatch_outbound, appointments, booking_slots, repair_orders, '
+                'vehicles, customers RESTART IDENTITY CASCADE'
+            ))
         public_routes.limiter.seen.clear()
         self.client = TestClient(app)
 
