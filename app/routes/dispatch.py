@@ -19,7 +19,7 @@ from app.database import get_db
 from app.config import OWNER_PHONE
 from app.dispatch import AUTO_POLICIES, LOCKED_POLICIES, MAKES, POLICIES, PROMISE, apply_policies, assess, auto_reply, is_reaction, parse_owner_command, propose
 from app.appointment_model import Appointment
-from app import website_alerts
+from app import alert_rules, website_alerts
 from app.sending_pause import is_paused, pause, resume
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync, OPEN_STATUSES
 from app.models import Communication, Customer, RepairOrder, Vehicle
@@ -576,8 +576,16 @@ def due_owner_messages(db: Session, now: datetime) -> list[dict]:
     if now.weekday() != 6 and DAILY_HOUR <= now.hour < DAILY_HOUR + 3:
         due.append((f"daily:{now.date()}", "owner_daily", None, _daily_text(db, now)))
 
-    messages = []
+    current_rules = alert_rules.rules()
+    kept = []
     for key, kind, item_id, text in due:
+        item = db.get(DispatchItem, item_id) if item_id else None
+        urgent = bool(item and item.urgency != "normal")
+        booking = bool(item and website_alerts.is_website(item) and item.draft_reply == "")
+        if alert_rules.allowed(kind, urgent, booking, now, current_rules):
+            kept.append((key, kind, item_id, text))  # held ones are not reserved, so they go out later
+    messages = []
+    for key, kind, item_id, text in kept:
         row = db.query(DispatchOutbound).filter(DispatchOutbound.dedupe_key == key).first()
         if row is None:
             if not reserve(db, key, kind, item_id):

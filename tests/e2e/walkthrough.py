@@ -14,7 +14,7 @@ PAGES = [("dashboard", "/dashboard"), ("dashboard-urgent", "/dashboard?view=urge
          ("ro-new", "/ro/new"), ("ro-detail", "/ro/1"), ("estimates", "/estimates/"), ("invoices", "/invoices/"), ("invoice-detail", "/invoices/1"),
          ("finance", "/finance/"), ("customers", "/customers/"), ("fleet", "/customers/?type_filter=fleet"), ("missing-page", "/ro/99999"), ("customer-new", "/customers/new"),
          ("customer-detail", "/customers/1"), ("vehicle-new", "/vehicles/new?customer_id=1"), ("vehicle-detail", "/vehicles/1"),
-         ("calendar", "/appointments/calendar"), ("settings", "/settings"), ("business-settings", "/settings/business"), ("live-control", "/live/control"),
+         ("calendar", "/appointments/calendar"), ("settings", "/settings"), ("business-settings", "/settings/business"), ("alert-center", "/alerts"), ("live-control", "/live/control"),
          ("site-home", "/site/"), ("site-services", "/site/services"), ("site-diesel", "/site/services/diesel"),
          ("site-nvzn", "/site/services/nvzn-customs"), ("site-contact", "/site/contact"), ("site-book", "/site/book"),
          ("site-book-times", "/site/book?service=diagnostic"), ("site-estimate", "/site/estimate"),
