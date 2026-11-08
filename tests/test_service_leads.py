@@ -145,6 +145,17 @@ class ServiceLeadTests(unittest.TestCase):
             self.assertEqual(db.get(ServiceLead, lead.id).status, "declined")
             self.assertIsNone(due_lead_digest(db, NOW))
 
+    def test_missed_call_without_transcript_still_opens_a_lead(self):
+        result = self.post(message_id="missing-transcript", body="Missed call, no voicemail.",
+                           kind="call", callOutcome="missed")
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(len(self.leads()), 1)
+        self.assertEqual(self.leads()[0].status, "new")
+        duplicate = self.post(message_id="missing-transcript", body="Missed call, no voicemail.",
+                              kind="call", callOutcome="missed")
+        self.assertTrue(duplicate.json()["duplicate"])
+        self.assertEqual(len(self.leads()), 1)
+
     def test_information_only_call_does_not_create_service_lead(self):
         self.post(body="What are your business hours?", kind="call", callOutcome="answered")
         self.assertEqual(self.leads(), [])

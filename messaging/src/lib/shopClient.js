@@ -98,12 +98,12 @@ async function logCommunication({ phone, direction, body, externalId }) {
  * Best-effort hand-off of an inbound SMS to the Operations queue. Records work
  * for the owner only; it never sends anything and never throws.
  */
-async function dispatchIntake({ conversationId, messageId, phone, body, recovery = false, contactName = null, kind = "message", threadMessageId = null, autoRepliesOn = false, knownCustomer = false }) {
+async function dispatchIntake({ conversationId, messageId, phone, body, recovery = false, contactName = null, kind = "message", callOutcome = null, threadMessageId = null, autoRepliesOn = false, knownCustomer = false }) {
   if (!configured()) return { recorded: false, reason: "not_configured" };
   try {
     return await request("/internal/dispatch/intake", {
       method: "POST",
-      body: JSON.stringify({ conversationId, messageId, phone, body, recovery, contactName, kind, threadMessageId, autoRepliesOn, knownCustomer }),
+      body: JSON.stringify({ conversationId, messageId, phone, body, recovery, contactName, kind, callOutcome, threadMessageId, autoRepliesOn, knownCustomer }),
     });
   } catch (err) {
     console.error("shopClient.dispatchIntake failed:", err.message);

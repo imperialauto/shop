@@ -38,6 +38,10 @@ def aware(value: datetime) -> datetime:
 def _service_request(result, message, lead) -> bool:
     if lead is not None:
         return True
+    # A verified unanswered call needs callback even without a usable transcript.
+    # Do not mark a Sona-answered information-only call as a service opportunity.
+    if message.kind == "call" and message.callOutcome in ("missed", "voicemail"):
+        return True
     if result.category in ("repair", "towing", "pricing", "scheduling"):
         return True
     return bool(_SERVICE_WORDS.search(message.body or ""))

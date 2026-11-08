@@ -1,7 +1,7 @@
 name: Shop appointment and regression checks
 on:
   pull_request:
-    branches: [main]
+    branches: [main, codex/imperial-project-sms-status]
   push:
     branches: [feature/appointment-foundation-20261031]
 jobs:

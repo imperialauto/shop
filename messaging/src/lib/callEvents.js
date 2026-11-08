@@ -82,7 +82,7 @@ function createCallEvents({ quo, shopClient, contacts, runPass, deliver, phoneNu
     const conversationId = (await conversationFor(phone)) || `CALL${phone.replace(/\D/g, "")}`;
     const body = summaryBody(summary);
     const result = await shopClient.dispatchIntake({
-      conversationId, messageId: `summary:${callId}`, phone, body, recovery: true, kind: "call",
+      conversationId, messageId: `summary:${callId}`, phone, body, recovery: true, kind: "call", callOutcome: "answered",
       threadMessageId: "none", contactName: contacts ? await contacts.nameFor(phone) : null,
     });
     if (result.recorded && !result.owner) {
