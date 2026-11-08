@@ -517,8 +517,22 @@ class QueueWorkflowTests(unittest.TestCase):
         result = self.post("m1", "2013 Ford Fusion fuel leak").json()
         self.assertEqual((result["vehicleText"], result["category"]), ("2013 Ford Fusion", "repair"))
 
+    def test_sona_answered_call_is_not_misclassified_as_missed(self):
+        data = {**message("answered1", "2015 Nissan Sentra wont start", "CNsona"), "kind": "call", "callOutcome": "answered"}
+        result = self.client.post(INTAKE, headers=HEADERS, json=data).json()
+        self.assertEqual(result["status"], "needs_owner")  # still escalates for follow-up
+        item = self.items()[0]
+        self.assertNotIn("missed_call", json.loads(item.approval_reasons))
+        self.assertIn("customer_reply", json.loads(item.approval_reasons))
+
+    def test_unknown_legacy_call_still_goes_to_owner_without_missed_label(self):
+        data = {**message("unknown1", "2015 Nissan Sentra wont start", "CNlegacy"), "kind": "call"}
+        result = self.client.post(INTAKE, headers=HEADERS, json=data).json()
+        self.assertEqual(result["status"], "needs_owner")
+        self.assertNotIn("missed_call", json.loads(self.items()[0].approval_reasons))
+
     def test_missed_call_needs_the_owner_and_yes_checks_the_text_thread(self):
-        data = {**message("call1", "Voicemail: please call me"), "kind": "call", "threadMessageId": "text9", "recovery": True}
+        data = {**message("call1", "Voicemail: please call me"), "kind": "call", "callOutcome": "voicemail", "threadMessageId": "text9", "recovery": True}
         result = self.client.post(INTAKE, headers=HEADERS, json=data).json()
         self.assertEqual(result["status"], "needs_owner")
         self.assertIsNone(result["autoReply"])

@@ -11,6 +11,9 @@ def read_only_enabled():
 def database_audit(include_counts=True):
     from app import models  # register expected tables; does not create them
     tasks_enabled = os.getenv("IMPERIAL_TASKS_ENABLED", "").strip().lower() == "true"
+    leads_enabled = os.getenv("SERVICE_LEADS_ENABLED", "").strip().lower() == "true"
+    if leads_enabled:
+        from app import lead_model  # noqa: F401; only audit new tables after enablement
     result = {"connected": False, "driver": engine.url.get_backend_name(),
               "host": engine.url.host or "local", "database": engine.url.database,
               "missing_tables": [], "missing_columns": {}, "tables": {}}
@@ -25,7 +28,9 @@ def database_audit(include_counts=True):
             existing = set(schema.get_table_names())
             for name, model in sorted(Base.metadata.tables.items()):
                 if not tasks_enabled and name in ("imperial_tasks", "imperial_task_audit"):
-                    continue  # WIP schema intentionally absent until approved migration
+                    continue  # WIP task schema intentionally absent until approved migration
+                if not leads_enabled and name in ("service_leads", "service_lead_audit"):
+                    continue  # WIP lead schema intentionally absent until approved migration
                 if name not in existing:
                     result["missing_tables"].append(name)
                     continue
