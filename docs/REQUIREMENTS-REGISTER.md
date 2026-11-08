@@ -36,7 +36,7 @@ The AI assistant is named **Imperial**.
 | R15 | Quo | Message and call intake, alerts, drafts | deployed | Live since Nov 3. `YES` and FYI seen working |
 | R16 | Quo | AI call answering | deployed | Sona live. Owner must confirm rules were added |
 | R17 | Owner SMS | YES, NO, EDIT, DONE, LATER, OLD | deployed | `YES` verified. Others unproven live |
-| R18 | Owner SMS | One short text per item and plain-English replies | approved | Owner decision. Not built |
+| R18 | Imperial AI | One short text per item and plain-English replies | deployed | PR 45 live since Nov 5. Plain-English replies not yet proven on real texts |
 | R19 | Imperial AI | Job files for each customer | deployed | Texts done through OpenAI. Calls not yet covered, and not proven on real messages |
 | R20 | Imperial AI | Dashboard and SMS commands that take audited actions | proposed | Assistant is read-only |
 | R21 | Tasks | Unified task and project engine | proposed | Dispatch queue only |
@@ -65,6 +65,8 @@ The AI assistant is named **Imperial**.
 | 2026-11-05 | The assistant is named Imperial | current |
 | 2026-11-05 | Finished work waits for owner approval before merging to main | replaced 2026-11-05: tested work goes live and the owner is told after. Ask first for deletion, public website changes, or new cost |
 | 2026-11-05 | Login roles: tech for jobs and calendar, office for customers, jobs, invoices and queue, admin for all but Finance and logins. Finance and logins are owner-only | current |
+| 2026-11-08 | PR 52 is the main website version. ChatGPT's PR 59 copy is rebuilt on top of PR 52 after it merges | current |
+| 2026-11-08 | ChatGPT reviews only until the owner assigns it work. Keep the QA services ChatGPT added to the preview project until testing ends | current |
 | 2026-11-05 | Owner texts PAUSE ALL or STOP ALL to stop automated texting, RESUME to restart | current |
 
 ## Completion log
