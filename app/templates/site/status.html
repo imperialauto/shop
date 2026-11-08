@@ -1,0 +1,22 @@
+{% extends "site/_layout.html" %}
+{% block title %}Repair status — {{ business.name }}{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="wrap" style="max-width:560px">
+    <div class="eyebrow">Repair status</div>
+    <h1>Check on your vehicle</h1>
+    {% if error %}<p class="alert alert-error" role="alert">{{ error }}</p>{% endif %}
+    <form class="form" method="post" action="/site/status">
+      <fieldset>
+        <label for="reference">Reference number</label>
+        <input id="reference" name="reference" required placeholder="WEB-1234" autocomplete="off">
+        <div style="margin-top:14px">
+          <label for="phone">Phone number on the job</label>
+          <input id="phone" name="phone" type="tel" required autocomplete="tel">
+        </div>
+      </fieldset>
+      <button class="btn btn-purple" type="submit">Check status</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

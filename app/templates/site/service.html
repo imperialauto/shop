@@ -1,0 +1,33 @@
+{% extends "site/_layout.html" %}
+{% block title %}{{ line.name }} — {{ business.name }}{% endblock %}
+{% block description %}{{ line.short }}{% endblock %}
+{% block content %}
+<section class="hero">
+  <div class="wrap">
+    <div class="eyebrow">{{ line.division }}</div>
+    <h1>{{ line.name }}</h1>
+    <p class="lead">{{ line.intro }}</p>
+    <div class="actions">
+      <a class="btn btn-gold" href="/site/estimate?service={{ line.slug }}">Request an estimate</a>
+      <a class="btn btn-outline" href="tel:{{ business.phone_tel }}">Call {{ business.phone_display }}</a>
+    </div>
+  </div>
+</section>
+<section class="section">
+  <div class="wrap split">
+    <div>
+      <h2>What this covers</h2>
+      <ul class="checks">{% for point in line.points %}<li>{{ point }}</li>{% endfor %}</ul>
+      {% if line.note %}<p class="note">{{ line.note }}</p>{% endif %}
+    </div>
+    <div class="panel">
+      <h3>Ready to come in?</h3>
+      <p>Standard services can be booked online. Complex repairs start with an estimate.</p>
+      <div class="actions" style="margin-top:0">
+        <a class="btn btn-purple" href="/site/book">Book online</a>
+        <a class="btn btn-light" href="/site/estimate?service={{ line.slug }}">Get an estimate</a>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

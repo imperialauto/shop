@@ -1,0 +1,11 @@
+{% extends "site/_layout.html" %}
+{% block title %}FAQ — {{ business.name }}{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="wrap" style="max-width:820px">
+    <div class="eyebrow">FAQ</div>
+    <h1>Common questions</h1>
+    {% for question, answer in questions %}<h3>{{ question }}</h3><p>{{ answer }}</p>{% endfor %}
+  </div>
+</section>
+{% endblock %}

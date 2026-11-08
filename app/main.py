@@ -10,10 +10,13 @@ from app.database import get_db, init_db
 from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user
 from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, appointments, dispatch, imperial_tasks, live, finance, owner_setup, staff
-from app.routes import account_security
+from app.routes import account_security, public_site
 from app.scheduler import start_scheduler
 
+import hashlib
+import hmac
 import os
+from app.public_site import preview_code
 import time
 
 from app.security import limiter
@@ -49,6 +52,7 @@ app.include_router(ai_assist.router, prefix="/ai", tags=["ai"])
 app.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
 app.include_router(estimate_gen.router, prefix="/estimates", tags=["estimates"])
 app.include_router(sign.router, prefix="/sign", tags=["sign"])
+app.include_router(public_site.router, tags=["public_site"])
 # Internal service-to-service API for the standalone messaging module (see
 # app/routes/internal_messaging.py) — gated by INTERNAL_API_KEY, not a user
 # session, since the caller is another Railway service, not a browser.
@@ -102,6 +106,8 @@ def read_only_exempt(request: Request) -> bool:
     blocking it silently drops customer conversations from their records.
     Dispatch routes touch only the queue tables, never jobs, invoices or payments.
     """
+    if request.url.path == "/site/status":
+        return True  # status lookup does not write shop records
     if request.url.path in ACCOUNT_WRITES or request.url.path == "/dispatch/sending":
         return True  # the stop switch must work even while read-only
     if request.url.path.startswith("/settings/users/"):
@@ -119,8 +125,38 @@ def read_only_exempt(request: Request) -> bool:
     )
 
 
+PREVIEW_COOKIE = "imperial_preview"
+PREVIEW_FORM = ('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Private preview</title>'
+                '<body style="background:#2D0245;color:#fff;font-family:-apple-system,sans-serif;text-align:center;padding:64px 20px"><h1 style="font-size:22px">Private preview</h1>{error}'
+                '<form method="post" action="/preview-access"><input name="code" type="password" aria-label="Access code" autocomplete="off" style="font-size:16px;padding:12px;width:260px;max-width:100%">'
+                '<br><button type="submit" style="margin-top:14px;min-height:48px;padding:0 28px;font-size:16px;font-weight:700;background:#EAD272;border:0;border-radius:10px">Continue</button></form>')
+
+
+async def preview_gate(request: Request):
+    """Only a disposable preview has a code. Every other deployment skips this."""
+    code = preview_code()
+    if not code or request.url.path in ("/healthz", "/readyz"):
+        return None
+    expected = hashlib.sha256(code.encode()).hexdigest()
+    if hmac.compare_digest(request.cookies.get(PREVIEW_COOKIE, ""), expected):
+        return None
+    if request.url.path != "/preview-access":
+        return RedirectResponse("/preview-access", status_code=303)
+    if request.method == "POST":
+        entered = str((await request.form()).get("code", ""))
+        if hmac.compare_digest(entered.encode(), code.encode()):
+            response = RedirectResponse("/site/", status_code=303)
+            response.set_cookie(PREVIEW_COOKIE, expected, max_age=7 * 86400, httponly=True, secure=True, samesite="lax")
+            return response
+        return HTMLResponse(PREVIEW_FORM.format(error="<p>That code did not match.</p>"), status_code=403, headers={"X-Robots-Tag": "noindex, nofollow"})
+    return HTMLResponse(PREVIEW_FORM.format(error=""), headers={"X-Robots-Tag": "noindex, nofollow"})
+
+
 @app.middleware("http")
 async def recovery_mode(request: Request, call_next):
+    gated = await preview_gate(request)
+    if gated is not None:
+        return gated
     if cross_site_post(request):
         return JSONResponse({"error": "This request came from another site."}, status_code=403)
     if app.state.read_only and request.method not in ("GET", "HEAD", "OPTIONS") and not read_only_exempt(request):

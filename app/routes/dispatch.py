@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from app import calendar_feed
+from app import website_alerts
 from app.appointments import PHOENIX
 from app.auth import get_current_user, require_admin
 from app.database import get_db
@@ -482,6 +483,13 @@ FOLLOW_UP_HOURS = range(11, 19)
 def _alert_text(db: Session, item: DispatchItem) -> str:
     said = " ".join(item.summary.split())[:120]
     name = _label(db, item)
+    if website_alerts.is_website(item):
+        phone = item.customer_phone or "no phone"
+        if item.draft_reply == "":
+            return f"Website booking {name}: {said}\nNothing needed. It's on the calendar."
+        head = "URGENT website" if item.urgency != "normal" else "Website"
+        return (f"{head} #{item.id} {name} {phone}\n{said}\n"
+                f"Call or text them yourself. Nothing was sent to them. DONE {item.id} when handled.")
     if item.draft_reply == "":
         return f"FYI {name}: {said}\nNothing needed. Tell me if you want to answer."
     head = f"URGENT #{item.id}" if item.urgency != "normal" else f"#{item.id}"
@@ -608,7 +616,7 @@ def queued_replies(db: Session) -> list[dict]:
     for row in rows:
         item = db.get(DispatchItem, row.item_id)
         row.status = "reserved"
-        if item is None or not item.customer_phone or not item.draft_reply:
+        if item is None or website_alerts.is_website(item) or not item.customer_phone or not item.draft_reply:
             row.status = "skipped"
             continue
         replies.append({"key": row.dedupe_key, "itemId": item.id, "phone": item.customer_phone,
@@ -753,6 +761,8 @@ def decide(
         raise HTTPException(404, "Item not found.")
     if item.status not in OPEN_STATUSES:
         raise HTTPException(409, "This item was already decided.")
+    if website_alerts.is_website(item) and decision == "approve" and reply_text.strip():
+        raise HTTPException(409, "Website requests must be contacted manually.")
     if item.last_message_id != expected_message_id:
         raise HTTPException(409, "A newer customer message arrived. Review it before deciding.")
     if proposed_action.strip():

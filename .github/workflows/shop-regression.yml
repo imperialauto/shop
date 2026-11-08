@@ -1,7 +1,7 @@
 name: Shop appointment and regression checks
 on:
   pull_request:
-    branches: [main, codex/imperial-project-sms-status]
+    branches: [main, codex/imperial-project-sms-status, codex/imperial-qa-unified-leads-20261107]
   push:
     branches: [feature/appointment-foundation-20261031]
 jobs:
@@ -62,3 +62,8 @@ jobs:
         env:
           TEST_DATABASE_URL: postgresql://test:test-only@127.0.0.1:5432/appointment_test
         run: PYTHONPATH=. python tests/imperial_task_postgres.py
+
+      - name: PostgreSQL public website booking
+        env:
+          TEST_DATABASE_URL: postgresql://test:test-only@127.0.0.1:5432/appointment_test
+        run: PYTHONPATH=. python tests/public_booking_postgres.py -v
