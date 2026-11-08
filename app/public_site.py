@@ -9,6 +9,8 @@ import os
 import re
 from dataclasses import dataclass, field, replace
 
+from app import business_settings
+
 PRODUCTION_PROJECT_ID = "97a71288-74a7-4405-9789-b74fda7b8939"
 
 # Suite confirmed by the owner on 2026-11-05. Phone, email and hours match the owner's records.
@@ -156,14 +158,14 @@ def preview_code() -> str:
 
 def booking_closed_days() -> set[int]:
     """Weekdays closed to online booking, 0 is Monday. Shop hours already close Sunday."""
-    raw = os.getenv("PUBLIC_BOOKING_CLOSED_DAYS", "")
+    raw = business_settings.raw("booking_closed_days") or ""
     return {int(day) for day in raw.split(",") if day.strip().isdigit()}
 
 
 def service_catalog() -> dict[str, dict]:
     """PUBLIC_SERVICE_CATALOG: {"diagnostic": {"price": 0, "price_type": "exact", "minutes": 60, "mobile": false}}"""
     try:
-        data = json.loads(os.getenv("PUBLIC_SERVICE_CATALOG") or "{}")
+        data = json.loads(business_settings.raw("booking_services") or "{}")
     except ValueError:
         return {}
     return data if isinstance(data, dict) else {}
@@ -207,7 +209,7 @@ class MobileZone:
 def mobile_zone(zip_code: str | None) -> MobileZone | None:
     """PUBLIC_MOBILE_ZONES: {"85000": {"fee": 0, "travel_minutes": 30}}. Unlisted ZIP codes are not served online."""
     try:
-        zones = json.loads(os.getenv("PUBLIC_MOBILE_ZONES") or "{}")
+        zones = json.loads(business_settings.raw("mobile_zones") or "{}")
         entry = zones.get((zip_code or "").strip())
         if not isinstance(entry, dict):
             return None

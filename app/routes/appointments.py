@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from app import business_settings
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import RepairOrder
@@ -34,7 +35,7 @@ ACTIVE_STATUSES = ("tentative", "confirmed")
 
 def shop_buffer_minutes() -> int:
     """One hour after shop appointments unless SHOP_BUFFER_MINUTES says otherwise."""
-    raw = os.environ.get("SHOP_BUFFER_MINUTES", "60")
+    raw = business_settings.raw("shop_buffer_minutes") or "60"
     try:
         value = int(raw)
     except ValueError as exc:
@@ -89,7 +90,7 @@ class AppointmentInput(BaseModel):
         return value
 
 def configured_hours():
-    raw = os.environ.get("SHOP_HOURS_JSON")
+    raw = business_settings.raw("shop_hours")
     if not raw:
         return {}
     try:
