@@ -21,6 +21,12 @@ def _owner_session_tag(user: User) -> str:
     return hmac.new(SECRET_KEY.encode("utf-8"), material, hashlib.sha256).hexdigest()
 
 
+def after_login(request: Request, default: str) -> str:
+    """The page someone was sent away from, if it is a local page, else the default."""
+    target = request.session.pop("next", "") or ""
+    return target if target.startswith("/") and not target.startswith("//") and "\\" not in target else default
+
+
 def get_current_user(request: Request, db: Session) -> User:
     user_id = request.session.get("user_id")
     if not user_id:

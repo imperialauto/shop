@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user, login_user, verify_password
+from app.auth import after_login, get_current_user, login_user, verify_password
 from app.database import get_db
 from app.models import User
 from app.security import (PENDING_SECONDS, UserMfa, check_code, decrypt_secret, encrypt_secret, limiter,
@@ -67,7 +67,7 @@ def verify_submit(request: Request, code: str = Form(...), db: Session = Depends
     limiter.clear(*keys)
     request.session.pop("pending_mfa", None)
     login_user(request, user)
-    return RedirectResponse("/dashboard", status_code=303)
+    return RedirectResponse(after_login(request, "/ro/" if user.role == "tech" else "/dashboard"), status_code=303)
 
 
 def _page(request: Request, user: User, db: Session, **extra):
