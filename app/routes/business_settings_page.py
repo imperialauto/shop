@@ -5,6 +5,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app import business_settings as store
@@ -100,7 +101,11 @@ def parse(form) -> dict:
 
 
 def page(request: Request, db: Session, user, status: int = 200, **extra):
-    history = db.query(store.BusinessSettingChange).order_by(store.BusinessSettingChange.id.desc()).limit(15).all()
+    try:
+        history = db.query(store.BusinessSettingChange).order_by(store.BusinessSettingChange.id.desc()).limit(15).all()
+    except SQLAlchemyError:  # the settings tables are not created yet
+        db.rollback()
+        history, extra = [], {"not_ready": True, **extra}
     return templates.TemplateResponse("business_settings.html", {"request": request, "user": user, "settings": current(),
                                       "history": history, **extra}, status_code=status)
 
@@ -118,7 +123,11 @@ async def update(request: Request, db: Session = Depends(get_db)):
         values = parse(await request.form())
     except Invalid as exc:
         return page(request, db, user, 422, error=str(exc))
-    changed = [key for key, value in values.items() if store.save(db, key, value, user.username)]
-    db.commit()
+    try:
+        changed = [key for key, value in values.items() if store.save(db, key, value, user.username)]
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return page(request, db, user, 503, error="Settings can't be saved until the settings table is set up.")
     store.clear_cache()
     return RedirectResponse(f"/settings/business?saved={1 if changed else 0}", status_code=303)

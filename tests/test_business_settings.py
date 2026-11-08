@@ -113,6 +113,15 @@ class BusinessSettingsTests(unittest.TestCase):
         with self.Session() as db:
             self.assertEqual(db.query(store.BusinessSetting).count(), 0)
 
+    def test_page_works_before_the_tables_exist(self):
+        store.BusinessSettingChange.__table__.drop(self.engine)
+        store.BusinessSetting.__table__.drop(self.engine)
+        owner = self.sign_in()
+        page = owner.get("/settings/business")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("isn't set up yet", page.text)
+        self.assertEqual(owner.post("/settings/business", data=form()).status_code, 503)
+
     def test_railway_variables_still_work_with_nothing_saved(self):
         with patch.dict(os.environ, {"SHOP_BUFFER_MINUTES": "45"}):
             self.assertEqual(shop_buffer_minutes(), 45)
