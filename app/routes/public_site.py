@@ -13,7 +13,7 @@ PostgreSQL lock the staff booking API uses. Confirmation appears on screen only.
 """
 import logging
 
-from app import website_alerts
+from app import business_settings, website_alerts
 import os
 import re
 import secrets
@@ -63,7 +63,7 @@ STATUS_LIMIT = SubmissionLimiter(limit=20)
 
 def lead_minutes() -> int:
     try:
-        value = int(os.getenv("PUBLIC_BOOKING_LEAD_MINUTES", "120"))
+        value = int(business_settings.raw("booking_lead_minutes") or "120")
     except ValueError:
         return 120
     return max(0, min(value, 7 * 24 * 60))

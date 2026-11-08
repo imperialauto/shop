@@ -9,7 +9,7 @@ from app.config import SECRET_KEY
 from app.database import get_db, init_db
 from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user
-from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, appointments, dispatch, live, finance, owner_setup, public_site, staff
+from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, appointments, business_settings_page, dispatch, live, finance, owner_setup, public_site, staff
 from app.routes import account_security
 from app.scheduler import start_scheduler
 
@@ -48,6 +48,7 @@ app.include_router(finance.router, prefix="/finance", tags=["finance"])
 app.include_router(owner_setup.router, tags=["owner_setup"])
 app.include_router(account_security.router, tags=["security"])
 app.include_router(staff.router, tags=["staff"])
+app.include_router(business_settings_page.router, tags=["settings"])
 app.include_router(public_site.router, tags=["public_site"])
 app.include_router(ai_assist.router, prefix="/ai", tags=["ai"])
 app.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
@@ -110,6 +111,8 @@ def read_only_exempt(request: Request) -> bool:
         return True  # the stop switch must work even while read-only
     if request.url.path == "/site/status":
         return True  # looks up a status link and writes nothing
+    if request.url.path == "/settings/business":
+        return True  # owner configuration, audited, checks for the owner itself
     if request.url.path.startswith("/settings/users/"):
         return True  # logins only; these routes check for the owner themselves
     # The one-time owner claim has its own strong Railway secret + CSRF

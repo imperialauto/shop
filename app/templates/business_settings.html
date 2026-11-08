@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Business settings — Imperial Auto Care{% endblock %}
+{% block content %}
+<div class="mb-6"><a href="/settings" class="text-sm text-stone-400">← Settings</a>
+  <h1 class="text-2xl font-bold text-yellow-400">Business settings</h1>
+  <p class="text-sm text-stone-400">Hours, online booking, prices and mobile fees. Every change is saved with your name.</p></div>
+{% if error %}<div class="bg-red-900 border border-red-700 text-red-200 text-sm rounded px-3 py-2 mb-4" role="alert">{{ error }} Nothing was saved.</div>{% endif %}
+{% if saved %}<div class="bg-green-900 border border-green-700 text-green-200 text-sm rounded px-3 py-2 mb-4">Saved.</div>{% endif %}
+<form method="post" action="/settings/business" class="max-w-3xl space-y-6">
+  <div class="card">
+    <h2 class="font-bold mb-1">Hours</h2>
+    <p class="text-sm text-stone-400 mb-3">"Book online" lets customers book that day on the website.</p>
+    {% for d in settings.hours %}{% set i = loop.index0 %}
+    <div class="flex flex-wrap items-center gap-3 py-2 border-b border-stone-800">
+      <strong style="width:100px">{{ d.day }}</strong>
+      <label><input type="checkbox" name="open_{{ i }}" {% if d.open %}checked{% endif %}> Open</label>
+      <input type="time" name="opens_{{ i }}" value="{{ d.opens }}" class="form-input" style="width:130px" aria-label="{{ d.day }} opens">
+      <span>to</span>
+      <input type="time" name="closes_{{ i }}" value="{{ d.closes }}" class="form-input" style="width:130px" aria-label="{{ d.day }} closes">
+      <label><input type="checkbox" name="online_{{ i }}" {% if d.online %}checked{% endif %}> Book online</label>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="card">
+    <h2 class="font-bold mb-1">Online booking services</h2>
+    <p class="text-sm text-stone-400 mb-3">Leave the price blank to show "Price coming soon". A service can't be booked online until it has a price.</p>
+    {% for s in settings.services %}
+    <div class="py-3 border-b border-stone-800">
+      <strong>{{ s.name }}</strong>
+      <div class="flex flex-wrap items-center gap-3 mt-2">
+        <label>Price $ <input name="price_{{ s.slug }}" inputmode="decimal" value="{{ s.price if s.price is not none else '' }}" class="form-input" style="width:110px"></label>
+        <select name="type_{{ s.slug }}" class="form-input" style="width:auto">
+          <option value="exact" {% if s.price_type != 'starting' %}selected{% endif %}>Exact price</option>
+          <option value="starting" {% if s.price_type == 'starting' %}selected{% endif %}>Starting price</option>
+        </select>
+        <label><input name="minutes_{{ s.slug }}" inputmode="numeric" value="{{ s.minutes }}" class="form-input" style="width:80px"> minutes</label>
+        <label><input type="checkbox" name="mobile_{{ s.slug }}" {% if s.mobile %}checked{% endif %}> Can be mobile</label>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="card">
+    <h2 class="font-bold mb-1">Mobile ZIP codes</h2>
+    <p class="text-sm text-stone-400 mb-3">One per line: ZIP, fee, travel minutes each way. Example: <code>85307, 25, 20</code>. Other ZIP codes get an estimate request instead.</p>
+    <textarea name="zones" rows="6" class="form-input" style="font-family:monospace">{{ settings.zones }}</textarea>
+  </div>
+  <div class="card flex flex-wrap gap-6">
+    <label>Buffer after shop jobs <input name="buffer" inputmode="numeric" value="{{ settings.buffer }}" class="form-input" style="width:80px"> minutes</label>
+    <label>Earliest online booking <input name="lead" inputmode="numeric" value="{{ settings.lead }}" class="form-input" style="width:90px"> minutes from now</label>
+  </div>
+  <button class="btn-primary" type="submit" style="min-height:44px">Save settings</button>
+</form>
+<div class="card max-w-3xl mt-6">
+  <h2 class="font-bold mb-2">Change history</h2>
+  {% for c in history %}<div class="text-sm py-1 border-b border-stone-800">{{ c.changed_at.strftime('%b %-d, %-I:%M %p') }} UTC · {{ c.changed_by }} changed {{ c.key.replace('_', ' ') }}</div>
+  {% else %}<p class="text-sm text-stone-400">No changes yet. Values come from the Railway settings until saved here.</p>{% endfor %}
+</div>
+{% endblock %}

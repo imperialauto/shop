@@ -10,6 +10,12 @@
   {% if must_change %}
   <div class="bg-red-900 border border-red-700 text-red-200 text-sm rounded px-3 py-2 max-w-md">Set your own password to continue. Enter the temporary one as your current password.</div>
   {% endif %}
+  {% if user.role == 'owner' %}
+  <a href="/settings/business" class="card max-w-md" style="display:block; text-decoration:none;">
+    <strong>Business settings</strong>
+    <div class="text-sm text-stone-400">Hours, online booking, prices and mobile fees</div>
+  </a>
+  {% endif %}
   <a href="/settings/security" class="card max-w-md" style="display:block; text-decoration:none;">
     <strong>Two-step login</strong>
     <p class="text-stone-400 text-sm" style="margin:4px 0 0;">Add a code from your phone at sign-in.</p>
