@@ -1,0 +1,48 @@
+{% extends "site/_layout.html" %}
+{% block title %}Get an estimate — {{ business.name }}{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="wrap" style="max-width:820px">
+    <div class="eyebrow">Estimate request</div>
+    <h1>Tell us about the job</h1>
+    <p>For diagnostics, diesel and European work, transmissions, fleet vehicles, on-site, towing or roadside help, rentals, and NVZN Customs. A VIN helps us look up the right parts.</p>
+
+    {% if error %}<p class="alert alert-error" role="alert">{{ error }}</p>{% endif %}
+
+    {% if not forms_open %}
+      <p class="alert alert-info">Online estimate requests open soon. For now, call or text <a href="tel:{{ business.phone_tel }}">{{ business.phone_display }}</a>.</p>
+    {% else %}
+    <form class="form" method="post" action="/site/estimate">
+      <fieldset>
+        <legend>The job</legend>
+        <label for="service_line">Type of work</label>
+        <select id="service_line" name="service_line">
+          <option value="">Not sure</option>
+          {% for line in service_lines %}<option value="{{ line.slug }}" {% if values.service_line == line.slug %}selected{% endif %}>{{ line.name }}</option>{% endfor %}
+        </select>
+        <div style="margin-top:14px">
+          <label for="description">What is going on?</label>
+          <textarea id="description" name="description" maxlength="2000" required minlength="10" placeholder="Noises, warning lights, codes, when it started, what has been tried">{{ values.description or '' }}</textarea>
+        </div>
+        <div style="margin-top:14px">
+          <label id="where-label">Where is the vehicle?</label>
+          <div class="choices" role="radiogroup" aria-labelledby="where-label">
+            {% for key, label in where_options.items() %}
+            <label class="choice"><input type="radio" name="where" value="{{ key }}" {% if (values.where or 'shop') == key %}checked{% endif %}><span>{{ label }}</span></label>
+            {% endfor %}
+          </div>
+        </div>
+        <div style="margin-top:14px">
+          <label for="location">Vehicle location <span class="hint">Needed for on-site or roadside requests. Address, cross streets or mile marker.</span></label>
+          <input id="location" name="location" type="text" maxlength="256" value="{{ values.location or '' }}">
+        </div>
+      </fieldset>
+      {% set require_make = false %}
+      {% include "site/_person_vehicle.html" %}
+      <p class="hint">Make and model are required unless you enter a VIN. Complex repairs need an estimate and your approval. Nothing is booked until we contact you.</p>
+      <button class="btn btn-purple" type="submit">Send estimate request</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

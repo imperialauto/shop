@@ -2,7 +2,7 @@
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from app.appointment_model import Appointment  # noqa: F401
+from app.appointment_model import Appointment, BookingSlot  # noqa: F401
 from app.auth import hash_password
 from app.database import Base, SessionLocal, engine
 from app.dispatch_model import DispatchItem
@@ -38,6 +38,16 @@ for n, (status, urgency, category, summary, draft) in enumerate([
     db.add(DispatchItem(id=n, quo_conversation_id=f"CNsample{n}", last_message_id=f"MSGsample{n}", customer_phone=f"+1602555010{n}", status=status, urgency=urgency,
                         category=category, summary=summary, proposed_action="Review the message and reply.", draft_reply=draft,
                         approval_reasons='["customer_reply"]', contact_name=f"Sample Contact {n}", updated_at=now - timedelta(hours=n), created_at=now - timedelta(hours=n)))
+# Made-up open times for the public booking walkthrough: weekdays 11 AM, 1 PM and 3 PM Phoenix.
+from zoneinfo import ZoneInfo
+phoenix_today = datetime.now(ZoneInfo("America/Phoenix")).replace(hour=0, minute=0, second=0, microsecond=0)
+for offset in range(2, 12):
+    day = phoenix_today + timedelta(days=offset)
+    if day.weekday() > 4:
+        continue
+    for hour in (11, 13, 15):
+        start = day.replace(hour=hour)
+        db.add(BookingSlot(resource_id="bay-1", starts_at=start.astimezone(timezone.utc), ends_at=(start + timedelta(hours=1)).astimezone(timezone.utc)))
 db.commit()
 if engine.dialect.name == "postgresql":
     from sqlalchemy import text

@@ -19,6 +19,7 @@ from app.database import get_db
 from app.config import OWNER_PHONE
 from app.dispatch import AUTO_POLICIES, LOCKED_POLICIES, MAKES, POLICIES, PROMISE, apply_policies, assess, auto_reply, is_reaction, parse_owner_command, propose
 from app.appointment_model import Appointment
+from app import website_alerts
 from app.sending_pause import is_paused, pause, resume
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync, OPEN_STATUSES
 from app.models import Communication, Customer, RepairOrder, Vehicle
@@ -471,6 +472,13 @@ FOLLOW_UP_HOURS = range(11, 19)
 def _alert_text(db: Session, item: DispatchItem) -> str:
     said = " ".join(item.summary.split())[:120]
     name = _label(db, item)
+    if website_alerts.is_website(item):
+        phone = item.customer_phone or "no phone"
+        if item.draft_reply == "":
+            return f"Website booking {name}: {said}\nNothing needed. It's on the calendar."
+        head = "URGENT website" if item.urgency != "normal" else "Website"
+        return (f"{head} #{item.id} {name} {phone}\n{said}\n"
+                f"Call or text them yourself. Nothing was sent to them. DONE {item.id} when handled.")
     if item.draft_reply == "":
         return f"FYI {name}: {said}\nNothing needed. Tell me if you want to answer."
     head = f"URGENT #{item.id}" if item.urgency != "normal" else f"#{item.id}"

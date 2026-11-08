@@ -1,0 +1,32 @@
+<fieldset>
+  <legend>Your vehicle</legend>
+  <div class="row">
+    <div><label for="year">Year</label><input id="year" name="year" type="text" inputmode="numeric" maxlength="4" autocomplete="off" value="{{ values.year or '' }}"></div>
+    <div><label for="make">Make</label><input id="make" name="make" type="text" maxlength="64" {% if require_make %}required{% endif %} placeholder="Ford" value="{{ values.make or '' }}"></div>
+    <div><label for="model">Model</label><input id="model" name="model" type="text" maxlength="128" {% if require_make %}required{% endif %} placeholder="F-250" value="{{ values.model or '' }}"></div>
+  </div>
+  <div class="row" style="margin-top:14px">
+    <div><label for="vin">VIN <span class="hint">17 characters, on the driver's door jamb or windshield. Optional.</span></label><input id="vin" name="vin" type="text" maxlength="20" autocapitalize="characters" autocomplete="off" spellcheck="false" value="{{ values.vin or '' }}"></div>
+    <div><label for="mileage">Mileage <span class="hint">Optional</span></label><input id="mileage" name="mileage" type="text" inputmode="numeric" maxlength="9" value="{{ values.mileage or '' }}"></div>
+  </div>
+</fieldset>
+<fieldset>
+  <legend>Your details</legend>
+  <div class="row">
+    <div><label for="first_name">First name</label><input id="first_name" name="first_name" type="text" maxlength="64" autocomplete="given-name" required value="{{ values.first_name or '' }}"></div>
+    <div><label for="last_name">Last name</label><input id="last_name" name="last_name" type="text" maxlength="64" autocomplete="family-name" required value="{{ values.last_name or '' }}"></div>
+  </div>
+  <div class="row" style="margin-top:14px">
+    <div><label for="phone">Mobile phone</label><input id="phone" name="phone" type="tel" maxlength="20" autocomplete="tel" required value="{{ values.phone or '' }}"></div>
+    <div><label for="email">Email <span class="hint">Optional</span></label><input id="email" name="email" type="email" maxlength="128" autocomplete="email" value="{{ values.email or '' }}"></div>
+  </div>
+  <div style="margin-top:14px">
+    <label id="contact-label">Best way to reach you</label>
+    <div class="choices" role="radiogroup" aria-labelledby="contact-label">
+      {% for key, label in contact_options.items() %}
+      <label class="choice"><input type="radio" name="contact_method" value="{{ key }}" {% if (values.contact_method or 'text') == key %}checked{% endif %}><span>{{ label }}</span></label>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="hp" aria-hidden="true"><label for="company">Company</label><input id="company" name="company" type="text" tabindex="-1" autocomplete="off"></div>
+</fieldset>
