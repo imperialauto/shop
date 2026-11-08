@@ -122,6 +122,20 @@ class BusinessSettingsTests(unittest.TestCase):
         self.assertIn("isn't set up yet", page.text)
         self.assertEqual(owner.post("/settings/business", data=form()).status_code, 503)
 
+    def test_alert_center_is_owner_only_and_saves_rules(self):
+        from app import alert_rules
+        owner = self.sign_in()
+        self.assertEqual(owner.get("/alerts").status_code, 200)
+        saved = owner.post("/alerts", data={"quiet_start": "21:00", "quiet_end": "07:00", "on_owner_wrap": "on"})
+        self.assertEqual(saved.headers["location"], "/alerts?saved=1")
+        rules = alert_rules.rules()
+        self.assertEqual((rules["quiet_start"], rules["quiet_end"]), ("21:00", "07:00"))
+        self.assertIn("owner_daily", rules["off"])
+        self.assertNotIn("owner_wrap", rules["off"])
+        self.assertEqual(owner.post("/alerts", data={"quiet_start": "21:00"}).status_code, 422)
+        for name in ("office", "boss"):
+            self.assertEqual(self.sign_in(name).get("/alerts").status_code, 403)
+
     def test_railway_variables_still_work_with_nothing_saved(self):
         with patch.dict(os.environ, {"SHOP_BUFFER_MINUTES": "45"}):
             self.assertEqual(shop_buffer_minutes(), 45)

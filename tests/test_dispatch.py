@@ -374,6 +374,35 @@ class QueueWorkflowTests(unittest.TestCase):
         response = self.client.post("/internal/dispatch/sync", headers=HEADERS, json={"source": "backup", "ok": ok, "detail": "x"})
         self.assertEqual(response.status_code, 200)
 
+    def test_alert_rules_turn_off_optional_texts_only(self):
+        from app import alert_rules
+        ten = datetime(2026, 11, 2, 10, 30, tzinfo=AZ)
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        with patch.object(alert_rules, "rules", return_value={"quiet_start": "", "quiet_end": "", "off": ["owner_daily"]}):
+            keys = [m["key"] for m in self.alert(ten)]
+        self.assertFalse(any(k.startswith("daily:") for k in keys))
+        self.assertTrue(any(k.startswith("alert:") for k in keys))  # customer messages can't be turned off
+        self.assertTrue(any(m["key"].startswith("daily:") for m in self.alert(ten)))  # back on, it sends
+
+    def test_alert_rule_clock(self):
+        from app import alert_rules
+        overnight = {"quiet_start": "21:00", "quiet_end": "07:00", "off": []}
+        self.assertTrue(alert_rules.in_quiet_hours(datetime(2026, 11, 2, 23, 0, tzinfo=AZ), overnight))
+        self.assertTrue(alert_rules.in_quiet_hours(datetime(2026, 11, 2, 6, 59, tzinfo=AZ), overnight))
+        self.assertFalse(alert_rules.in_quiet_hours(datetime(2026, 11, 2, 7, 0, tzinfo=AZ), overnight))
+        self.assertTrue(alert_rules.allowed("owner_backup", False, False, datetime(2026, 11, 2, 23, 0, tzinfo=AZ), overnight))
+
+    def test_quiet_hours_hold_normal_texts_but_not_urgent_ones(self):
+        from app import alert_rules
+        ten = datetime(2026, 11, 2, 10, 30, tzinfo=AZ)
+        quiet = {"quiet_start": "10:00", "quiet_end": "11:00", "off": []}
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        with patch.object(alert_rules, "rules", return_value=quiet):
+            keys = [m["key"] for m in self.alert(ten)]
+        self.assertTrue(any(k.startswith("alert:") for k in keys))  # safety still comes through
+        self.assertFalse(any(k.startswith("daily:") for k in keys))
+        self.assertTrue(any(m["key"].startswith("daily:") for m in self.alert(ten.replace(hour=11, minute=5))))  # held, then sent
+
     def test_failed_backup_texts_the_owner_once_a_day(self):
         now = datetime.now(AZ).replace(hour=9)
         self.report_backup(True)
