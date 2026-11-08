@@ -393,6 +393,8 @@ def _owner_command(db: Session, message: IntakeMessage) -> dict:
     item = db.query(DispatchItem).filter(DispatchItem.id == item_id).with_for_update().first()
     if item is None or item.status not in OPEN_STATUSES:
         return {"ownerReply": f"#{item_id} is not open."}
+    if website_alerts.is_website(item) and decision in ("approve", "edit"):
+        return {"ownerReply": f"Website request #{item.id} must be contacted manually."}
     alerted = db.query(DispatchOutbound).filter(
         DispatchOutbound.dedupe_key == f"alert:{item.id}:{item.last_message_id}",
         DispatchOutbound.status == "sent",
@@ -643,6 +645,8 @@ def save_draft(draft: DraftInput, db: Session = Depends(get_db), _auth: bool = D
     ).first()
     if item is None:
         return {"recorded": False}
+    if website_alerts.is_website(item):
+        return {"recorded": False}
     reasons = json.loads(item.approval_reasons or "[]")
     if draft.note and draft.note.strip():
         item.proposed_action = draft.note.strip()  # the job file line for this customer
@@ -670,6 +674,8 @@ def owner_action(request_: OwnerAction, db: Session = Depends(get_db), _auth: bo
     text = (request_.text or "").strip()
     if item is None or not text:
         return {"ownerReply": "I couldn't match that to an open customer. Text OPEN for the list."}
+    if website_alerts.is_website(item):
+        return {"ownerReply": f"Website request #{item.id} must be contacted manually."}
     item.draft_reply = text
     item.status = "needs_owner"
     audit(db, item.id, "owner_sms", "owner_proposed")

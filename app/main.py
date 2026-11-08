@@ -164,6 +164,8 @@ async def recovery_mode(request: Request, call_next):
             return _message_page("Saving is paused", "The system is in read-only mode, so nothing was changed.", 503)
         return JSONResponse({"error": "Recovery audit mode: production changes and external actions are paused.", "read_only": True}, status_code=503)
     response = await call_next(request)
+    if preview_code():
+        response.headers["X-Robots-Tag"] = "noindex, nofollow"
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", "same-origin")
     if not request.url.path.startswith("/live/overlay"):

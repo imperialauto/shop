@@ -337,12 +337,19 @@ class PublicBooking(unittest.TestCase):
             self.assertIn('Nothing needed', dispatch._alert_text(db, booked))
 
     def test_website_items_never_hand_a_reply_to_messaging(self):
-        from app.dispatch_model import DispatchItem
+        from app.dispatch_model import DispatchItem, DispatchOutbound
+        from app.routes import dispatch
         slot_id = self.slot(weekday_at(11))
         self.client.post('/site/book', data=self.form(slot_id), follow_redirects=False)
         with SessionLocal() as db:
             item = db.query(DispatchItem).one()
-            self.assertTrue(item.last_message_id.startswith('web:'))  # never equals a Quo message id, so sends are skipped
+            item.draft_reply = 'Synthetic draft'
+            outbound = DispatchOutbound(dedupe_key='synthetic-website-reply', item_id=item.id,
+                                        kind=dispatch.DASHBOARD_REPLY, status='queued')
+            db.add(outbound)
+            db.commit()
+            self.assertEqual(dispatch.queued_replies(db), [])
+            self.assertEqual(outbound.status, 'skipped')
 
     def test_only_approved_services_can_be_booked(self):
         slot_id = self.slot(weekday_at(11))
