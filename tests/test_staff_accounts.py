@@ -137,6 +137,22 @@ class StaffLoginTests(unittest.TestCase):
         self.assertEqual(blocked.status_code, 503)
         self.assertIn("nothing was changed", blocked.text)
 
+    def test_signed_out_browser_goes_to_sign_in_then_back(self):
+        client = TestClient(app, follow_redirects=False)
+        page = client.get("/settings/business", headers={"accept": "text/html"})
+        self.assertEqual((page.status_code, page.headers["location"]), (303, "/login"))
+        self.assertEqual(client.post("/login", data={"username": "owner", "password": PASSWORD}).headers["location"], "/settings/business")
+        self.assertEqual(client.post("/login", data={"username": "owner", "password": PASSWORD}).headers["location"], "/dashboard")
+
+    def test_signed_out_api_call_still_gets_401(self):
+        self.assertEqual(TestClient(app).get("/appointments/").status_code, 401)
+
+    def test_only_local_pages_are_returned_to(self):
+        from types import SimpleNamespace
+        from app.auth import after_login
+        for bad in ("//evil.example", "https://evil.example", "/\\evil"):
+            self.assertEqual(after_login(SimpleNamespace(session={"next": bad}), "/dashboard"), "/dashboard")
+
     def test_blocked_page_is_plain_language(self):
         crew, _ = self.sign_in("crew")
         response = crew.get("/finance/", headers={"accept": "text/html"})

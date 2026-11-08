@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.config import SECRET_KEY
 from app.database import get_db, init_db
 from app.models import User
-from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user
+from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user, after_login
 from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, appointments, business_settings_page, dispatch, live, finance, owner_setup, public_site, staff
 from app.routes import account_security
 from app.scheduler import start_scheduler
@@ -190,6 +190,16 @@ def _message_page(title: str, detail: str, status: int) -> HTMLResponse:
                         '<a href="javascript:history.back()" style="color:#d4a853">Go back</a></body>', status_code=status)
 
 
+@app.exception_handler(401)
+def not_signed_in(request: Request, exc):
+    """A person in a browser goes to sign in, then back to the page they wanted."""
+    if request.method != "GET" or "text/html" not in request.headers.get("accept", ""):
+        return JSONResponse({"detail": exc.detail}, status_code=401)
+    path = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+    request.session["next"] = path[:300]
+    return RedirectResponse("/login", status_code=303)
+
+
 @app.exception_handler(403)
 def forbidden(request: Request, exc):
     if "text/html" not in request.headers.get("accept", ""):
@@ -241,11 +251,14 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
         return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid username or password"})
     limiter.clear(*keys)
     if account_security.confirmed_mfa(db, user.id):
+        wanted = request.session.get("next")
         request.session.clear()
         request.session["pending_mfa"] = {"user": user.id, "at": time.time()}
+        if wanted:
+            request.session["next"] = wanted  # still go there after the code
         return RedirectResponse("/login/verify", status_code=303)
     login_user(request, user)
-    return RedirectResponse("/ro/" if user.role == "tech" else "/dashboard", status_code=302)
+    return RedirectResponse(after_login(request, "/ro/" if user.role == "tech" else "/dashboard"), status_code=302)
 
 
 @app.get("/logout")

@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [feature/appointment-foundation-20261031, claude/settings-center]
+    branches: [feature/appointment-foundation-20261031, claude/settings-center, claude/signin-redirect]
 jobs:
   app-tests:
     runs-on: ubuntu-latest
