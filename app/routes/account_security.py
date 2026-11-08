@@ -67,7 +67,7 @@ def verify_submit(request: Request, code: str = Form(...), db: Session = Depends
     limiter.clear(*keys)
     request.session.pop("pending_mfa", None)
     login_user(request, user)
-    return RedirectResponse(after_login(request, "/ro/" if user.role == "tech" else "/dashboard"), status_code=303)
+    return RedirectResponse(after_login(request, "/my-day" if user.role == "tech" else "/dashboard"), status_code=303)
 
 
 def _page(request: Request, user: User, db: Session, **extra):

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}My day — Imperial Auto Care{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold text-yellow-400">My day</h1>
+<p class="text-sm text-stone-400 mb-4">{{ today }}</p>
+
+{% macro vehicle(ro) %}{{ ro.vehicle.year or '' }} {{ ro.vehicle.make or '' }} {{ ro.vehicle.model or '' }}{% endmacro %}
+
+<h2 class="font-bold mb-2">My jobs ({{ mine|length }})</h2>
+{% for ro in mine %}
+<div class="card mb-3">
+  <a href="/ro/{{ ro.id }}" style="display:block;text-decoration:none;color:inherit">
+    <div class="flex justify-between gap-2"><strong>{{ vehicle(ro) }}</strong><span class="text-sm text-stone-400">#{{ ro.id }}</span></div>
+    <div class="text-sm text-stone-400">{{ ro.customer.first_name or '' }} · {{ ro.status.replace('_', ' ').title() }}</div>
+    {% if ro.concern %}<p class="text-sm mt-1">{{ ro.concern[:160] }}</p>{% endif %}
+  </a>
+  <form method="post" action="/ro/{{ ro.id }}/update-status?back=my-day" class="flex flex-wrap gap-2 mt-3">
+    {% for key, label in steps if key != ro.status %}
+    <button type="submit" name="status" value="{{ key }}" class="btn-secondary" style="min-height:44px">{{ label }}</button>
+    {% endfor %}
+  </form>
+  <a href="/ro/{{ ro.id }}#notes" class="text-sm text-yellow-400" style="display:inline-block;margin-top:10px;min-height:44px">Add notes →</a>
+</div>
+{% else %}
+<div class="card mb-3 text-sm text-stone-400">No jobs assigned to you right now.</div>
+{% endfor %}
+
+<h2 class="font-bold mt-6 mb-2">Today at the shop ({{ visits|length }})</h2>
+<div class="card mb-3">
+{% for v in visits %}
+  <a href="/ro/{{ v.ro.id }}" class="flex justify-between py-2 border-b border-stone-800" style="text-decoration:none;color:inherit;min-height:44px">
+    <span><strong>{{ v.time }}</strong> {{ vehicle(v.ro) }}{% if v.mobile %} · Mobile{% endif %}</span><span class="text-stone-400">#{{ v.ro.id }}</span>
+  </a>
+{% else %}<p class="text-sm text-stone-400">No appointments booked in the app today. Check the calendar for others.</p>{% endfor %}
+</div>
+
+<h2 class="font-bold mt-6 mb-2">Not assigned yet ({{ unassigned|length }})</h2>
+<div class="card">
+{% for ro in unassigned %}
+  <a href="/ro/{{ ro.id }}" class="flex justify-between py-2 border-b border-stone-800" style="text-decoration:none;color:inherit;min-height:44px">
+    <span>{{ vehicle(ro) }} · {{ ro.status.replace('_', ' ').title() }}</span><span class="text-stone-400">#{{ ro.id }}</span>
+  </a>
+{% else %}<p class="text-sm text-stone-400">Nothing waiting.</p>{% endfor %}
+</div>
+{% endblock %}

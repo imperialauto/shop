@@ -153,6 +153,50 @@ class StaffLoginTests(unittest.TestCase):
         for bad in ("//evil.example", "https://evil.example", "/\\evil"):
             self.assertEqual(after_login(SimpleNamespace(session={"next": bad}), "/dashboard"), "/dashboard")
 
+    def make_job(self, tech_id=None):
+        from app.models import Customer, RepairOrder, Vehicle
+        with self.Session() as db:
+            customer = Customer(first_name="Pat", last_name="Sample", phone="6025550100")
+            db.add(customer)
+            db.flush()
+            vehicle = Vehicle(customer_id=customer.id, year=2016, make="Ford", model="Focus")
+            db.add(vehicle)
+            db.flush()
+            order = RepairOrder(customer_id=customer.id, vehicle_id=vehicle.id, status="intake", concern="Made-up concern", assigned_tech_id=tech_id)
+            db.add(order)
+            db.commit()
+            return order.id
+
+    def test_tech_lands_on_my_day_with_their_jobs(self):
+        mine, other = self.make_job(tech_id=2), self.make_job()
+        crew, response = self.sign_in("crew")
+        self.assertEqual(response.headers["location"], "/my-day")
+        self.assertEqual(crew.get("/dashboard").headers["location"], "/my-day")
+        page = crew.get("/my-day").text
+        self.assertIn(f'/ro/{mine}/update-status?back=my-day', page)
+        self.assertIn("Not assigned yet (1)", page)
+        moved = crew.post(f"/ro/{mine}/update-status?back=my-day", data={"status": "in_progress"})
+        self.assertEqual(moved.headers["location"], "/my-day")
+
+    def test_status_must_be_real_and_tech_cannot_deliver(self):
+        job = self.make_job(tech_id=2)
+        crew, _ = self.sign_in("crew")
+        self.assertEqual(crew.post(f"/ro/{job}/update-status", data={"status": "made-up"}).status_code, 422)
+        self.assertEqual(crew.post(f"/ro/{job}/update-status", data={"status": "delivered"}).status_code, 403)
+        owner, _ = self.sign_in()
+        self.assertEqual(owner.post(f"/ro/{job}/update-status", data={"status": "delivered"}).status_code, 302)
+
+    def test_owner_assigns_and_tech_cannot(self):
+        job = self.make_job()
+        crew, _ = self.sign_in("crew")
+        self.assertEqual(crew.post(f"/ro/{job}/assign", data={"assigned_tech_id": "2"}).status_code, 403)
+        owner, _ = self.sign_in()
+        self.assertEqual(owner.post(f"/ro/{job}/assign", data={"assigned_tech_id": "2"}).status_code, 302)
+        from app.models import RepairOrder
+        with self.Session() as db:
+            self.assertEqual(db.get(RepairOrder, job).assigned_tech_id, 2)
+        self.assertEqual(owner.post(f"/ro/{job}/assign", data={"assigned_tech_id": "999"}).status_code, 422)
+
     def test_blocked_page_is_plain_language(self):
         crew, _ = self.sign_in("crew")
         response = crew.get("/finance/", headers={"accept": "text/html"})
