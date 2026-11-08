@@ -336,20 +336,20 @@ class PublicBooking(unittest.TestCase):
             self.assertNotIn('YES', text)
             self.assertIn('Nothing needed', dispatch._alert_text(db, booked))
 
-    def test_website_items_never_hand_a_reply_to_messaging(self):
+    def test_website_items_cannot_queue_a_dashboard_reply(self):
         from app.dispatch_model import DispatchItem, DispatchOutbound
-        from app.routes import dispatch
-        slot_id = self.slot(weekday_at(11))
-        self.client.post('/site/book', data=self.form(slot_id), follow_redirects=False)
+        data = {**self.form(0), 'where': 'shop', 'description': 'Synthetic intermittent brake noise.'}
+        self.assertEqual(self.client.post('/site/estimate', data=data, follow_redirects=False).status_code, 303)
+        self.client.post('/login', data={'username': 'fixture', 'password': 'fixture-pass'})
         with SessionLocal() as db:
             item = db.query(DispatchItem).one()
-            item.draft_reply = 'Synthetic draft'
-            outbound = DispatchOutbound(dedupe_key='synthetic-website-reply', item_id=item.id,
-                                        kind=dispatch.DASHBOARD_REPLY, status='queued')
-            db.add(outbound)
-            db.commit()
-            self.assertEqual(dispatch.queued_replies(db), [])
-            self.assertEqual(outbound.status, 'skipped')
+            item_id, message_id = item.id, item.last_message_id
+        response = self.client.post(f'/dispatch/{item_id}/decide', data={
+            'decision': 'approve', 'expected_message_id': message_id, 'reply_text': 'Synthetic draft',
+        })
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('must be contacted manually', response.text)
+        self.assertEqual(self.count(DispatchOutbound), 0)
 
     def test_only_approved_services_can_be_booked(self):
         slot_id = self.slot(weekday_at(11))
