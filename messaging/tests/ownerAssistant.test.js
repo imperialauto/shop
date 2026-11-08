@@ -56,3 +56,12 @@ test("job notes are one line and failures are harmless", async () => {
   assert.equal(await jobNote({ conversation: "x", complete: async () => "Needs oil\nchange" }), "Needs oil change");
   assert.equal(await jobNote({ conversation: "x", complete: async () => { throw new Error("down"); } }), null);
 });
+
+test("a request to check prices is not turned into a reminder", async () => {
+  const snapshot = { waitingOnYou: [{ id: 48 }] };
+  const complete = async () => JSON.stringify({ action: "later", itemId: 48, hours: 2 });
+  assert.equal(await interpretOwner({ question: "#48 can you check prices?", snapshot, complete }), null);
+  const asked = await interpretOwner({ question: "remind me about 48 in 3 hours", snapshot, complete });
+  assert.equal(asked.action, "later");
+});
+
