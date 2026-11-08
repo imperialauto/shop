@@ -9,7 +9,7 @@ from app.config import SECRET_KEY
 from app.database import get_db, init_db
 from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user, after_login
-from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, business_settings_page, dispatch, live, finance, owner_setup, public_site, staff
+from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, my_day, business_settings_page, dispatch, live, finance, owner_setup, public_site, staff
 from app.routes import account_security
 from app.scheduler import start_scheduler
 
@@ -50,6 +50,7 @@ app.include_router(account_security.router, tags=["security"])
 app.include_router(staff.router, tags=["staff"])
 app.include_router(business_settings_page.router, tags=["settings"])
 app.include_router(alert_center.router, tags=["alerts"])
+app.include_router(my_day.router, tags=["my_day"])
 app.include_router(public_site.router, tags=["public_site"])
 app.include_router(ai_assist.router, prefix="/ai", tags=["ai"])
 app.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
@@ -259,7 +260,7 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
             request.session["next"] = wanted  # still go there after the code
         return RedirectResponse("/login/verify", status_code=303)
     login_user(request, user)
-    return RedirectResponse(after_login(request, "/ro/" if user.role == "tech" else "/dashboard"), status_code=302)
+    return RedirectResponse(after_login(request, "/my-day" if user.role == "tech" else "/dashboard"), status_code=302)
 
 
 @app.get("/logout")

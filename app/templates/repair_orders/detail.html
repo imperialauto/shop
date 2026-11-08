@@ -14,7 +14,7 @@
   <div class="flex flex-wrap gap-2">
     <form method="post" action="/ro/{{ ro.id }}/update-status" class="flex gap-2 items-center">
       <select name="status" class="form-select w-44" aria-label="Job status" onchange="this.form.submit()">
-        {% for val, label in statuses %}
+        {% for val, label in statuses if val != 'delivered' or user.role != 'tech' or ro.status == 'delivered' %}
         <option value="{{ val }}" {% if ro.status == val %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
@@ -56,7 +56,18 @@
   <div class="card col-span-1">
     <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Details</h3>
     <p class="text-stone-400 text-sm">Status: <span class="text-stone-200">{{ ro.status.replace('_',' ').title() }}</span></p>
+    {% if user.role != 'tech' %}
+    <form method="post" action="/ro/{{ ro.id }}/assign" class="mt-1 flex items-center gap-2">
+      <label class="text-stone-400 text-sm" for="assign-tech">Tech:</label>
+      <select id="assign-tech" name="assigned_tech_id" class="form-select" style="width:auto" onchange="this.form.submit()">
+        <option value="">Unassigned</option>
+        {% for t in techs %}<option value="{{ t.id }}" {% if ro.assigned_tech_id == t.id %}selected{% endif %}>{{ t.full_name or t.username }}</option>{% endfor %}
+      </select>
+      <noscript><button class="btn-secondary" type="submit">Save</button></noscript>
+    </form>
+    {% else %}
     <p class="text-stone-400 text-sm mt-1">Tech: <span class="text-stone-200">{{ ro.assigned_tech.full_name if ro.assigned_tech else 'Unassigned' }}</span></p>
+    {% endif %}
     <p class="text-stone-400 text-xs mt-1">
       <a href="/status/{{ ro.public_token }}" target="_blank" class="text-gold-400 hover:underline">Customer status page →</a>
     </p>
@@ -83,7 +94,7 @@
 <!-- Tech Notes -->
 <div class="card mb-4">
   <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Tech Notes / Diagnostic Second-Brain</h3>
-  <form method="post" action="/ro/{{ ro.id }}/update-notes">
+  <form id="notes" method="post" action="/ro/{{ ro.id }}/update-notes">
     <textarea name="tech_notes" rows="5" class="form-input mb-3"
       placeholder="Document your diagnostic process, findings, parts replaced, labor performed…">{{ ro.tech_notes or '' }}</textarea>
     <button type="submit" class="btn-secondary text-xs">Save Notes</button>

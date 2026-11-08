@@ -11,8 +11,8 @@ ROLES = {"admin": "Admin", "office": "Office Coordinator", "tech": "Technician"}
 PUBLIC = ("/site", "/login", "/logout", "/status", "/sign", "/webhooks", "/internal", "/healthz", "/readyz", "/live/overlay", "/owner-setup")
 OWNER_ONLY = ("/finance", "/settings/users", "/settings/business", "/alerts")
 ADMIN_ONLY = ("/live", "/dispatch/sending", "/dispatch/policies")
-OFFICE = ("/dashboard", "/customers", "/vehicles", "/ro", "/appointments", "/invoices", "/estimates", "/dispatch", "/ai", "/settings")
-TECH_READ = re.compile(r"^/(ro(/board|/|/\d+(/vehicles)?)?|vehicles/\d+|appointments/?|appointments/calendar|settings(/security)?)$")
+OFFICE = ("/my-day", "/dashboard", "/customers", "/vehicles", "/ro", "/appointments", "/invoices", "/estimates", "/dispatch", "/ai", "/settings")
+TECH_READ = re.compile(r"^/(my-day|ro(/board|/|/\d+(/vehicles)?)?|vehicles/\d+|appointments/?|appointments/calendar|settings(/security)?)$")
 TECH_WRITE = re.compile(r"^/(ro/\d+/(update-status|update-notes|add-line-item)|ai/[a-z-]+/\d+|settings/change-password|settings/security/(start|confirm|disable))$")
 PASSWORD_CHANGE_PATHS = ("/settings", "/settings/change-password", "/logout")
 
@@ -54,6 +54,6 @@ def role_gate(request: Request, db: Session = Depends(get_db)):
     if user.must_change_password and not _under(path, PUBLIC) and path not in PASSWORD_CHANGE_PATHS:
         raise _redirect("/settings?change=1")
     if user.role == "tech" and path == "/dashboard":
-        raise _redirect("/ro/")
+        raise _redirect("/my-day")
     if not allowed(user.role, request.method, path):
         raise HTTPException(status_code=403, detail="Your login doesn't have access to this.")

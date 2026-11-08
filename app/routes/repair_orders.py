@@ -41,6 +41,12 @@ RO_STATUSES = [
 ]
 
 
+def workers(db):
+    """Active logins that can be assigned a job. Office logins don't work on vehicles."""
+    return [u for u in db.query(User).order_by(User.full_name, User.username).all()
+            if u.role in ("tech", "owner", "admin") and u.is_active is not False]
+
+
 def require_user(request, db):
     try:
         return get_current_user(request, db)
@@ -113,7 +119,7 @@ def new_ro_form(request: Request, customer_id: int = None, vehicle_id: int = Non
     vehicles = []
     if customer_id:
         vehicles = db.query(Vehicle).filter(Vehicle.customer_id == customer_id).all()
-    techs = db.query(User).all()
+    techs = workers(db)
     return templates.TemplateResponse("repair_orders/form.html", {
         "request": request, "user": user, "ro": None,
         "customers": customers, "vehicles": vehicles, "techs": techs,
@@ -158,7 +164,7 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
     ro = db.query(RepairOrder).filter(RepairOrder.id == ro_id).first()
     if not ro:
         raise HTTPException(status_code=404)
-    techs = db.query(User).all()
+    techs = workers(db)
     subtotal = sum(li.total for li in ro.line_items)
     # Pull all communications for this customer (across all ROs), sorted oldest→newest
     comms = (
@@ -199,6 +205,10 @@ def update_status(
     if not ro:
         raise HTTPException(status_code=404)
 
+    if status not in dict(RO_STATUSES):
+        raise HTTPException(status_code=422, detail="Unknown status.")
+    if user.role == "tech" and status == "delivered":
+        raise HTTPException(status_code=403, detail="The front desk marks a job delivered.")
     prev_status = ro.status
     ro.status = status
     db.commit()
@@ -213,6 +223,26 @@ def update_status(
             )
             print(f"[Review] Queued review request to {ro.customer.phone} for RO #{ro_id}")
 
+    back = request.query_params.get("back")
+    return RedirectResponse("/my-day" if back == "my-day" else f"/ro/{ro_id}", status_code=302)
+
+
+@router.post("/{ro_id}/assign")
+def assign(request: Request, ro_id: int, db: Session = Depends(get_db), assigned_tech_id: str = Form("")):
+    user = require_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    ro = db.get(RepairOrder, ro_id)
+    if not ro:
+        raise HTTPException(status_code=404)
+    if assigned_tech_id:
+        worker = db.get(User, int(assigned_tech_id)) if assigned_tech_id.isdigit() else None
+        if worker is None or worker not in workers(db):
+            raise HTTPException(status_code=422, detail="Choose someone who works on vehicles.")
+        ro.assigned_tech_id = worker.id
+    else:
+        ro.assigned_tech_id = None
+    db.commit()
     return RedirectResponse(f"/ro/{ro_id}", status_code=302)
 
 
