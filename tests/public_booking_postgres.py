@@ -156,7 +156,7 @@ class PublicBooking(unittest.TestCase):
             'repair_order_id': order_id, 'resource_id': 'bay-1',
             'starts_at': start.isoformat(), 'ends_at': (start + timedelta(hours=1)).isoformat(),
         })
-        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.status_code, 201, result.text)
         appointment_id = result.json()['id']
         with SessionLocal() as db:
             self.assertEqual(db.query(ServiceLead).filter_by(source='website').one().status, 'estimate_needed')
