@@ -1,0 +1,24 @@
+/* Imperial design system (R36, docs/DESIGN-SYSTEM.md). One source of brand
+   colors for the website, customer pages and the staff dashboard. */
+:root {
+  --imp-purple: #2D0245;
+  --imp-purple-deep: #1A0129;
+  --imp-purple-soft: #3D0A5C;
+  --imp-purple-tint: #F3EEF8;
+  --imp-gold: #EAD272;
+  --imp-gold-dark: #CBB06B;
+  --imp-gold-text: #6B5A1E;   /* gold-family text that passes contrast on white */
+  --imp-gold-tint: #FFFBEA;
+  --imp-ink: #1D1724;
+  --imp-muted: #5D5468;
+  --imp-line: #E7E1EC;
+  --imp-paper: #FAF8FB;
+  --imp-surface: #FFFFFF;
+  --imp-ok: #17603A;      --imp-ok-tint: #E8F6EE;
+  --imp-warn: #8A5A00;    --imp-warn-tint: #FFF4CC;
+  --imp-danger: #9B1C1C;  --imp-danger-tint: #FDECEC;
+  --imp-serif: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+  --imp-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --imp-radius: 10px;
+  --imp-radius-card: 14px;
+}

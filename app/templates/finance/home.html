@@ -4,31 +4,31 @@
 <style>
   .finance-wrap { max-width: 1180px; margin: 0 auto; }
   .finance-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; }
-  .finance-sub { color:#a1a1aa; font-size:13px; line-height:1.55; margin-top:7px; max-width:680px; }
+  .finance-sub { color:var(--imp-muted); font-size:13px; line-height:1.55; margin-top:7px; max-width:680px; }
   .finance-period { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .finance-period input { min-height:44px; max-width:175px; }
   .finance-period button { min-height:44px; }
   .finance-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin:18px 0; }
   .finance-metric { min-width:0; padding:18px; }
-  .finance-metric .name { font-size:12px; color:#a1a1aa; }
-  .finance-metric .value { font-size:clamp(23px,3vw,34px); font-weight:750; color:#fafafa; letter-spacing:-.03em; margin-top:5px; overflow-wrap:anywhere; }
-  .finance-metric .hint { color:#71717a; font-size:11px; line-height:1.55; margin-top:9px; }
+  .finance-metric .name { font-size:12px; color:var(--imp-muted); }
+  .finance-metric .value { font-size:clamp(23px,3vw,34px); font-weight:750; color:var(--imp-ink); letter-spacing:-.03em; margin-top:5px; overflow-wrap:anywhere; }
+  .finance-metric .hint { color:var(--imp-muted); font-size:11px; line-height:1.55; margin-top:9px; }
   .finance-layout { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr); gap:14px; }
   .finance-section { min-width:0; }
-  .finance-section h2 { margin:0 0 12px; font-size:15px; color:#fafafa; font-weight:650; }
-  .finance-status { background:rgba(212,168,83,.07); border:1px solid rgba(212,168,83,.25); border-radius:10px; padding:14px 16px; line-height:1.55; font-size:13px; color:#edcc8a; margin:18px 0; }
-  .finance-caption { font-size:12px; line-height:1.6; color:#a1a1aa; }
-  .finance-payment { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:12px 0; border-bottom:1px solid rgba(255,255,255,.07); }
+  .finance-section h2 { margin:0 0 12px; font-size:15px; color:var(--imp-ink); font-weight:650; }
+  .finance-status { background:rgba(203,176,107,.07); border:1px solid rgba(203,176,107,.25); border-radius:10px; padding:14px 16px; line-height:1.55; font-size:13px; color:#edcc8a; margin:18px 0; }
+  .finance-caption { font-size:12px; line-height:1.6; color:var(--imp-muted); }
+  .finance-payment { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:12px 0; border-bottom:1px solid var(--imp-line); }
   .finance-payment:last-child { border-bottom:0; }
-  .finance-payment h3 { margin:0; font-size:13.5px; font-weight:600; color:#e4e4e7; overflow-wrap:anywhere; }
-  .finance-payment p { color:#71717a; font-size:12px; margin:4px 0 0; }
-  .finance-payment .amount { color:#fafafa; white-space:nowrap; font-weight:700; font-variant-numeric:tabular-nums; }
-  .finance-step { display:flex; align-items:flex-start; gap:12px; padding:12px 0; border-bottom:1px solid rgba(255,255,255,.06); }
+  .finance-payment h3 { margin:0; font-size:13.5px; font-weight:600; color:var(--imp-ink); overflow-wrap:anywhere; }
+  .finance-payment p { color:var(--imp-muted); font-size:12px; margin:4px 0 0; }
+  .finance-payment .amount { color:var(--imp-ink); white-space:nowrap; font-weight:700; font-variant-numeric:tabular-nums; }
+  .finance-step { display:flex; align-items:flex-start; gap:12px; padding:12px 0; border-bottom:1px solid var(--imp-line); }
   .finance-step:last-child { border-bottom:none; }
-  .finance-step .circle { width:27px; height:27px; border-radius:50%; background:rgba(212,168,83,.12); color:#d4a853; display:flex; flex-shrink:0; align-items:center; justify-content:center; font-size:12px; font-weight:700; }
-  .finance-step strong { font-size:13px; color:#e4e4e7; }
-  .finance-step p { color:#a1a1aa; margin-top:4px; font-size:12px; line-height:1.5; }
-  .finance-source { color:#71717a; font-size:12px; line-height:1.55; margin-top:12px; }
+  .finance-step .circle { width:27px; height:27px; border-radius:50%; background:rgba(203,176,107,.12); color: var(--imp-purple); display:flex; flex-shrink:0; align-items:center; justify-content:center; font-size:12px; font-weight:700; }
+  .finance-step strong { font-size:13px; color:var(--imp-ink); }
+  .finance-step p { color:var(--imp-muted); margin-top:4px; font-size:12px; line-height:1.5; }
+  .finance-source { color:var(--imp-muted); font-size:12px; line-height:1.55; margin-top:12px; }
   @media (max-width: 900px) {
     .finance-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
     .finance-layout { grid-template-columns:1fr; }
@@ -84,8 +84,8 @@
   </div>
 
   {% else %}
-  <div class="card" role="status" style="margin:18px 0;padding:18px;border-color:rgba(212,168,83,.24);">
-    <div style="font-size:15px;font-weight:650;color:#fafafa;">No shop payments have been entered into Imperial Operations yet</div>
+  <div class="card" role="status" style="margin:18px 0;padding:18px;border-color:rgba(203,176,107,.24);">
+    <div style="font-size:15px;font-weight:650;color:var(--imp-ink);">No shop payments have been entered into Imperial Operations yet</div>
     <p class="finance-caption" style="margin-top:8px;">This is a data-coverage gap, <strong>not $0 business revenue</strong>. Your historical Chase, Bank of America, Square, PayPal and Apple Cash evidence remains outside the dashboard until the secure transaction import and reconciliation are completed.</p>
     <p class="finance-caption" style="margin-top:8px;">Use this page to access finance activity once payments are recorded. Do not make tax or investor decisions from these incomplete operational totals.</p>
   </div>

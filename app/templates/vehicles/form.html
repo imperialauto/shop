@@ -25,13 +25,13 @@
 
     <!-- VIN decode -->
     <div>
-      <label class="form-label">VIN <span style="font-weight:400; color:#52525b;">(auto-fills year/make/model when 17 chars)</span></label>
+      <label class="form-label">VIN <span style="font-weight:400; color:var(--imp-muted);">(auto-fills year/make/model when 17 chars)</span></label>
       <div style="display:flex; gap:8px; align-items:center;">
         <input type="text" name="vin" id="vin-input"
           value="{{ vehicle.vin if vehicle else '' }}"
           class="form-input font-mono" maxlength="17" placeholder="17-character VIN"
           style="flex:1; text-transform:uppercase;" />
-        <span id="vin-status" style="font-size:12px; color:#52525b; white-space:nowrap;"></span>
+        <span id="vin-status" style="font-size:12px; color:var(--imp-muted); white-space:nowrap;"></span>
       </div>
     </div>
 
@@ -174,7 +174,7 @@ vinInput.addEventListener('input', function() {
   // Force uppercase
   const raw = this.value.toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g, '');
   this.value = raw;
-  vinStatus.style.color = '#52525b';
+  vinStatus.style.color = 'var(--imp-muted)';
 
   if (raw.length < 17) {
     vinStatus.textContent = raw.length > 0 ? `${raw.length}/17` : '';
@@ -222,7 +222,7 @@ vinInput.addEventListener('input', function() {
       }
 
       vinStatus.textContent = '✓ Decoded';
-      vinStatus.style.color = '#4ade80';
+      vinStatus.style.color = 'var(--imp-ok)';
     })
     .catch(() => {
       vinStatus.textContent = '⚠ Decode failed';

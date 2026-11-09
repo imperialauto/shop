@@ -5,7 +5,7 @@
 <div class="page-header">
   <div>
     <div class="page-title">Dashboard</div>
-    <div style="font-size:12px; color:#a1a1aa; margin-top:3px;">{{ now.strftime('%A, %B %d') if now else '' }}</div>
+    <div style="font-size:12px; color:var(--imp-muted); margin-top:3px;">{{ now.strftime('%A, %B %d') if now else '' }}</div>
   </div>
   <div style="display:flex; gap:8px; flex-wrap:wrap; margin-left:auto;">
   <a href="/appointments/calendar" class="btn-secondary">Calendar</a>
@@ -21,12 +21,12 @@
 
   {% if health %}
   <details class="card-sm" style="margin-bottom:12px; {% if not health.ok %}border-color:rgba(248,113,113,0.55);{% endif %}" {% if not health.ok %}open{% endif %} id="system-health">
-    <summary style="cursor:pointer; font-size:13px; color:{{ '#f87171' if not health.ok else '#a1a1aa' }};">
+    <summary style="cursor:pointer; font-size:13px; color:{{ 'var(--imp-danger)' if not health.ok else 'var(--imp-muted)' }};">
       {% if health.ok %}All systems working{% else %}{{ health.problems|length }} thing{{ 's need' if health.problems|length != 1 else ' needs' }} attention{% endif %}
     </summary>
     <ul style="list-style:none; margin:8px 0 0; padding:0; display:grid; gap:6px; font-size:13px;">
       {% for c in health.checks %}
-      <li><strong style="color:{{ '#f87171' if not c.ok else ('#a1a1aa' if c.info else '#4ade80') }};">{{ '!' if not c.ok else ('·' if c.info else '✓') }} {{ c.name }}</strong>: {{ c.detail }}{% if c.fix %} <span style="color:#a1a1aa;">{{ c.fix }}</span>{% endif %}</li>
+      <li><strong style="color:{{ 'var(--imp-danger)' if not c.ok else ('var(--imp-muted)' if c.info else 'var(--imp-ok)') }};">{{ '!' if not c.ok else ('·' if c.info else '✓') }} {{ c.name }}</strong>: {{ c.detail }}{% if c.fix %} <span style="color:var(--imp-muted);">{{ c.fix }}</span>{% endif %}</li>
       {% endfor %}
     </ul>
   </details>
@@ -35,27 +35,27 @@
   {% if home and home.ready %}
   <div class="stat-row">
     <a href="#queue" class="card-sm" style="display:block; text-decoration:none; {% if home.urgent %}border-color:rgba(248,113,113,0.5);{% endif %}">
-      <div style="font-size:24px; font-weight:700; color:{{ '#f87171' if home.urgent else '#fafafa' }}; line-height:1;">{{ home.needs_you }}</div>
-      <div style="font-size:12px; color:#a1a1aa; margin-top:4px;">Need you{% if home.urgent %} · {{ home.urgent }} urgent{% endif %}</div>
+      <div style="font-size:24px; font-weight:700; color:{{ 'var(--imp-danger)' if home.urgent else 'var(--imp-ink)' }}; line-height:1;">{{ home.needs_you }}</div>
+      <div style="font-size:12px; color:var(--imp-muted); margin-top:4px;">Need you{% if home.urgent %} · {{ home.urgent }} urgent{% endif %}</div>
     </a>
     <a href="/appointments/calendar" class="card-sm" style="display:block; text-decoration:none;">
-      <div style="font-size:24px; font-weight:700; color:#fafafa; line-height:1;">{{ home.today }}</div>
-      <div style="font-size:12px; color:#a1a1aa; margin-top:4px;">On today's calendar{% if not home.calendar_ok %} (Apple calendar not loading){% endif %}</div>
+      <div style="font-size:24px; font-weight:700; color:var(--imp-ink); line-height:1;">{{ home.today }}</div>
+      <div style="font-size:12px; color:var(--imp-muted); margin-top:4px;">On today's calendar{% if not home.calendar_ok %} (Apple calendar not loading){% endif %}</div>
     </a>
     <a href="/ro/?status=waiting_approval" class="card-sm" style="display:block; text-decoration:none;">
-      <div style="font-size:24px; font-weight:700; color:#fafafa; line-height:1;">{{ home.awaiting }}</div>
-      <div style="font-size:12px; color:#a1a1aa; margin-top:4px;">Waiting on customer approval</div>
+      <div style="font-size:24px; font-weight:700; color:var(--imp-ink); line-height:1;">{{ home.awaiting }}</div>
+      <div style="font-size:12px; color:var(--imp-muted); margin-top:4px;">Waiting on customer approval</div>
     </a>
     {% if home.money %}
     <a href="/invoices/" class="card-sm" style="display:block; text-decoration:none;">
-      <div style="font-size:24px; font-weight:700; color:#fafafa; line-height:1;">${{ '{:,.0f}'.format(home.money.owed) }}</div>
-      <div style="font-size:12px; color:#a1a1aa; margin-top:4px;">Owed on {{ home.money.owed_count }} invoice{{ 's' if home.money.owed_count != 1 }} · ${{ '{:,.0f}'.format(home.money.paid_week) }} paid this week</div>
-      {% if home.money.cycle.median_hours is not none %}<div style="font-size:12px; color:#a1a1aa; margin-top:2px;">First contact to paid: {{ (home.money.cycle.median_hours / 24)|round(1) }} days typical ({{ home.money.cycle.jobs }} job{{ 's' if home.money.cycle.jobs != 1 }}, last 30 days)</div>{% endif %}
+      <div style="font-size:24px; font-weight:700; color:var(--imp-ink); line-height:1;">${{ '{:,.0f}'.format(home.money.owed) }}</div>
+      <div style="font-size:12px; color:var(--imp-muted); margin-top:4px;">Owed on {{ home.money.owed_count }} invoice{{ 's' if home.money.owed_count != 1 }} · ${{ '{:,.0f}'.format(home.money.paid_week) }} paid this week</div>
+      {% if home.money.cycle.median_hours is not none %}<div style="font-size:12px; color:var(--imp-muted); margin-top:2px;">First contact to paid: {{ (home.money.cycle.median_hours / 24)|round(1) }} days typical ({{ home.money.cycle.jobs }} job{{ 's' if home.money.cycle.jobs != 1 }}, last 30 days)</div>{% endif %}
     </a>
     {% else %}
     <a href="/ro/" class="card-sm" style="display:block; text-decoration:none;">
-      <div style="font-size:24px; font-weight:700; color:#fafafa; line-height:1;">{{ open_count }}</div>
-      <div style="font-size:12px; color:#a1a1aa; margin-top:4px;">Open jobs</div>
+      <div style="font-size:24px; font-weight:700; color:var(--imp-ink); line-height:1;">{{ open_count }}</div>
+      <div style="font-size:12px; color:var(--imp-muted); margin-top:4px;">Open jobs</div>
     </a>
     {% endif %}
   </div>
@@ -72,9 +72,9 @@
 
   <!-- Open ROs Table -->
   <div class="card" style="padding:0; overflow:hidden;">
-    <div style="padding:14px 16px 12px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,0.06);">
-      <span style="font-size:13.5px; font-weight:600; color:#e4e4e7;">Open Repair Orders</span>
-      <a href="/ro/" style="font-size:12px; color:#52525b; text-decoration:none;" onmouseover="this.style.color='#d4a853'" onmouseout="this.style.color='#52525b'">View all →</a>
+    <div style="padding:14px 16px 12px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--imp-line);">
+      <span style="font-size:13.5px; font-weight:600; color:var(--imp-ink);">Open Repair Orders</span>
+      <a href="/ro/" style="font-size:12px; color:var(--imp-muted); text-decoration:none;" onmouseover="this.style.color='var(--imp-purple)'" onmouseout="this.style.color='var(--imp-muted)'">View all →</a>
     </div>
     {% if open_ros %}
     <table>
@@ -91,28 +91,28 @@
       <tbody>
         {% for ro in open_ros %}
         <tr class="cursor-pointer" onclick="window.location='/ro/{{ ro.id }}'" style="cursor:pointer;">
-          <td style="padding-left:16px; color:#d4a853; font-weight:600; font-family:monospace;">#{{ ro.id }}</td>
+          <td style="padding-left:16px; color: var(--imp-purple); font-weight:600; font-family:monospace;">#{{ ro.id }}</td>
           <td>
             {% if ro.customer.customer_type == 'fleet' %}
             <span class="badge badge-fleet" style="margin-right:6px;">FLEET</span>{{ ro.customer.fleet_name }}
             {% else %}
-            <span style="color:#e4e4e7;">{{ ro.customer.first_name }} {{ ro.customer.last_name }}</span>
+            <span style="color:var(--imp-ink);">{{ ro.customer.first_name }} {{ ro.customer.last_name }}</span>
             {% endif %}
           </td>
           <td>{{ ro.vehicle.year }} {{ ro.vehicle.make }} {{ ro.vehicle.model }}</td>
-          <td style="max-width:220px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#71717a;">{{ ro.concern or '—' }}</td>
+          <td style="max-width:220px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--imp-muted);">{{ ro.concern or '—' }}</td>
           <td>
             <span class="badge badge-{{ ro.status }}">{{ ro.status.replace('_',' ').title() }}</span>
           </td>
-          <td style="padding-right:16px; font-size:12px; color:#3f3f46;">{{ ro.created_at.strftime('%m/%d/%y') }}</td>
+          <td style="padding-right:16px; font-size:12px; color:var(--imp-line);">{{ ro.created_at.strftime('%m/%d/%y') }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
     {% else %}
-    <div style="padding:40px 20px; text-align:center; color:#3f3f46; font-size:13.5px;">
+    <div style="padding:40px 20px; text-align:center; color:var(--imp-line); font-size:13.5px;">
       No open repair orders.
-      <a href="/ro/new" style="color:#d4a853; text-decoration:none; margin-left:4px;">Create one →</a>
+      <a href="/ro/new" style="color: var(--imp-purple); text-decoration:none; margin-left:4px;">Create one →</a>
     </div>
     {% endif %}
   </div>

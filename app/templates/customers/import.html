@@ -32,7 +32,7 @@
   <div class="card">
     <ul>
       {% for r in rows %}
-      <li class="flex items-start gap-3 py-2" style="border-bottom:1px solid rgba(255,255,255,.05)">
+      <li class="flex items-start gap-3 py-2" style="border-bottom:1px solid var(--imp-line)">
         <input type="checkbox" name="phone" value="{{ r.phone }}" {% if r.suggested %}checked{% endif %} {% if r.skip %}disabled{% endif %} style="width:22px;height:22px;margin-top:2px">
         <div class="min-w-0">
           <div class="text-sm font-semibold">{{ (r.first ~ ' ' ~ r.last).strip() or r.company or 'No name in Quo' }} <span class="text-stone-400 font-normal">{{ pretty(r.phone) }}</span></div>

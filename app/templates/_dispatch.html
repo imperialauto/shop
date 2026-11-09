@@ -1,61 +1,61 @@
 {% if calendar_events is defined %}
-<div class="card" style="padding:12px 16px; margin-bottom:12px; font-size:13px; color:#a1a1aa;">
-  <div style="font-size:13.5px; font-weight:600; color:#e4e4e7; margin-bottom:6px;">Calendar, next 7 days</div>
+<div class="card" style="padding:12px 16px; margin-bottom:12px; font-size:13px; color:var(--imp-muted);">
+  <div style="font-size:13.5px; font-weight:600; color:var(--imp-ink); margin-bottom:6px;">Calendar, next 7 days</div>
   {% if calendar_events is none %}Not connected or could not be read.
   {% else %}{% for line in calendar_events %}<div style="overflow-wrap:anywhere;">{{ line }}</div>{% else %}Nothing scheduled.{% endfor %}{% endif %}
 </div>
 {% endif %}
 <div class="card" style="padding:0; overflow:hidden; margin-bottom:20px;">
-  <div style="padding:14px 16px 12px; border-bottom:1px solid rgba(255,255,255,0.06); display:flex; justify-content:space-between; gap:12px;">
-    <span style="font-size:13.5px; font-weight:600; color:#e4e4e7;">Needs attention</span>
-    <span style="font-size:12px; color:#71717a;">{{ dispatch_items|length }} open</span>
+  <div style="padding:14px 16px 12px; border-bottom:1px solid var(--imp-line); display:flex; justify-content:space-between; gap:12px;">
+    <span style="font-size:13.5px; font-weight:600; color:var(--imp-ink);">Needs attention</span>
+    <span style="font-size:12px; color:var(--imp-muted);">{{ dispatch_items|length }} open</span>
   </div>
   {% if imperial_task_snapshot is defined and imperial_task_snapshot.enabled %}
-  <section aria-label="Saved Imperial tasks" style="padding:12px 16px; border-bottom:1px solid rgba(255,255,255,0.06);">
+  <section aria-label="Saved Imperial tasks" style="padding:12px 16px; border-bottom:1px solid var(--imp-line);">
     <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:6px;">
-      <strong style="font-size:13px; color:#e4e4e7;">Saved to-do tasks</strong>
-      <span style="font-size:12px; color:#71717a;">{{ imperial_task_snapshot.tasks|length }} shown</span>
+      <strong style="font-size:13px; color:var(--imp-ink);">Saved to-do tasks</strong>
+      <span style="font-size:12px; color:var(--imp-muted);">{{ imperial_task_snapshot.tasks|length }} shown</span>
     </div>
     {% if imperial_task_snapshot.error %}
-    <p style="color:#f87171; font-size:12px; margin:0;">{{ imperial_task_snapshot.error }}</p>
+    <p style="color:var(--imp-danger); font-size:12px; margin:0;">{{ imperial_task_snapshot.error }}</p>
     {% elif imperial_task_snapshot.tasks %}
       {% for task in imperial_task_snapshot.tasks %}
       <div style="display:flex; gap:10px; justify-content:space-between; align-items:flex-start; font-size:12.5px; padding:5px 0;">
         <span style="color:#d4d4d8; overflow-wrap:anywhere;">#{{ task.id }} {{ task.title }}</span>
-        <span style="color:{{ '#fbbf24' if task.status == 'blocked' else '#a1a1aa' }}; white-space:nowrap;">{{ task.status.replace('_', ' ') }}</span>
+        <span style="color:{{ '#fbbf24' if task.status == 'blocked' else 'var(--imp-muted)' }}; white-space:nowrap;">{{ task.status.replace('_', ' ') }}</span>
       </div>
       {% endfor %}
     {% else %}
-    <p style="color:#71717a; font-size:12px; margin:0;">No saved to-do tasks. Customer communications appear below.</p>
+    <p style="color:var(--imp-muted); font-size:12px; margin:0;">No saved to-do tasks. Customer communications appear below.</p>
     {% endif %}
   </section>
   {% endif %}
   {% if not dispatch_ready %}
-  <div style="padding:16px; color:#a1a1aa; font-size:13px;">The queue is not set up on this database yet.</div>
+  <div style="padding:16px; color:var(--imp-muted); font-size:13px;">The queue is not set up on this database yet.</div>
   {% else %}
-  <form method="post" action="/dispatch/sending" style="display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 16px; font-size:12.5px; border-bottom:1px solid rgba(255,255,255,0.06); color:{{ '#f87171' if sending_paused else '#a1a1aa' }};">
+  <form method="post" action="/dispatch/sending" style="display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 16px; font-size:12.5px; border-bottom:1px solid var(--imp-line); color:{{ 'var(--imp-danger)' if sending_paused else 'var(--imp-muted)' }};">
     <span>{% if sending_paused %}<strong>All texting is stopped.</strong> Nothing goes to customers or you until you resume.{% else %}Texting is on.{% endif %}</span>
     <button class="btn-secondary" type="submit" name="action" value="{{ 'resume' if sending_paused else 'stop' }}" style="min-height:44px; white-space:nowrap;">{{ 'Resume texting' if sending_paused else 'Stop all texting' }}</button>
   </form>
   {% if read_only %}
-  <div style="padding:10px 16px; color:#d4a853; font-size:12.5px; border-bottom:1px solid rgba(255,255,255,0.06);">The system is read-only. New messages still appear here, but decisions and policy changes will not save.</div>
+  <div style="padding:10px 16px; color: var(--imp-purple); font-size:12.5px; border-bottom:1px solid var(--imp-line);">The system is read-only. New messages still appear here, but decisions and policy changes will not save.</div>
   {% endif %}
-  <nav aria-label="Queue filters" style="display:flex; flex-wrap:wrap; gap:6px; padding:10px 16px; border-bottom:1px solid rgba(255,255,255,0.06);">
+  <nav aria-label="Queue filters" style="display:flex; flex-wrap:wrap; gap:6px; padding:10px 16px; border-bottom:1px solid var(--imp-line);">
     {% for key, label in dispatch_views.items() %}
-    <a class="queue-filter" href="/dashboard?view={{ key }}" style="font-size:12px; text-decoration:none; color:{{ '#d4a853' if key == dispatch_view else '#a1a1aa' }};"{% if key == dispatch_view %} aria-current="true"{% endif %}>{{ label }}</a>
+    <a class="queue-filter" href="/dashboard?view={{ key }}" style="font-size:12px; text-decoration:none; color:{{ 'var(--imp-purple)' if key == dispatch_view else 'var(--imp-muted)' }};"{% if key == dispatch_view %} aria-current="true"{% endif %}>{{ label }}</a>
     {% endfor %}
   </nav>
   {% for row in dispatch_items %}{% set item = row.item %}
-  <details style="border-bottom:1px solid rgba(255,255,255,0.06);"{% if item.urgency == 'safety' %} open{% endif %}>
-    <summary style="padding:12px 16px; cursor:pointer; color:#e4e4e7; font-size:13px;">
-      {% if item.urgency == 'safety' %}<strong style="color:#f87171;">Safety</strong> ·{% elif item.urgency == 'urgent' %}<strong style="color:#d4a853;">Urgent</strong> ·{% endif %}
+  <details style="border-bottom:1px solid var(--imp-line);"{% if item.urgency == 'safety' %} open{% endif %}>
+    <summary style="padding:12px 16px; cursor:pointer; color:var(--imp-ink); font-size:13px;">
+      {% if item.urgency == 'safety' %}<strong style="color:var(--imp-danger);">Safety</strong> ·{% elif item.urgency == 'urgent' %}<strong style="color: var(--imp-purple);">Urgent</strong> ·{% endif %}
       {{ row.customer_name or item.customer_phone }}{% if item.vehicle_text %} · {{ item.vehicle_text }}{% endif %} · {{ item.category|capitalize }}{% if item.status == 'needs_owner' %} · Your approval{% endif %}
     </summary>
-    <div style="padding:0 16px 14px; font-size:13px; color:#a1a1aa;">
+    <div style="padding:0 16px 14px; font-size:13px; color:var(--imp-muted);">
       <p style="margin:0 0 8px; overflow-wrap:anywhere;">{{ item.summary or 'No message text.' }}</p>
       {% if row.reasons %}<p style="margin:0 0 8px;">Why you: {{ row.reasons|join(', ') }}</p>{% endif %}
       <p style="margin:0 0 8px;">Price or impact: {% if row.estimate is not none %}${{ '%.2f'|format(row.estimate) }} on open RO #{{ row.open_ro.id }}{% else %}Nothing priced yet{% endif %}</p>
-      {% if row.open_ro %}<p style="margin:0 0 8px;">Job: <a href="/ro/{{ row.open_ro.id }}" style="color:#d4a853;">RO #{{ row.open_ro.id }}</a> · {{ row.open_ro.status.replace('_',' ') }}</p>{% endif %}
+      {% if row.open_ro %}<p style="margin:0 0 8px;">Job: <a href="/ro/{{ row.open_ro.id }}" style="color: var(--imp-purple);">RO #{{ row.open_ro.id }}</a> · {{ row.open_ro.status.replace('_',' ') }}</p>{% endif %}
       {% if row.next_appointment %}<p style="margin:0 0 8px;">Next appointment is booked.</p>{% endif %}
       <p style="margin:0 0 8px; display:flex; flex-wrap:wrap; gap:8px;">
         {% if item.customer_id %}<a class="btn-secondary" href="/customers/{{ item.customer_id }}#file">Customer file</a>{% endif %}
@@ -90,14 +90,14 @@
     </div>
   </details>
   {% else %}
-  <div style="padding:16px; color:#71717a; font-size:13px;">Nothing here.</div>
+  <div style="padding:16px; color:var(--imp-muted); font-size:13px;">Nothing here.</div>
   {% endfor %}
   {% for feed in dispatch_health %}
-  <div style="padding:8px 16px; font-size:12px; color:{{ '#f87171' if feed.problem else '#71717a' }}; border-top:1px solid rgba(255,255,255,0.06);">
+  <div style="padding:8px 16px; font-size:12px; color:{{ 'var(--imp-danger)' if feed.problem else 'var(--imp-muted)' }}; border-top:1px solid var(--imp-line);">
     {{ feed.source|capitalize }}: {% if feed.problem %}needs attention, {{ feed.failures }} failures in a row{% else %}healthy{% endif %}{% if feed.last_success_at %}, last success {{ feed.last_success_at.strftime('%b %d %H:%M') }} UTC{% endif %}
   </div>
   {% endfor %}
-  <details style="padding:12px 16px; font-size:13px; color:#a1a1aa;">
+  <details style="padding:12px 16px; font-size:13px; color:var(--imp-muted);">
     <summary style="cursor:pointer;">Approval rules</summary>
     <form method="post" action="/dispatch/policies" style="margin-top:10px; display:grid; gap:8px;">
       {% for policy in dispatch_policies %}

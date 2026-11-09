@@ -3,16 +3,19 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Verify login</title>
-<style>
-  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box; background: #09090b; color: #e4e4e7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/imperial.css">
+  <style>
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box; background: var(--imp-paper); color: var(--imp-ink); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
   main { width: 100%; max-width: 340px; }
-  h1 { font-size: 20px; margin: 0 0 8px; }
-  p { color: #a1a1aa; font-size: 14px; margin: 0 0 16px; }
-  label { display: block; font-size: 13px; color: #a1a1aa; margin-bottom: 6px; }
-  input { width: 100%; box-sizing: border-box; min-height: 48px; font-size: 18px; padding: 10px 12px; color: #fff; background: #18181b; border: 1px solid #3f3f46; border-radius: 8px; }
-  button { width: 100%; min-height: 48px; margin-top: 12px; border: 0; border-radius: 8px; background: #d4a853; color: #111; font-size: 16px; font-weight: 600; }
+  h1 { font-family: var(--imp-serif); font-size: 28px; color: var(--imp-purple); margin: 0 0 8px; }
+  p { color: var(--imp-muted); font-size: 14px; margin: 0 0 16px; }
+  label { display: block; font-size: 13px; color: var(--imp-muted); margin-bottom: 6px; }
+  input { width: 100%; box-sizing: border-box; min-height: 48px; font-size: 18px; padding: 10px 12px; color: var(--imp-ink); background: var(--imp-surface); border: 1px solid var(--imp-line); border-radius: 8px; }
+  button { width: 100%; min-height: 48px; margin-top: 12px; border: 0; border-radius: 8px; background: var(--imp-gold); color: var(--imp-purple-deep); font-size: 16px; font-weight: 600; }
   .error { color: #fca5a5; font-size: 14px; margin-bottom: 12px; }
-  a { display: block; margin-top: 16px; color: #a1a1aa; font-size: 14px; text-align: center; }
+  a { display: block; margin-top: 16px; color: var(--imp-muted); font-size: 14px; text-align: center; }
 </style>
 </head>
 <body>

@@ -4,62 +4,65 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Authorize Repair — Imperial Auto Care</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/imperial.css">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #09090b; color: #e4e4e7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100dvh; padding-bottom: 40px; }
+    body { background: var(--imp-paper); color: var(--imp-ink); font-family: var(--imp-sans); min-height: 100dvh; padding-bottom: 40px; }
 
-    .top-bar { background: #111113; border-bottom: 1px solid rgba(255,255,255,0.07); padding: 14px 20px; display: flex; align-items: center; gap: 12px; }
-    .top-bar .logo { font-size: 20px; }
-    .top-bar .shop { font-size: 15px; font-weight: 700; color: #d4a853; }
-    .top-bar .sub { font-size: 12px; color: #52525b; }
+    .top-bar { background: var(--imp-purple); border-bottom: 3px solid var(--imp-gold); padding: 14px 20px; display: flex; align-items: center; gap: 12px; }
+    .top-bar .logo { width: 34px; height: 34px; border-radius: 9px; border: 2px solid var(--imp-gold); display: inline-flex; align-items: center; justify-content: center; font-family: var(--imp-serif); font-weight: 700; font-size: 19px; color: var(--imp-gold); }
+    .top-bar .shop { font-family: var(--imp-serif); font-size: 21px; font-weight: 700; color: var(--imp-gold); }
+    .top-bar .sub { font-size: 12px; color: #D9CDE3; }
 
     .container { max-width: 540px; margin: 0 auto; padding: 20px 16px; }
 
-    .section-title { font-size: 11px; font-weight: 600; color: #52525b; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 10px; }
+    .section-title { font-size: 11px; font-weight: 600; color: var(--imp-muted); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 10px; }
 
-    .card { background: #18181b; border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+    .card { background: var(--imp-surface); border: 1px solid var(--imp-line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
 
-    .vehicle-line { font-size: 18px; font-weight: 700; color: #fafafa; }
-    .vehicle-sub { font-size: 13px; color: #71717a; margin-top: 3px; }
+    .vehicle-line { font-size: 18px; font-weight: 700; color: var(--imp-ink); }
+    .vehicle-sub { font-size: 13px; color: var(--imp-muted); margin-top: 3px; }
 
     table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-    thead th { text-align: left; font-size: 10.5px; font-weight: 600; color: #52525b; text-transform: uppercase; letter-spacing: 0.06em; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.07); }
-    tbody td { padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.04); color: #a1a1aa; vertical-align: top; }
+    thead th { text-align: left; font-size: 10.5px; font-weight: 600; color: var(--imp-muted); text-transform: uppercase; letter-spacing: 0.06em; padding-bottom: 8px; border-bottom: 1px solid var(--imp-line); }
+    tbody td { padding: 9px 0; border-bottom: 1px solid var(--imp-line); color: var(--imp-muted); vertical-align: top; }
     tbody tr:last-child td { border-bottom: none; }
-    .td-desc { color: #e4e4e7; }
+    .td-desc { color: var(--imp-ink); }
     .td-right { text-align: right; white-space: nowrap; }
 
-    .total-row { display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.07); margin-top: 6px; }
-    .total-label { font-size: 13px; color: #71717a; }
-    .total-amount { font-size: 20px; font-weight: 700; color: #d4a853; }
+    .total-row { display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid var(--imp-line); margin-top: 6px; }
+    .total-label { font-size: 13px; color: var(--imp-muted); }
+    .total-amount { font-size: 20px; font-weight: 700; color: var(--imp-purple); }
 
-    .concern-box { font-size: 13.5px; color: #a1a1aa; line-height: 1.55; }
+    .concern-box { font-size: 13.5px; color: var(--imp-muted); line-height: 1.55; }
 
-    .sig-pad-wrap { position: relative; border-radius: 10px; overflow: hidden; border: 2px solid rgba(255,255,255,0.12); background: #fafafa; touch-action: none; }
+    .sig-pad-wrap { position: relative; border-radius: 10px; overflow: hidden; border: 2px solid var(--imp-line); background: var(--imp-ink); touch-action: none; }
     .sig-pad-wrap canvas { display: block; width: 100%; height: 160px; cursor: crosshair; touch-action: none; }
     .sig-hint { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); font-size: 11px; color: rgba(0,0,0,0.25); pointer-events: none; white-space: nowrap; }
 
     .sig-actions { display: flex; gap: 8px; margin-top: 10px; }
-    .btn-clear { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #71717a; font-size: 13px; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
-    .btn-clear:hover { color: #a1a1aa; }
+    .btn-clear { background: var(--imp-purple-tint); border: 1px solid var(--imp-line); color: var(--imp-muted); font-size: 13px; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
+    .btn-clear:hover { color: var(--imp-muted); }
 
-    .name-input { background: #09090b; border: 1px solid rgba(255,255,255,0.1); color: #e4e4e7; border-radius: 8px; padding: 10px 12px; width: 100%; font-size: 14px; outline: none; margin-top: 10px; }
-    .name-input:focus { border-color: #d4a853; }
+    .name-input { background: var(--imp-paper); border: 1px solid var(--imp-line); color: var(--imp-ink); border-radius: 8px; padding: 10px 12px; width: 100%; font-size: 14px; outline: none; margin-top: 10px; }
+    .name-input:focus { border-color: var(--imp-gold-dark); }
 
-    .submit-btn { width: 100%; background: #d4a853; color: #09090b; font-size: 15px; font-weight: 700; padding: 14px; border: none; border-radius: 10px; cursor: pointer; margin-top: 16px; letter-spacing: 0.02em; }
+    .submit-btn { width: 100%; background: var(--imp-gold); color: var(--imp-purple-deep); font-size: 15px; font-weight: 700; padding: 14px; border: none; border-radius: 10px; cursor: pointer; margin-top: 16px; letter-spacing: 0.02em; }
     .submit-btn:active { background: #c49640; }
 
-    .error-msg { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.25); color: #f87171; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 12px; }
+    .error-msg { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.25); color: var(--imp-danger); border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 12px; }
 
-    .already-signed { background: rgba(74,222,128,0.08); border: 1px solid rgba(74,222,128,0.2); color: #4ade80; border-radius: 10px; padding: 16px; text-align: center; font-size: 14px; }
+    .already-signed { background: rgba(74,222,128,0.08); border: 1px solid rgba(74,222,128,0.2); color: var(--imp-ok); border-radius: 10px; padding: 16px; text-align: center; font-size: 14px; }
 
-    .auth-notice { font-size: 11.5px; color: #52525b; line-height: 1.5; margin-top: 8px; }
+    .auth-notice { font-size: 11.5px; color: var(--imp-muted); line-height: 1.5; margin-top: 8px; }
   </style>
 </head>
 <body>
 
 <div class="top-bar">
-  <div class="logo">⚙</div>
+  <div class="logo" aria-hidden="true">I</div>
   <div>
     <div class="shop">Imperial Auto Care</div>
     <div class="sub">Glendale, AZ — Auto &amp; Diesel Repair</div>
@@ -74,7 +77,7 @@
   </div>
   {% else %}
 
-  <h2 style="font-size:18px; font-weight:700; color:#fafafa; margin:16px 0 14px;">Authorize Repair Work</h2>
+  <h2 style="font-size:18px; font-weight:700; color:var(--imp-ink); margin:16px 0 14px;">Authorize Repair Work</h2>
 
   {% if error %}
   <div class="error-msg">{{ error }}</div>
@@ -106,11 +109,11 @@
         <tr>
           <td class="td-desc">
             {{ li.description }}
-            <div style="font-size:11.5px; color:#52525b; margin-top:1px;">{{ li.item_type | title }} × {{ li.quantity }}{% if li.approval == 'approved' %} · Approved{% elif li.approval == 'declined' %} · Declined{% endif %}</div>
+            <div style="font-size:11.5px; color:var(--imp-muted); margin-top:1px;">{{ li.item_type | title }} × {{ li.quantity }}{% if li.approval == 'approved' %} · Approved{% elif li.approval == 'declined' %} · Declined{% endif %}</div>
             {% if li.approval == 'pending' %}
             <div style="display:flex; gap:8px; margin-top:8px;">
-              <label style="flex:1; min-height:44px; display:flex; align-items:center; gap:6px; background:#18181b; border-radius:8px; padding:0 10px;"><input type="radio" name="line_{{ li.id }}" value="approved" data-amount="{{ '%.2f'|format(li.total) }}" required> Approve</label>
-              <label style="flex:1; min-height:44px; display:flex; align-items:center; gap:6px; background:#18181b; border-radius:8px; padding:0 10px;"><input type="radio" name="line_{{ li.id }}" value="declined"> Decline</label>
+              <label style="flex:1; min-height:44px; display:flex; align-items:center; gap:6px; background:var(--imp-surface); border-radius:8px; padding:0 10px;"><input type="radio" name="line_{{ li.id }}" value="approved" data-amount="{{ '%.2f'|format(li.total) }}" required> Approve</label>
+              <label style="flex:1; min-height:44px; display:flex; align-items:center; gap:6px; background:var(--imp-surface); border-radius:8px; padding:0 10px;"><input type="radio" name="line_{{ li.id }}" value="declined"> Decline</label>
             </div>
             {% endif %}
           </td>
@@ -123,7 +126,7 @@
       <span class="total-label">{% if pending %}Total you approve{% else %}Estimated Total{% endif %}</span>
       <span class="total-amount" id="approved-total">${{ "%.2f"|format(subtotal) }}</span>
     </div>
-    {% if pending %}<p style="font-size:12px; color:#71717a; margin-top:8px;">Before tax. Declined items are not done or charged.</p>{% endif %}
+    {% if pending %}<p style="font-size:12px; color:var(--imp-muted); margin-top:8px;">Before tax. Declined items are not done or charged.</p>{% endif %}
   </div>
   {% endif %}
 
