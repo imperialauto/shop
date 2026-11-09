@@ -19,7 +19,7 @@ from app.database import get_db
 from app.config import OWNER_PHONE
 from app.dispatch import AUTO_POLICIES, LOCKED_POLICIES, MAKES, POLICIES, PROMISE, apply_policies, assess, auto_reply, is_reaction, parse_owner_command, propose
 from app.appointment_model import Appointment
-from app import alert_rules, approval_links, quo_import, website_alerts
+from app import alert_rules, approval_links, next_action, quo_import, website_alerts
 from app.sending_pause import is_paused, pause, resume
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync, OPEN_STATUSES
 from app.models import Communication, Customer, RepairOrder, Vehicle
@@ -467,6 +467,7 @@ DASHBOARD_REPLY = "dashboard_reply"
 QUIET = timedelta(seconds=30)  # lets a burst of customer texts become one alert
 TICK_LIMIT = 10
 DAILY_HOUR = 10
+STUCK_HOUR = 11
 DRAFT_GRACE = timedelta(seconds=90)
 APPOINTMENT_WARNING = timedelta(minutes=75)
 FOLLOW_UP_HOURS = range(11, 19)
@@ -581,6 +582,11 @@ def due_owner_messages(db: Session, now: datetime) -> list[dict]:
     backup_problem = _backup_problem(db, now)
     if backup_problem and now.hour >= 7:
         due.append((f"backup:{now.date()}", "owner_backup", None, backup_problem))
+    if now.weekday() != 6 and STUCK_HOUR <= now.hour < STUCK_HOUR + 3:
+        # One text a day, only when something is actually stuck (exceptions, not a status report).
+        stuck = next_action.stuck_jobs(db, now.astimezone(timezone.utc))
+        if stuck:
+            due.append((f"stuck:{now.date()}", "owner_stuck", None, next_action.stuck_text(stuck)))
     if now.weekday() != 6 and DAILY_HOUR <= now.hour < DAILY_HOUR + 3:
         due.append((f"daily:{now.date()}", "owner_daily", None, _daily_text(db, now)))
 

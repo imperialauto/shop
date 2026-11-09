@@ -81,3 +81,44 @@ def for_job(db: Session, ro: RepairOrder, role: str) -> dict | None:
                 "post": f"/ro/{ro.id}/update-status", "fields": {"status": "in_progress"}, "button": "Parts are here"}
     return {"who": "Tech", "title": "Finish the work", "detail": "Marking it complete tells the office to invoice.",
             "post": f"/ro/{ro.id}/update-status", "fields": {"status": "complete"}, "button": "Mark complete"}
+
+
+STUCK_AFTER_HOURS = 48
+
+
+def last_activity(ro: RepairOrder):
+    """The newest thing that happened on the job: status change, line, decision, invoice or payment."""
+    stamps = [ro.updated_at, ro.created_at, ro.signed_at]
+    for li in ro.line_items:
+        stamps += [li.created_at, li.decided_at]
+    for inv in ro.invoices:
+        stamps.append(inv.created_at)
+        stamps += [p.paid_at for p in inv.payments]
+    stamps = [t if t.tzinfo else t.replace(tzinfo=timezone.utc) for t in stamps if t]
+    return max(stamps) if stamps else None
+
+
+def stuck_jobs(db: Session, now: datetime, limit: int = 5) -> list[tuple[RepairOrder, dict, float]]:
+    """Open jobs whose next step hasn't moved in two days, oldest first. Read-only."""
+    found = []
+    for ro in db.query(RepairOrder).filter(RepairOrder.status != "delivered").all():
+        step = for_job(db, ro, "owner")
+        last = last_activity(ro)
+        if step is None or last is None:
+            continue
+        hours = (now - last).total_seconds() / 3600
+        if hours >= STUCK_AFTER_HOURS:
+            found.append((ro, step, hours))
+    found.sort(key=lambda row: -row[2])
+    return found[:limit]
+
+
+def stuck_text(rows) -> str:
+    lines = ["Stuck jobs (no movement in 2+ days):"]
+    for ro, step, hours in rows:
+        v = ro.vehicle
+        car = " ".join(str(x) for x in (v.make, v.model) if x) if v else ""
+        who = (ro.customer.first_name or "").strip() if ro.customer else ""
+        lines.append(f"#{ro.id} {who}{' ' + car if car else ''}: {step['title']} ({int(hours // 24)}d)")
+    lines.append("Each job's page has the one-tap next step.")
+    return "\n".join(lines)

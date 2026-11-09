@@ -9,11 +9,13 @@ OPTIONAL = {
     "owner_wrap": "End-of-day wrap-up (6:30 PM)",
     "owner_nudge": "Follow-up reminders on unanswered items",
     "owner_calendar": "Heads-up before calendar appointments",
+    "owner_stuck": "Daily note on jobs stuck for 2+ days",
     "website_booking": "Note when a customer books online",
 }
 LABELS = {
     "owner_alert": "Customer message", "owner_nudge": "Follow-up reminder", "owner_wrap": "End-of-day wrap-up",
     "owner_daily": "Morning summary", "owner_calendar": "Appointment heads-up", "owner_backup": "Backup problem",
+    "owner_stuck": "Stuck jobs",
     "dashboard_reply": "Reply sent from dashboard",
 }
 DEFAULTS = {"quiet_start": "", "quiet_end": "", "off": []}
