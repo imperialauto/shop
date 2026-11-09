@@ -296,11 +296,17 @@ def flows(page, device):
         visitor.click("form[action='/site/book'] button[type=submit]")
         visitor.wait_for_url("**/site/book/received")
         body = visitor.inner_text("body")
-        assert "Reference WEB-" in body and "$10" in body and "confirmed" in body, body[:300]
+        assert "WEB-" in body and "$10" in body and "confirmed" in body.lower(), body[:300]
+        assert "Add to my calendar" in body, body[:300]
         measure(visitor, "site-booked", device, 200, [])
-        reference = body.split("Reference ")[1].split(".")[0]
-        visitor.click("a:has-text('View status')")
+        reference = visitor.inner_text("#ref").strip()
+        visitor.reload()  # a refresh keeps the reference on screen
+        assert reference in visitor.inner_text("#ref")
+        visitor.click("a:has-text('Open my status page')")
         assert "/status/" in visitor.url
+        status_body = visitor.inner_text("body")
+        assert reference in status_body and "Booked" in status_body, status_body[:300]
+        assert "Confirm before contacting" not in status_body
         measure(visitor, "site-status-result", device, 200, [])
         visitor.goto(BASE + "/site/status")
         visitor.fill("[name=reference]", reference)
@@ -312,6 +318,11 @@ def flows(page, device):
         visitor.fill("[name=phone]", "6025550100")
         visitor.click("form[action='/site/status'] button[type=submit]")
         assert "could not match" in visitor.inner_text("body")
+        visitor.fill("#lost-phone", "6025550123")
+        visitor.fill("#lost-last", "Visitor")
+        visitor.click("form[action='/site/status/lost'] button[type=submit]")
+        assert "If that matches a booking or request" in visitor.inner_text("body")
+        measure(visitor, "site-lost-reference", device, 200, [])
         visitor.context.close()
         page.goto(BASE + "/appointments/")
         assert "confirmed" in page.inner_text("body"), "online booking not on the staff list"

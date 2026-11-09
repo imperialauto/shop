@@ -110,7 +110,13 @@ class PublicBooking(unittest.TestCase):
         self.assertIn('Diagnostic appointment', received.text)
         self.assertIn('booked', received.text)
         self.assertIn('/status/', received.text)
-        self.assertIn('Reference WEB-', received.text)
+        self.assertIn('Your reference', received.text)
+        self.assertIn('visit.ics', received.text)
+        # The same booking sent again (double tap or resend) returns the first reference.
+        again = self.client.post('/site/book', data=self.form(slot_id), follow_redirects=False)
+        self.assertEqual(again.status_code, 303, again.text)
+        with SessionLocal() as db:
+            self.assertEqual(db.query(Appointment).count(), 1)
 
         with SessionLocal() as db:
             appointment = db.query(Appointment).one()
