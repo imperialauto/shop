@@ -165,10 +165,32 @@ function ownerCostEvidence({ question, history, unitCost }) {
   return null;
 }
 
+
+// A customer selling price is a financial instruction. Parse a completely
+// explicit owner command, never ask an LLM to guess the RO, rate or hours.
+// Example: "RO #17: customer part price $155; labor 1.0 hr shop".
+function parseQuotePartCommand(question) {
+  const text = String(question || "");
+  if (/\b(?:my|our|vendor|supplier|wholesale)\s+cost\b/i.test(text)) return null;
+  const ro = text.match(/\b(?:RO|job)\s*#?\s*(\d{1,9})\b/i);
+  const sell = text.match(/\b(?:customer\s+(?:part\s+)?price|selling\s+price|retail\s+price)\s*(?:is|of|:|=|at)?\s*\$\s*([\d,]+(?:\.\d{1,2})?)/i);
+  const labor = text.match(/\blabor\s*(?:hours?|time|:|=)?\s*(\d+(?:\.\d{1,2})?)\s*(?:hours?|hrs?|h)\b/i);
+  const rate = text.match(/\b(shop|mobile|diesel|cspr)\s*(?:labor)?\b/i);
+  if (!ro || !sell || !labor || !rate) return null;
+  const partPrice = Number(sell[1].replace(/,/g, ""));
+  const laborHours = Number(labor[1]);
+  if (!Number.isFinite(partPrice) || partPrice <= 0 || partPrice > 50000
+      || !Number.isFinite(laborHours) || laborHours < 0 || laborHours > 40) return null;
+  return { action: "quote_part", itemId: null, roId: Number(ro[1]), partPrice,
+    laborHours, rateType: rate[1].toLowerCase(), evidence: text.slice(0, 400) };
+}
+
 const LATER_WORDS = /\b(later|remind|reminder|snooze|tomorrow|tonight|morning|afternoon|evening|hours?|hrs?|min(ute)?s?|after|until|wait|in \d)\b/i;
 
 // Turns a plain-English text into one action. Anything unclear becomes a normal answer.
 async function interpretOwner({ question, snapshot, history = [], complete = defaultComplete }) {
+  const quote = parseQuotePartCommand(question);
+  if (quote) return quote;
   try {
     const raw = await complete([
       { role: "system", content: `${INTERPRET_PROMPT}\n\nShop snapshot:\n${JSON.stringify(snapshot)}` },
@@ -211,4 +233,4 @@ async function jobNote({ conversation, complete = defaultComplete }) {
   }
 }
 
-module.exports = { interpretOwner, jobNote, answerOwner, recentTurns, customerDetail, mentionedItems, FALLBACK, complete: defaultComplete };
+module.exports = { interpretOwner, parseQuotePartCommand, jobNote, answerOwner, recentTurns, customerDetail, mentionedItems, FALLBACK, complete: defaultComplete };
