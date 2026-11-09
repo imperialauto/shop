@@ -4,35 +4,38 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Vehicle Status — Imperial Auto Care</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/imperial.css">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #09090b; color: #e4e4e7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100dvh; }
-    .top-bar { background: #111113; border-bottom: 1px solid rgba(255,255,255,0.07); padding: 14px 20px; display: flex; align-items: center; gap: 12px; }
-    .top-bar .logo { font-size: 20px; }
-    .top-bar .shop { font-size: 15px; font-weight: 700; color: #d4a853; }
-    .top-bar .sub { font-size: 12px; color: #52525b; }
+    body { background: var(--imp-paper); color: var(--imp-ink); font-family: var(--imp-sans); min-height: 100dvh; }
+    .top-bar { background: var(--imp-purple); border-bottom: 3px solid var(--imp-gold); padding: 14px 20px; display: flex; align-items: center; gap: 12px; }
+    .top-bar .logo { width: 34px; height: 34px; border-radius: 9px; border: 2px solid var(--imp-gold); display: inline-flex; align-items: center; justify-content: center; font-family: var(--imp-serif); font-weight: 700; font-size: 19px; color: var(--imp-gold); }
+    .top-bar .shop { font-family: var(--imp-serif); font-size: 21px; font-weight: 700; color: var(--imp-gold); }
+    .top-bar .sub { font-size: 12px; color: #D9CDE3; }
     .container { max-width: 420px; margin: 0 auto; padding: 24px 16px; }
-    .card { background: #18181b; border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 20px; margin-bottom: 14px; }
-    .label { font-size: 10.5px; font-weight: 600; color: #52525b; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 4px; }
-    .vehicle-name { font-size: 20px; font-weight: 700; color: #fafafa; }
+    .card { background: var(--imp-surface); border: 1px solid var(--imp-line); border-radius: 12px; padding: 20px; margin-bottom: 14px; }
+    .label { font-size: 10.5px; font-weight: 600; color: var(--imp-muted); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 4px; }
+    .vehicle-name { font-size: 20px; font-weight: 700; color: var(--imp-ink); }
     .status-pill { display: inline-block; font-size: 13px; font-weight: 600; padding: 4px 12px; border-radius: 999px; margin-top: 4px; }
     .status-waiting_approval { background: rgba(234,179,8,0.15); color: #facc15; }
-    .status-in_progress { background: rgba(34,197,94,0.15); color: #4ade80; }
+    .status-in_progress { background: rgba(34,197,94,0.15); color: var(--imp-ok); }
     .status-diagnosing { background: rgba(59,130,246,0.15); color: #60a5fa; }
     .status-waiting_parts { background: rgba(249,115,22,0.15); color: #fb923c; }
     .status-complete { background: rgba(168,85,247,0.15); color: #c084fc; }
     .status-delivered { background: rgba(20,184,166,0.15); color: #2dd4bf; }
-    .status-intake { background: rgba(113,113,122,0.15); color: #a1a1aa; }
-    .concern-text { font-size: 13.5px; color: #a1a1aa; line-height: 1.55; margin-top: 6px; }
-    .sign-btn { display: block; width: 100%; background: #d4a853; color: #09090b; font-size: 15px; font-weight: 700; padding: 14px; border-radius: 10px; text-decoration: none; text-align: center; margin-top: 6px; }
-    .signed-badge { background: rgba(74,222,128,0.08); border: 1px solid rgba(74,222,128,0.2); color: #4ade80; border-radius: 10px; padding: 12px 16px; font-size: 13.5px; text-align: center; }
-    .contact-note { font-size: 12px; color: #3f3f46; text-align: center; margin-top: 20px; }
+    .status-intake { background: rgba(113,113,122,0.15); color: var(--imp-muted); }
+    .concern-text { font-size: 13.5px; color: var(--imp-muted); line-height: 1.55; margin-top: 6px; }
+    .sign-btn { display: block; width: 100%; background: var(--imp-gold); color: var(--imp-purple-deep); font-size: 15px; font-weight: 700; padding: 14px; border-radius: 10px; text-decoration: none; text-align: center; margin-top: 6px; }
+    .signed-badge { background: rgba(74,222,128,0.08); border: 1px solid rgba(74,222,128,0.2); color: var(--imp-ok); border-radius: 10px; padding: 12px 16px; font-size: 13.5px; text-align: center; }
+    .contact-note { font-size: 12px; color: var(--imp-muted); text-align: center; margin-top: 20px; }
   </style>
 </head>
 <body>
 
 <div class="top-bar">
-  <div class="logo">⚙</div>
+  <div class="logo" aria-hidden="true">I</div>
   <div>
     <div class="shop">Imperial Auto Care</div>
     <div class="sub">Glendale, AZ — Auto &amp; Diesel Repair</div>
@@ -44,7 +47,7 @@
   <div class="card">
     <div class="label">Vehicle</div>
     <div class="vehicle-name">{{ ro.vehicle.year }} {{ ro.vehicle.make }} {{ ro.vehicle.model }}</div>
-    {% if ro.vehicle.engine %}<div style="font-size:13px; color:#71717a; margin-top:2px;">{{ ro.vehicle.engine }}</div>{% endif %}
+    {% if ro.vehicle.engine %}<div style="font-size:13px; color:var(--imp-muted); margin-top:2px;">{{ ro.vehicle.engine }}</div>{% endif %}
 
     <div style="margin-top:14px;">
       <div class="label">Status</div>
@@ -61,9 +64,9 @@
 
   {% set pending = ro.line_items|selectattr('approval', 'equalto', 'pending')|list %}
   {% if pending %}
-    <div class="card" style="border-color: rgba(212,168,83,0.3);">
-      <div style="font-size:14px; font-weight:600; color:#fafafa; margin-bottom:6px;">Your approval is needed</div>
-      <div style="font-size:13px; color:#71717a; margin-bottom:12px;">{{ pending|length }} item{{ 's' if pending|length != 1 }} to approve or decline. You only pay for what you approve.</div>
+    <div class="card" style="border-color: rgba(203,176,107,0.3);">
+      <div style="font-size:14px; font-weight:600; color:var(--imp-ink); margin-bottom:6px;">Your approval is needed</div>
+      <div style="font-size:13px; color:var(--imp-muted); margin-bottom:12px;">{{ pending|length }} item{{ 's' if pending|length != 1 }} to approve or decline. You only pay for what you approve.</div>
       <a href="/sign/ro/{{ ro.public_token }}" class="sign-btn">Review &amp; Approve →</a>
     </div>
   {% elif ro.status == 'waiting_approval' %}
@@ -72,9 +75,9 @@
       ✓ Estimate signed by {{ ro.approved_by }} on {{ ro.signed_at.strftime('%B %d, %Y') }}
     </div>
     {% else %}
-    <div class="card" style="border-color: rgba(212,168,83,0.3);">
-      <div style="font-size:14px; font-weight:600; color:#fafafa; margin-bottom:6px;">Your approval is needed</div>
-      <div style="font-size:13px; color:#71717a; margin-bottom:12px;">Review the estimate below and sign to authorize us to begin work.</div>
+    <div class="card" style="border-color: rgba(203,176,107,0.3);">
+      <div style="font-size:14px; font-weight:600; color:var(--imp-ink); margin-bottom:6px;">Your approval is needed</div>
+      <div style="font-size:13px; color:var(--imp-muted); margin-bottom:12px;">Review the estimate below and sign to authorize us to begin work.</div>
       <a href="/sign/ro/{{ ro.public_token }}" class="sign-btn">Review &amp; Sign Estimate →</a>
     </div>
     {% endif %}
@@ -84,11 +87,11 @@
     {% set inv = ro.invoices[-1] %}
     {% if inv.status in ['sent', 'draft'] %}
     <div class="card" style="border-color: rgba(96,165,250,0.3);">
-      <div style="font-size:14px; font-weight:600; color:#fafafa; margin-bottom:6px;">Final Invoice Ready</div>
+      <div style="font-size:14px; font-weight:600; color:var(--imp-ink); margin-bottom:6px;">Final Invoice Ready</div>
       {% if inv.customer_signed_at %}
       <div class="signed-badge">✓ Signed by {{ inv.customer_approved_by }}</div>
       {% else %}
-      <div style="font-size:13px; color:#71717a; margin-bottom:12px;">Your vehicle is ready. Please review and sign the final invoice.</div>
+      <div style="font-size:13px; color:var(--imp-muted); margin-bottom:12px;">Your vehicle is ready. Please review and sign the final invoice.</div>
       <a href="/sign/invoice/{{ inv.id }}?token={{ ro.public_token }}" class="sign-btn">Review &amp; Sign Invoice →</a>
       {% endif %}
     </div>

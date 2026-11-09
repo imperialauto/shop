@@ -3,42 +3,49 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Login — Imperial Auto Care</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <title>Sign in — Imperial Auto Care</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/imperial.css">
   <style>
-    body { background-color: #1a0a2e; color: #e8e0d5; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100dvh; display: grid; place-items: center; padding: 20px; font-family: var(--imp-sans);
+           background: linear-gradient(160deg, var(--imp-purple) 0%, var(--imp-purple-deep) 75%); color: var(--imp-ink); }
+    .wrap { width: 100%; max-width: 380px; }
+    .brand { text-align: center; margin-bottom: 22px; }
+    .mark { width: 52px; height: 52px; border-radius: 12px; border: 2px solid var(--imp-gold); display: inline-flex; align-items: center; justify-content: center;
+            font-family: var(--imp-serif); font-weight: 700; font-size: 30px; color: var(--imp-gold); }
+    .brand h1 { margin: 10px 0 2px; font-family: var(--imp-serif); font-size: 32px; color: var(--imp-gold); }
+    .brand p { margin: 0; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: #D9CDE3; }
+    .panel { background: var(--imp-surface); border-radius: var(--imp-radius-card); padding: 24px; box-shadow: 0 18px 40px rgba(26,1,41,0.35); }
+    label { display: block; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--imp-muted); margin-bottom: 6px; }
+    input { width: 100%; min-height: 48px; padding: 10px 12px; font-size: 16px; border: 1.5px solid #CFC5D8; border-radius: var(--imp-radius); color: var(--imp-ink); background: var(--imp-surface); }
+    input:focus { outline: 3px solid rgba(203,176,107,0.5); border-color: var(--imp-purple); }
+    .field { margin-bottom: 16px; }
+    button { width: 100%; min-height: 50px; border: 0; border-radius: var(--imp-radius); background: var(--imp-purple); color: #FFFFFF; font-size: 16px; font-weight: 700; cursor: pointer; }
+    button:hover { background: var(--imp-purple-soft); }
+    .error { background: var(--imp-danger-tint); color: var(--imp-danger); border-radius: 8px; padding: 10px 12px; font-size: 14px; margin-bottom: 16px; }
   </style>
 </head>
-<body class="min-h-screen flex items-center justify-center">
-  <div class="w-full max-w-sm">
-    <div class="text-center mb-8">
-      <div class="text-4xl mb-2">⚙</div>
-      <h1 class="text-2xl font-bold text-yellow-400">Imperial Auto Care</h1>
-      <p class="text-gray-400 text-sm mt-1">Shop Management System</p>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <span class="mark" aria-hidden="true">I</span>
+      <h1>Imperial Auto Care</h1>
+      <p>Operations</p>
     </div>
-
-    <div class="bg-purple-950 border border-purple-800 rounded-lg p-6">
-      {% if error %}
-      <div class="bg-red-900 border border-red-700 text-red-200 text-sm rounded px-3 py-2 mb-4">
-        {{ error }}
-      </div>
-      {% endif %}
-
+    <div class="panel">
+      {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
       <form method="post" action="/login">
-        <div class="mb-4">
-          <label class="block text-gray-400 text-xs font-semibold mb-1 uppercase tracking-wide">Username</label>
-          <input type="text" name="username" autofocus required
-            class="bg-purple-900 border border-purple-700 text-gray-200 rounded px-3 py-2 w-full text-sm focus:outline-none focus:border-yellow-400" />
+        <div class="field">
+          <label for="username">Username</label>
+          <input id="username" type="text" name="username" autocomplete="username" autofocus required />
         </div>
-        <div class="mb-6">
-          <label class="block text-gray-400 text-xs font-semibold mb-1 uppercase tracking-wide">Password</label>
-          <input type="password" name="password" required
-            class="bg-purple-900 border border-purple-700 text-gray-200 rounded px-3 py-2 w-full text-sm focus:outline-none focus:border-yellow-400" />
+        <div class="field">
+          <label for="password">Password</label>
+          <input id="password" type="password" name="password" autocomplete="current-password" required />
         </div>
-        <button type="submit"
-          class="w-full bg-yellow-500 hover:bg-yellow-400 text-purple-900 font-bold py-2 rounded text-sm transition-colors">
-          Sign In
-        </button>
+        <button type="submit">Sign In</button>
       </form>
     </div>
   </div>

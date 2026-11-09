@@ -59,7 +59,7 @@
 
 <div class="relative">
   <!-- Vertical timeline line -->
-  <div style="position:absolute; left:15px; top:0; bottom:0; width:2px; background:rgba(255,255,255,0.06); border-radius:1px;"></div>
+  <div style="position:absolute; left:15px; top:0; bottom:0; width:2px; background: var(--imp-purple-tint); border-radius:1px;"></div>
 
   <div class="space-y-4 pl-10">
     {% for ro in ros|reverse %}
@@ -68,9 +68,9 @@
       <div style="position:absolute; left:-42px; top:16px; width:12px; height:12px; border-radius:50%; border:2px solid;
         {% if ro.status == 'delivered' %}border-color:#2dd4bf; background:#0f2e2c;
         {% elif ro.status == 'complete' %}border-color:#c084fc; background:#1a0e2e;
-        {% elif ro.status in ['in_progress','diagnosing'] %}border-color:#4ade80; background:#0f2e1a;
+        {% elif ro.status in ['in_progress','diagnosing'] %}border-color:var(--imp-ok); background:#0f2e1a;
         {% elif ro.status == 'waiting_approval' %}border-color:#facc15; background:#2a2210;
-        {% else %}border-color:#52525b; background:#18181b;{% endif %}">
+        {% else %}border-color:var(--imp-muted); background:var(--imp-surface);{% endif %}">
       </div>
 
       <div class="card" onclick="window.location='/ro/{{ ro.id }}'" style="cursor:pointer;">

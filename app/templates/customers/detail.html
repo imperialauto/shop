@@ -68,7 +68,7 @@
         <td class="text-gold-400 font-mono">#{{ ro.id }}</td>
         <td class="text-stone-400">{{ ro.vehicle.year }} {{ ro.vehicle.make }} {{ ro.vehicle.model }}</td>
         <td class="text-stone-300 max-w-xs truncate">{{ ro.concern or '—' }}</td>
-        <td><span class="badge-status bg-gray-700 text-gray-300">{{ ro.status.replace('_',' ').title() }}</span></td>
+        <td><span class="badge badge-{{ ro.status }}">{{ ro.status.replace('_',' ').title() }}</span></td>
         <td class="text-stone-500 text-xs">{{ ro.created_at.strftime('%m/%d/%y') }}</td>
       </tr>
       {% endfor %}

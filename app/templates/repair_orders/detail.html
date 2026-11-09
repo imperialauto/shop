@@ -9,7 +9,7 @@
 {% if next_step %}
 <div class="card mb-4" style="border-color:rgba(234,210,114,.55); display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px;" id="next-step">
   <div style="min-width:0">
-    <p class="text-xs uppercase tracking-wide" style="color:#d4a853; margin:0">Next step · {{ next_step.who }}</p>
+    <p class="text-xs uppercase tracking-wide" style="color: var(--imp-purple); margin:0">Next step · {{ next_step.who }}</p>
     <p class="font-semibold" style="margin:2px 0 0">{{ next_step.title }}</p>
     <p class="text-sm text-stone-400" style="margin:2px 0 0">{{ next_step.detail }}</p>
   </div>
@@ -95,9 +95,9 @@
     <p class="text-stone-400 text-xs mt-1">
       <a href="/status/{{ ro.public_token }}" target="_blank" class="text-gold-400 hover:underline">Customer status page →</a>
     </p>
-    <hr style="border-color:rgba(255,255,255,0.06); margin:10px 0;">
+    <hr style="border-color:var(--imp-line); margin:10px 0;">
     {% if ro.signed_at %}
-    <p style="color:#4ade80; font-size:12px;">✓ Signed by {{ ro.approved_by }}<br><span style="color:#52525b;">{{ ro.signed_at.strftime('%b %d %I:%M %p') }}</span></p>
+    <p style="color:var(--imp-ok); font-size:12px;">✓ Signed by {{ ro.approved_by }}<br><span style="color:var(--imp-muted);">{{ ro.signed_at.strftime('%b %d %I:%M %p') }}</span></p>
     {% else %}
     <div style="display:flex; flex-direction:column; gap:5px;">
       <a href="/sign/ro/{{ ro.public_token }}" target="_blank" class="btn-secondary" style="font-size:11.5px; padding:5px 10px;">🖊 Open Signature Page</a>
@@ -238,7 +238,7 @@
           var q = encodeURIComponent((veh + (desc ? ' ' + desc : '')).trim());
           window.open('https://www.autozonepro.com/catalog/parts/search?searchTerm=' + q, '_blank');
         })()"
-        style="background:#e60012; color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:11.5px; font-weight:600; cursor:pointer; white-space:nowrap; display:flex; align-items:center; gap:5px;">
+        style="background:#e60012; color:var(--imp-ink); border:none; border-radius:6px; padding:6px 12px; font-size:11.5px; font-weight:600; cursor:pointer; white-space:nowrap; display:flex; align-items:center; gap:5px;">
         <span>🔴</span> AutoZone Pro
       </button>
       <span class="text-stone-600 text-xs">← searches vehicle + description</span>

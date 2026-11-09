@@ -79,7 +79,7 @@
 {% endif %}
 
 <!-- Add Payment -->
-{% if payment_error %}<p role="alert" style="color:#f87171; margin:8px 0;">{{ payment_error }}</p>{% endif %}
+{% if payment_error %}<p role="alert" style="color:var(--imp-danger); margin:8px 0;">{{ payment_error }}</p>{% endif %}
 {% if balance > 0 %}
 <div class="card">
   <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Add Payment</h3>
