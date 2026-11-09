@@ -37,6 +37,10 @@
       <p style="margin:0 0 8px;">Price or impact: {% if row.estimate is not none %}${{ '%.2f'|format(row.estimate) }} on open RO #{{ row.open_ro.id }}{% else %}Nothing priced yet{% endif %}</p>
       {% if row.open_ro %}<p style="margin:0 0 8px;">Job: <a href="/ro/{{ row.open_ro.id }}" style="color:#d4a853;">RO #{{ row.open_ro.id }}</a> · {{ row.open_ro.status.replace('_',' ') }}</p>{% endif %}
       {% if row.next_appointment %}<p style="margin:0 0 8px;">Next appointment is booked.</p>{% endif %}
+      <p style="margin:0 0 8px; display:flex; flex-wrap:wrap; gap:8px;">
+        {% if item.customer_id %}<a class="btn-secondary" href="/customers/{{ item.customer_id }}#file">Customer file</a>{% endif %}
+        {% if not row.open_ro %}<a class="btn-secondary" href="{{ row.start_job }}">Start job</a>{% endif %}
+      </p>
       {% if row.history %}<details style="margin-bottom:8px;"><summary style="cursor:pointer;">Recent history</summary>
         {% for entry in row.history %}<p style="margin:6px 0 0; overflow-wrap:anywhere;">{{ entry.direction|capitalize }}: {{ (entry.body or '')[:160] }}</p>{% endfor %}
       </details>{% endif %}

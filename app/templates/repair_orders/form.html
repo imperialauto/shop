@@ -72,7 +72,7 @@
         </button>
         {% endfor %}
       </div>
-      <textarea name="concern" rows="3" class="form-input" placeholder="Describe the customer's concern…"></textarea>
+      <textarea name="concern" rows="3" class="form-input" placeholder="Describe the customer's concern…">{{ request.query_params.get('concern', '') }}</textarea>
     </div>
   </div>
 

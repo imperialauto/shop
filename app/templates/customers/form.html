@@ -58,7 +58,7 @@
       </div>
       <div>
         <label class="form-label">Last Name *</label>
-        <input type="text" name="last_name" required value="{{ customer.last_name if customer else '' }}" class="form-input" />
+        <input type="text" name="last_name" required value="{{ customer.last_name if customer else request.query_params.get('last', '') }}" class="form-input" />
       </div>
     </div>
 
@@ -92,13 +92,13 @@
       <input type="text" name="vin" id="quick-vin" maxlength="17" autocomplete="off" class="form-input font-mono" placeholder="17 characters" />
     </div>
     <div class="grid grid-cols-3 gap-3">
-      <div><label class="form-label">Year</label><input type="text" inputmode="numeric" name="year" id="quick-year" maxlength="4" class="form-input" /></div>
-      <div><label class="form-label">Make</label><input type="text" name="make" id="quick-make" class="form-input" /></div>
-      <div><label class="form-label">Model</label><input type="text" name="model" id="quick-model" class="form-input" /></div>
+      <div><label class="form-label">Year</label><input type="text" inputmode="numeric" name="year" id="quick-year" maxlength="4" value="{{ request.query_params.get('year', '') }}" class="form-input" /></div>
+      <div><label class="form-label">Make</label><input type="text" name="make" id="quick-make" value="{{ request.query_params.get('make', '') }}" class="form-input" /></div>
+      <div><label class="form-label">Model</label><input type="text" name="model" id="quick-model" value="{{ request.query_params.get('model', '') }}" class="form-input" /></div>
     </div>
     <div>
       <label class="form-label">What do they need?</label>
-      <textarea name="concern" rows="2" class="form-input" placeholder="e.g. Brakes grinding, check engine light"></textarea>
+      <textarea name="concern" rows="2" class="form-input" placeholder="e.g. Brakes grinding, check engine light">{{ request.query_params.get('concern', '') }}</textarea>
     </div>
   </div>
   {% endif %}

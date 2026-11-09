@@ -83,6 +83,25 @@ class FastIntakeTests(unittest.TestCase):
         plain = self.client.post("/vehicles/new", data={"customer_id": "1", "make": "Ford", "model": "Focus"})
         self.assertEqual(plain.headers["location"], "/customers/1")
 
+    def test_queue_card_start_job_carries_what_the_customer_said(self):
+        from types import SimpleNamespace
+        from urllib.parse import parse_qs, urlparse
+        from app.routes.dispatch import _start_job_url
+        item = SimpleNamespace(summary="Brakes  grinding on my\nFocus", vehicle_text="2016 Ford Focus ST",
+                               contact_name="Dana Lee", customer_phone="+16235550188")
+        new = urlparse(_start_job_url(None, item))
+        self.assertEqual(new.path, "/customers/new")
+        self.assertEqual({k: v[0] for k, v in parse_qs(new.query).items()},
+                         {"phone": "+16235550188", "first": "Dana", "last": "Lee", "year": "2016", "make": "Ford",
+                          "model": "Focus ST", "concern": "Brakes grinding on my Focus"})
+        known = urlparse(_start_job_url(SimpleNamespace(id=1), item))
+        self.assertEqual((known.path, parse_qs(known.query)["customer_id"][0]), ("/ro/new", "1"))
+        page = self.client.get("/" + known.path.lstrip("/") + "?" + known.query).text
+        self.assertIn("Brakes grinding on my Focus</textarea>", page)
+        prefilled = self.client.get(f"{new.path}?{new.query}").text
+        for value in ('value="Lee"', 'value="2016"', 'value="Ford"', 'value="Focus ST"', "Brakes grinding on my Focus</textarea>"):
+            self.assertIn(value, prefilled)
+
     def test_form_prefills_from_a_link(self):
         page = self.client.get("/customers/new?phone=6235550188&first=Dana").text
         self.assertIn('value="6235550188"', page)
