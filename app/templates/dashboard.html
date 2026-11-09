@@ -104,13 +104,13 @@
           <td>
             <span class="badge badge-{{ ro.status }}">{{ ro.status.replace('_',' ').title() }}</span>
           </td>
-          <td style="padding-right:16px; font-size:12px; color:var(--imp-line);">{{ ro.created_at.strftime('%m/%d/%y') }}</td>
+          <td style="padding-right:16px; font-size:12px; color:var(--imp-muted);">{{ ro.created_at.strftime('%m/%d/%y') }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
     {% else %}
-    <div style="padding:40px 20px; text-align:center; color:var(--imp-line); font-size:13.5px;">
+    <div style="padding:40px 20px; text-align:center; color:var(--imp-muted); font-size:13.5px;">
       No open repair orders.
       <a href="/ro/new" style="color: var(--imp-purple); text-decoration:none; margin-left:4px;">Create one →</a>
     </div>
