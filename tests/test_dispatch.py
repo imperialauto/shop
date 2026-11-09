@@ -1024,5 +1024,35 @@ class QueueWorkflowTests(unittest.TestCase):
             self.assertEqual(db.query(DispatchOutbound).count(), 0)
 
 
+    def test_queued_customer_approval_link_freezes_price_until_manual_reissue(self):
+        self._save_fusion_cost(self._fusion_sourcing_setup())
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            self.owner_text("owner-first-price", "RO #1: customer part price $155; labor 1 hr shop")
+            original = {"action": "quote_part", "ownerPhone": OWNER,
+                        "ownerMessageId": "owner-first-price", "roId": 1,
+                        "partPrice": 155, "laborHours": 1, "rateType": "shop",
+                        "evidence": "RO #1: customer part price $155; labor 1 hr shop"}
+            first = self.client.post("/internal/dispatch/owner-action", headers=HEADERS, json=original)
+            self.assertIn("PENDING", first.json()["ownerReply"])
+            self.owner_text("owner-fitment", "prepare approval RO #1 fitment verified")
+            prep = self.client.post("/internal/dispatch/owner-action", headers=HEADERS, json={
+                "action": "prepare_link", "ownerPhone": OWNER,
+                "ownerMessageId": "owner-fitment", "roId": 1,
+                "evidence": "prepare approval RO #1 fitment verified",
+                "customerMessageId": "customer-latest-quo-id",
+            })
+            self.assertIn("Nothing sent", prep.json()["ownerReply"])
+            self.owner_text("owner-reprice", "RO #1: customer part price $180; labor 1 hr shop")
+            change = self.client.post("/internal/dispatch/owner-action", headers=HEADERS,
+                json={**original, "ownerMessageId": "owner-reprice", "partPrice": 180,
+                      "evidence": "RO #1: customer part price $180; labor 1 hr shop"})
+        self.assertIn("approval link history", change.json()["ownerReply"])
+        with self.Session() as db:
+            prices = [li.unit_price for li in db.query(LineItem).filter(
+                LineItem.repair_order_id == 1).all()]
+            self.assertIn(155, prices)
+            self.assertNotIn(180, prices)
+
+
 if __name__ == "__main__":
     unittest.main()
