@@ -795,6 +795,14 @@ def _owner_part_cost(db: Session, request_: OwnerAction) -> dict:
                   (p.description or "").split(" — anticipated pickup")[0].lower() == description.lower()]
     if len(candidates) > 1:
         return {"ownerReply": "Multiple sourcing records matched. Review the RO; nothing changed."}
+    # Never silently change the basis of an already drafted or decided quote.
+    if candidates and candidates[0].cost != cost:
+        linked = db.query(LineItem).filter(
+            LineItem.repair_order_id == ro.id,
+            LineItem.description == f"Part: {description}",
+        ).all()
+        if linked:
+            return {"ownerReply": "An estimate line already exists for this part. Review the cost change in the RO; nothing changed."}
     part = candidates[0] if candidates else PartsOrder(
         repair_order_id=ro.id, quantity=1, vendor=None, status="sourcing")
     part.description = desc
