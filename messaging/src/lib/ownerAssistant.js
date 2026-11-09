@@ -261,4 +261,4 @@ async function jobNote({ conversation, complete = defaultComplete }) {
   }
 }
 
-module.exports = { interpretOwner, parseDirectPartCost, parseQuotePartCommand, parsePrepareApprovalCommand, jobNote, answerOwner, recentTurns, customerDetail, mentionedItems, FALLBACK, complete: defaultComplete };
+module.exports = { interpretOwner, leaksPrivateAcquisitionCost, parseDirectPartCost, parseQuotePartCommand, parsePrepareApprovalCommand, jobNote, answerOwner, recentTurns, customerDetail, mentionedItems, FALLBACK, complete: defaultComplete };
