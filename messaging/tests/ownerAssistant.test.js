@@ -220,3 +220,11 @@ test("owner can safely address an RO directly when its conversation item is clos
   assert.equal(parseDirectPartCost("RO #17: add fuel tank for $81.83 customer price"), null);
   assert.equal(parseDirectPartCost("RO #17: add fuel tank for $0 my cost"), null);
 });
+
+test("private cost guard protects money, not a shared vehicle year", () => {
+  const { leaksPrivateAcquisitionCost } = require("../src/lib/ownerAssistant");
+  const owner = [{ role: "user", content: "2013 Ford Fusion tank for $81.83 my cost." }];
+  assert.equal(leaksPrivateAcquisitionCost("", "For your 2013 Ford Fusion the approved selling price is $155.", owner), false);
+  assert.equal(leaksPrivateAcquisitionCost("", "The tank will cost $81.83 for your 2013 Fusion.", owner), true);
+  assert.equal(leaksPrivateAcquisitionCost("", "It is $81.83.", [{ role: "user", content: "my cost was 81.83" }]), true);
+});
