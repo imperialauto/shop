@@ -53,19 +53,21 @@ def queue(db: Session, ro: RepairOrder, newest_message_id: str, actor: str) -> D
     total = sum(li.total for li in waiting)
     summary = f"Job #{ro.id}: {len(waiting)} repair{'s' if len(waiting) != 1 else ''}, ${total:,.2f} for the customer to approve."
     now = datetime.now().astimezone()
+    # Everything is worked out before the item joins the session, so no early save sees it half-filled.
+    fields = dict(customer_phone=phone, customer_id=ro.customer_id, vehicle_id=ro.vehicle_id,
+                  summary=summary, draft_reply=message_for(ro),
+                  proposed_action=f"Text the approval link for job #{ro.id}",
+                  # The send is refused later if the customer's thread has moved past this message.
+                  last_message_id=newest_message_id or "none", thread_message_id=None, updated_at=now)
     item = db.query(DispatchItem).filter(DispatchItem.quo_conversation_id == conversation_key(ro.id),
                                          DispatchItem.status.in_(OPEN_STATUSES)).with_for_update().first()
     if item is None:
         item = DispatchItem(quo_conversation_id=conversation_key(ro.id), category=CATEGORY, urgency="normal",
-                            status="needs_owner", created_at=now)
+                            status="needs_owner", created_at=now, **fields)
         db.add(item)
-    item.customer_phone, item.customer_id, item.vehicle_id = phone, ro.customer_id, ro.vehicle_id
-    item.summary, item.draft_reply = summary, message_for(ro)
-    item.proposed_action = f"Text the approval link for job #{ro.id}"
-    # The send is refused later if the customer's thread has moved past this message.
-    item.last_message_id = newest_message_id or "none"
-    item.thread_message_id = None
-    item.updated_at = now
+    else:
+        for name, value in fields.items():
+            setattr(item, name, value)
     db.flush()
     db.add(DispatchAudit(item_id=item.id, actor=actor[:64], action="approval_link_queued", detail=f"job {ro.id}"))
     return item
