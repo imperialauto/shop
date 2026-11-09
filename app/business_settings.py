@@ -22,6 +22,7 @@ KEYS = {
     "booking_lead_minutes": "PUBLIC_BOOKING_LEAD_MINUTES",
     "booking_closed_days": "PUBLIC_BOOKING_CLOSED_DAYS",
     "alert_rules": "ALERT_RULES_JSON",
+    "labor_rates": "LABOR_RATES_JSON",
 }
 CACHE_SECONDS = 15
 _cache: dict = {"at": 0.0, "values": None}

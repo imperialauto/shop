@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app import business_settings as store
 from app.auth import get_current_user
 from app.database import get_db
+from app import pricing
 from app.public_site import BOOKABLE_SERVICES
 
 router = APIRouter()
@@ -51,6 +52,7 @@ def current() -> dict:
                       "minutes": (services.get(s.slug) or {}).get("minutes", s.minutes),
                       "mobile": (services.get(s.slug) or {}).get("mobile") is True} for s in BOOKABLE_SERVICES],
         "zones": "\n".join(f"{z}, {v.get('fee', '')}, {v.get('travel_minutes', '')}" for z, v in sorted(zones.items()) if isinstance(v, dict)),
+        "rates": [{"key": k, "label": label, "value": pricing.rates()[k]} for k, label in pricing.RATE_LABELS.items()],
         "buffer": store.raw("shop_buffer_minutes") or "60",
         "lead": store.raw("booking_lead_minutes") or "120",
     }
@@ -95,7 +97,9 @@ def parse(form) -> dict:
             raise Invalid(f"Mobile ZIP line {number}: use ZIP, fee, travel minutes. Example: 85307, 25, 20")
         zones[parts[0]] = {"fee": _number(parts[1], f"ZIP {parts[0]} fee", 0, 1000, whole=False),
                            "travel_minutes": _number(parts[2], f"ZIP {parts[0]} travel", 0, 240)}
-    return {"shop_hours": hours, "booking_closed_days": ",".join(closed), "booking_services": services, "mobile_zones": zones,
+    labor = {key: _number(form.get(f"rate_{key}", "").strip().lstrip("$"), label, 0, 1000, whole=False)
+             for key, label in pricing.RATE_LABELS.items()}
+    return {"labor_rates": labor, "shop_hours": hours, "booking_closed_days": ",".join(closed), "booking_services": services, "mobile_zones": zones,
             "shop_buffer_minutes": str(_number(form.get("buffer", "").strip(), "Buffer after shop jobs", 0, 240)),
             "booking_lead_minutes": str(_number(form.get("lead", "").strip(), "Earliest online booking", 0, 10080))}
 
