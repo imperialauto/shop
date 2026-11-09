@@ -130,8 +130,8 @@ function leaksPrivateAcquisitionCost(question, proposedText, history = []) {
   const privateCost = /\b(?:my|our|shop|vendor|supplier|wholesale|purchase)\s+(?:(?:parts?|tank|item|unit)\s+)?cost\b|\b(?:cost\s+(?:me|us)|(?:i|we)\s+paid)\b/i;
   if (!privateCost.test(source)) return false;
   const prices = source.match(/\$\s*[\d,]+(?:\.\d{1,2})?/g) || [];
-  const normalized = String(proposedText || "").replace(/,/g, "").replace(/\s+/g, "");
-  return prices.some((price) => normalized.includes(price.replace(/,/g, "").replace(/\s+/g, "")));
+  const normalized = String(proposedText || "").replace(/[$,\s]/g, "");
+  return prices.some((price) => normalized.includes(price.replace(/[$,\s]/g, "")));
 }
 
 const LATER_WORDS = /\b(later|remind|reminder|snooze|tomorrow|tonight|morning|afternoon|evening|hours?|hrs?|min(ute)?s?|after|until|wait|in \d)\b/i;
