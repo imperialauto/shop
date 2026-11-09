@@ -197,3 +197,14 @@ test("customer quote requires explicit RO, price, hours, and approved rate", asy
     assert.equal(parsed, null, question);
   }
 });
+
+test("an estimate link command needs exact RO and explicit fitment verification", async () => {
+  const { parsePrepareApprovalCommand } = require("../src/lib/ownerAssistant");
+  assert.deepEqual(parsePrepareApprovalCommand("prepare approval RO #17 fitment verified"),
+    { action: "prepare_link", itemId: null, roId: 17,
+      evidence: "prepare approval RO #17 fitment verified" });
+  for (const input of ["send link", "approve RO #17", "prepare approval RO #17",
+                      "prepare approval RO #17 no fitment", "send estimate to Fusion"]) {
+    assert.equal(parsePrepareApprovalCommand(input), null, input);
+  }
+});
