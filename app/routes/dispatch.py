@@ -910,6 +910,13 @@ def _owner_quote_part(db: Session, request_: OwnerAction) -> dict:
     if duplicate:
         return {"ownerReply": f"Draft quote already saved to RO #{ro.id}; nothing duplicated."}
 
+    # A previously queued or sent signing link must never change its prices
+    # behind the customer's back. Further revisions require manual re-review.
+    issued_link = db.query(DispatchItem).filter(
+        DispatchItem.quo_conversation_id == approval_links.conversation_key(ro.id),
+    ).first()
+    if issued_link:
+        return {"ownerReply": "This RO has an approval link history. Review and reissue the estimate manually; no prices changed."}
     clean_part = (part.description or "Part").split(" — anticipated pickup")[0].strip()
     descriptions = (f"Part: {clean_part}", f"Labor: install {clean_part}")
     existing = db.query(LineItem).filter(
