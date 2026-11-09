@@ -157,6 +157,15 @@ class ApprovalLinkTests(unittest.TestCase):
         self.assertEqual(len(decisions), 1)
         self.assertIn("Approved 1 of 1", decisions[0].summary)
 
+    def test_new_job_from_customer_page_lists_their_vehicle(self):
+        page = self.owner.get("/ro/new?customer_id=1").text
+        self.assertIn('<option value="1" selected>2016 Ford Focus', page)
+        self.assertNotIn("Select customer first", page)
+        with self.Session() as db:
+            db.add(Customer(id=2, first_name="No", last_name="Car", phone="6025550111"))
+            db.commit()
+        self.assertIn("No vehicles on file", self.owner.get("/ro/new?customer_id=2").text)
+
     def test_mobile_numbers(self):
         self.assertEqual(approval_links.mobile("1 (602) 555-0100"), "+16025550100")
         self.assertIsNone(approval_links.mobile("555-0100"))
