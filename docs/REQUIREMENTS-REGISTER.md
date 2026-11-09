@@ -54,7 +54,7 @@ The AI assistant is named **Imperial**.
 | R33 | Channels | Instagram, Messenger, TikTok | proposed | |
 | R34 | Other | Document generation, marketing, inventory, warranties | proposed | PDF estimates exist |
 | R35 | Security | Passkey login, separate accounts, approval levels, STOP ALL, automatic backups | in progress | Two-step login, STOP ALL, staff logins with role limits, nightly verified backups plus a second copy in a separate storage bucket (PR 69). Read-only off Nov 9. Both production databases have an unapplied PostgreSQL security patch (12 CVEs, notice Aug 20) that Railway's weekend window never applied; owner decision needed. No passkeys. A copy outside Railway needs an owner-made key |
-| R36 | Design | One Imperial visual identity (purple and gold) across website, booking, customer pages, dashboard, staff, finance, AI, Knowledge Center, divisions and alerts; NVZN has its own division mark | approved | Owner requirement Nov 9 overrides the black and gold dashboard. Preview first, owner approval before rolling into production |
+| R36 | Design | One Imperial visual identity (purple and gold) across website, booking, customer pages, dashboard, staff, finance, AI, Knowledge Center, divisions and alerts; NVZN has its own division mark | approved | Owner requirement Nov 9 overrides the black and gold dashboard. Audit and tokens in `docs/DESIGN-SYSTEM.md`. Preview canvas (website home, owner home, customer approval, technician My day, shared kit) sent for approval Nov 9. No production change until approved |
 
 ## Decisions
 | Date | Decision | Status |
