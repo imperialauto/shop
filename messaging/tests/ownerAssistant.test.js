@@ -146,3 +146,31 @@ test("cost amounts match equivalent formatting but not substrings", async () => 
   assert.equal(await propose("The part is $1200.00."), null);
   assert.equal((await propose("Use reference 12001.")).action, "propose");
 });
+
+test("owner can stage a private tank cost from earlier SMS only after explicit save request", async () => {
+  const snapshot = { waitingOnYou: [{ id: 52, who: "2013 Ford Fusion Scheduling" }] };
+  const history = [
+    { role: "user", content: "I sourced the tank for the Ford Fusion for $81.83 my cost and can pickup around Thursday." },
+    { role: "assistant", content: "We still need the selling price." },
+  ];
+  const selected = async () => JSON.stringify({ action: "part_cost", itemId: 52,
+    partDescription: "fuel tank", unitCost: 81.83, eta: "Thursday" });
+  const action = await interpretOwner({ question: "add it to the estimate", snapshot, history, complete: selected });
+  assert.equal(action.action, "part_cost");
+  assert.equal(action.itemId, 52);
+  assert.equal(action.unitCost, 81.83);
+  assert.match(action.evidence, /Ford Fusion/);
+  assert.equal(action.eta, "Thursday");
+});
+
+test("cost write cannot rely on a guessed price or a customer-supplied amount", async () => {
+  const snapshot = { waitingOnYou: [{ id: 52, who: "2013 Ford Fusion" }] };
+  const fake = async () => JSON.stringify({ action: "part_cost", itemId: 52,
+    partDescription: "fuel tank", unitCost: 81.83, eta: "Thursday" });
+  const args = { question: "add it to the estimate", snapshot, complete: fake };
+  assert.equal(await interpretOwner({ ...args, history: [{ role: "assistant", content: "The tank is $81.83 my cost." }] }), null);
+  assert.equal(await interpretOwner({ ...args, history: [{ role: "user", content: "The customer wants the $81.83 tank." }] }), null);
+  assert.equal(await interpretOwner({ ...args, history: [{ role: "user", content: "My cost was $87.00." }] }), null);
+  assert.equal(await interpretOwner({ ...args, history: [{ role: "user", content: "I sourced a tank for $81.83 my cost." }],
+    question: "when did they call?" }), null);
+});
