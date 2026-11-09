@@ -192,11 +192,11 @@ async def intake_turn(conversation: list, new_message: str) -> tuple[str, dict |
 
 ESTIMATE_SYSTEM = """You are a diesel and fleet repair estimator for Imperial Auto Care in Phoenix, AZ.
 
-Standard rates: diesel/fleet $150/hr, gas $130/hr. Parts markup 25-30% over dealer cost.
-Customer-supplied parts rates: diesel $165/hr, gas $145/hr. When customer_supplied_parts=true:
-  - Use the higher labor rate above
+Do not choose dollar rates or markups: the shop's own rate table prices labor, and no parts markup is approved.
+Pick rate_type: "diesel" for diesel or fleet work, "cspr" when customer_supplied_parts=true, otherwise "shop".
+Give parts_low and parts_high as expected supplier cost with no markup. When customer_supplied_parts=true:
+  - Set rate_type to "cspr"
   - Set parts_low and parts_high to 0 (customer is supplying them)
-  - Set total_low/total_high to labor only
   - Add to notes: "Labor rate reflects customer-supplied parts. We do not warranty parts not sourced by the shop."
 
 CRITICAL â€” ONE-TIME-USE (OTU) PARTS KNOWLEDGE:
@@ -212,12 +212,9 @@ Respond ONLY with this JSON (no other text):
 {
   "summary": "One-line description of the work",
   "labor_hours": 4.5,
-  "labor_rate": 150,
-  "labor_total": 675.0,
+  "rate_type": "shop",
   "parts_low": 800,
   "parts_high": 1100,
-  "total_low": 1475,
-  "total_high": 1775,
   "notes": "Important caveats, things to watch for, recommended upsells",
   "needs_inspection": false,
   "customer_supplied_parts": false,
@@ -253,7 +250,13 @@ async def generate_estimate(data: dict) -> dict:
     text = response.choices[0].message.content.strip()
     start = text.find("{")
     end = text.rfind("}") + 1
-    return json.loads(text[start:end])
+    estimate = json.loads(text[start:end])
+    if csp:
+        estimate["rate_type"] = "cspr"
+        estimate["parts_low"] = estimate["parts_high"] = 0
+    # The shop's rate table, not the AI, sets the labor rate and totals (price sheet, Nov 8).
+    from app.routes.estimate_gen import apply_shop_rates
+    return apply_shop_rates(estimate)
 
 # â”€â”€ Mileage parsing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
