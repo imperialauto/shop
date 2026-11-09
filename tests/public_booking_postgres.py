@@ -15,6 +15,7 @@ os.environ['DATABASE_URL'] = str(url.render_as_string(hide_password=False))
 os.environ['APP_READ_ONLY'] = 'false'
 os.environ['SECRET_KEY'] = 'test-only-secret'
 os.environ['PUBLIC_FORMS_ENABLED'] = 'true'
+os.environ['SERVICE_LEADS_ENABLED'] = 'true'
 os.environ['SHOP_HOURS_JSON'] = '{"0":["10:00","18:00"],"1":["10:00","18:00"],"2":["10:00","18:00"],"3":["10:00","18:00"],"4":["10:00","18:00"]}'
 os.environ.pop('PUBLIC_BOOKING_SERVICES', None)
 os.environ['PUBLIC_SERVICE_CATALOG'] = json.dumps({
@@ -30,11 +31,13 @@ from app.database import Base, engine, SessionLocal
 from app.models import Communication, Customer, RepairOrder, User, Vehicle
 from app.appointment_model import Appointment, BookingSlot
 from app.auth import hash_password
+from app.lead_model import ServiceLead, ServiceLeadAudit
 from app.routes import public_site as public_routes
 
 MIGRATIONS = ('migrations/20261031_appointments.sql', 'migrations/20261102_live_overlay.sql', 'migrations/20261102_dispatcher.sql',
-              'migrations/20261102_dispatch_draft.sql', 'migrations/20261102_dispatch_contact.sql', 'migrations/20261103_dispatch_call.sql')
-MIGRATED = ('appointments', 'booking_slots', 'dispatch_items', 'dispatch_events', 'dispatch_policies', 'dispatch_audit', 'dispatch_outbound', 'dispatch_sync')
+              'migrations/20261102_dispatch_draft.sql', 'migrations/20261102_dispatch_contact.sql', 'migrations/20261103_dispatch_call.sql',
+              'migrations/20261106_service_leads.sql')
+MIGRATED = ('appointments', 'booking_slots', 'dispatch_items', 'dispatch_events', 'dispatch_policies', 'dispatch_audit', 'dispatch_outbound', 'dispatch_sync', 'service_leads', 'service_lead_audit')
 
 
 def weekday_at(hour: int, days: int = 7) -> datetime:
@@ -112,6 +115,10 @@ class PublicBooking(unittest.TestCase):
         with SessionLocal() as db:
             appointment = db.query(Appointment).one()
             self.assertEqual(appointment.status, 'confirmed')
+            lead = db.query(ServiceLead).one()
+            self.assertEqual((lead.source, lead.status, lead.appointment_id),
+                             ('website', 'booked', appointment.id))
+            self.assertEqual(lead.closure_evidence_ref, f'appointment:{appointment.id}')
             self.assertEqual(float(appointment.booked_value), 10)
             self.assertEqual(appointment.location, 'shop')
             self.assertEqual(appointment.resource_id, 'bay-1')
@@ -129,6 +136,49 @@ class PublicBooking(unittest.TestCase):
         self.client.post('/login', data={'username': 'fixture', 'password': 'fixture-pass'})
         listed = self.client.get('/appointments/').json()
         self.assertEqual([a['status'] for a in listed], ['confirmed'])
+
+    def test_estimate_tentative_confirmation_and_cancellation(self):
+        data = {**self.form(0), 'where': 'shop', 'description': 'Synthetic intermittent brake noise.'}
+        response = self.client.post('/site/estimate', data=data, follow_redirects=False)
+        self.assertEqual(response.status_code, 303, response.text)
+        with SessionLocal() as db:
+            website = db.query(ServiceLead).one()
+            order_id = website.repair_order_id
+            self.assertEqual(website.status, 'estimate_needed')
+            # A Quo inquiry can concern another service even for the same customer and vehicle.
+            db.add(ServiceLead(source='quo', external_thread_id='CNsynthetic', status='new',
+                               customer_id=website.customer_id, vehicle_id=website.vehicle_id,
+                               customer_phone='+16025550177'))
+            db.commit()
+        self.client.post('/login', data={'username': 'fixture', 'password': 'fixture-pass'})
+        start = weekday_at(11)
+        result = self.client.post('/appointments/', json={
+            'repair_order_id': order_id, 'resource_id': 'bay-1',
+            'starts_at': start.isoformat(), 'ends_at': (start + timedelta(hours=1)).isoformat(),
+        })
+        self.assertEqual(result.status_code, 201, result.text)
+        appointment_id = result.json()['id']
+        with SessionLocal() as db:
+            self.assertEqual(db.query(ServiceLead).filter_by(source='website').one().status, 'estimate_needed')
+        self.assertEqual(self.client.post(f'/appointments/{appointment_id}/confirm').status_code, 200)
+        with SessionLocal() as db:
+            lead = db.query(ServiceLead).filter_by(source='website').one()
+            self.assertEqual((lead.status, lead.appointment_id), ('booked', appointment_id))
+            self.assertEqual(db.query(ServiceLead).filter_by(source='quo').one().status, 'new')
+        self.assertEqual(self.client.post(f'/appointments/{appointment_id}/cancel').status_code, 200)
+        with SessionLocal() as db:
+            lead = db.query(ServiceLead).filter_by(source='website').one()
+            self.assertEqual((lead.status, lead.appointment_id, lead.resolved_at), ('scheduling', None, None))
+            self.assertEqual([audit.action for audit in db.query(ServiceLeadAudit).order_by(ServiceLeadAudit.id)],
+                             ['lead_opened', 'booked', 'booking_cancelled'])
+            self.assertEqual(db.query(Communication).count(), 0)
+
+    def test_website_leads_remain_feature_gated(self):
+        with patch.dict(os.environ, {'SERVICE_LEADS_ENABLED': 'false'}):
+            result = self.client.post('/site/book', data=self.form(self.slot(weekday_at(11))), follow_redirects=False)
+        self.assertEqual(result.status_code, 303, result.text)
+        self.assertEqual(self.count(Appointment), 1)
+        self.assertEqual(self.count(ServiceLead), 0)
 
     def test_taken_removed_or_too_soon_times_are_refused(self):
         start = weekday_at(11)
@@ -286,13 +336,20 @@ class PublicBooking(unittest.TestCase):
             self.assertNotIn('YES', text)
             self.assertIn('Nothing needed', dispatch._alert_text(db, booked))
 
-    def test_website_items_never_hand_a_reply_to_messaging(self):
-        from app.dispatch_model import DispatchItem
-        slot_id = self.slot(weekday_at(11))
-        self.client.post('/site/book', data=self.form(slot_id), follow_redirects=False)
+    def test_website_items_cannot_queue_a_dashboard_reply(self):
+        from app.dispatch_model import DispatchItem, DispatchOutbound
+        data = {**self.form(0), 'where': 'shop', 'description': 'Synthetic intermittent brake noise.'}
+        self.assertEqual(self.client.post('/site/estimate', data=data, follow_redirects=False).status_code, 303)
+        self.client.post('/login', data={'username': 'fixture', 'password': 'fixture-pass'})
         with SessionLocal() as db:
             item = db.query(DispatchItem).one()
-            self.assertTrue(item.last_message_id.startswith('web:'))  # never equals a Quo message id, so sends are skipped
+            item_id, message_id = item.id, item.last_message_id
+        response = self.client.post(f'/dispatch/{item_id}/decide', data={
+            'decision': 'approve', 'expected_message_id': message_id, 'reply_text': 'Synthetic draft',
+        })
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('must be contacted manually', response.text)
+        self.assertEqual(self.count(DispatchOutbound), 0)
 
     def test_only_approved_services_can_be_booked(self):
         slot_id = self.slot(weekday_at(11))

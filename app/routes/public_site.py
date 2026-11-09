@@ -13,7 +13,7 @@ PostgreSQL lock the staff booking API uses. Confirmation appears on screen only.
 """
 import logging
 
-from app import business_settings, website_alerts
+from app import business_settings, lead_lifecycle, website_alerts
 import os
 import re
 import secrets
@@ -383,12 +383,14 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
             f"Mileage given: {vehicle_details['mileage']:,}" if vehicle_details["mileage"] else "",
         ])
         order = new_repair_order(db, customer, vehicle, concern, vehicle_details["mileage"])
-        db.add(Appointment(repair_order_id=order.id, resource_id=slot.resource_id, starts_at=starts_at, ends_at=candidate.ends_at,
+        appointment = Appointment(repair_order_id=order.id, resource_id=slot.resource_id, starts_at=starts_at, ends_at=candidate.ends_at,
                            status="confirmed", booked_value=total or 0, location="mobile" if zone else "shop",
-                           travel_before_minutes=candidate.travel_before_minutes, buffer_after_minutes=candidate.buffer_after_minutes))
+                           travel_before_minutes=candidate.travel_before_minutes, buffer_after_minutes=candidate.buffer_after_minutes)
+        db.add(appointment)
         db.flush()
-        website_alerts.queue(db, order, "booking", f"Booked {service.name}, {label}{', mobile visit' if zone else ''}.",
-                             vehicle_text=" ".join(str(p) for p in (vehicle_details["year"], vehicle_details["make"], vehicle_details["model"]) if p))
+        item = website_alerts.queue(db, order, "booking", f"Booked {service.name}, {label}{', mobile visit' if zone else ''}.",
+                                    vehicle_text=" ".join(str(p) for p in (vehicle_details["year"], vehicle_details["make"], vehicle_details["model"]) if p))
+        lead_lifecycle.intake_from_website(db, order, item, appointment)
         db.commit()
     except FormError as exc:
         db.rollback()
@@ -461,9 +463,10 @@ async def estimate_submit(request: Request, db: Session = Depends(get_db)):
         ])
         order = new_repair_order(db, customer, vehicle, concern, details["mileage"])
         db.flush()
-        website_alerts.queue(db, order, "request", f"{line.name if line else 'Estimate'}: {WHERE_OPTIONS[where]}. {description}",
-                             service_line=line.slug if line else "",
-                             vehicle_text=" ".join(str(p) for p in (details["year"], details["make"], details["model"]) if p))
+        item = website_alerts.queue(db, order, "request", f"{line.name if line else 'Estimate'}: {WHERE_OPTIONS[where]}. {description}",
+                                    service_line=line.slug if line else "",
+                                    vehicle_text=" ".join(str(p) for p in (details["year"], details["make"], details["model"]) if p))
+        lead_lifecycle.intake_from_website(db, order, item)
         db.commit()
     except Exception:
         db.rollback()
