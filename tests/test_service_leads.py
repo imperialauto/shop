@@ -168,3 +168,13 @@ class ServiceLeadTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LeadAlertSwitchTests(unittest.TestCase):
+    def test_owner_can_turn_off_lead_reminders(self):
+        from datetime import datetime
+        from app import alert_rules
+        self.assertIn("owner_leads", alert_rules.OPTIONAL)
+        rules = {**alert_rules.DEFAULTS, "off": ["owner_leads"]}
+        self.assertFalse(alert_rules.allowed("owner_leads", False, False, datetime(2026, 11, 9, 12, 0), rules))
+        self.assertTrue(alert_rules.allowed("owner_leads", True, False, datetime(2026, 11, 9, 12, 0), rules))  # urgent still goes
