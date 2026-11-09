@@ -27,9 +27,23 @@
     <div>
       <label class="form-label">Vehicle *</label>
       <div id="vehicle-select">
+        {% if selected_customer_id and vehicles %}
+        <select name="vehicle_id" class="form-select" required>
+          {% if vehicles|length > 1 %}<option value="">Select vehicle…</option>{% endif %}
+          {% for v in vehicles %}
+          <option value="{{ v.id }}" {% if selected_vehicle_id == v.id or vehicles|length == 1 %}selected{% endif %}>{{ v.year or '' }} {{ v.make or '' }} {{ v.model or '' }}{% if v.license_plate %} · {{ v.license_plate }}{% endif %}</option>
+          {% endfor %}
+        </select>
+        {% elif selected_customer_id %}
+        <div style="display:flex;gap:8px;align-items:center;">
+          <select name="vehicle_id" class="form-select" required><option value="">No vehicles on file — add one first</option></select>
+          <a href="/vehicles/new?customer_id={{ selected_customer_id }}" class="btn-primary text-xs" style="white-space:nowrap; padding:6px 10px;">+ Add Vehicle</a>
+        </div>
+        {% else %}
         <select name="vehicle_id" class="form-select" required>
           <option value="">Select customer first…</option>
         </select>
+        {% endif %}
       </div>
     </div>
 

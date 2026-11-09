@@ -27,23 +27,27 @@ def list_customers(request: Request, db: Session = Depends(get_db), search: str 
         return RedirectResponse("/login", status_code=302)
 
     query = db.query(Customer)
-    if search:
-        query = query.filter(
-            (Customer.first_name.ilike(f"%{search}%")) |
-            (Customer.last_name.ilike(f"%{search}%")) |
-            (Customer.fleet_name.ilike(f"%{search}%")) |
-            (Customer.phone.ilike(f"%{search}%"))
-        )
     if type_filter == "fleet":
         query = query.filter(Customer.customer_type == "fleet")
     elif type_filter == "individual":
         query = query.filter(Customer.customer_type == "individual")
-
     customers = query.order_by(Customer.last_name).all()
+    if search.strip():
+        customers = [c for c in customers if matches(c, search)]
     return templates.TemplateResponse("customers/list.html", {
         "request": request, "user": user, "customers": customers,
         "search": search, "type_filter": type_filter
     })
+
+
+def matches(customer: Customer, search: str) -> bool:
+    """Phone in any format (602-555-0100, 6025550100, +1 602…), or every word of a name."""
+    digits = "".join(ch for ch in search if ch.isdigit())
+    if len(digits) >= 4:
+        phone = "".join(ch for ch in (customer.phone or "") if ch.isdigit())
+        return digits[-10:] in phone[-10:] or phone[-10:].endswith(digits[-10:])
+    text = " ".join(filter(None, (customer.first_name, customer.last_name, customer.fleet_name, customer.email))).lower()
+    return all(word in text for word in search.lower().split())
 
 
 @router.get("/new", response_class=HTMLResponse)
