@@ -926,5 +926,60 @@ class QueueWorkflowTests(unittest.TestCase):
             self.assertEqual(db.query(LineItem).count(), 0)
 
 
+    def test_verified_owner_sms_queues_link_only_after_live_customer_thread(self):
+        self.assertEqual(self._save_fusion_cost(self._fusion_sourcing_setup()).status_code, 200)
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            self.owner_text("o-quote-link", "RO #1: customer part price $155; labor 1 hr shop")
+            quote = self.client.post("/internal/dispatch/owner-action", headers=HEADERS,
+                json={"action": "quote_part", "ownerPhone": OWNER, "ownerMessageId": "o-quote-link",
+                      "roId": 1, "partPrice": 155, "laborHours": 1, "rateType": "shop",
+                      "evidence": "RO #1: customer part price $155; labor 1 hr shop"})
+            self.assertEqual(quote.status_code, 200)
+            self.owner_text("o-approve-link", "prepare approval RO #1 fitment verified")
+            prepare = {"action": "prepare_link", "ownerPhone": OWNER,
+                       "ownerMessageId": "o-approve-link", "roId": 1,
+                       "evidence": "prepare approval RO #1 fitment verified"}
+            first = self.client.post("/internal/dispatch/owner-action", headers=HEADERS, json=prepare)
+            self.assertEqual(first.json()["customerThreadPhone"], "+16025550100")
+            with self.Session() as db:
+                self.assertEqual(db.query(DispatchItem).filter(
+                    DispatchItem.category == "approval_link").count(), 0)
+            staged = self.client.post("/internal/dispatch/owner-action", headers=HEADERS,
+                json={**prepare, "customerMessageId": "customer-quo-message-1"})
+            self.assertEqual(staged.status_code, 200, staged.text)
+            self.assertIn("Nothing sent", staged.json()["ownerReply"])
+            again = self.client.post("/internal/dispatch/owner-action", headers=HEADERS,
+                json={**prepare, "customerMessageId": "customer-quo-message-1"})
+            self.assertIn("already has approval item", again.json()["ownerReply"])
+        with self.Session() as db:
+            item = db.query(DispatchItem).filter(DispatchItem.category == "approval_link").one()
+            self.assertEqual(item.status, "needs_owner")
+            self.assertEqual(item.last_message_id, "customer-quo-message-1")
+            self.assertIn("/sign/ro/", item.draft_reply)
+            self.assertNotIn("81.83", item.draft_reply)
+            self.assertEqual(db.query(DispatchOutbound).count(), 0)
+            ro = db.get(RepairOrder, 1)
+            self.assertEqual(ro.status, "waiting_approval")
+            review = db.query(DispatchItem).filter(DispatchItem.category == "estimate_pricing").one()
+            self.assertEqual(review.status, "closed")
+
+    def test_fitment_attestation_and_complete_pricing_required_for_link(self):
+        self._fusion_sourcing_setup()
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            self.owner_text("o-approve-early", "prepare approval RO #1 fitment verified")
+            request = {"action": "prepare_link", "ownerPhone": OWNER,
+                       "ownerMessageId": "o-approve-early", "roId": 1,
+                       "evidence": "prepare approval RO #1 fitment verified",
+                       "customerMessageId": "customer-quo-message"}
+            no_price = self.client.post("/internal/dispatch/owner-action", headers=HEADERS, json=request)
+            self.assertIn("incomplete", no_price.json()["ownerReply"])
+            no_fitment = self.client.post("/internal/dispatch/owner-action", headers=HEADERS,
+                json={**request, "evidence": "prepare approval RO #1"})
+            self.assertIn("fitment", no_fitment.json()["ownerReply"])
+        with self.Session() as db:
+            self.assertEqual(db.query(DispatchItem).filter(
+                DispatchItem.category == "approval_link").count(), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
