@@ -174,3 +174,26 @@ test("cost write cannot rely on a guessed price or a customer-supplied amount", 
   assert.equal(await interpretOwner({ ...args, history: [{ role: "user", content: "I sourced a tank for $81.83 my cost." }],
     question: "when did they call?" }), null);
 });
+
+test("customer quote requires explicit RO, price, hours, and approved rate", async () => {
+  const snapshot = { waitingOnYou: [{ id: 52, who: "2013 Ford Fusion" }] };
+  const send = async () => { throw new Error("LLM must not guess financial instructions"); };
+  const ok = await interpretOwner({
+    question: "RO #17: customer part price $155; labor 1.0 hr shop",
+    snapshot, complete: send,
+  });
+  assert.deepEqual(ok, { action: "quote_part", itemId: null, roId: 17,
+    partPrice: 155, laborHours: 1, rateType: "shop",
+    evidence: "RO #17: customer part price $155; labor 1.0 hr shop" });
+  for (const question of [
+    "The tank cost me $81.83.",
+    "RO #17: part $155, 1h",
+    "RO #17: customer part price $155",
+    "RO #17: customer part price $155; labor 1 hr",
+    "customer part price $155; labor 1 hr shop",
+    "RO #17: my cost $81.83; customer part price $155; labor 1 hr shop",
+  ]) {
+    const parsed = require("../src/lib/ownerAssistant").parseQuotePartCommand(question);
+    assert.equal(parsed, null, question);
+  }
+});
