@@ -13,7 +13,7 @@ PostgreSQL lock the staff booking API uses. Confirmation appears on screen only.
 """
 import logging
 
-from app import business_settings, lead_lifecycle, website_alerts
+from app import business_settings, calendar_feed, lead_lifecycle, website_alerts
 import os
 import re
 import secrets
@@ -255,8 +255,18 @@ def booking_window(slot: BookingSlot, service, zone) -> AppointmentWindow:
                              travel if zone else shop_buffer_minutes())
 
 
-def fits(db: Session, window: AppointmentWindow) -> bool:
+def calendar_busy(now: datetime) -> list[dict] | None:
+    """Events on the owner's linked calendar for the booking window. [] when no calendar is linked;
+    None when one is linked but can't be read, and then nothing is offered (no double booking)."""
+    if not calendar_feed.feed_urls():
+        return []
+    return calendar_feed.upcoming(now, days=BOOKING_DAYS + 2)
+
+
+def fits(db: Session, window: AppointmentWindow, busy: list[dict] | None = ()) -> bool:
     if window.starts_at.astimezone(PHOENIX).weekday() in booking_closed_days():
+        return False
+    if busy is None or calendar_feed.busy_overlaps(busy, window.blocked_from, window.blocked_until):
         return False
     try:  # the buffer or trip back must also end inside open hours
         held = AppointmentWindow(window.starts_at, window.blocked_until, window.resource_id)
@@ -271,9 +281,10 @@ def booking_times(db: Session, service, zone) -> "OrderedDict[str, list[dict]]":
     earliest = now + timedelta(minutes=lead_minutes())
     latest = now + timedelta(days=BOOKING_DAYS)
     days: OrderedDict[str, list[dict]] = OrderedDict()
+    busy = calendar_busy(now)
     for slot in open_slots(db, now):
         start = utc(slot.starts_at)
-        if not earliest <= start <= latest or not fits(db, booking_window(slot, service, zone)):
+        if not earliest <= start <= latest or not fits(db, booking_window(slot, service, zone), busy):
             continue
         local = start.astimezone(PHOENIX)
         hour = local.hour % 12 or 12
@@ -292,6 +303,8 @@ def booking_unavailable_reason(db: Session) -> str:
         return "Shop hours are not set up for online booking."
     if db.bind.dialect.name != "postgresql":
         return "Online booking needs the PostgreSQL database."
+    if calendar_busy(datetime.now(timezone.utc)) is None:
+        return "The shop calendar can't be checked right now."
     return ""
 
 
@@ -370,7 +383,7 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
         if slot.removed_at is not None or starts_at < datetime.now(timezone.utc) + timedelta(minutes=lead_minutes()):
             raise FormError(taken)
         candidate = booking_window(slot, service, zone)
-        if not fits(db, candidate):
+        if not fits(db, candidate, calendar_busy(datetime.now(timezone.utc))):
             raise FormError(taken)
         customer, matched = find_or_create_customer(db, person)
         vehicle = find_or_create_vehicle(db, customer, matched, vehicle_details)

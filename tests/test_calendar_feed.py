@@ -5,7 +5,7 @@ from datetime import datetime
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-from app.calendar_feed import describe, events_between, feed_urls, parse_events
+from app.calendar_feed import busy_overlaps, describe, events_between, feed_urls, parse_events
 
 PHX = ZoneInfo("America/Phoenix")
 FEED = """BEGIN:VCALENDAR
@@ -95,6 +95,16 @@ class CalendarFeedTests(unittest.TestCase):
     def test_two_feeds_end_to_end_both_count(self):
         self.assertEqual(len(parse_events(FEED + FEED)), 2 * len(parse_events(FEED)))
 
+
+
+class BusyTests(unittest.TestCase):
+    def test_events_carry_their_end_and_block_overlaps_only(self):
+        found = events_between(FEED, datetime(2026, 1, 5, tzinfo=PHX), datetime(2026, 1, 8, tzinfo=PHX))
+        first = next(e for e in found if e["title"].startswith("Sample inspection"))
+        self.assertEqual(first["end"], datetime(2026, 1, 5, 12, tzinfo=PHX))
+        self.assertTrue(busy_overlaps(found, datetime(2026, 1, 5, 11, 30, tzinfo=PHX), datetime(2026, 1, 5, 13, tzinfo=PHX)))
+        self.assertFalse(busy_overlaps(found, datetime(2026, 1, 5, 12, tzinfo=PHX), datetime(2026, 1, 5, 13, tzinfo=PHX)))  # back to back is fine
+        self.assertFalse(busy_overlaps(found, datetime(2026, 1, 6, 9, tzinfo=PHX), datetime(2026, 1, 6, 10, tzinfo=PHX)))  # all-day doesn't block
 
 if __name__ == "__main__":
     unittest.main()
