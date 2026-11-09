@@ -355,9 +355,9 @@ class PublicBooking(unittest.TestCase):
 
     def test_preview_switch_cannot_work_in_production(self):
         with patch.dict(os.environ, {'PUBLIC_PREVIEW_MODE': 'true', 'RAILWAY_ENVIRONMENT_NAME': 'production'}):
-            self.assertNotIn('A/C performance check', self.client.get('/site/book').text)
+            self.assertNotIn('/site/book?service=ac-check', self.client.get('/site/book').text)  # requestable, never bookable
         with patch.dict(os.environ, {'PUBLIC_PREVIEW_MODE': 'true', 'RAILWAY_ENVIRONMENT_NAME': 'other', 'RAILWAY_PROJECT_ID': '97a71288-74a7-4405-9789-b74fda7b8939'}):
-            self.assertNotIn('A/C performance check', self.client.get('/site/book').text)
+            self.assertNotIn('/site/book?service=ac-check', self.client.get('/site/book').text)
 
     def test_website_booking_and_request_reach_the_owner_queue(self):
         from app.dispatch_model import DispatchItem
