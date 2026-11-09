@@ -38,24 +38,24 @@
     <button class="btn-secondary" type="submit" name="action" value="{{ 'resume' if sending_paused else 'stop' }}" style="min-height:44px; white-space:nowrap;">{{ 'Resume texting' if sending_paused else 'Stop all texting' }}</button>
   </form>
   {% if read_only %}
-  <div style="padding:10px 16px; color: var(--imp-purple); font-size:12.5px; border-bottom:1px solid var(--imp-line);">The system is read-only. New messages still appear here, but decisions and policy changes will not save.</div>
+  <div style="padding:10px 16px; color: var(--imp-heading); font-size:12.5px; border-bottom:1px solid var(--imp-line);">The system is read-only. New messages still appear here, but decisions and policy changes will not save.</div>
   {% endif %}
   <nav aria-label="Queue filters" style="display:flex; flex-wrap:wrap; gap:6px; padding:10px 16px; border-bottom:1px solid var(--imp-line);">
     {% for key, label in dispatch_views.items() %}
-    <a class="queue-filter" href="/dashboard?view={{ key }}" style="font-size:12px; text-decoration:none; color:{{ 'var(--imp-purple)' if key == dispatch_view else 'var(--imp-muted)' }};"{% if key == dispatch_view %} aria-current="true"{% endif %}>{{ label }}</a>
+    <a class="queue-filter" href="/dashboard?view={{ key }}" style="font-size:12px; text-decoration:none; padding:4px 10px; border-radius:999px; {{ 'background:var(--imp-gold); color:var(--imp-on-gold); font-weight:700;' if key == dispatch_view else 'color:var(--imp-muted);' }}"{% if key == dispatch_view %} aria-current="true"{% endif %}>{{ label }}</a>
     {% endfor %}
   </nav>
   {% for row in dispatch_items %}{% set item = row.item %}
   <details style="border-bottom:1px solid var(--imp-line);"{% if item.urgency == 'safety' %} open{% endif %}>
     <summary style="padding:12px 16px; cursor:pointer; color:var(--imp-ink); font-size:13px;">
-      {% if item.urgency == 'safety' %}<strong style="color:var(--imp-danger);">Safety</strong> ·{% elif item.urgency == 'urgent' %}<strong style="color: var(--imp-purple);">Urgent</strong> ·{% endif %}
+      {% if item.urgency == 'safety' %}<strong style="color:var(--imp-danger);">Safety</strong> ·{% elif item.urgency == 'urgent' %}<strong style="color: var(--imp-heading);">Urgent</strong> ·{% endif %}
       {{ row.customer_name or item.customer_phone }}{% if item.vehicle_text %} · {{ item.vehicle_text }}{% endif %} · {{ item.category|capitalize }}{% if item.status == 'needs_owner' %} · Your approval{% endif %}
     </summary>
     <div style="padding:0 16px 14px; font-size:13px; color:var(--imp-muted);">
       <p style="margin:0 0 8px; overflow-wrap:anywhere;">{{ item.summary or 'No message text.' }}</p>
       {% if row.reasons %}<p style="margin:0 0 8px;">Why you: {{ row.reasons|join(', ') }}</p>{% endif %}
       <p style="margin:0 0 8px;">Price or impact: {% if row.estimate is not none %}${{ '%.2f'|format(row.estimate) }} on open RO #{{ row.open_ro.id }}{% else %}Nothing priced yet{% endif %}</p>
-      {% if row.open_ro %}<p style="margin:0 0 8px;">Job: <a href="/ro/{{ row.open_ro.id }}" style="color: var(--imp-purple);">RO #{{ row.open_ro.id }}</a> · {{ row.open_ro.status.replace('_',' ') }}</p>{% endif %}
+      {% if row.open_ro %}<p style="margin:0 0 8px;">Job: <a href="/ro/{{ row.open_ro.id }}" style="color: var(--imp-heading);">RO #{{ row.open_ro.id }}</a> · {{ row.open_ro.status.replace('_',' ') }}</p>{% endif %}
       {% if row.next_appointment %}<p style="margin:0 0 8px;">Next appointment is booked.</p>{% endif %}
       <p style="margin:0 0 8px; display:flex; flex-wrap:wrap; gap:8px;">
         {% if item.customer_id %}<a class="btn-secondary" href="/customers/{{ item.customer_id }}#file">Customer file</a>{% endif %}

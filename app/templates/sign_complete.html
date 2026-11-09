@@ -11,9 +11,9 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: var(--imp-paper); color: var(--imp-ink); font-family: var(--imp-sans); min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; text-align: center; }
     .check { font-size: 56px; margin-bottom: 16px; }
-    h1 { font-family: var(--imp-serif); font-size: 28px; font-weight: 700; color: var(--imp-purple); margin-bottom: 8px; }
+    h1 { font-family: var(--imp-serif); font-size: 28px; font-weight: 700; color: var(--imp-heading); margin-bottom: 8px; }
     p { font-size: 14px; color: var(--imp-muted); line-height: 1.6; max-width: 320px; }
-    .shop { font-size: 13px; color: var(--imp-purple); margin-top: 20px; font-weight: 600; }
+    .shop { font-size: 13px; color: var(--imp-heading); margin-top: 20px; font-weight: 600; }
     .detail { font-size: 13px; color: var(--imp-muted); margin-top: 4px; }
   </style>
 </head>
@@ -26,7 +26,7 @@
     {% if doc_type == "invoice" %}
       Thank you! Your invoice has been signed. Imperial Auto Care has been notified. You're good to go!
     {% else %}
-      Thank you! We've received your authorization and will begin work on your {{ ro.vehicle.year }} {{ ro.vehicle.make }} {{ ro.vehicle.model }}. We'll reach out when it's ready.
+      Thank you! We've received your authorization and will begin work on your {{ ro.vehicle.label }}. We'll reach out when it's ready.
     {% endif %}
   </p>
   <div class="shop">Imperial Auto Care</div>

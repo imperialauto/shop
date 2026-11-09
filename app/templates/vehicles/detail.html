@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ vehicle.year }} {{ vehicle.make }} {{ vehicle.model }} — Imperial Auto Care{% endblock %}
+{% block title %}{{ vehicle.label }} — Imperial Auto Care{% endblock %}
 {% block content %}
 
 <div class="flex items-center gap-3 mb-2">
@@ -8,7 +8,7 @@
 
 <div class="flex items-start justify-between mb-4">
   <div>
-    <h1 class="text-2xl font-bold text-yellow-400">{{ vehicle.year }} {{ vehicle.make }} {{ vehicle.model }}</h1>
+    <h1 class="text-2xl font-bold text-yellow-400">{{ vehicle.label }}</h1>
     {% if vehicle.engine %}<p class="text-stone-400 text-sm mt-0.5">{{ vehicle.engine }}</p>{% endif %}
     {% if vehicle.vin %}<p class="text-stone-500 text-xs font-mono mt-0.5">VIN: {{ vehicle.vin }}</p>{% endif %}
   </div>

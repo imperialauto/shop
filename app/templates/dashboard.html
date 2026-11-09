@@ -74,7 +74,7 @@
   <div class="card" style="padding:0; overflow:hidden;">
     <div style="padding:14px 16px 12px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--imp-line);">
       <span style="font-size:13.5px; font-weight:600; color:var(--imp-ink);">Open Repair Orders</span>
-      <a href="/ro/" style="font-size:12px; color:var(--imp-muted); text-decoration:none;" onmouseover="this.style.color='var(--imp-purple)'" onmouseout="this.style.color='var(--imp-muted)'">View all →</a>
+      <a href="/ro/" style="font-size:12px; color:var(--imp-muted); text-decoration:none;" onmouseover="this.style.color='var(--imp-gold)'" onmouseout="this.style.color='var(--imp-muted)'">View all →</a>
     </div>
     {% if open_ros %}
     <table>
@@ -91,7 +91,7 @@
       <tbody>
         {% for ro in open_ros %}
         <tr class="cursor-pointer" onclick="window.location='/ro/{{ ro.id }}'" style="cursor:pointer;">
-          <td style="padding-left:16px; color: var(--imp-purple); font-weight:600; font-family:monospace;">#{{ ro.id }}</td>
+          <td style="padding-left:16px; color: var(--imp-heading); font-weight:600; font-family:monospace;">#{{ ro.id }}</td>
           <td>
             {% if ro.customer.customer_type == 'fleet' %}
             <span class="badge badge-fleet" style="margin-right:6px;">FLEET</span>{{ ro.customer.fleet_name }}
@@ -99,7 +99,7 @@
             <span style="color:var(--imp-ink);">{{ ro.customer.first_name }} {{ ro.customer.last_name }}</span>
             {% endif %}
           </td>
-          <td>{{ ro.vehicle.year }} {{ ro.vehicle.make }} {{ ro.vehicle.model }}</td>
+          <td>{{ ro.vehicle.label }}</td>
           <td style="max-width:220px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--imp-muted);">{{ ro.concern or '—' }}</td>
           <td>
             <span class="badge badge-{{ ro.status }}">{{ ro.status.replace('_',' ').title() }}</span>
@@ -112,7 +112,7 @@
     {% else %}
     <div style="padding:40px 20px; text-align:center; color:var(--imp-muted); font-size:13.5px;">
       No open repair orders.
-      <a href="/ro/new" style="color: var(--imp-purple); text-decoration:none; margin-left:4px;">Create one →</a>
+      <a href="/ro/new" style="color: var(--imp-heading); text-decoration:none; margin-left:4px;">Create one →</a>
     </div>
     {% endif %}
   </div>

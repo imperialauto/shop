@@ -1,24 +1,42 @@
-/* Imperial design system (R36, docs/DESIGN-SYSTEM.md). One source of brand
-   colors for the website, customer pages and the staff dashboard. */
+/* Imperial design system (R36, docs/DESIGN-SYSTEM.md).
+   Owner direction Nov 9: purple, grey and gold. A deep purple-grey base with
+   real grey tones so the gold stands out; not one single colour. */
 :root {
+  /* Purple-grey surfaces, darkest to lightest */
+  --imp-header: #16111C;        /* sidebar, top bars */
+  --imp-paper: #221C29;         /* page background */
+  --imp-surface: #2C2534;       /* cards, panels, inputs */
+  --imp-surface-2: #362E40;     /* raised rows, hover, chips */
+  --imp-line: #463C52;          /* borders and dividers */
+
+  /* Greys for text */
+  --imp-ink: #F1EDF4;           /* main text */
+  --imp-muted: #B4ABBF;         /* secondary text (7:1 on paper) */
+  --imp-faint: #8C8398;         /* tertiary text, placeholders */
+
+  /* Brand purple: fills and highlights, never body text */
   --imp-purple: #2D0245;
   --imp-purple-deep: #1A0129;
-  --imp-purple-soft: #3D0A5C;
-  --imp-purple-tint: #F3EEF8;
+  --imp-purple-soft: #5A3A78;   /* active chips, focus fills */
+  --imp-purple-tint: #362E40;   /* subtle purple-grey fills (was light tint) */
+
+  /* Gold: the accent that pops */
   --imp-gold: #EAD272;
   --imp-gold-dark: #CBB06B;
-  --imp-gold-text: #6B5A1E;   /* gold-family text that passes contrast on white */
-  --imp-gold-tint: #FFFBEA;
-  --imp-ink: #1D1724;
-  --imp-muted: #5D5468;
-  --imp-line: #E7E1EC;
-  --imp-paper: #FAF8FB;
-  --imp-surface: #FFFFFF;
-  --imp-ok: #17603A;      --imp-ok-tint: #E8F6EE;
-  --imp-warn: #8A5A00;    --imp-warn-tint: #FFF4CC;
-  --imp-danger: #9B1C1C;  --imp-danger-tint: #FDECEC;
+  --imp-gold-text: #EAD272;
+  --imp-gold-tint: #3A3220;
+  --imp-heading: #EAD272;       /* page and card titles */
+  --imp-link: #F0DE95;
+  --imp-on-gold: #1A1420;       /* text on gold */
+
+  /* Status */
+  --imp-ok: #8FDCB0;      --imp-ok-tint: #1F3A2C;
+  --imp-warn: #EAD272;    --imp-warn-tint: #3E3420;
+  --imp-danger: #F4A9A9;  --imp-danger-tint: #46202A;
+
   --imp-serif: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
   --imp-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --imp-radius: 10px;
   --imp-radius-card: 14px;
+  color-scheme: dark;
 }

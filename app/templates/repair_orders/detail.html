@@ -9,7 +9,7 @@
 {% if next_step %}
 <div class="card mb-4" style="border-color:rgba(234,210,114,.55); display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px;" id="next-step">
   <div style="min-width:0">
-    <p class="text-xs uppercase tracking-wide" style="color: var(--imp-purple); margin:0">Next step · {{ next_step.who }}</p>
+    <p class="text-xs uppercase tracking-wide" style="color: var(--imp-heading); margin:0">Next step · {{ next_step.who }}</p>
     <p class="font-semibold" style="margin:2px 0 0">{{ next_step.title }}</p>
     <p class="text-sm text-stone-400" style="margin:2px 0 0">{{ next_step.detail }}</p>
   </div>
@@ -70,7 +70,7 @@
 
   <div class="card col-span-1">
     <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Vehicle</h3>
-    <p class="font-semibold">{{ ro.vehicle.year }} {{ ro.vehicle.make }} {{ ro.vehicle.model }}</p>
+    <p class="font-semibold">{{ ro.vehicle.label }}</p>
     {% if ro.vehicle.engine %}<p class="text-stone-400 text-sm">{{ ro.vehicle.engine }}</p>{% endif %}
     {% if ro.vehicle.vin %}<p class="text-stone-500 text-xs font-mono">{{ ro.vehicle.vin }}</p>{% endif %}
     {% if ro.mileage_in %}<p class="text-stone-400 text-sm">{{ "{:,}".format(ro.mileage_in) }} miles in</p>{% endif %}
@@ -234,7 +234,7 @@
       <button type="button" id="azpro-btn"
         onclick="(function(){
           var desc = document.getElementById('li-description').value.trim();
-          var veh = '{{ ro.vehicle.year }} {{ ro.vehicle.make }} {{ ro.vehicle.model }}';
+          var veh = '{{ ro.vehicle.label }}';
           var q = encodeURIComponent((veh + (desc ? ' ' + desc : '')).trim());
           window.open('https://www.autozonepro.com/catalog/parts/search?searchTerm=' + q, '_blank');
         })()"

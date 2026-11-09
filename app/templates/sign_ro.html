@@ -11,7 +11,7 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: var(--imp-paper); color: var(--imp-ink); font-family: var(--imp-sans); min-height: 100dvh; padding-bottom: 40px; }
 
-    .top-bar { background: var(--imp-purple); border-bottom: 3px solid var(--imp-gold); padding: 14px 20px; display: flex; align-items: center; gap: 12px; }
+    .top-bar { background: var(--imp-header); border-bottom: 3px solid var(--imp-gold); padding: 14px 20px; display: flex; align-items: center; gap: 12px; }
     .top-bar .logo { width: 34px; height: 34px; border-radius: 9px; border: 2px solid var(--imp-gold); display: inline-flex; align-items: center; justify-content: center; font-family: var(--imp-serif); font-weight: 700; font-size: 19px; color: var(--imp-gold); }
     .top-bar .shop { font-family: var(--imp-serif); font-size: 21px; font-weight: 700; color: var(--imp-gold); }
     .top-bar .sub { font-size: 12px; color: #D9CDE3; }
@@ -34,7 +34,7 @@
 
     .total-row { display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid var(--imp-line); margin-top: 6px; }
     .total-label { font-size: 13px; color: var(--imp-muted); }
-    .total-amount { font-size: 20px; font-weight: 700; color: var(--imp-purple); }
+    .total-amount { font-size: 20px; font-weight: 700; color: var(--imp-heading); }
 
     .concern-box { font-size: 13.5px; color: var(--imp-muted); line-height: 1.55; }
 
@@ -86,7 +86,7 @@
   <!-- Vehicle -->
   <div class="card">
     <div class="section-title">Vehicle</div>
-    <div class="vehicle-line">{{ ro.vehicle.year }} {{ ro.vehicle.make }} {{ ro.vehicle.model }}</div>
+    <div class="vehicle-line">{{ ro.vehicle.label }}</div>
     {% if ro.vehicle.engine %}<div class="vehicle-sub">{{ ro.vehicle.engine }}</div>{% endif %}
     {% if ro.concern %}
     <div style="margin-top:10px;">

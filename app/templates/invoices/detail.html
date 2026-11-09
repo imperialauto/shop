@@ -34,7 +34,7 @@
   </div>
   <div class="card">
     <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-2">Vehicle</h3>
-    <p class="font-semibold">{{ invoice.repair_order.vehicle.year }} {{ invoice.repair_order.vehicle.make }} {{ invoice.repair_order.vehicle.model }}</p>
+    <p class="font-semibold">{{ invoice.repair_order.vehicle.label }}</p>
     {% if invoice.repair_order.vehicle.vin %}<p class="text-stone-500 text-xs font-mono">{{ invoice.repair_order.vehicle.vin }}</p>{% endif %}
   </div>
 </div>
