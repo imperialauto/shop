@@ -127,9 +127,19 @@ async function getCallSummary(callId) {
   return data;
 }
 
+// Webhooks made with the 2026-03-30 API (how createCallWebhook makes them) are
+// listed at /webhooks with the version header; /v1/webhooks only shows older ones.
+// Read both so an existing hook is never created again on restart.
 async function listWebhooks() {
-  const { data = [] } = await quoFetch("/v1/webhooks");
-  return data;
+  const lists = await Promise.allSettled([
+    quoFetch("/webhooks", { headers: { "Quo-Api-Version": "2026-03-30" } }),
+    quoFetch("/v1/webhooks"),
+  ]);
+  const ok = lists.filter((r) => r.status === "fulfilled");
+  if (!ok.length) throw lists[0].reason;
+  const seen = new Map();
+  for (const r of ok) for (const hook of (r.value && r.value.data) || []) seen.set(hook.id || hook.url, hook);
+  return [...seen.values()];
 }
 
 async function createCallWebhook({ url, phoneNumberId }) {

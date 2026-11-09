@@ -47,7 +47,7 @@ if (process.env.DISPATCH_RECOVERY_ENABLED === "true") {
     }));
     ensureCallWebhook({ quo, url: `${process.env.PUBLIC_URL}/webhooks/quo-calls/${process.env.CALL_HOOK_TOKEN}`, phoneNumberId: options.phoneNumberId })
       .then((state) => console.log(`Quo call webhook ${state}`))
-      .catch((err) => console.error(`Quo call webhook setup failed: ${err.status || err.message}`));
+      .catch((err) => console.error(`Quo call webhook setup failed: ${err.status || ""} ${err.code || ""} ${err.message || ""}`.trim()));
   }
 }
 
