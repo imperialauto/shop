@@ -3,7 +3,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from groq import AsyncGroq
-import json, base64, os, secrets, io
+import json, base64, html, os, secrets, io
 from xml.sax.saxutils import escape as xml_escape
 from datetime import date
 
@@ -12,12 +12,26 @@ from app.auth import get_current_user
 from app.config import GROQ_API_KEY
 
 router = APIRouter()
+
+
+def apply_shop_rates(data: dict) -> dict:
+    """The shop's own rates decide the price. The AI only suggests hours and a rate type."""
+    from app import pricing
+    kind = data.get("rate_type") if data.get("rate_type") in ("shop", "mobile", "diesel", "cspr") else "shop"
+    hours = max(float(data.get("labor_hours", 0) or 0), 0.0)
+    rate = pricing.rate_for(kind)
+    low, high = max(float(data.get("parts_low", 0) or 0), 0.0), max(float(data.get("parts_high", 0) or 0), 0.0)
+    labor = round(hours * rate, 2)
+    data.update(rate_type=kind, labor_hours=hours, labor_rate=rate, labor_total=labor,
+                parts_low=low, parts_high=max(high, low), total_low=labor + low, total_high=labor + max(high, low))
+    return data
 templates = Jinja2Templates(
     directory=os.path.join(os.path.dirname(__file__), "..", "templates")
 )
 
-EXTRACT_ESTIMATE_SYSTEM = """You are a repair estimator for Imperial Auto Care, a full-service auto repair shop in Phoenix, AZ that serves everyday daily-driver customers as well as diesel and commercial fleet vehicles.
-Rates: diesel/fleet $150/hr, everyday gas vehicle $130/hr. Parts markup 25-30% over dealer cost. Regular everyday customers (non-diesel, non-fleet) are common — treat their vehicles with the same care and rigor, just using the gas labor rate and skipping diesel-only sections below.
+EXTRACT_ESTIMATE_SYSTEM = """You are a repair estimator for Imperial Auto Care, an automotive and diesel repair shop in Glendale, AZ.
+Choose rate_type for the job: "shop" for in-shop work, "mobile" for work at the customer's location, "diesel" for diesel vehicles, "cspr" when the customer supplies the parts. The shop sets the hourly rate; do not put dollar rates in your answer.
+Parts prices are rough guesses only. The shop will check real prices before quoting. Never add a markup.
 
 The shop owner has shared a customer conversation (pasted text or a screenshot). Extract vehicle info and generate an estimate.
 
@@ -42,12 +56,9 @@ Output ONLY this JSON (nothing else before or after):
   "missing_info": [],
   "summary": "one-line job description",
   "labor_hours": 4.5,
-  "labor_rate": 150,
-  "labor_total": 675.0,
+  "rate_type": "diesel",
   "parts_low": 800,
   "parts_high": 1100,
-  "total_low": 1475,
-  "total_high": 1775,
   "notes": "important caveats, diesel-specific watch items, recommended upsells",
   "needs_inspection": false,
   "otu_parts": ["6.0L head bolts (TTY — must replace)", "EGR cooler gaskets (one-time-use)"]
@@ -57,7 +68,7 @@ Rules:
 - If mileage unknown, use 0 and add "mileage" to missing_info
 - Add any fields you had to guess to missing_info
 - needs_inspection=true only when you genuinely cannot estimate without seeing the vehicle
-- Use real flat-rate labor times (Mitchell/AllData standards)
+- Use typical flat-rate labor times as a starting point; the shop confirms ALLDATA time
 - Apply diesel expertise for Powerstroke, Duramax, Cummins
 - otu_parts should be [] if no OTU parts apply to this job"""
 
@@ -91,14 +102,7 @@ async def generate_from_input(
         img_b64 = base64.standard_b64encode(img_bytes).decode()
         media_type = screenshot.content_type or "image/jpeg"
         content = [
-            {
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": media_type,
-                    "data": img_b64,
-                },
-            },
+            {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{img_b64}"}},
             {
                 "type": "text",
                 "text": "Read this screenshot of a customer text conversation. Extract the vehicle info and complaint, then generate the repair estimate.",
@@ -113,7 +117,7 @@ async def generate_from_input(
 
     client = AsyncGroq(api_key=GROQ_API_KEY)
     # Use vision model for images, text model for pasted text
-    model = "llama-3.2-90b-vision-preview" if (screenshot and screenshot.filename) else "llama-3.3-70b-versatile"
+    model = "meta-llama/llama-4-scout-17b-16e-instruct" if (screenshot and screenshot.filename) else "llama-3.3-70b-versatile"
     try:
         response = await client.chat.completions.create(
             model=model,
@@ -129,12 +133,14 @@ async def generate_from_input(
         data = json.loads(text[start:end])
     except Exception as e:
         return HTMLResponse(
-            f'<p class="text-red-400 text-sm">Error generating estimate: {e}</p>'
+            f'<p class="text-red-400 text-sm">Error generating estimate: {html.escape(str(e))}</p>'
         )
+    data = apply_shop_rates(data)
+    shown = {k: html.escape(str(v)) if isinstance(v, str) else v for k, v in data.items()}
 
     estimate_json = json.dumps(data)
 
-    missing = data.get("missing_info", [])
+    missing = [html.escape(str(m)) for m in data.get("missing_info", [])]
     missing_html = ""
     if missing:
         missing_html = f"""
@@ -145,13 +151,17 @@ async def generate_from_input(
     otu = data.get("otu_parts", [])
     otu_html = ""
     if otu:
-        otu_items = "".join(f"<li>{p}</li>" for p in otu)
+        otu_items = "".join(f"<li>{html.escape(str(p))}</li>" for p in otu)
         otu_html = f"""
         <div class="bg-red-900 bg-opacity-40 border border-red-700 rounded p-3 text-sm">
           <div class="text-red-300 font-bold mb-1">🔴 ONE-TIME-USE PARTS — Order before starting</div>
           <ul class="text-red-200 text-xs space-y-0.5 list-disc list-inside">{otu_items}</ul>
         </div>"""
 
+    parts_warning = """
+        <div class="bg-yellow-900 bg-opacity-30 border border-yellow-700 rounded p-3 text-sm text-yellow-300">
+          Parts prices are rough AI guesses. Check AutoZonePro and ALLDATA time before sending any price.
+        </div>"""
     if data.get("needs_inspection"):
         estimate_block = """
         <div class="bg-plum-900 border border-plum-600 rounded p-4 text-stone-300 text-sm">
@@ -181,7 +191,7 @@ async def generate_from_input(
         </div>
         <div class="grid grid-cols-2 gap-3 text-sm mb-2">
           <div class="bg-plum-900 rounded p-3">
-            <div class="text-stone-400 text-xs uppercase tracking-wide mb-1">Parts</div>
+            <div class="text-stone-400 text-xs uppercase tracking-wide mb-1">Parts (unverified guess)</div>
             <div class="text-stone-200">${pl:,.0f} – ${ph:,.0f}</div>
           </div>
           <div class="bg-plum-900 rounded p-3">
@@ -209,23 +219,28 @@ async def generate_from_input(
     if data.get("notes"):
         notes_html = f"""
         <div class="text-xs text-stone-400 bg-plum-900 rounded p-3">
-          <span class="font-semibold text-stone-300">Notes:</span> {data['notes']}
+          <span class="font-semibold text-stone-300">Notes:</span> {shown['notes']}
         </div>"""
 
-    year = data.get("year", "")
-    make = data.get("make", "")
-    model = data.get("model", "")
-    engine = data.get("engine", "")
-    mileage = data.get("mileage", 0)
-    name = data.get("name", "Unknown")
-    complaint = data.get("complaint", "")
-    summary = data.get("summary", complaint)
+    year = shown.get("year", "")
+    make = shown.get("make", "")
+    model = shown.get("model", "")
+    engine = shown.get("engine", "")
+    try:
+        mileage = int(data.get("mileage", 0) or 0)
+    except (TypeError, ValueError):
+        mileage = 0
+    name = shown.get("name", "Unknown")
+    complaint = shown.get("complaint", "")
+    summary = shown.get("summary", complaint)
+    safe_json = html.escape(estimate_json, quote=True)
 
     return HTMLResponse(f"""
     <div class="card space-y-3">
       <h2 class="text-gold-300 font-semibold">Estimate Ready</h2>
 
       {missing_html}
+      {parts_warning}
       {otu_html}
 
       <div class="grid grid-cols-2 gap-3 text-sm">
@@ -257,18 +272,18 @@ async def generate_from_input(
       {notes_html}
 
       <!-- Hidden master JSON (updated by recalc()) -->
-      <input id="est-json" type="hidden" value='{estimate_json}' />
+      <input id="est-json" type="hidden" value="{safe_json}" />
 
       <div class="border-t border-plum-700 pt-3 space-y-3">
         <!-- PDF download -->
         <form method="post" action="/estimates/pdf" target="_blank">
-          <input class="est-json-input" type="hidden" name="estimate_json" value='{estimate_json}' />
+          <input class="est-json-input" type="hidden" name="estimate_json" value="{safe_json}" />
           <button type="submit" class="btn-secondary w-full">⬇ Download PDF Estimate</button>
         </form>
 
         <!-- Create RO -->
         <form hx-post="/estimates/create-ro" hx-target="#ro-result" hx-swap="innerHTML">
-          <input class="est-json-input" type="hidden" name="estimate_json" value='{estimate_json}' />
+          <input class="est-json-input" type="hidden" name="estimate_json" value="{safe_json}" />
           <div class="flex items-end gap-3">
             <div class="flex-1">
               <label class="form-label">Customer phone (optional)</label>
@@ -297,43 +312,48 @@ async def create_ro_from_estimate(
 
     data = json.loads(estimate_json)
 
+    from app import pricing
     from app.models import Customer, Vehicle, RepairOrder, LineItem
 
     customer = None
+    normalized = ""
     if phone_number.strip():
-        normalized = "".join(c for c in phone_number if c.isdigit() or c == "+")
-        if not normalized.startswith("+"):
-            normalized = "+1" + normalized.lstrip("1")
-        customer = db.query(Customer).filter(Customer.phone == normalized).first()
+        digits = "".join(c for c in phone_number if c.isdigit())[-10:]
+        normalized = "+1" + digits if len(digits) == 10 else ""
+        # Match however the number was saved before, by its last ten digits.
+        customer = next((c for c in db.query(Customer).filter(Customer.phone.isnot(None)).all()
+                         if digits and "".join(ch for ch in c.phone if ch.isdigit())[-10:] == digits), None)
 
     if not customer:
         parts = data.get("name", "Unknown").split(maxsplit=1)
         customer = Customer(
             first_name=parts[0],
             last_name=parts[1] if len(parts) > 1 else "",
-            phone=phone_number.strip() or "",
+            phone=normalized or phone_number.strip(),
         )
         db.add(customer)
         db.flush()
 
     mileage = int(data.get("mileage", 0) or 0)
-    vehicle = Vehicle(
-        customer_id=customer.id,
-        year=int(data.get("year", 0) or 0),
-        make=data.get("make", ""),
-        model=data.get("model", ""),
-        engine=data.get("engine", ""),
-        mileage=mileage,
-    )
-    db.add(vehicle)
-    db.flush()
+    year = int(data.get("year", 0) or 0)
+    make, model = (data.get("make") or "").strip(), (data.get("model") or "").strip()
+    # A returning customer's vehicle is reused instead of copied.
+    vehicle = next((v for v in db.query(Vehicle).filter(Vehicle.customer_id == customer.id).all()
+                    if (v.year or 0) == year and (v.make or "").lower() == make.lower() and (v.model or "").lower() == model.lower()), None)
+    if vehicle is None:
+        vehicle = Vehicle(customer_id=customer.id, year=year, make=make, model=model,
+                          engine=data.get("engine", ""), mileage=mileage)
+        db.add(vehicle)
+        db.flush()
+    elif mileage and mileage > (vehicle.mileage or 0):
+        vehicle.mileage = mileage
 
     ro = RepairOrder(
         customer_id=customer.id,
         vehicle_id=vehicle.id,
         status="waiting_approval",
         concern=data.get("complaint", ""),
-        tech_notes=f"Manual estimate — AI notes: {data.get('notes', '')}",
+        tech_notes=f"Estimate tool, {data.get('rate_type', 'shop')} rate. Parts prices unverified. AI notes: {data.get('notes', '')}",
         public_token=secrets.token_urlsafe(16),
         mileage_in=mileage,
     )
@@ -346,7 +366,7 @@ async def create_ro_from_estimate(
             description=f"Labor — {data.get('summary', data.get('complaint'))}",
             item_type="labor",
             quantity=float(data.get("labor_hours", 0) or 0),
-            unit_price=float(data.get("labor_rate", 150) or 150),
+            unit_price=float(data.get("labor_rate") or pricing.rate_for(data.get("rate_type", "shop"))),
         ))
         parts_mid = (
             float(data.get("parts_low", 0) or 0) + float(data.get("parts_high", 0) or 0)
@@ -354,7 +374,7 @@ async def create_ro_from_estimate(
         if parts_mid > 0:
             db.add(LineItem(
                 repair_order_id=ro.id,
-                description="Parts (estimate — subject to final quote)",
+                description="Parts (unverified estimate, confirm price before sending)",
                 item_type="part",
                 quantity=1,
                 unit_price=parts_mid,

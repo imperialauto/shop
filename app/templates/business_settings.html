@@ -23,6 +23,14 @@
     {% endfor %}
   </div>
   <div class="card">
+    <h2 class="font-bold mb-1">Labor rates</h2>
+    <p class="text-sm text-stone-400 mb-3">Used by the estimate tool. From your Nov 8 price sheet. No parts markup is applied.</p>
+    {% for r in settings.rates %}
+    <label class="flex flex-wrap items-center justify-between gap-3 py-2 border-b border-stone-800">{{ r.label }}
+      <span>$ <input name="rate_{{ r.key }}" inputmode="decimal" value="{{ '%g'|format(r.value) }}" class="form-input" style="width:100px"></span></label>
+    {% endfor %}
+  </div>
+  <div class="card">
     <h2 class="font-bold mb-1">Online booking services</h2>
     <p class="text-sm text-stone-400 mb-3">Leave the price blank to show "Price coming soon". A service can't be booked online until it has a price.</p>
     {% for s in settings.services %}

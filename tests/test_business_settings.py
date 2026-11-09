@@ -21,7 +21,8 @@ PASSWORD = "fixture-password-1"
 
 
 def form(**changes):
-    data = {"buffer": "60", "lead": "120", "zones": "85307, 25, 20"}
+    data = {"buffer": "60", "lead": "120", "zones": "85307, 25, 20", "rate_shop": "150", "rate_mobile": "165",
+            "rate_diesel": "175", "rate_cspr": "165", "rate_service_call": "75"}
     for i in range(6):
         data.update({f"open_{i}": "on", f"opens_{i}": "11:00", f"closes_{i}": "19:00", f"online_{i}": "on"})
     data["closes_5"], data["opens_5"] = "17:00", "12:00"
@@ -135,6 +136,15 @@ class BusinessSettingsTests(unittest.TestCase):
         self.assertEqual(owner.post("/alerts", data={"quiet_start": "21:00"}).status_code, 422)
         for name in ("office", "boss"):
             self.assertEqual(self.sign_in(name).get("/alerts").status_code, 403)
+
+    def test_labor_rates_default_to_the_price_sheet_and_can_change(self):
+        from app import pricing
+        self.assertEqual(pricing.rates(), pricing.DEFAULT_RATES)
+        owner = self.sign_in()
+        owner.post("/settings/business", data=form(rate_diesel="185"))
+        self.assertEqual(pricing.rate_for("diesel"), 185)
+        self.assertEqual(pricing.rate_for("anything-else"), 150)
+        self.assertEqual(owner.post("/settings/business", data=form(rate_shop="cheap")).status_code, 422)
 
     def test_railway_variables_still_work_with_nothing_saved(self):
         with patch.dict(os.environ, {"SHOP_BUFFER_MINUTES": "45"}):

@@ -70,6 +70,7 @@ The AI assistant is named **Imperial**.
 | 2026-11-05 | Saturday is 12 to 5 and open to online booking if the service and buffer fit. Sunday is closed except qualifying emergency roadside service. Towing stays under Imperial Auto Care with staff-confirmed dispatch. Only verified prices are published | current |
 | 2026-11-08 | PR 52 is the main website version. ChatGPT's PR 59 copy is rebuilt on top of PR 52 after it merges | current |
 | 2026-11-08 | PR 52 and PR 61 go live with public forms off, hidden from search, and the domain on Squarespace. PR 38 closed as replaced by PR 51. NVZN pay split decided later | current |
+| 2026-11-08 | Master price sheet in `docs/PRICE-SHEET.md` is the pricing reference: $150 shop, $165 mobile, $175 diesel, $165 customer-supplied parts, $75 service call plus travel. No parts markup approved. Live website prices change only after owner verification | current |
 | 2026-11-08 | ChatGPT reviews only until the owner assigns it work. Keep the QA services ChatGPT added to the preview project until testing ends | current |
 | 2026-11-05 | Owner texts PAUSE ALL or STOP ALL to stop automated texting, RESUME to restart | current |
 
