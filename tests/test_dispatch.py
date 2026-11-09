@@ -878,5 +878,53 @@ class QueueWorkflowTests(unittest.TestCase):
             self.assertEqual(db.query(PartsOrder).count(), 0)
 
 
+    def test_owner_can_stage_non_billable_quote_after_explicit_retail_price_and_labor(self):
+        source = self._fusion_sourcing_setup()
+        self.assertEqual(self._save_fusion_cost(source).status_code, 200)
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            self.owner_text("o-quote-1", "RO #1: customer part price $155; labor 1.0 hr shop")
+        payload = {
+            "action": "quote_part", "ownerPhone": OWNER, "ownerMessageId": "o-quote-1",
+            "roId": 1, "partPrice": 155, "laborHours": 1.0, "rateType": "shop",
+            "evidence": "RO #1: customer part price $155; labor 1.0 hr shop",
+        }
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            first = self.client.post("/internal/dispatch/owner-action", headers=HEADERS, json=payload)
+            second = self.client.post("/internal/dispatch/owner-action", headers=HEADERS, json=payload)
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertIn("PENDING", first.json()["ownerReply"])
+        self.assertIn("already saved", second.json()["ownerReply"])
+        with self.Session() as db:
+            lines = db.query(LineItem).order_by(LineItem.item_type).all()
+            self.assertEqual(len(lines), 2)
+            labor = next(li for li in lines if li.item_type == "labor")
+            part = next(li for li in lines if li.item_type == "part")
+            self.assertEqual((part.unit_price, labor.quantity, labor.unit_price), (155, 1.0, 150.0))
+            self.assertEqual((part.approval, labor.approval), ("pending", "pending"))
+            self.assertFalse(labor.billable)
+            self.assertFalse(part.billable)
+            self.assertEqual(db.query(DispatchOutbound).count(), 0)
+            self.assertEqual(db.query(PartsOrder).one().cost, 81.83)
+
+    def test_quote_refuses_private_cost_and_unverified_price_instructions(self):
+        self._fusion_sourcing_setup()
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            self.owner_text("o-quote-2", "RO #1 quote")
+        base = {
+            "action": "quote_part", "ownerPhone": OWNER, "ownerMessageId": "o-quote-2",
+            "roId": 1, "partPrice": 155, "laborHours": 1, "rateType": "shop",
+            "evidence": "RO #1: customer part price $155; labor 1 hr shop",
+        }
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            missing_source = self.client.post("/internal/dispatch/owner-action", headers=HEADERS, json=base)
+        self.assertIn("verified sourcing", missing_source.json()["ownerReply"])
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            leaking = self.client.post("/internal/dispatch/owner-action", headers=HEADERS,
+                json={**base, "evidence": "RO #1: my cost $81.83; customer part price $155; labor 1 hr shop"})
+        self.assertIn("private cost", leaking.json()["ownerReply"])
+        with self.Session() as db:
+            self.assertEqual(db.query(LineItem).count(), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
