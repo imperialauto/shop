@@ -378,7 +378,58 @@ def flows(page, device):
         measure(visitor, "site-estimate-received", device, 200, [])
         visitor.context.close()
 
-    for name, action in [("wrong password", wrong_password), ("login", login), ("public site booking", site_booking), ("public mobile booking", site_mobile_booking), ("public time conflict", site_taken_time), ("public site estimate", site_estimate), ("new customer", customer), ("new vehicle", vehicle), ("new repair order", repair_order),
+    def site_brake_package():
+        visitor = page.context.browser.new_context(**page_options).new_page()
+        visitor.goto(BASE + "/site/book")
+        visitor.click("a[href='/site/book?service=brake-pads-rotors']")
+        body = visitor.inner_text("body")
+        assert "From $300 per axle" in body and "Final price confirmed before work" in body, body[:400]
+        visitor.locator("label.choice", has=visitor.locator("input[value=pickup]")).click()
+        visitor.select_option("#axles", "2")
+        visitor.locator("label.choice", has=visitor.locator("input[name=slot_id]")).last.click()
+        visitor.fill("[name=year]", "2019")
+        visitor.fill("[name=make]", "Ram")
+        visitor.fill("[name=model]", "1500")
+        visitor.fill("[name=first_name]", "Brake" + device)
+        visitor.fill("[name=last_name]", "Visitor")
+        visitor.fill("[name=phone]", "6025550131" if device == "phone" else "6025550132")
+        measure(visitor, "site-brake-package", device, 200, [])
+        visitor.click("button:has-text('Book this time')")
+        visitor.wait_for_url("**/site/book/received")
+        body = visitor.inner_text("body")
+        assert "From $800 for 2 axles" in body and "Final price is confirmed" in body, body[:400]
+        measure(visitor, "site-brake-booked", device, 200, [])
+        visitor.context.close()
+
+    def site_request_unpriced():
+        visitor = page.context.browser.new_context(**page_options).new_page()
+        visitor.goto(BASE + "/site/book")
+        assert "call or text" not in visitor.inner_text("main").lower()
+        visitor.click("a[href='/site/estimate?about=ac-check']")
+        assert "A/C performance check" in visitor.input_value("textarea[name=description]")
+        measure(visitor, "site-request-unpriced", device, 200, [])
+        visitor.context.close()
+
+    def site_roadside():
+        visitor = page.context.browser.new_context(**page_options).new_page()
+        visitor.goto(BASE + "/site/services/towing")
+        visitor.click("a.btn-gold[href='/site/roadside']")
+        visitor.locator("label.choice", has=visitor.locator("input[value=tow]")).click()
+        visitor.fill("#location", "Made-up: 59th Ave and Northern")
+        visitor.fill("[name=make]", "Ford")
+        visitor.fill("[name=model]", "Focus")
+        visitor.fill("[name=first_name]", "Road" + device)
+        visitor.fill("[name=last_name]", "Visitor")
+        visitor.fill("[name=phone]", "6025550141" if device == "phone" else "6025550142")
+        measure(visitor, "site-roadside", device, 200, [])
+        visitor.click("form[action='/site/roadside'] button[type=submit]")
+        visitor.wait_for_url("**/site/estimate/received")
+        assert "Nothing is dispatched until we call you" in visitor.inner_text("body")
+        measure(visitor, "site-roadside-received", device, 200, [])
+        visitor.context.close()
+
+    for name, action in [("wrong password", wrong_password), ("login", login), ("public site booking", site_booking), ("public mobile booking", site_mobile_booking), ("public time conflict", site_taken_time), ("public site estimate", site_estimate),
+                         ("public brake package", site_brake_package), ("public unpriced request", site_request_unpriced), ("public roadside", site_roadside), ("new customer", customer), ("new vehicle", vehicle), ("new repair order", repair_order),
                          ("add line item", line_item), ("add part", part_item), ("change status", status), ("create invoice", invoice),
                          ("no duplicate invoice", duplicate_invoice), ("record payment", payment), ("customer status link", public_status),
                          ("customer signature", signature), ("book appointment", booking), ("search customers", search),
