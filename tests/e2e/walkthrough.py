@@ -386,7 +386,7 @@ def flows(page, device):
         assert "From $300 per axle" in body and "Final price confirmed before work" in body, body[:400]
         visitor.locator("label.choice", has=visitor.locator("input[value=pickup]")).click()
         visitor.select_option("#axles", "2")
-        visitor.locator("label.choice", has=visitor.locator("input[name=slot_id]")).last.click()
+        visitor.locator("details[open] label.choice", has=visitor.locator("input[name=slot_id]")).last.click()
         visitor.fill("[name=year]", "2019")
         visitor.fill("[name=make]", "Ram")
         visitor.fill("[name=model]", "1500")
