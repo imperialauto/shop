@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Customer
 
-BATCH = 4
+BATCH = 8  # the messaging service checks in every 5 minutes, so history fills in within a few hours
 EVERY_SECONDS = 120
 RECHECK_AFTER = timedelta(days=7)
 _lock = threading.Lock()

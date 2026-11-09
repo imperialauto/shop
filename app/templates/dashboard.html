@@ -19,6 +19,19 @@
 
 <div class="page-body">
 
+  {% if health %}
+  <details class="card-sm" style="margin-bottom:12px; {% if not health.ok %}border-color:rgba(248,113,113,0.55);{% endif %}" {% if not health.ok %}open{% endif %} id="system-health">
+    <summary style="cursor:pointer; font-size:13px; color:{{ '#f87171' if not health.ok else '#a1a1aa' }};">
+      {% if health.ok %}All systems working{% else %}{{ health.problems|length }} thing{{ 's need' if health.problems|length != 1 else ' needs' }} attention{% endif %}
+    </summary>
+    <ul style="list-style:none; margin:8px 0 0; padding:0; display:grid; gap:6px; font-size:13px;">
+      {% for c in health.checks %}
+      <li><strong style="color:{{ '#f87171' if not c.ok else ('#a1a1aa' if c.info else '#4ade80') }};">{{ '!' if not c.ok else ('·' if c.info else '✓') }} {{ c.name }}</strong>: {{ c.detail }}{% if c.fix %} <span style="color:#a1a1aa;">{{ c.fix }}</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+
   {% if home and home.ready %}
   <div class="stat-row">
     <a href="#queue" class="card-sm" style="display:block; text-decoration:none; {% if home.urgent %}border-color:rgba(248,113,113,0.5);{% endif %}">
