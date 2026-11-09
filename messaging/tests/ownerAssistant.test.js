@@ -110,3 +110,14 @@ test("private cost from a prior owner text is not repeated after 'draft a reply'
   });
   assert.equal(unsafe, null);
 });
+
+test("private cost is blocked even if the proposed text omits the dollar symbol", async () => {
+  const snapshot = { waitingOnYou: [{ id: 52, who: "2013 Ford Fusion" }] };
+  const action = await interpretOwner({
+    question: "draft a reply",
+    history: [{ role: "user", content: "my cost for the tank is $81.83" }],
+    snapshot,
+    complete: async () => JSON.stringify({ action: "propose", itemId: 52, text: "I found the tank for 81.83." }),
+  });
+  assert.equal(action, null);
+});
