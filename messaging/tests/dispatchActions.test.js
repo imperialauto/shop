@@ -95,3 +95,59 @@ test("owner texts go only to the owner and report each result", async () => {
   assert.deepEqual(f.sends, [{ to: OWNER, content: "Approval #1" }]);
   assert.deepEqual(f.outcomes, [{ key: "alert:1:m1", status: "sent" }]);
 });
+
+test("owner-approved link is queued only after checking real customer Quo texts and calls", async () => {
+  process.env.OWNER_TEXTS_ENABLED = "true";
+  const observed = [];
+  const sent = [];
+  const quo = {
+    listMessages: async ({ participants }) => ({
+      data: participants[0] === OWNER ? [] : [
+        { id: "customer-latest", createdAt: "2026-11-09T20:00:00Z", direction: "incoming" },
+      ],
+    }),
+    listCalls: async () => ({ data: [] }),
+    sendMessage: async (message) => sent.push(message),
+  };
+  const shopClient = {
+    dispatchOwnerAction: async (request) => {
+      observed.push(request);
+      return request.customerMessageId
+        ? { ownerReply: "Approval item #42 drafted. Nothing sent." }
+        : { customerThreadPhone: PHONE };
+    },
+  };
+  await handleIntakeResult({ result: { ownerQuestion: "prepare approval RO #17 fitment verified",
+    snapshot: { waitingOnYou: [] } }, messageId: "owner-link-msg", phone: OWNER, quo, shopClient });
+  assert.equal(observed.length, 2);
+  assert.equal(observed[0].ownerMessageId, "owner-link-msg");
+  assert.equal(observed[1].customerMessageId, "customer-latest");
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].to, OWNER);
+  assert.match(sent[0].content, /Nothing sent/);
+});
+
+test("no approval link is queued when current Quo call context fails closed", async () => {
+  process.env.OWNER_TEXTS_ENABLED = "true";
+  const observed = [];
+  const sent = [];
+  const quo = {
+    listMessages: async ({ participants }) => ({ data: participants[0] === OWNER ? [] : [
+      { id: "customer-latest", createdAt: "2026-11-09T20:00:00Z", direction: "incoming" },
+    ] }),
+    listCalls: async () => { throw new Error("Quo unavailable"); },
+    sendMessage: async (message) => sent.push(message),
+  };
+  const shopClient = {
+    dispatchOwnerAction: async (request) => {
+      observed.push(request);
+      return { customerThreadPhone: PHONE };
+    },
+  };
+  await handleIntakeResult({ result: { ownerQuestion: "prepare approval RO #17 fitment verified",
+    snapshot: { waitingOnYou: [] } }, messageId: "owner-link-msg", phone: OWNER, quo, shopClient });
+  assert.equal(observed.length, 1);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].to, OWNER);
+  assert.match(sent[0].content, /No approval link queued/);
+});
