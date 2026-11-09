@@ -94,3 +94,19 @@ test("a distinct owner-approved selling price can still be proposed", async () =
   });
   assert.equal(action.action, "propose");
 });
+
+test("private cost from a prior owner text is not repeated after 'draft a reply'", async () => {
+  const snapshot = { waitingOnYou: [{ id: 52, who: "2013 Ford Fusion" }] };
+  const history = [
+    { role: "user", content: "I sourced the tank for $81.83 my cost and can pick it up Thursday." },
+    { role: "assistant", content: "Great, the estimate still needs its selling price." },
+  ];
+  const unsafe = await interpretOwner({
+    question: "draft a reply", snapshot, history,
+    complete: async () => JSON.stringify({
+      action: "propose", itemId: 52,
+      text: "We found the tank for your Fusion for $81.83, and should have it Thursday.",
+    }),
+  });
+  assert.equal(unsafe, null);
+});
