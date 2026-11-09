@@ -28,6 +28,7 @@ async function offerMissedCall({ quo, shopClient, contacts, phoneNumberId, conve
     body: call.body,
     recovery: true,
     kind: "call",
+    callOutcome: call.body.startsWith("Voicemail:") || call.body.startsWith("Left a voicemail") ? "voicemail" : "missed",
     threadMessageId: newest?.id || "none",
     contactName: contacts ? await contacts.nameFor(phone) : null,
   });
