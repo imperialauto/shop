@@ -5,6 +5,8 @@
   <div class="wrap" style="max-width:560px">
     <div class="eyebrow">Repair status</div>
     <h1>Check on your vehicle</h1>
+    <p class="text-muted">Your reference is shown on the confirmation page after you book or request an estimate (for example, WEB-1234). Save it before closing that page. We do not currently send a confirmation text or email.</p>
+    <p class="text-muted">Can’t find your reference? Call or text <a href="tel:{{ business.phone_tel }}">{{ business.phone_display }}</a> and we’ll help locate your request. Please don’t submit another booking just to get a number.</p>
     {% if error %}<p class="alert alert-error" role="alert">{{ error }}</p>{% endif %}
     <form class="form" method="post" action="/site/status">
       <fieldset>
