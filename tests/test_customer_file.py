@@ -114,6 +114,19 @@ class CustomerFileTests(unittest.TestCase):
         self.assertEqual(calls, [])
         self.assertEqual(f["problems"], {"text": "no_phone", "call": "no_phone"})
 
+    def test_search_by_any_phone_format_or_full_name(self):
+        def override():
+            with self.Session() as db:
+                yield db
+        app.dependency_overrides[get_db] = override
+        client = TestClient(app)
+        client.post("/login", data={"username": "owner", "password": PASSWORD})
+        for term in ("6025550100", "+1 602-555-0100", "602.555.0100", "0100", "Pat Sample", "sample"):
+            page = client.get("/customers/", params={"search": term}).text
+            self.assertIn("Pat", page, term)
+            self.assertNotIn("Lee", page, term)
+        self.assertNotIn("Pat", client.get("/customers/", params={"search": "4805559999"}).text)
+
     def test_bridge_is_off_until_configured(self):
         with patch.dict("os.environ", {"MESSAGING_BRIDGE_URL": "", "OPERATIONS_BRIDGE_TOKEN": ""}):
             self.assertEqual(customer_file._bridge("/calls", "6025550100"), (None, "not_connected"))
