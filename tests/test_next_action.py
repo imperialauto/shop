@@ -83,6 +83,35 @@ class NextActionTests(unittest.TestCase):
                                     setattr(ro, "status", "complete")))
         self.assertEqual(self.step()["title"], "Nothing approved to bill")
 
+    def test_stuck_jobs_text_once_a_day_and_respects_the_off_switch(self):
+        from datetime import datetime, timedelta, timezone
+        from unittest.mock import patch
+        from zoneinfo import ZoneInfo
+        from app import alert_rules
+        from app.routes import dispatch
+        old = datetime(2026, 11, 2, 17, 0)
+        self.change(lambda db, ro: (setattr(ro, "created_at", old), setattr(ro, "updated_at", old),
+                                    db.add(LineItem(repair_order_id=5, description="Pads", unit_price=349, created_at=old))))
+        now = datetime(2026, 11, 9, 11, 30, tzinfo=ZoneInfo("America/Phoenix"))
+        with self.Session() as db:
+            rows = next_action.stuck_jobs(db, now.astimezone(timezone.utc))
+            self.assertEqual([r[0].id for r in rows], [5])
+            text = next_action.stuck_text(rows)
+        self.assertIn("#5 Pat Ford Focus: Ask the customer to approve 1 item (7d)", text)
+        with self.Session() as db, patch.object(dispatch, "OWNER_PHONE", "+16025550199"), \
+                patch.object(alert_rules, "rules", lambda: {**alert_rules.DEFAULTS, "off": []}):
+            keys = [m["key"] for m in dispatch.due_owner_messages(db, now)]
+            self.assertIn("stuck:2026-11-09", keys)
+            self.assertNotIn("stuck:2026-11-09", [m["key"] for m in dispatch.due_owner_messages(db, now)])  # reserved once
+        with self.Session() as db, patch.object(dispatch, "OWNER_PHONE", "+16025550199"), \
+                patch.object(alert_rules, "rules", lambda: {**alert_rules.DEFAULTS, "off": ["owner_stuck"]}):
+            later = now + timedelta(days=1)
+            self.assertNotIn(f"stuck:{later.date()}", [m["key"] for m in dispatch.due_owner_messages(db, later)])
+        # Fresh activity takes it off the list.
+        self.change(lambda db, ro: setattr(ro, "updated_at", datetime(2026, 11, 9, 17, 0)))
+        with self.Session() as db:
+            self.assertEqual(next_action.stuck_jobs(db, now.astimezone(timezone.utc)), [])
+
     def test_job_page_shows_one_button(self):
         client = TestClient(app, follow_redirects=False)
         client.post("/login", data={"username": "owner", "password": PASSWORD})
