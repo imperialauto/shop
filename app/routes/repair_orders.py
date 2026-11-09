@@ -1,3 +1,4 @@
+from html import escape
 from fastapi import APIRouter, Request, Depends, Form, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -337,7 +338,9 @@ def delete_line_item(request: Request, ro_id: int, li_id: int, db: Session = Dep
 
 @router.get("/{ro_id}/vehicles", response_class=HTMLResponse)
 def get_vehicles_for_customer(request: Request, ro_id: int, customer_id: int, db: Session = Depends(get_db)):
-    """HTMX endpoint — returns vehicle options for a selected customer"""
+    """HTMX endpoint — returns vehicle options only to authenticated staff."""
+    if not require_user(request, db):
+        return RedirectResponse("/login", status_code=302)
     vehicles = db.query(Vehicle).filter(Vehicle.customer_id == customer_id).all()
 
     add_link = (
@@ -362,7 +365,7 @@ def get_vehicles_for_customer(request: Request, ro_id: int, customer_id: int, db
             label += f" — {v.engine}"
         if v.license_plate:
             label += f" · {v.license_plate}"
-        opts += f'<option value="{v.id}">{label}</option>'
+        opts += f'<option value="{v.id}">{escape(label)}</option>'
 
     add_btn = (
         f'<a href="/vehicles/new?customer_id={customer_id}&next=job" '
