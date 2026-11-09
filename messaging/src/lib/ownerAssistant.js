@@ -140,6 +140,21 @@ function leaksPrivateAcquisitionCost(question, proposedText, history = []) {
 }
 
 
+// When the customer queue item is closed, the owner can name the exact RO.
+// We parse the ID and cost from one literal owner command without an LLM.
+// Example: "RO #17: add fuel tank for $81.83 my cost, pickup Thursday".
+function parseDirectPartCost(question) {
+  const text = String(question || "").trim();
+  const match = text.match(/^(?:RO|job)\s*#?\s*(\d{1,9})\s*[:,-]?\s*(?:add|save|record|attach)\s+(.{3,80}?)\s+(?:for\s+)?\$\s*([\d,]+(?:\.\d{1,2})?)\s+(?:my|our|shop|vendor|supplier)\s+cost\b(.*)$/i);
+  if (!match) return null;
+  const cost = Number(match[3].replace(/,/g, ""));
+  if (!Number.isFinite(cost) || cost <= 0 || cost > 50000) return null;
+  const eta = match[4].match(/\b(?:pickup|pick up|available)\s+(?:around\s+)?([A-Za-z]{4,12})\b/i);
+  return { action: "part_cost", itemId: null, roId: Number(match[1]),
+    partDescription: match[2].trim().slice(0, 120), unitCost: cost,
+    eta: eta ? eta[1] : "", evidence: text.slice(0, 400) };
+}
+
 // A parts cost can only be staged when the owner has actually given that
 // amount in a recent owner message and requests a record update. Otherwise
 // the model's number is untrusted; keep the database untouched.
@@ -198,6 +213,8 @@ const LATER_WORDS = /\b(later|remind|reminder|snooze|tomorrow|tonight|morning|af
 
 // Turns a plain-English text into one action. Anything unclear becomes a normal answer.
 async function interpretOwner({ question, snapshot, history = [], complete = defaultComplete }) {
+  const directPart = parseDirectPartCost(question);
+  if (directPart) return directPart;
   const approval = parsePrepareApprovalCommand(question);
   if (approval) return approval;
   const quote = parseQuotePartCommand(question);
@@ -244,4 +261,4 @@ async function jobNote({ conversation, complete = defaultComplete }) {
   }
 }
 
-module.exports = { interpretOwner, parseQuotePartCommand, parsePrepareApprovalCommand, jobNote, answerOwner, recentTurns, customerDetail, mentionedItems, FALLBACK, complete: defaultComplete };
+module.exports = { interpretOwner, parseDirectPartCost, parseQuotePartCommand, parsePrepareApprovalCommand, jobNote, answerOwner, recentTurns, customerDetail, mentionedItems, FALLBACK, complete: defaultComplete };
