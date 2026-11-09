@@ -12,7 +12,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
-from app import calendar_feed
+from app import calendar_feed, pricing
 from app.appointments import PHOENIX
 from app.auth import get_current_user, require_admin
 from app.database import get_db
@@ -22,7 +22,7 @@ from app.appointment_model import Appointment
 from app import alert_rules, approval_links, name_finder, next_action, quo_import, website_alerts
 from app.sending_pause import is_paused, pause, resume
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync, OPEN_STATUSES
-from app.models import Communication, Customer, PartsOrder, RepairOrder, Vehicle
+from app.models import Communication, Customer, LineItem, PartsOrder, RepairOrder, Vehicle
 from app.routes.internal_messaging import _find_customer_by_phone, _normalize_phone, require_internal_key
 
 router = APIRouter()
@@ -54,8 +54,8 @@ class DraftInput(BaseModel):
 
 
 class OwnerAction(BaseModel):
-    action: str = Field(pattern="^(propose|done|later|part_cost)$")
-    itemId: int
+    action: str = Field(pattern="^(propose|done|later|part_cost|quote_part)$")
+    itemId: int | None = None
     text: str | None = Field(default=None, max_length=1500)
     hours: int | None = Field(default=None, ge=1, le=168)
     # Only part_cost uses these; it never writes a billable estimate line.
@@ -65,6 +65,10 @@ class OwnerAction(BaseModel):
     unitCost: float | None = Field(default=None, gt=0, le=50000, allow_inf_nan=False)
     eta: str | None = Field(default=None, max_length=64)
     evidence: str | None = Field(default=None, max_length=400)
+    roId: int | None = Field(default=None, ge=1)
+    partPrice: float | None = Field(default=None, gt=0, le=50000, allow_inf_nan=False)
+    laborHours: float | None = Field(default=None, ge=0, le=40, allow_inf_nan=False)
+    rateType: str | None = Field(default=None, pattern="^(shop|mobile|diesel|cspr)$")
 
 
 class OutboundResult(BaseModel):
@@ -825,9 +829,100 @@ def _owner_part_cost(db: Session, request_: OwnerAction) -> dict:
     )}
 
 
+def _owner_quote_part(db: Session, request_: OwnerAction) -> dict:
+    """Build pending quote lines ONLY from explicit owner price + labor command.
+
+    Never sends a customer SMS, charges an invoice or queues a public link.
+    Pending items are non-billable until the customer approves them.
+    """
+    if not request_.ownerPhone or not _is_owner(request_.ownerPhone):
+        raise HTTPException(status_code=403, detail="Owner identity required")
+    message_id = (request_.ownerMessageId or "").strip()
+    if not message_id or db.query(DispatchEvent).filter(
+        DispatchEvent.quo_message_id == message_id).first() is None:
+        return {"ownerReply": "Owner message not verified. No quote was changed."}
+    ro_id, part_price, hours, kind = (
+        request_.roId, request_.partPrice, request_.laborHours, request_.rateType)
+    evidence = (request_.evidence or "").strip()
+    if not ro_id or part_price is None or hours is None or kind is None:
+        return {"ownerReply": "Please specify RO #, customer part price, labor hours and rate type."}
+    if re.search(r"\b(?:my|our|vendor|supplier|wholesale)\s+cost\b", evidence, re.I):
+        return {"ownerReply": "That is a private cost, not a customer quote. Nothing changed."}
+    if not re.search(rf"\b(?:RO|job)\s*#?\s*{ro_id}\b", evidence, re.I):
+        return {"ownerReply": "Confirm the RO number in your price instruction. Nothing changed."}
+    part_match = re.search(
+        r"\b(?:customer\s+(?:part\s+)?price|selling\s+price|retail\s+price)"
+        r"\s*(?:is|of|:|=|at)?\s*\$\s*([\d,]+(?:\.\d{1,2})?)", evidence, re.I)
+    hours_match = re.search(
+        r"\blabor\s*(?:hours?|time|:|=)?\s*(\d+(?:\.\d{1,2})?)\s*(?:hours?|hrs?|h)\b",
+        evidence, re.I)
+    if (not part_match or not hours_match
+            or abs(float(part_match.group(1).replace(",", "")) - part_price) > 0.001
+            or abs(float(hours_match.group(1)) - hours) > 0.001
+            or not re.search(rf"\b{kind}\b", evidence, re.I)):
+        return {"ownerReply": "Price, labor and rate were not verifiable from your text. Nothing changed."}
+
+    ro = db.query(RepairOrder).filter(
+        RepairOrder.id == ro_id,
+        RepairOrder.status != "delivered",
+    ).with_for_update().first()
+    if ro is None:
+        return {"ownerReply": "That repair order is missing or already delivered. Nothing changed."}
+    sourced = db.query(PartsOrder).filter(
+        PartsOrder.repair_order_id == ro.id,
+        PartsOrder.status == "sourcing",
+    ).with_for_update().all()
+    if len(sourced) != 1:
+        return {"ownerReply": "This RO needs exactly one verified sourcing part for this shortcut. Review the RO manually."}
+    part = sourced[0]
+    if part_price < part.cost:
+        return {"ownerReply": "The customer price is below the recorded shop cost. Review this job manually."}
+    audit_key = f"quote-ro:{ro.id}-owner-msg:{message_id}"
+    duplicate = db.query(DispatchAudit).filter(
+        DispatchAudit.action == "part_quote_staged",
+        DispatchAudit.detail == audit_key,
+    ).first()
+    if duplicate:
+        return {"ownerReply": f"Draft quote already saved to RO #{ro.id}; nothing duplicated."}
+
+    clean_part = (part.description or "Part").split(" — anticipated pickup")[0].strip()
+    descriptions = (f"Part: {clean_part}", f"Labor: install {clean_part}")
+    existing = db.query(LineItem).filter(
+        LineItem.repair_order_id == ro.id,
+        LineItem.description.in_(descriptions),
+    ).with_for_update().all()
+    if len(existing) > 2 or any(li.approval in ("approved", "declined") for li in existing):
+        return {"ownerReply": "Existing customer-approved or declined lines need manual review. Nothing changed."}
+    by_description = {li.description: li for li in existing}
+    for desc, typ, quantity, price, taxable in (
+        (descriptions[0], "part", 1, part_price, True),
+        (descriptions[1], "labor", hours, pricing.rate_for(kind), False),
+    ):
+        line = by_description.get(desc)
+        if line is None:
+            line = LineItem(repair_order_id=ro.id, description=desc, approval="pending")
+            db.add(line)
+        line.item_type = typ
+        line.quantity = quantity
+        line.unit_price = price
+        line.taxable = taxable
+        line.approval = "pending"
+    db.add(DispatchAudit(actor="owner_sms", action="part_quote_staged", detail=audit_key))
+    db.commit()
+    subtotal = part_price + hours * pricing.rate_for(kind)
+    return {"ownerReply": (
+        f"RO #{ro.id}: saved PENDING part USD {part_price:.2f} plus {hours:g} "
+        f"hours {kind} labor at USD {pricing.rate_for(kind):.2f}/hr "
+        f"(subtotal USD {subtotal:.2f}, tax extra if applicable). "
+        "Nothing sent or billed. Verify fitment and request approval from the RO."
+    )}
+
+
 @internal_router.post("/owner-action")
 def owner_action(request_: OwnerAction, db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
     """Plain-English owner replies. Nothing here texts a customer: sending still needs YES."""
+    if request_.action == "quote_part":
+        return _owner_quote_part(db, request_)
     if request_.action == "part_cost":
         return _owner_part_cost(db, request_)
     if request_.action == "done":
