@@ -159,7 +159,7 @@ class BookableService:
 # Owner approved these six on 2026-11-05, subject to final prices and times.
 # Final values come from PUBLIC_SERVICE_CATALOG. No price is ever assumed here.
 BOOKABLE_SERVICES: tuple[BookableService, ...] = (
-    BookableService("diagnostic", "Diagnostic appointment", "Check engine light, warning lights, noises or drivability. We find the cause and give you an estimate.", 60),
+    BookableService("diagnostic", "Basic in-shop diagnostic screening", "Initial screening for warning lights, noises or drivability concerns. Advanced diagnostic testing requires a separate estimate and your approval.", 60),
     BookableService("oil-service", "Oil and filter service", "Gas or diesel. Includes a quick look over the vehicle.", 60),
     BookableService("brake-inspection", "Brake inspection", "Pads, rotors, fluid and hardware checked, with an estimate if anything needs work.", 60),
     BookableService("ac-check", "A/C performance check", "We check how the A/C is cooling and look for leaks.", 60),
