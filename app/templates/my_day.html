@@ -4,7 +4,7 @@
 <h1 class="text-2xl font-bold text-yellow-400">My day</h1>
 <p class="text-sm text-stone-400 mb-4">{{ today }}</p>
 
-{% macro vehicle(ro) %}{{ ro.vehicle.year or '' }} {{ ro.vehicle.make or '' }} {{ ro.vehicle.model or '' }}{% endmacro %}
+{% macro vehicle(ro) %}{{ ro.vehicle.label }}{% endmacro %}
 
 <h2 class="font-bold mb-2">My jobs ({{ mine|length }})</h2>
 {% for ro in mine %}
@@ -37,9 +37,12 @@
 <h2 class="font-bold mt-6 mb-2">Not assigned yet ({{ unassigned|length }})</h2>
 <div class="card">
 {% for ro in unassigned %}
-  <a href="/ro/{{ ro.id }}" class="flex justify-between py-2 border-b border-stone-800" style="text-decoration:none;color:inherit;min-height:44px">
-    <span>{{ vehicle(ro) }} · {{ ro.status.replace('_', ' ').title() }}</span><span class="text-stone-400">#{{ ro.id }}</span>
-  </a>
+  <div class="flex items-center justify-between gap-3 py-2 border-b border-stone-800" style="min-height:44px">
+    <a href="/ro/{{ ro.id }}" style="text-decoration:none;color:inherit;flex:1;min-width:0">
+      <span>{{ vehicle(ro) }} · {{ ro.status.replace('_', ' ').title() }}</span> <span class="text-stone-400">#{{ ro.id }}</span>
+    </a>
+    {% if can_take %}<form method="post" action="/ro/{{ ro.id }}/assign?back=my-day"><input type="hidden" name="assigned_tech_id" value="{{ user.id }}"><button type="submit" class="btn-primary" style="min-height:44px">Take it</button></form>{% endif %}
+  </div>
 {% else %}<p class="text-sm text-stone-400">Nothing waiting.</p>{% endfor %}
 </div>
 {% endblock %}

@@ -280,6 +280,8 @@ def assign(request: Request, ro_id: int, db: Session = Depends(get_db), assigned
     else:
         ro.assigned_tech_id = None
     db.commit()
+    if request.query_params.get("back") == "my-day":
+        return RedirectResponse("/my-day", status_code=302)
     return RedirectResponse(f"/ro/{ro_id}", status_code=302)
 
 
