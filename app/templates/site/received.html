@@ -6,7 +6,7 @@
     <div class="eyebrow">Received</div>
     <h1>{% if kind == 'booking' %}You're booked{% else %}We have your request{% endif %}</h1>
     <p class="alert alert-ok" role="status">
-      {% if kind == 'booking' and item.time %}Confirmed: {{ item.service }} on {{ item.time }} (Arizona time).{% if item.price %} Price: {{ item.price }}{% if item.fee %}, plus a ${{ '%.2f'|format(item.fee) }} mobile fee{% endif %}.{% endif %}
+      {% if kind == 'booking' and item.time %}Confirmed: {{ item.service }} on {{ item.time }} (Arizona time).{% if item.price %} Price: {{ item.price }}{% if item.fee %}, plus a ${{ '%.2f'|format(item.fee) }} mobile fee{% endif %}.{% endif %}{% if item.starting %} Final price is confirmed with you after we check parts for your vehicle, before any work.{% endif %}
       {% elif kind == 'booking' %}Thanks. Your request is in.
       {% else %}Request received. This is not a booking yet: we will review it and contact you about an estimate and a time.{% endif %}
     </p>

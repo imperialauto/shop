@@ -12,7 +12,7 @@
     {% if not forms_open %}
       <p class="alert alert-info">Online booking opens soon. For now, call or text <a href="tel:{{ business.phone_tel }}">{{ business.phone_display }}</a> and we will get you scheduled.</p>
     {% elif unavailable %}
-      <p class="alert alert-info">Online booking is not available right now. Call or text <a href="tel:{{ business.phone_tel }}">{{ business.phone_display }}</a> and we will get you scheduled.</p>
+      <p class="alert alert-info">Online times aren't available right now. <a href="/site/estimate{% if service %}?about={{ service.slug }}{% endif %}">Send a request online</a> and we'll offer you a time.</p>
     {% endif %}
 
     {% if not service %}
@@ -23,12 +23,19 @@
         <a href="/site/book?service={{ s.slug }}"><div class="card"><h3>{{ s.name }}</h3><p>{{ s.description }}</p><span class="more">{{ s.price_label }} · About {{ s.minutes }} minutes · Choose →</span></div></a>
         {% endfor %}
       </div>
-      {% else %}
-      <p class="alert alert-info">Online booking opens once prices are final. Call or text <a href="tel:{{ business.phone_tel }}">{{ business.phone_display }}</a>.</p>
+      {% endif %}
+      {% if requestable %}
+      <h2 style="margin-top:24px">{% if services %}More services{% else %}Services{% endif %}</h2>
+      <p class="hint">These need a quick price check first. Send the request online and we'll reply with the price and a time.</p>
+      <div class="service-pick">
+        {% for s in requestable %}
+        <a href="/site/estimate?about={{ s.slug }}"><div class="card"><h3>{{ s.name }}</h3><p>{{ s.description }}</p><span class="more">Request online →</span></div></a>
+        {% endfor %}
+      </div>
       {% endif %}
     {% else %}
       <div class="panel chosen">
-        <div><div class="tag">Service</div><strong>{{ service.name }}</strong><div class="hint">{{ service.price_label }} · About {{ service.minutes }} minutes</div></div>
+        <div><div class="tag">Service</div><strong>{{ service.name }}</strong><div class="hint">{{ service.price_label }} · About {{ service.minutes }} minutes{% if service.price_type == 'starting' %} · Final price confirmed before work{% endif %}</div></div>
         <a href="/site/book">Change service</a>
       </div>
 
@@ -73,10 +80,25 @@
             </div>
             {% endfor %}
           {% else %}
-            <p class="alert alert-info" id="no-times">No online times fit this service in the next few weeks. Call or text <a href="tel:{{ business.phone_tel }}">{{ business.phone_display }}</a>, or <a href="/site/estimate">send an estimate request</a>.</p>
+            <p class="alert alert-info" id="no-times">No online times fit this service in the next few weeks. <a href="/site/estimate?about={{ service.slug }}">Send a request online</a> and we'll offer you a time.</p>
           {% endif %}
         </fieldset>
         {% if days %}
+          {% if service.tiers %}
+          <fieldset>
+            <legend>Your vehicle type</legend>
+            <div class="choices" role="radiogroup" aria-label="Vehicle type">
+              {% for key, label, amount in service.tiers %}
+              <label class="choice"><input type="radio" name="vehicle_class" value="{{ key }}" required {% if vehicle_class == key %}checked{% endif %}><span>{{ label }} · from ${{ '%.0f'|format(amount) }}</span></label>
+              {% endfor %}
+            </div>
+            <div style="margin-top:14px">
+              <label for="axles">Axles</label>
+              <select id="axles" name="axles"><option value="1" {% if axles == 1 %}selected{% endif %}>One axle (front or rear)</option><option value="2" {% if axles == 2 %}selected{% endif %}>Both axles</option></select>
+            </div>
+            <p class="hint" style="margin-top:10px">Starting prices per axle with new pads and rotors. We check parts for your exact vehicle and confirm the final price before any work. Nothing extra is done without your OK.</p>
+          </fieldset>
+          {% endif %}
           {% if zone %}
           <fieldset>
             <legend>Visit address</legend>

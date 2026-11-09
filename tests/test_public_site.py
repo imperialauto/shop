@@ -1,4 +1,5 @@
 """Public website pages and estimate requests. Made-up data only; nothing is sent to anyone."""
+import json
 import os
 import unittest
 from unittest.mock import patch
@@ -46,6 +47,26 @@ class InputRules(unittest.TestCase):
             self.assertIsNone(public_site.bookable_service("diagnostic"))
         with patch.dict(os.environ, {"PUBLIC_BOOKING_SERVICES": ""}):
             self.assertEqual(public_site.approved_bookable_services(), [])
+
+    def test_package_tiers_are_starting_prices_and_unpriced_services_are_requestable(self):
+        from app import business_settings
+        catalog = {"diagnostic": {"price": 75}, "brake-pads-rotors": {"tiers": {"sedan": 349, "suv": "399", "boat": 1, "pickup": 449}}}
+        with patch.dict(os.environ, {"PUBLIC_SERVICE_CATALOG": json.dumps(catalog)}), patch.object(business_settings, "_load", return_value={}):
+            brakes = public_site.bookable_service("brake-pads-rotors")
+            self.assertEqual(brakes.price_label, "From $349 per axle")
+            self.assertEqual([t[0] for t in brakes.tiers], ["sedan", "suv", "pickup"])  # unknown classes dropped
+            self.assertEqual(brakes.tier("suv")[2], 399.0)
+            self.assertEqual(public_site.bookable_service("diagnostic").price_label, "$75")
+            self.assertIn("ac-check", [s.slug for s in public_site.requestable_services()])
+            self.assertNotIn("diagnostic", [s.slug for s in public_site.requestable_services()])
+
+    def test_auto_times_setting(self):
+        from app import business_settings
+        cases = [('{"resources": ["bay-1"], "step_minutes": 30}', {"resources": ["bay-1"], "step_minutes": 30}),
+                 ('{"resources": ["bay-1"], "step_minutes": 7}', {}), ('{"resources": []}', {}), ("nonsense", {}), ("", {})]
+        for raw, expected in cases:
+            with patch.dict(os.environ, {"PUBLIC_AUTO_TIMES": raw}), patch.object(business_settings, "_load", return_value={}):
+                self.assertEqual(public_site.auto_times(), expected, raw)
 
     def test_forms_need_switch_and_writable_app(self):
         with patch.dict(os.environ, {"PUBLIC_FORMS_ENABLED": "true"}):

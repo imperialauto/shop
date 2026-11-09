@@ -18,6 +18,7 @@ import os
 import re
 import secrets
 import hashlib
+from dataclasses import dataclass
 import time
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
@@ -33,7 +34,7 @@ from app.appointment_model import Appointment, BookingSlot
 from app.appointments import PHOENIX, AppointmentValidationError, AppointmentWindow, validate_slot
 from app.database import get_db
 from app.models import Customer, RepairOrder, Vehicle
-from app.public_site import (BUSINESS, SERVICE_LINE_BY_SLUG, SERVICE_LINES, FormError, SubmissionLimiter,
+from app.public_site import (BUSINESS, SERVICE_LINE_BY_SLUG, SERVICE_LINES, VEHICLE_CLASSES, FormError, SubmissionLimiter, auto_times, requestable_services,
                              approved_bookable_services, bookable_service, bookable_services, booking_closed_days, clean_text, format_phone,
                              forms_enabled, indexable, mobile_zone, normalize_email, normalize_mileage, normalize_phone,
                              normalize_vin, normalize_year, phone_digits, NAME_LIMIT, TEXT_LIMIT)
@@ -294,10 +295,89 @@ def form_values(form) -> dict:
 
 
 # ── Online booking ───────────────────────────────────────────────────────────
-def total_price(service, zone) -> float | None:
-    if service.price is None or (zone and zone.fee is None):
+def package_price(service, vehicle_class: str = "", axles: int = 1) -> float | None:
+    """Starting price for a package: the vehicle-class tier times the axles. Plain services use their price."""
+    if service.tiers:
+        tier = service.tier(vehicle_class)
+        return None if tier is None else tier[2] * max(1, min(axles, 2))
+    return service.price
+
+
+def total_price(service, zone, vehicle_class: str = "", axles: int = 1) -> float | None:
+    price = package_price(service, vehicle_class, axles)
+    if price is None or (zone and zone.fee is None):
         return None
-    return service.price + (zone.fee if zone else 0)
+    return price + (zone.fee if zone else 0)
+
+
+@dataclass(frozen=True)
+class Opening:
+    """A time a customer can pick: a published slot, or one generated from shop hours."""
+    id: str
+    resource_id: str
+    starts_at: datetime
+
+
+def generated_openings(now: datetime) -> list[Opening]:
+    setup = auto_times()
+    if not setup:
+        return []
+    try:
+        hours = configured_hours()
+    except HTTPException:
+        return []
+    found = []
+    today = now.astimezone(PHOENIX).date()
+    for offset in range(BOOKING_DAYS + 1):
+        day = today + timedelta(days=offset)
+        if day.weekday() not in hours:
+            continue
+        opens, closes = hours[day.weekday()]
+        start = datetime.combine(day, opens, tzinfo=PHOENIX)
+        end = datetime.combine(day, closes, tzinfo=PHOENIX)
+        while start < end:
+            for index, resource in enumerate(setup["resources"]):
+                found.append(Opening(f"a{index}-{int(start.timestamp())}", resource, start.astimezone(timezone.utc)))
+            start += timedelta(minutes=setup["step_minutes"])
+    return found
+
+
+def openings(db: Session, now: datetime) -> list[Opening]:
+    published = [Opening(str(s.id), s.resource_id, utc(s.starts_at)) for s in open_slots(db, now)]
+    taken = {(o.resource_id, o.starts_at) for o in published}
+    extra = [o for o in generated_openings(now) if (o.resource_id, o.starts_at) not in taken]
+    return sorted(published + extra, key=lambda o: (o.starts_at, o.resource_id))
+
+
+def resolve_opening(db: Session, slot_id: str, lock: bool = False) -> Opening | None:
+    """The chosen time, re-checked on the server. Generated times must still line up with today's settings."""
+    slot_id = (slot_id or "").strip()
+    if slot_id.startswith("a"):
+        setup = auto_times()
+        try:
+            index, stamp = slot_id[1:].split("-", 1)
+            resource = setup["resources"][int(index)]
+            start = datetime.fromtimestamp(int(stamp), tz=timezone.utc)
+        except (KeyError, ValueError, IndexError, TypeError):
+            return None
+        local = start.astimezone(PHOENIX)
+        if local.second or (local.hour * 60 + local.minute) % setup["step_minutes"]:
+            return None
+        if lock:
+            db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:resource))"), {"resource": resource})
+        return Opening(slot_id, resource, start)
+    if not slot_id.isdigit():
+        return None
+    slot = db.get(BookingSlot, int(slot_id))
+    if slot is None or slot.removed_at is not None:
+        return None
+    if lock:
+        # Same transaction-scoped lock as the staff booking API, released on commit or rollback.
+        db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:resource))"), {"resource": slot.resource_id})
+        db.refresh(slot)
+        if slot.removed_at is not None:
+            return None
+    return Opening(str(slot.id), slot.resource_id, utc(slot.starts_at))
 
 
 def booking_window(slot: BookingSlot, service, zone) -> AppointmentWindow:
@@ -335,8 +415,8 @@ def booking_times(db: Session, service, zone) -> "OrderedDict[str, list[dict]]":
     latest = now + timedelta(days=BOOKING_DAYS)
     days: OrderedDict[str, list[dict]] = OrderedDict()
     busy = calendar_busy(now)
-    for slot in open_slots(db, now):
-        start = utc(slot.starts_at)
+    for slot in openings(db, now):
+        start = slot.starts_at
         if not earliest <= start <= latest or not fits(db, booking_window(slot, service, zone), busy):
             continue
         local = start.astimezone(PHOENIX)
@@ -371,9 +451,14 @@ def booking_page(request: Request, db: Session, status_code: int = 200, error: s
     zip_code = clean_text(values.get("zip") or query.get("zip"), 5)
     zone = mobile_zone(zip_code) if where == "mobile" else None
     ready = bool(service) and not reason and (where == "shop" or zone is not None)
-    total = total_price(service, zone) if service else None
+    vehicle_class = values.get("vehicle_class") or query.get("vehicle_class", "")
+    axles = 2 if (values.get("axles") or query.get("axles")) == "2" else 1
+    if service and service.tiers and not service.tier(vehicle_class):
+        vehicle_class = ""
+    total = total_price(service, zone, vehicle_class, axles) if service else None
     return render(request, "site/book.html", status_code=status_code, form_page=True, active="book",
-                  services=bookable_services(), service=service, days=booking_times(db, service, zone) if ready else {},
+                  services=bookable_services(), requestable=requestable_services(), vehicle_class=vehicle_class, axles=axles,
+                  service=service, days=booking_times(db, service, zone) if ready else {},
                   where=where, zip_code=zip_code, zone=zone, total=total, ready=ready,
                   unavailable=reason, error=error, values=values, contact_options=CONTACT_OPTIONS)
 
@@ -413,10 +498,12 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
                 raise FormError("Enter the street address for the visit.")
         elif where != "shop":
             raise FormError("Choose the shop or your location.")
-        try:
-            slot_id = int(values.get("slot_id", ""))
-        except ValueError:
-            raise FormError("Choose a time.") from None
+        slot_id = values.get("slot_id", "").strip()
+        if not slot_id:
+            raise FormError("Choose a time.")
+        vehicle_class, axles = values.get("vehicle_class", ""), 2 if values.get("axles") == "2" else 1
+        if service.tiers and not service.tier(vehicle_class):
+            raise FormError("Choose your type of vehicle.")
     except FormError as exc:
         log.info("site_form_rejected form=booking reason=%s", str(exc)[:60])  # the message only, never what was typed
         return booking_page(request, db, 422, str(exc), values)
@@ -430,14 +517,12 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
 
     taken = "That time was just taken. Please choose another."
     try:
-        slot = db.get(BookingSlot, slot_id)
-        if slot is None or slot.removed_at is not None:
+        slot = resolve_opening(db, slot_id, lock=True)
+        if slot is None:
             raise FormError(taken)
-        # Same transaction-scoped lock as the staff booking API, released on commit or rollback.
-        db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:resource))"), {"resource": slot.resource_id})
-        db.refresh(slot)
-        starts_at = utc(slot.starts_at)
-        if slot.removed_at is not None or starts_at < datetime.now(timezone.utc) + timedelta(minutes=lead_minutes()):
+        starts_at = slot.starts_at
+        if starts_at < datetime.now(timezone.utc) + timedelta(minutes=lead_minutes()) \
+                or starts_at > datetime.now(timezone.utc) + timedelta(days=BOOKING_DAYS + 1):
             raise FormError(taken)
         candidate = booking_window(slot, service, zone)
         if not fits(db, candidate, calendar_busy(datetime.now(timezone.utc))):
@@ -445,10 +530,16 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
         customer, matched = find_or_create_customer(db, person)
         vehicle = find_or_create_vehicle(db, customer, matched, vehicle_details)
         label = phoenix_label(starts_at)
-        total = total_price(service, zone)
+        total = total_price(service, zone, vehicle_class, axles)
+        package = ""
+        if service.tiers:
+            package = (f"Package: {VEHICLE_CLASSES[vehicle_class]}, {axles} axle{'s' if axles == 2 else ''}. "
+                       f"Starting price shown ${package_price(service, vehicle_class, axles):,.2f}. Confirm VIN parts fitment, "
+                       "vendor cost, labor time and margin, then confirm the final price with the customer before work.")
         concern = concern_text(f"Online booking: {service.name} on {label}.", person, matched, [
+            package,
             f"Mobile visit: {street}, {values.get('zip')}. Travel {zone.travel_minutes} minutes each way." if zone else "At the shop.",
-            f"Price shown: {service.price_label}." + (f" Total shown: ${total:,.2f}." if total is not None else " No final price yet."),
+            f"Price shown: {service.price_label}." + (f" {'Starting total' if service.price_type == 'starting' else 'Total'} shown: ${total:,.2f}." if total is not None else " No final price yet."),
             f"Customer notes: {notes}" if notes else "",
             f"Mileage given: {vehicle_details['mileage']:,}" if vehicle_details["mileage"] else "",
         ])
@@ -458,8 +549,10 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
                            travel_before_minutes=candidate.travel_before_minutes, buffer_after_minutes=candidate.buffer_after_minutes)
         db.add(appointment)
         db.flush()
-        item = website_alerts.queue(db, order, "booking", f"Booked {service.name}, {label}{', mobile visit' if zone else ''}.",
-                                    vehicle_text=" ".join(str(p) for p in (vehicle_details["year"], vehicle_details["make"], vehicle_details["model"]) if p))
+        item = website_alerts.queue(db, order, "booking", f"Booked {service.name}, {label}{', mobile visit' if zone else ''}."
+                                    + (" Starting price: check parts for this VIN and confirm the final price." if service.price_type == "starting" else ""),
+                                    vehicle_text=" ".join(str(p) for p in (vehicle_details["year"], vehicle_details["make"], vehicle_details["model"]) if p),
+                                    review=service.price_type == "starting")
         lead_lifecycle.intake_from_website(db, order, item, appointment)
         db.commit()
     except FormError as exc:
@@ -468,8 +561,12 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
     except Exception:
         db.rollback()
         raise
+    shown = package_price(service, vehicle_class, axles)
+    price_text = service.price_label if not service.tiers else (
+        f"From ${shown:,.2f} for {axles} axle{'s' if axles == 2 else ''} ({VEHICLE_CLASSES[vehicle_class].lower()})".replace(".00", ""))
     request.session["site_booking"] = {"ref": f"WEB-{order.id}", "service": service.name, "time": label,
-                                       "price": service.price_label, "fee": (zone.fee or 0) if zone else 0, "token": order.public_token}
+                                       "price": price_text, "starting": service.price_type == "starting",
+                                       "fee": (zone.fee or 0) if zone else 0, "token": order.public_token}
     remember_submission(request, resend, "booking", request.session["site_booking"])
     return RedirectResponse("/site/book/received", status_code=303)
 
@@ -488,6 +585,12 @@ def estimate_page(request: Request, status_code: int = 200, error: str = "", val
     values = values or {}
     if not values.get("service_line") and request.query_params.get("service") in SERVICE_LINE_BY_SLUG:
         values["service_line"] = request.query_params["service"]
+    # Coming from a standard service without a set price: carry the choice over so nothing is typed twice.
+    about = next((s for s in approved_bookable_services() if s.slug == request.query_params.get("about")), None)
+    if about and not values.get("description"):
+        values["description"] = f"I'd like to book: {about.name}. "
+        values.setdefault("service_line", "auto-repair")
+        values["about"] = about.slug
     return render(request, "site/estimate.html", status_code=status_code, form_page=True, active="estimate",
                   error=error, values=values, where_options=WHERE_OPTIONS, contact_options=CONTACT_OPTIONS)
 
