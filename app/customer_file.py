@@ -61,7 +61,8 @@ def _money(value) -> str:
     return f"${float(value or 0):,.2f}"
 
 
-def build(db: Session, customer: Customer, fetch=_bridge) -> dict:
+def build(db: Session, customer: Customer, fetch=None) -> dict:
+    fetch = fetch or _bridge
     phone = digits(customer.phone)
     entries, problems = [], {}
 
