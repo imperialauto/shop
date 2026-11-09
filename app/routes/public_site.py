@@ -34,7 +34,7 @@ from app.appointment_model import Appointment, BookingSlot
 from app.appointments import PHOENIX, AppointmentValidationError, AppointmentWindow, validate_slot
 from app.database import get_db
 from app.models import Customer, RepairOrder, Vehicle
-from app.public_site import (BUSINESS, SERVICE_LINE_BY_SLUG, SERVICE_LINES, VEHICLE_CLASSES, FormError, SubmissionLimiter, auto_times, requestable_services,
+from app.public_site import (BUSINESS, ROADSIDE_LINES, SERVICE_LINE_BY_SLUG, SERVICE_LINES, VEHICLE_CLASSES, line_actions, FormError, SubmissionLimiter, auto_times, requestable_services,
                              approved_bookable_services, bookable_service, bookable_services, booking_closed_days, clean_text, format_phone,
                              forms_enabled, indexable, mobile_zone, normalize_email, normalize_mileage, normalize_phone,
                              normalize_vin, normalize_year, phone_digits, NAME_LIMIT, TEXT_LIMIT)
@@ -108,7 +108,7 @@ def page_headers(form_page: bool = False) -> dict:
 
 def render(request: Request, name: str, status_code: int = 200, form_page: bool = False, **context):
     base = {
-        "request": request, "business": BUSINESS, "service_lines": SERVICE_LINES,
+        "request": request, "business": BUSINESS, "service_lines": SERVICE_LINES, "line_actions": line_actions,
         "indexable": indexable(), "forms_open": forms_enabled(request.app.state.read_only),
         "year": datetime.now(PHOENIX).year,
     }
@@ -133,7 +133,8 @@ def service_detail(request: Request, slug: str):
     line = SERVICE_LINE_BY_SLUG.get(slug)
     if line is None:
         raise HTTPException(404, "Not found")
-    return render(request, "site/service.html", active="services", line=line)
+    return render(request, "site/service.html", active="services", line=line, actions=line_actions(slug),
+                  roadside=slug in ROADSIDE_LINES)
 
 
 @router.get("/contact", response_class=HTMLResponse)

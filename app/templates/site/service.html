@@ -8,8 +8,8 @@
     <h1>{{ line.name }}</h1>
     <p class="lead">{{ line.intro }}</p>
     <div class="actions">
-      <a class="btn btn-gold" href="/site/estimate?service={{ line.slug }}">Request an estimate</a>
-      <a class="btn btn-outline" href="tel:{{ business.phone_tel }}">Call {{ business.phone_display }}</a>
+      {% for label, href in actions %}<a class="btn {{ 'btn-gold' if loop.first else 'btn-outline' }}" href="{{ href }}">{{ label }}</a>{% endfor %}
+      {% if roadside %}<a class="btn btn-outline" href="tel:{{ business.phone_tel }}">Emergency? Call {{ business.phone_display }}</a>{% endif %}
     </div>
   </div>
 </section>
@@ -21,11 +21,10 @@
       {% if line.note %}<p class="note">{{ line.note }}</p>{% endif %}
     </div>
     <div class="panel">
-      <h3>Ready to come in?</h3>
-      <p>Standard services can be booked online. Complex repairs start with an estimate.</p>
+      <h3>{% if roadside %}Need help now?{% else %}Ready to come in?{% endif %}</h3>
+      <p>{% if roadside %}Send your location online and we'll call you to confirm before anything is dispatched.{% else %}Standard services can be booked online. Complex repairs start with an online estimate request, and you approve the price before work begins.{% endif %}</p>
       <div class="actions" style="margin-top:0">
-        <a class="btn btn-purple" href="/site/book">Book online</a>
-        <a class="btn btn-light" href="/site/estimate?service={{ line.slug }}">Get an estimate</a>
+        {% for label, href in actions %}<a class="btn {{ 'btn-purple' if loop.first else 'btn-light' }}" href="{{ href }}">{{ label }}</a>{% endfor %}
       </div>
     </div>
   </div>

@@ -85,7 +85,7 @@ SERVICE_LINES: tuple[ServiceLine, ...] = (
         "Most work is done at the shop. When a vehicle cannot get here, ask us about an on-site visit or a bring-in.",
         ("Class 8 semi roadside: starters, alternators, belts, water pumps and air systems",
          "Selected on-site repairs", "Shop transport for vehicles coming in for major repairs"),
-        note="Mobile and roadside work is quoted by request. Call or send an estimate request.",
+        note="Mobile and roadside work is quoted by request. Send a roadside request online; call for emergencies.",
     ),
     ServiceLine(
         "towing", "Towing and roadside dispatch",
@@ -112,6 +112,22 @@ SERVICE_LINES: tuple[ServiceLine, ...] = (
 )
 
 SERVICE_LINE_BY_SLUG = {line.slug: line for line in SERVICE_LINES}
+
+# The main online action for each service line. Phone stays available, but never as the main path,
+# except as the emergency option on roadside and towing.
+ROADSIDE_LINES = {"towing", "mobile-roadside"}
+
+
+def line_actions(slug: str) -> list[tuple[str, str]]:
+    """[(label, href)], main action first."""
+    estimate = ("Request an estimate", f"/site/estimate?service={slug}")
+    if slug in ROADSIDE_LINES:
+        return [("Request roadside help", "/site/roadside"), estimate]
+    if slug == "auto-repair":
+        return [("Book a diagnostic", "/site/book?service=diagnostic"), estimate]
+    if slug in ("diesel", "european-sprinter", "dps6-transmission", "fleet"):
+        return [estimate, ("Book a diagnostic", "/site/book?service=diagnostic")]
+    return [("Request online", f"/site/estimate?service={slug}")]
 
 
 @dataclass(frozen=True)

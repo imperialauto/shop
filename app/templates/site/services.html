@@ -13,6 +13,7 @@
         <h3>{{ line.name }}</h3>
         <p>{{ line.short }}</p>
         <a class="more" href="/site/services/{{ line.slug }}">Details →</a>
+        {% set first = line_actions(line.slug)[0] %}<a class="more" href="{{ first[1] }}" style="margin-left:14px">{{ first[0] }} →</a>
       </div>
       {% endfor %}
     </div>

@@ -121,6 +121,18 @@ class PublicPages(unittest.TestCase):
         self.assertEqual(self.client.get("/site/services/not-a-service").status_code, 404)
         self.assertEqual(self.client.get("/static/site.css").status_code, 200)
 
+    def test_every_service_leads_to_an_online_action(self):
+        import re
+        for line in public_site.SERVICE_LINES:
+            page = self.client.get(f"/site/services/{line.slug}").text
+            hero = page.split('class="hero"')[1].split("</section>")[0]
+            buttons = re.findall(r'<a class="btn[^"]*" href="([^"]+)"', hero)
+            self.assertTrue(buttons and buttons[0].startswith("/site/"), (line.slug, buttons))  # main action is online
+            phones = [b for b in buttons if b.startswith("tel:")]
+            self.assertEqual(bool(phones), line.slug in public_site.ROADSIDE_LINES, line.slug)  # phone only as emergency
+        home = self.client.get("/site/").text
+        self.assertIn('href="/site/roadside"', home)
+
     def test_indexable_after_cutover_setting(self):
         with patch.dict(os.environ, {"PUBLIC_SITE_INDEXABLE": "true"}):
             response = self.client.get("/site/")
