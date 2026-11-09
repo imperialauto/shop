@@ -38,7 +38,7 @@
     <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Vehicles ({{ customer.vehicles|length }})</h3>
     {% for v in customer.vehicles %}
     <div class="flex items-center justify-between py-1">
-      <span class="text-sm">{{ v.year }} {{ v.make }} {{ v.model }}{% if v.engine %} — {{ v.engine }}{% endif %}</span>
+      <span class="text-sm">{{ v.label }}{% if v.engine %} — {{ v.engine }}{% endif %}</span>
       <a href="/vehicles/{{ v.id }}/edit" class="text-xs text-stone-500 hover:text-gold-400">edit</a>
     </div>
     {% else %}
