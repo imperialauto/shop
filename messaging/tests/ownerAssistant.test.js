@@ -208,3 +208,15 @@ test("an estimate link command needs exact RO and explicit fitment verification"
     assert.equal(parsePrepareApprovalCommand(input), null, input);
   }
 });
+
+test("owner can safely address an RO directly when its conversation item is closed", async () => {
+  const { parseDirectPartCost } = require("../src/lib/ownerAssistant");
+  const command = "RO #17: add fuel tank for $81.83 my cost, pickup Thursday";
+  assert.deepEqual(parseDirectPartCost(command), {
+    action: "part_cost", itemId: null, roId: 17, partDescription: "fuel tank",
+    unitCost: 81.83, eta: "Thursday", evidence: command,
+  });
+  assert.equal(parseDirectPartCost("add fuel tank $81.83 my cost"), null);
+  assert.equal(parseDirectPartCost("RO #17: add fuel tank for $81.83 customer price"), null);
+  assert.equal(parseDirectPartCost("RO #17: add fuel tank for $0 my cost"), null);
+});
