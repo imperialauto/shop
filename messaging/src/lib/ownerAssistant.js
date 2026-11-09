@@ -121,17 +121,21 @@ async function answerOwner({ question, snapshot, history = [], complete = defaul
 // Never let an internal acquisition cost become a YES-sendable customer price.
 // This is a deterministic check; prompt instructions alone are insufficient.
 function leaksPrivateAcquisitionCost(question, proposedText, history = []) {
-  // Read owner turns only. The internal price may have been disclosed in an
-  // earlier SMS, while the latest owner message is simply "draft a reply".
-  const source = [
+  const ownerTurns = [
     ...history.filter((turn) => turn.role === "user").map((turn) => String(turn.content || "")),
     String(question || ""),
-  ].join(" ");
-  const privateCost = /\b(?:my|our|shop|vendor|supplier|wholesale|purchase)\s+(?:(?:parts?|tank|item|unit)\s+)?cost\b|\b(?:cost\s+(?:me|us)|(?:i|we)\s+paid)\b/i;
-  if (!privateCost.test(source)) return false;
-  const prices = source.match(/\$\s*[\d,]+(?:\.\d{1,2})?/g) || [];
-  const normalized = String(proposedText || "").replace(/[$,\s]/g, "");
-  return prices.some((price) => normalized.includes(price.replace(/[$,\s]/g, "")));
+  ];
+  const privateCost = /\b(?:my|our|shop|vendor|supplier|wholesale|purchase)\s+(?:(?:parts?|tank|item|unit|acquisition)\s+)?cost\b|\b(?:cost\s+(?:me|us)|(?:i|we)\s+paid)\b/i;
+  const amounts = /\b\d+(?:,\d{3})*(?:\.\d+)?\b/g;
+  const numberValue = (amount) => Number(amount.replace(/,/g, ""));
+  const proposedAmounts = new Set((proposedText.match(amounts) || []).map(numberValue));
+
+  // Treat a cost-marked owner text as private. A price in a separate owner
+  // turn can still be quoted unless it matches an earlier private amount.
+  return ownerTurns.some((turn) => {
+    if (!privateCost.test(turn)) return false;
+    return (turn.match(amounts) || []).some((amount) => proposedAmounts.has(numberValue(amount)));
+  });
 }
 
 const LATER_WORDS = /\b(later|remind|reminder|snooze|tomorrow|tonight|morning|afternoon|evening|hours?|hrs?|min(ute)?s?|after|until|wait|in \d)\b/i;
