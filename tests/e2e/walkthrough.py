@@ -468,7 +468,19 @@ with sync_playwright() as p:
         context.close()
     browser.close()
 (OUT / "report.json").write_text(json.dumps(results, indent=1))
-bad = [r for r in results if r.get("ok") is False or r.get("status", 200) >= 400 or r.get("overflow", 0) > 2]
-print(json.dumps(bad, indent=1))
-print(f"{len(results)} checks, {len(bad)} failures")
-sys.exit(1 if [r for r in bad if r.get("page") != "missing-page"] else 0)
+# A nonexistent repair order is deliberately probed on each device. A 404 is
+# the expected security/error-handling result, not a failed acceptance check.
+# Fail the walkthrough if that page unexpectedly succeeds or gives a 5xx.
+unexpected = []
+expected_not_found = []
+for result in results:
+    if result.get("page") == "missing-page":
+        if result.get("status") == 404:
+            expected_not_found.append(result)
+        else:
+            unexpected.append(result)
+    elif result.get("ok") is False or result.get("status", 200) >= 400 or result.get("overflow", 0) > 2:
+        unexpected.append(result)
+print(json.dumps(unexpected, indent=1))
+print(f"{len(results)} checks, {len(unexpected)} failures, {len(expected_not_found)} expected 404 probes")
+sys.exit(1 if unexpected else 0)
