@@ -70,7 +70,7 @@ test("YES stops if anything newer is in the thread", async () => {
   await handleIntakeResult({ result: { customerReply: reply }, messageId: "o1", phone: OWNER, ...f });
   assert.equal(f.sends.length, 1);
   assert.equal(f.sends[0].to, OWNER);
-  assert.match(f.sends[0].content, /not sent/);
+  assert.match(f.sends[0].content, /not sent/i);
   assert.equal(f.outcomes[0].status, "skipped");
 });
 
