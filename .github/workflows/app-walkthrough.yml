@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: ['main']
   push:
-    branches: ['main', 'claude/launch-audit', 'claude/login-security', 'claude/staff-accounts', 'claude/public-site-booking', 'claude/settings-center', 'claude/alert-center', 'claude/staff-home', 'claude/price-rates', 'claude/line-approvals', 'claude/home-summary', 'claude/imperial-design', 'claude/purple-grey', 'claude/job-page-one-step', 'claude/site-purple-grey', 'claude/website-leads', 'claude/my-day-take']
+    branches: ['main', 'claude/**']
 jobs:
   walkthrough:
     runs-on: ubuntu-latest
@@ -51,7 +51,6 @@ jobs:
       - name: Show server errors
         if: always()
         run: grep -nE "Traceback|Error|error" server.log | head -40 || true
-      # Artifacts are retained per run; do not force-push a shared results branch from CI.
       - uses: actions/upload-artifact@v4
         if: always()
         with:

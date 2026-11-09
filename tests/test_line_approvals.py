@@ -86,6 +86,13 @@ class LineApprovalTests(unittest.TestCase):
         with self.Session() as db:
             self.assertEqual(db.query(Invoice).one().subtotal, 449)
 
+    def test_approval_pages_are_never_cached_or_indexed(self):
+        page = self.customer.get("/sign/ro/made-up-token")
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.headers["cache-control"], "no-store")
+        self.assertIn("noindex", page.headers["x-robots-tag"])
+        self.assertEqual(self.customer.get("/sign/ro/wrong-token").status_code, 404)
+
     def test_decisions_cannot_be_changed_by_resubmitting(self):
         self.owner.post(f"/ro/{self.job}/request-approval")
         ids = self.ids()

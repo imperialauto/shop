@@ -54,12 +54,26 @@
       <div class="status-pill status-{{ ro.status }}">{{ ro.status.replace('_', ' ').title() }}</div>
     </div>
 
-    {% if ro.concern %}
     <div style="margin-top:14px;">
-      <div class="label">Concern on File</div>
-      <div class="concern-text">{{ ro.concern }}</div>
+      <div class="label">Reference</div>
+      <div style="font-size:18px; font-weight:700; letter-spacing:0.04em; color:var(--imp-gold);">{{ reference }}</div>
     </div>
-    {% endif %}
+
+    <div style="margin-top:14px;">
+      {% if visit %}
+      <div class="label">Booked</div>
+      <div style="font-size:15px; color:var(--imp-ink);">{{ visit_label }} (Arizona time){% if visit.location == 'mobile' %}, at your location{% else %}, at the shop{% endif %}</div>
+      <a href="/status/{{ ro.public_token }}/visit.ics" style="display:inline-flex; align-items:center; min-height:44px; margin-top:4px; font-size:14px; color:var(--imp-link);">Add to my calendar</a>
+      {% elif ro.status == 'intake' %}
+      <div class="label">Next step</div>
+      <div style="font-size:14px; color:var(--imp-muted);">Request received, not booked yet. We'll review it and contact you about an estimate and a time.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label">Keep this page</div>
+    <div style="font-size:13px; color:var(--imp-muted);">Bookmark this page or add it to your home screen to check back any time. It is private to you, so please don't share the link.</div>
   </div>
 
   {% set pending = ro.line_items|selectattr('approval', 'equalto', 'pending')|list %}

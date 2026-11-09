@@ -11,6 +11,8 @@ import os
 import secrets
 
 router = APIRouter()
+# Customer pages reached by a private link: never cached or indexed.
+PRIVATE_PAGE = {"Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow"}
 templates = Jinja2Templates(
     directory=os.path.join(os.path.dirname(os.path.dirname(__file__)), "templates")
 )
@@ -23,7 +25,7 @@ def _sign_page(request, ro, error=None, status=200):
     subtotal = sum(li.total for li in ro.line_items if li.approval in (None, "approved", "pending"))
     return templates.TemplateResponse("sign_ro.html", {
         "request": request, "ro": ro, "subtotal": subtotal, "pending": pending, "error": error,
-    }, status_code=status)
+    }, status_code=status, headers=PRIVATE_PAGE)
 
 
 @router.get("/ro/{token}", response_class=HTMLResponse)
@@ -67,7 +69,7 @@ async def sign_ro_submit(request: Request, token: str, db: Session = Depends(get
 
     return templates.TemplateResponse("sign_complete.html", {
         "request": request, "ro": ro, "doc_type": "estimate",
-    })
+    }, headers=PRIVATE_PAGE)
 
 
 # ── Invoice signing (at pickup / final bill) ────────────────────────────────
@@ -79,7 +81,7 @@ def sign_invoice_page(request: Request, invoice_id: int, token: str = "", db: Se
         raise HTTPException(status_code=404, detail="Not found")
     return templates.TemplateResponse("sign_invoice.html", {
         "request": request, "invoice": invoice, "ro": invoice.repair_order,
-    })
+    }, headers=PRIVATE_PAGE)
 
 
 @router.post("/invoice/{invoice_id}", response_class=HTMLResponse)
@@ -96,7 +98,7 @@ async def sign_invoice_submit(request: Request, invoice_id: int, token: str = ""
         return templates.TemplateResponse("sign_invoice.html", {
             "request": request, "invoice": invoice, "ro": invoice.repair_order,
             "error": "Please draw your signature before submitting.",
-        })
+        }, headers=PRIVATE_PAGE)
 
     invoice.customer_signature = signature_data
     invoice.customer_approved_by = approved_by or "Customer"
@@ -106,5 +108,5 @@ async def sign_invoice_submit(request: Request, invoice_id: int, token: str = ""
 
     return templates.TemplateResponse("sign_complete.html", {
         "request": request, "ro": invoice.repair_order, "doc_type": "invoice",
-    })
+    }, headers=PRIVATE_PAGE)
 

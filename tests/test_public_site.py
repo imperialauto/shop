@@ -78,6 +78,7 @@ class PublicPages(unittest.TestCase):
         app.dependency_overrides[get_db] = override
         self.read_only = app.state.read_only
         public_routes.limiter.seen.clear()
+        public_routes.STATUS_LIMIT.seen.clear()
         self.client = TestClient(app)
 
     def tearDown(self):
@@ -144,9 +145,12 @@ class PublicPages(unittest.TestCase):
             response = self.client.post("/site/estimate", data=self.estimate(), follow_redirects=False)
             self.assertEqual(response.status_code, 303, response.text)
             received = self.client.get(response.headers["location"])
-            self.assertIn("Reference WEB-", received.text)
-            # The confirmation is shown once, then the page sends visitors back to the form.
-            self.assertEqual(self.client.get("/site/estimate/received", follow_redirects=False).status_code, 303)
+            self.assertIn("Your reference", received.text)
+            self.assertIn("WEB-1", received.text)
+            # A refresh keeps the reference on screen in the same browser.
+            again = self.client.get("/site/estimate/received", follow_redirects=False)
+            self.assertEqual(again.status_code, 200)
+            self.assertIn("not a booking yet", again.text)
         self.assertEqual(self.counts(), (1, 1, 1, 0, 0))
         with self.Session() as db:
             order = db.query(RepairOrder).one()
@@ -201,8 +205,82 @@ class PublicPages(unittest.TestCase):
 
     def test_submissions_are_limited_per_connection(self):
         with self.open_forms():
-            codes = [self.client.post("/site/estimate", data=self.estimate(), follow_redirects=False).status_code for _ in range(6)]
+            codes = [self.client.post("/site/estimate", data=self.estimate(description=f"Made-up test number {n}: rough idle."),
+                                      follow_redirects=False).status_code for n in range(6)]
         self.assertEqual(codes, [303] * 5 + [429])
+
+    def test_sending_the_same_request_again_keeps_one_job(self):
+        with self.open_forms():
+            first = self.client.post("/site/estimate", data=self.estimate(), follow_redirects=False)
+            ref = self.client.get(first.headers["location"]).text.split("WEB-")[1][:3]
+            again = self.client.post("/site/estimate", data=self.estimate(description="  made-up test: hard start when cold,  white smoke for a minute. "), follow_redirects=False)
+            self.assertEqual(again.status_code, 303)
+            self.assertIn("WEB-" + ref, self.client.get(again.headers["location"]).text)
+        self.assertEqual(self.counts()[2], 1)
+
+    def lost(self, **data):
+        return self.client.post("/site/status/lost", data={"phone": "(602) 555-0142", "last_name": "Sampleton", **data})
+
+    def test_lost_reference_queues_help_without_revealing_or_booking(self):
+        from app.dispatch_model import DispatchItem
+        with self.open_forms(), patch.object(socket.socket, "connect", no_network):
+            self.client.post("/site/estimate", data=self.estimate())
+            before = self.counts()
+            hit, miss, wrong_name = self.lost(), self.lost(phone="(602) 555-0199"), self.lost(last_name="Nobody")
+            again = self.lost()
+        for page in (hit, miss, wrong_name, again):
+            self.assertEqual(page.status_code, 200)
+            self.assertIn("If that matches a booking or request", page.text)
+            self.assertNotIn("WEB-", page.text.split("Lost your reference")[1])  # nothing about the record is shown
+        self.assertEqual(self.counts(), before)  # no booking, customer or message created
+        with self.Session() as db:
+            items = db.query(DispatchItem).filter(DispatchItem.category == "reference_help").all()
+            self.assertEqual(len(items), 1)  # asking twice refreshes the same item
+            self.assertTrue(items[0].quo_conversation_id.startswith("WEB"))  # website no-text guards apply
+            self.assertIn("WEB-1", items[0].summary)
+            self.assertIsNone(items[0].draft_reply)
+
+    def test_lost_reference_closed_with_forms(self):
+        app.state.read_only = False
+        self.assertEqual(self.lost().status_code, 503)
+
+    def test_status_page_is_private_and_shows_no_internal_notes(self):
+        with self.open_forms():
+            self.client.post("/site/estimate", data=self.estimate())
+            self.client.post("/site/estimate", data=self.estimate(description="Made-up test: second visit, same truck."))
+        with self.Session() as db:
+            token = db.get(RepairOrder, 2).public_token
+        page = self.client.get(f"/status/{token}")
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.headers["cache-control"], "no-store")
+        self.assertIn("noindex", page.headers["x-robots-tag"])
+        self.assertIn("WEB-2", page.text)
+        self.assertIn("not booked yet", page.text)
+        for internal in ("Confirm before contacting", "No message has been sent", "Preferred contact"):
+            self.assertNotIn(internal, page.text)
+        self.assertEqual(self.client.get(f"/status/{token}/visit.ics").status_code, 404)  # nothing booked
+        self.assertEqual(self.client.get("/status/not-a-token").status_code, 404)
+
+    def test_booked_visit_shows_on_status_page_and_calendar_file(self):
+        from datetime import datetime, timedelta, timezone
+        with self.open_forms():
+            self.client.post("/site/estimate", data=self.estimate())
+        with self.Session() as db:
+            order = db.get(RepairOrder, 1)
+            start = datetime(2026, 12, 1, 18, 0, tzinfo=timezone.utc)
+            db.add(Appointment(repair_order_id=1, resource_id="bay-1", starts_at=start, ends_at=start + timedelta(hours=1),
+                               status="confirmed", location="shop"))
+            db.commit()
+            token = order.public_token
+        page = self.client.get(f"/status/{token}")
+        self.assertIn("Booked", page.text)
+        self.assertIn("Dec 1, 11:00 AM", page.text)
+        ics = self.client.get(f"/status/{token}/visit.ics")
+        self.assertEqual(ics.status_code, 200)
+        self.assertIn("text/calendar", ics.headers["content-type"])
+        self.assertIn("DTSTART:20261201T180000Z", ics.text)
+        self.assertIn("WEB-1", ics.text)
+        self.assertIn(f"/status/{token}", ics.text)
 
     def test_another_site_cannot_post(self):
         with self.open_forms():

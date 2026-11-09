@@ -14,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from app import business_settings, lead_lifecycle
+from app import business_settings, lead_lifecycle, website_alerts
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import RepairOrder
@@ -179,6 +179,9 @@ def confirm_appointment(appointment_id: int, request: Request, db: Session = Dep
             raise HTTPException(409, "Resource has a conflicting appointment.")
         appointment.status = "confirmed"
         lead_lifecycle.confirm_website_lead_for_order(db, appointment, f"user:{user.id}")
+        order = db.get(RepairOrder, appointment.repair_order_id)
+        if order is not None:
+            website_alerts.close_for_job(db, order, user.username, "appointment confirmed")
         db.commit()
         return {"id": appointment.id, "status": appointment.status}
     except Exception:
