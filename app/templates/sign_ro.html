@@ -68,7 +68,7 @@
 
 <div class="container">
 
-  {% if ro.signed_at %}
+  {% if ro.signed_at and not pending %}
   <div class="already-signed" style="margin-top:20px;">
     ✓ Already signed by {{ ro.approved_by }} on {{ ro.signed_at.strftime('%B %d, %Y') }}
   </div>
@@ -93,23 +93,26 @@
     {% endif %}
   </div>
 
+  <form method="post" id="sign-form">
+    <input type="hidden" name="signature_data" id="sig-data" />
+
   <!-- Line Items -->
   {% if ro.line_items %}
   <div class="card">
-    <div class="section-title">Estimated Work &amp; Parts</div>
+    <div class="section-title">{% if pending %}Approve or decline each item{% else %}Estimated Work &amp; Parts{% endif %}</div>
     <table>
-      <thead>
-        <tr>
-          <th>Description</th>
-          <th class="td-right">Amount</th>
-        </tr>
-      </thead>
       <tbody>
-        {% for li in ro.line_items %}
+        {% for li in ro.line_items if li.approval != 'declined' or not pending %}
         <tr>
           <td class="td-desc">
             {{ li.description }}
-            <div style="font-size:11.5px; color:#52525b; margin-top:1px;">{{ li.item_type | title }} × {{ li.quantity }}</div>
+            <div style="font-size:11.5px; color:#52525b; margin-top:1px;">{{ li.item_type | title }} × {{ li.quantity }}{% if li.approval == 'approved' %} · Approved{% elif li.approval == 'declined' %} · Declined{% endif %}</div>
+            {% if li.approval == 'pending' %}
+            <div style="display:flex; gap:8px; margin-top:8px;">
+              <label style="flex:1; min-height:44px; display:flex; align-items:center; gap:6px; background:#18181b; border-radius:8px; padding:0 10px;"><input type="radio" name="line_{{ li.id }}" value="approved" data-amount="{{ '%.2f'|format(li.total) }}" required> Approve</label>
+              <label style="flex:1; min-height:44px; display:flex; align-items:center; gap:6px; background:#18181b; border-radius:8px; padding:0 10px;"><input type="radio" name="line_{{ li.id }}" value="declined"> Decline</label>
+            </div>
+            {% endif %}
           </td>
           <td class="td-right">${{ "%.2f"|format(li.total) }}</td>
         </tr>
@@ -117,15 +120,12 @@
       </tbody>
     </table>
     <div class="total-row">
-      <span class="total-label">Estimated Total</span>
-      <span class="total-amount">${{ "%.2f"|format(subtotal) }}</span>
+      <span class="total-label">{% if pending %}Total you approve{% else %}Estimated Total{% endif %}</span>
+      <span class="total-amount" id="approved-total">${{ "%.2f"|format(subtotal) }}</span>
     </div>
+    {% if pending %}<p style="font-size:12px; color:#71717a; margin-top:8px;">Before tax. Declined items are not done or charged.</p>{% endif %}
   </div>
   {% endif %}
-
-  <!-- Signature form -->
-  <form method="post" id="sign-form">
-    <input type="hidden" name="signature_data" id="sig-data" />
 
     <div class="card">
       <div class="section-title">Your Name</div>
@@ -140,7 +140,7 @@
         <button type="button" class="btn-clear" onclick="clearSig()">Clear</button>
       </div>
 
-      <p class="auth-notice">By signing, I authorize Imperial Auto Care to perform the repairs listed above and agree to pay the estimated amount upon completion. Final invoice may vary based on actual parts and labor required.</p>
+      <p class="auth-notice">By signing, I authorize Imperial Auto Care to perform the repairs I approved above and agree to pay the estimated amount upon completion. Final invoice may vary based on actual parts and labor required.</p>
     </div>
 
     <button type="submit" class="submit-btn" onclick="return prepareSubmit()">✓ Authorize Work</button>
@@ -221,5 +221,20 @@
   }
 </script>
 
+<script>
+  (function () {
+    var label = document.getElementById('approved-total');
+    var radios = document.querySelectorAll('input[type=radio][name^="line_"]');
+    if (!label || !radios.length) return;
+    var fixed = {{ '%.2f'|format(ro.line_items|selectattr('approval', 'equalto', 'approved')|map(attribute='total')|sum) }};
+    function update() {
+      var sum = fixed;
+      document.querySelectorAll('input[type=radio][value=approved]:checked').forEach(function (r) { sum += parseFloat(r.dataset.amount); });
+      label.textContent = '$' + sum.toFixed(2);
+    }
+    radios.forEach(function (r) { r.addEventListener('change', update); });
+    update();
+  })();
+</script>
 </body>
 </html>

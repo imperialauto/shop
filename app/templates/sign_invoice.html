@@ -80,7 +80,7 @@
         <tr><th>Description</th><th class="td-right">Amount</th></tr>
       </thead>
       <tbody>
-        {% for li in ro.line_items %}
+        {% for li in ro.line_items if li.billable %}
         <tr>
           <td class="td-desc">
             {{ li.description }}

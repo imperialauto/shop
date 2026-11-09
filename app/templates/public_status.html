@@ -59,7 +59,14 @@
     {% endif %}
   </div>
 
-  {% if ro.status == 'waiting_approval' %}
+  {% set pending = ro.line_items|selectattr('approval', 'equalto', 'pending')|list %}
+  {% if pending %}
+    <div class="card" style="border-color: rgba(212,168,83,0.3);">
+      <div style="font-size:14px; font-weight:600; color:#fafafa; margin-bottom:6px;">Your approval is needed</div>
+      <div style="font-size:13px; color:#71717a; margin-bottom:12px;">{{ pending|length }} item{{ 's' if pending|length != 1 }} to approve or decline. You only pay for what you approve.</div>
+      <a href="/sign/ro/{{ ro.public_token }}" class="sign-btn">Review &amp; Approve →</a>
+    </div>
+  {% elif ro.status == 'waiting_approval' %}
     {% if ro.signed_at %}
     <div class="signed-badge">
       ✓ Estimate signed by {{ ro.approved_by }} on {{ ro.signed_at.strftime('%B %d, %Y') }}

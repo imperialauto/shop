@@ -74,12 +74,13 @@ def create_invoice(request: Request, ro_id: int, db: Session = Depends(get_db)):
     existing = db.query(Invoice).filter(Invoice.repair_order_id == ro_id, Invoice.status != "void").first()
     if existing:
         return RedirectResponse(f"/invoices/{existing.id}", status_code=303)
-    if not ro.line_items:
+    billable = [li for li in ro.line_items if li.billable]
+    if not billable:
         return RedirectResponse(f"/ro/{ro_id}", status_code=303)
 
-    subtotal = sum(li.total for li in ro.line_items)
+    subtotal = sum(li.total for li in billable)
     tax_rate = SHOP_TAX_RATE
-    tax_amount = round(sum(li.total for li in ro.line_items if li.item_type == "part") * tax_rate, 2)
+    tax_amount = round(sum(li.total for li in billable if li.item_type == "part") * tax_rate, 2)
     total = subtotal + tax_amount
 
     invoice = Invoice(

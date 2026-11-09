@@ -45,7 +45,7 @@
   <table>
     <thead><tr><th>Description</th><th>Type</th><th class="text-right">Qty</th><th class="text-right">Unit Price</th><th class="text-right">Total</th></tr></thead>
     <tbody>
-      {% for li in invoice.repair_order.line_items %}
+      {% for li in invoice.repair_order.line_items if li.billable %}
       <tr>
         <td>{{ li.description }}</td>
         <td class="text-stone-400">{{ li.item_type }}</td>
