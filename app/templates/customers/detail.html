@@ -6,7 +6,7 @@
   <a href="/customers/" class="text-stone-400 hover:text-gold-300 text-sm">← Customers</a>
 </div>
 
-<div class="flex items-start justify-between mb-4">
+<div class="flex flex-wrap items-start justify-between gap-3 mb-4">
   <div>
     {% if customer.customer_type == 'fleet' %}
     <span class="badge-fleet mb-1 inline-block">FLEET</span>
@@ -16,14 +16,14 @@
     <h1 class="text-2xl font-bold text-yellow-400">{{ customer.first_name }} {{ customer.last_name }}</h1>
     {% endif %}
   </div>
-  <div class="flex gap-2">
+  <div class="flex flex-wrap gap-2">
     <a href="/customers/{{ customer.id }}/edit" class="btn-secondary">Edit</a>
     <a href="/ro/new?customer_id={{ customer.id }}" class="btn-primary">+ New RO</a>
     <a href="/vehicles/new?customer_id={{ customer.id }}" class="btn-secondary">+ Add Vehicle</a>
   </div>
 </div>
 
-<div class="grid grid-cols-2 gap-4 mb-4">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
   <div class="card">
     <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Contact</h3>
     {% if customer.phone %}<p class="text-sm">📞 {{ customer.phone }}</p>{% endif %}
@@ -50,6 +50,7 @@
 <div class="card">
   <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Repair Orders ({{ customer.repair_orders|length }})</h3>
   {% if customer.repair_orders %}
+  <div class="overflow-x-auto">
   <table>
     <thead>
       <tr>
@@ -72,8 +73,55 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% else %}
   <p class="text-stone-500 text-sm">No repair orders yet.</p>
+  {% endif %}
+</div>
+
+
+<!-- Customer file: everything matched to this customer or this phone number -->
+<div class="card mt-4" id="file">
+  <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+    <h3 class="text-xs text-stone-400 uppercase tracking-wide">Customer file</h3>
+    <div class="flex gap-3 text-sm">
+      <span>Billed <strong>${{ '{:,.2f}'.format(file.money.billed) }}</strong></span>
+      <span>Paid <strong>${{ '{:,.2f}'.format(file.money.paid) }}</strong></span>
+      <span>Owes <strong class="{{ 'text-red-400' if file.money.balance > 0 else '' }}">${{ '{:,.2f}'.format(file.money.balance) }}</strong></span>
+    </div>
+  </div>
+
+  {% for kind, problem in file.problems.items() %}
+  <p class="text-sm text-amber-300 mb-2">
+    {% if problem == 'no_phone' %}No phone number on this customer, so texts and calls can't be matched. <a class="underline" href="/customers/{{ customer.id }}/edit">Add one →</a>
+    {% elif problem == 'not_connected' %}{{ 'Texts' if kind == 'text' else 'Calls' }} aren't connected to this page yet. Saved copies are shown.
+    {% else %}{{ 'Texts' if kind == 'text' else 'Calls' }} couldn't be loaded from Quo right now. Saved copies are shown; refresh to try again.{% endif %}
+  </p>
+  {% endfor %}
+
+  <div class="flex flex-wrap gap-2 mb-3">
+    {% for key, label in file.filters %}
+    <a href="?show={{ key }}#file" class="px-3 py-1 rounded-full text-sm {{ 'bg-yellow-500 text-black font-semibold' if show == key else 'bg-plum-800 text-stone-300' }}">{{ label }} ({{ file.counts[key] }})</a>
+    {% endfor %}
+  </div>
+
+  {% set shown = file.entries if show == 'all' else file.entries|selectattr('kind', 'equalto', show)|list %}
+  {% if shown %}
+  <ol class="space-y-2">
+    {% for e in shown[:200] %}
+    <li class="border-l-2 pl-3 py-1 {{ {'text':'border-sky-500','call':'border-emerald-500','job':'border-yellow-500','money':'border-violet-400'}[e.kind] }}">
+      <div class="flex flex-wrap justify-between gap-2">
+        <span class="text-sm font-semibold">{% if e.link %}<a href="{{ e.link }}" class="hover:text-gold-300">{{ e.title }}</a>{% else %}{{ e.title }}{% endif %}</span>
+        <span class="text-xs text-stone-500">{{ e.at.astimezone(tz).strftime('%b %-d, %Y %-I:%M %p') }}</span>
+      </div>
+      {% if e.detail %}<p class="text-sm text-stone-300 whitespace-pre-line break-words">{{ e.detail }}</p>{% endif %}
+      {% for url in e.media %}<a href="{{ url }}" target="_blank" rel="noopener" class="text-xs text-gold-400 underline mr-2">📷 Photo</a>{% endfor %}
+    </li>
+    {% endfor %}
+  </ol>
+  {% if shown|length > 200 %}<p class="text-xs text-stone-500 mt-2">Showing the newest 200.</p>{% endif %}
+  {% else %}
+  <p class="text-stone-500 text-sm">Nothing here yet.</p>
   {% endif %}
 </div>
 

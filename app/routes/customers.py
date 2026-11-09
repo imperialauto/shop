@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Customer
 from app.auth import get_current_user
+from app import customer_file
+from app.appointments import PHOENIX
 import os
 
 router = APIRouter()
@@ -93,7 +95,13 @@ def view_customer(request: Request, customer_id: int, db: Session = Depends(get_
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(status_code=404)
-    return templates.TemplateResponse("customers/detail.html", {"request": request, "user": user, "customer": customer})
+    file = customer_file.build(db, customer)
+    show = request.query_params.get("show", "all")
+    if show not in file["counts"]:
+        show = "all"
+    return templates.TemplateResponse("customers/detail.html", {
+        "request": request, "user": user, "customer": customer, "file": file, "show": show, "tz": PHOENIX,
+    })
 
 
 @router.get("/{customer_id}/edit", response_class=HTMLResponse)
