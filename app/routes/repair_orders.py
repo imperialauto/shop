@@ -336,7 +336,7 @@ def get_vehicles_for_customer(request: Request, ro_id: int, customer_id: int, db
     vehicles = db.query(Vehicle).filter(Vehicle.customer_id == customer_id).all()
 
     add_link = (
-        f'<a href="/vehicles/new?customer_id={customer_id}" target="_blank" '
+        f'<a href="/vehicles/new?customer_id={customer_id}&next=job" '
         f'class="btn-primary text-xs" style="white-space:nowrap; padding:6px 10px;">+ Add Vehicle</a>'
     )
 
@@ -360,7 +360,7 @@ def get_vehicles_for_customer(request: Request, ro_id: int, customer_id: int, db
         opts += f'<option value="{v.id}">{label}</option>'
 
     add_btn = (
-        f'<a href="/vehicles/new?customer_id={customer_id}" target="_blank" '
+        f'<a href="/vehicles/new?customer_id={customer_id}&next=job" '
         f'class="btn-secondary text-xs" style="white-space:nowrap; padding:6px 10px;">+ Add</a>'
     )
     return HTMLResponse(

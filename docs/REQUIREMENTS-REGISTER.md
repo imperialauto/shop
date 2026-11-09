@@ -15,6 +15,7 @@ The AI assistant is named **Imperial**.
 - No customer messages during testing. Tests use made-up data.
 - Nothing is called complete without evidence.
 - `imperialautophx.com` stays on Squarespace until replacement acceptance tests pass and the owner approves cutover.
+- **Continuous workflow optimization (permanent, Nov 9):** for every button, link, form, screen and workflow, ask how to make it easier, quicker, more intuitive, or unnecessary. Trace the journey, count taps, screens, entries and decisions, reuse data already on file, make the next action obvious, update every screen at once, and work on phone and desktop. Never remove safeguards, approvals, financial controls or audit history to save a step. Record findings and measured results under R37, not in a separate list.
 
 ## Requirements
 | ID | Area | Requirement | Status | Evidence or gap |
@@ -55,6 +56,7 @@ The AI assistant is named **Imperial**.
 | R34 | Other | Document generation, marketing, inventory, warranties | proposed | PDF estimates exist |
 | R35 | Security | Passkey login, separate accounts, approval levels, STOP ALL, automatic backups | in progress | Two-step login, STOP ALL, staff logins with role limits, nightly verified backups plus a second copy in a separate storage bucket (PR 69). Read-only off Nov 9. Both production databases have an unapplied PostgreSQL security patch (12 CVEs, notice Aug 20) that Railway's weekend window never applied; owner decision needed. No passkeys. A copy outside Railway needs an owner-made key |
 | R36 | Design | One Imperial visual identity (purple and gold) across website, booking, customer pages, dashboard, staff, finance, AI, Knowledge Center, divisions and alerts; NVZN has its own division mark | approved | Owner requirement Nov 9 overrides the black and gold dashboard. Audit and tokens in `docs/DESIGN-SYSTEM.md`. Preview canvas (website home, owner home, customer approval, technician My day, shared kit) sent for approval Nov 9. No production change until approved |
+| R37 | Workflow | Continuous workflow optimization across every Imperial screen (owner rule, Nov 9) | in progress | First pass: new customer to job. Next to trace: Quo conversation to estimate or appointment, owner approval from a text, technician job update, customer approval |
 
 ## Decisions
 | Date | Decision | Status |
@@ -77,6 +79,7 @@ The AI assistant is named **Imperial**.
 | 2026-11-09 | The whole platform uses one Imperial purple and gold design. The black and gold dashboard is not approved as final. Preview first, then production after owner approval | current |
 | 2026-11-09 | Customers are created from Quo: owner reviews and ticks past contacts; new texters and callers get a record automatically | current |
 | 2026-11-09 | Approval links reach customers only after the owner's YES | current |
+| 2026-11-09 | Continuous workflow optimization is a permanent rule for the whole platform (R37) | current |
 
 ## Completion log
 | Date | Change | Evidence | Deployed |
@@ -102,3 +105,5 @@ The AI assistant is named **Imperial**.
 | 2026-11-09 | PR 73 approval links by text through the owner's YES; fixes a crash on a second approval round | CI passed after two fixes the tests caught, owner approved, merged 05:49 | Yes, not yet used |
 | 2026-11-09 | PR 74 new-job vehicle list and phone search; PR 75 Quo import and automatic customer records | CI passed, merged 05:58 and 06:04, both services started clean | Yes, import not yet run |
 | 2026-11-09 | Audit: web build for register-only PR 72 failed once at image build (transient; later deploys fine). Postgres warnings are an unapplied security patch, not data problems. Open PRs: 51, 55, 57, 58, 59 and old 4, 5, 8 | Railway environment status and Railway agent read-only check | n/a |
+| 2026-11-09 | R37 optimization 1, new customer to job: before, 7 screens and about 10 taps (customer form, customer page, vehicle form, customer page, job form, job page), and a second customer could be made for a known phone. After, one form saves the customer, vehicle (VIN fills year, make and model) and job, then opens the job: 2 screens and 1 tap. A known phone opens the existing file instead of a duplicate. Adding a vehicle from the job form returns to it with the vehicle picked. Links can prefill phone and name | `tests/test_fast_intake.py`, walkthrough updated | Pending |
+| 2026-11-09 | R37 optimization 2, queue text or call to job: before, open Customers, search, open the customer (or create one by retyping phone and name), New RO, pick the vehicle, retype the request: about 6 screens and 3 retyped fields. After, the queue card has Customer file and Start job; Start job carries over the phone, Quo name, vehicle (year, make, model) and what the customer said, so it is 1 tap to a filled form and 1 tap to save | `tests/test_fast_intake.py` | Pending |

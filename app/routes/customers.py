@@ -3,11 +3,11 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Customer
+from app.models import Customer, RepairOrder, Vehicle
 from app.auth import get_current_user
 from app import customer_file, quo_import
 from app.appointments import PHOENIX
-import os
+import os, secrets
 
 router = APIRouter()
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "..", "templates"))
@@ -102,25 +102,54 @@ def create_customer(
     phone: str = Form(""),
     address: str = Form(""),
     notes: str = Form(""),
+    vin: str = Form(""),
+    year: str = Form(""),
+    make: str = Form(""),
+    model: str = Form(""),
+    concern: str = Form(""),
+    then: str = Form("customer"),
 ):
+    """One form: the customer, optionally their vehicle, optionally the job. A known phone opens the existing file."""
     user = require_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=302)
 
+    digits = "".join(ch for ch in phone if ch.isdigit())[-10:]
+    if len(digits) == 10:
+        for existing in db.query(Customer).filter(Customer.phone.isnot(None)).all():
+            if "".join(ch for ch in existing.phone if ch.isdigit())[-10:] == digits:
+                return RedirectResponse(f"/customers/{existing.id}?existing=1", status_code=303)
+
     customer = Customer(
         customer_type=customer_type,
         fleet_name=fleet_name or None,
-        first_name=first_name,
-        last_name=last_name,
+        first_name=first_name.strip(),
+        last_name=last_name.strip(),
         email=email or None,
         phone=phone or None,
         address=address or None,
         notes=notes or None,
     )
     db.add(customer)
+    db.flush()
+    vehicle = None
+    if vin.strip() or make.strip() or model.strip():
+        vehicle = Vehicle(customer_id=customer.id, year=int(year) if year.strip().isdigit() else None,
+                          make=make.strip() or None, model=model.strip() or None,
+                          vin=vin.strip().upper()[:17] or None)
+        db.add(vehicle)
+        db.flush()
+    ro = None
+    if then == "job" and vehicle is not None:
+        ro = RepairOrder(customer_id=customer.id, vehicle_id=vehicle.id, concern=concern.strip() or None,
+                         public_token=secrets.token_urlsafe(32))
+        db.add(ro)
     db.commit()
-    db.refresh(customer)
-    return RedirectResponse(f"/customers/{customer.id}", status_code=302)
+    if ro is not None:
+        return RedirectResponse(f"/ro/{ro.id}", status_code=303)
+    if then == "job":
+        return RedirectResponse(f"/ro/new?customer_id={customer.id}", status_code=303)
+    return RedirectResponse(f"/customers/{customer.id}", status_code=303)
 
 
 @router.get("/{customer_id}", response_class=HTMLResponse)

@@ -891,7 +891,22 @@ def _card(db: Session, item: DispatchItem, scheduled: dict[int, datetime]) -> di
         "open_ro": open_ro,
         "estimate": estimate,
         "next_appointment": scheduled.get(item.customer_id),
+        "start_job": _start_job_url(customer, item),
     }
+
+
+def _start_job_url(customer, item) -> str:
+    """One tap from a text or call to a job, carrying over what the customer already told us."""
+    from urllib.parse import urlencode
+    concern = " ".join((item.summary or "").split())[:300]
+    if customer:
+        return "/ro/new?" + urlencode({"customer_id": customer.id, "concern": concern})
+    words = (item.vehicle_text or "").split()
+    year = words.pop(0) if words and words[0].isdigit() and len(words[0]) == 4 else ""
+    name = (item.contact_name or "").split()
+    query = {"phone": item.customer_phone, "first": name[0] if name else "", "last": " ".join(name[1:]),
+             "year": year, "make": words[0] if words else "", "model": " ".join(words[1:]), "concern": concern}
+    return "/customers/new?" + urlencode({k: v for k, v in query.items() if v})
 
 
 def _sync_health(db: Session) -> list[dict]:

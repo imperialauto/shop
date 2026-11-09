@@ -69,8 +69,8 @@ def flows(page, device):
         page.goto(BASE + "/customers/new")
         page.fill("[name=first_name]", "Flow" + device)
         page.fill("[name=last_name]", "Check")
-        page.fill("[name=phone]", "6025550199")
-        page.click("form button[type=submit]")
+        page.fill("[name=phone]", "60255501" + str(10 + len(device)))  # one number per device, so no duplicate match
+        page.click("form button[value=customer]")
         page.wait_for_load_state("networkidle")
         context["customer"] = int(re.search(r"/customers/(\d+)", page.url).group(1))
 

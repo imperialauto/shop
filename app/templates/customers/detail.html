@@ -6,6 +6,7 @@
   <a href="/customers/" class="text-stone-400 hover:text-gold-300 text-sm">← Customers</a>
 </div>
 
+{% if request.query_params.get('existing') %}<div class="card mb-3 text-sm" style="border-color:rgba(234,210,114,.5)">This phone number is already a customer, so their file opened instead of making a duplicate.</div>{% endif %}
 <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
   <div>
     {% if customer.customer_type == 'fleet' %}
