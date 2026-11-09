@@ -33,6 +33,17 @@ Add new chapters here. Don't start a second manual. This file moves into the Kno
 3. If the part isn't listed (the Fusion Hybrid had no tank or filler neck), stop after a couple of tries. The source is then the **Ford dealer (OEM)** or a **used/recycled part (LKQ)**. Write down which one you used.
 4. Write down the price, brand, warranty and delivery date. Never place an order without the owner's approval.
 
+### Step 3b. Check local salvage yards on car-part.com (used parts)
+1. Go to car-part.com. Set the year, make/model and part, enter ZIP **85307**, and search.
+2. Pick the exact trim/engine on the next screen (e.g. **Hybrid SE**). Results are sorted by distance and show grade, stock #, price and phone.
+3. Prefer listings whose trim matches the car (the word "Hybrid", or "VIN U (8th digit)") and Grade A, at the closest yards. Write down the yard, stock #, price and phone.
+4. Fusion result, Nov 9: LKQ-Keystone Phoenix stock P12025, 2014 Fusion Hybrid SE, Grade A, $133.50 (17 mi). Also Matador (M677, $100) and United #1 (5952, call).
+
+### Step 3c. Office confirms availability (before the estimate goes out)
+1. Imperial (or the advisor) adds a **[PARTS CHECK]** task to the job's Quo conversation with the yards, stock numbers, prices, phone numbers and the part number to quote.
+2. The office (Mom) calls and confirms: the part is in stock and already off the donor car, it's the right trim (e.g. hybrid), its condition, the price, the warranty and the pickup time. She writes the result in the task.
+3. **Nothing is ordered** until the owner approves the estimate.
+
 ### Step 4. Build the estimate
 | Line | Rule |
 |---|---|
@@ -46,6 +57,8 @@ Add new chapters here. Don't start a second manual. This file moves into the Kno
 Label every price **confirmed current**, **working promotional**, **historical reference** or **custom quote required**.
 
 ### Step 5. Timeline and communication
+- **Order of approval:** draft the estimate → the owner approves it → it's sent to the customer → the customer approves → parts are ordered. Drafts are marked "DRAFT — FOR OWNER APPROVAL".
+- Recommend cheap diagnostics first on high-mileage cars (e.g. misfire testing before a tank), so the customer doesn't buy parts for an engine that isn't worth fixing.
 - Give the parts arrival date from the supplier and the labor time from ALLDATA, then add the shop's actual schedule.
 - Promise a regular update time (for example, a daily text by 5 PM) and keep it. The Fusion complaint on Nov 9 was about missed updates, not the repair.
 - Every customer message waits for the owner's approval. Before sending, re-read the conversation in Quo so nothing is repeated or out of date.
