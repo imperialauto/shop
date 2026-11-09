@@ -5,7 +5,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app import calendar_feed
+from app import calendar_feed, cycle_time
 from app.appointment_model import Appointment
 from app.appointments import PHOENIX
 from app.dispatch_model import DispatchItem
@@ -34,7 +34,8 @@ def summary(db: Session, user, now: datetime | None = None) -> dict:
             week = (start - timedelta(days=start.weekday())).astimezone(timezone.utc).replace(tzinfo=None)
             money = {"owed": round(sum(max(inv.total - paid_on[inv.id], 0) for inv in open_invoices), 2),
                      "owed_count": len(open_invoices),
-                     "paid_week": round(db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(Payment.paid_at >= week).scalar() or 0, 2)}
+                     "paid_week": round(db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(Payment.paid_at >= week).scalar() or 0, 2),
+                     "cycle": cycle_time.recent(db)}
     except SQLAlchemyError:
         db.rollback()
         return {"ready": False}
