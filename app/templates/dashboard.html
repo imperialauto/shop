@@ -99,7 +99,7 @@
             <span style="color:var(--imp-ink);">{{ ro.customer.first_name }} {{ ro.customer.last_name }}</span>
             {% endif %}
           </td>
-          <td>{{ ro.vehicle.year }} {{ ro.vehicle.make }} {{ ro.vehicle.model }}</td>
+          <td>{{ ro.vehicle.label }}</td>
           <td style="max-width:220px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--imp-muted);">{{ ro.concern or '—' }}</td>
           <td>
             <span class="badge badge-{{ ro.status }}">{{ ro.status.replace('_',' ').title() }}</span>

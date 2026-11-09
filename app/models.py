@@ -70,6 +70,13 @@ class Vehicle(Base):
     customer = relationship("Customer", back_populates="vehicles")
     repair_orders = relationship("RepairOrder", back_populates="vehicle")
 
+    @property
+    def label(self):
+        """Year make model for screens; skips blanks, "None" and "Unknown"."""
+        parts = [str(p).strip() for p in (self.year, self.make, self.model) if p is not None]
+        parts = [p for p in parts if p and p.lower() not in ("none", "unknown")]
+        return " ".join(parts) or "Vehicle details not given yet"
+
 
 class RepairOrder(Base):
     __tablename__ = "repair_orders"

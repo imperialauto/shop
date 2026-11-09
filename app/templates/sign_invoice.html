@@ -68,7 +68,7 @@
 
   <div class="card">
     <div class="section-title">Vehicle</div>
-    <div class="vehicle-line">{{ ro.vehicle.year }} {{ ro.vehicle.make }} {{ ro.vehicle.model }}</div>
+    <div class="vehicle-line">{{ ro.vehicle.label }}</div>
     {% if ro.vehicle.engine %}<div class="vehicle-sub">{{ ro.vehicle.engine }}</div>{% endif %}
     {% if ro.customer %}
     <div class="vehicle-sub" style="margin-top:6px;">{{ ro.customer.first_name }} {{ ro.customer.last_name }}</div>
