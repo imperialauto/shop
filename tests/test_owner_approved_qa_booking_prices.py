@@ -26,6 +26,8 @@ class OwnerApprovedQAPricingTests(unittest.TestCase):
             services = {service.slug: service for service in public_site.bookable_services()}
             self.assertEqual(set(services), {"diagnostic", "brake-inspection"})
             self.assertEqual(services["diagnostic"].price, 75)
+            self.assertEqual(services["diagnostic"].name, "Basic in-shop diagnostic screening")
+            self.assertIn("Advanced diagnostic testing requires a separate estimate", services["diagnostic"].description)
             self.assertEqual(services["brake-inspection"].price, 49)
             for service in services.values():
                 self.assertEqual(service.price_type, "exact")
