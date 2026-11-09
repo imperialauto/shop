@@ -112,16 +112,39 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
     });
     const projectReply = brainReply || await answerProjectQuestion({ question: result.ownerQuestion, history });
     const action = projectReply ? null : await interpretOwner({ question: result.ownerQuestion, snapshot: result.snapshot, history });
-    const content = projectReply || (action
-      ? (await shopClient.dispatchOwnerAction({ ...action, ownerPhone: phone, ownerMessageId: messageId })).ownerReply
-      : await answerOwner({
-          question: result.ownerQuestion,
-          snapshot: {
-            ...result.snapshot,
-            customerDetail: await customerDetail({ question: result.ownerQuestion, snapshot: result.snapshot, quo, callContext }),
-          },
-          history,
-        }));
+    let ownerActionReply = null;
+    if (!projectReply && action) {
+      const request = { ...action, ownerPhone: phone, ownerMessageId: messageId };
+      let outcome = await shopClient.dispatchOwnerAction(request);
+      if (outcome.customerThreadPhone) {
+        // The app has found a priced, fitment-verified RO. Fetch the real Quo
+        // customer thread before asking it to queue the signing link.
+        const customerPhone = outcome.customerThreadPhone;
+        try {
+          const { data: messages = [] } = await quo.listMessages({ participants: [customerPhone], maxResults: 10 });
+          const newest = [...messages].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
+          const checked = newest?.id
+            ? await verifyApprovedReplyContext({ quo, phone: customerPhone, messageId: newest.id })
+            : { ok: false, notice: "no current Quo customer text was found" };
+          if (!checked.ok) {
+            outcome = { ownerReply: "No approval link queued: " + checked.notice + ". Review the RO in the dashboard." };
+          } else {
+            outcome = await shopClient.dispatchOwnerAction({ ...request, customerMessageId: newest.id });
+          }
+        } catch (_) {
+          outcome = { ownerReply: "No approval link queued: current customer messages could not be verified." };
+        }
+      }
+      ownerActionReply = outcome.ownerReply;
+    }
+    const content = projectReply || ownerActionReply || await answerOwner({
+      question: result.ownerQuestion,
+      snapshot: {
+        ...result.snapshot,
+        customerDetail: await customerDetail({ question: result.ownerQuestion, snapshot: result.snapshot, quo, callContext }),
+      },
+      history,
+    });
     await quo.sendMessage({ to: phone, content }).catch((err) => console.error("Owner answer failed:", err.message));
   }
   let customerSent = false;
