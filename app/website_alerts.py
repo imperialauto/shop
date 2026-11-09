@@ -7,7 +7,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.dispatch_model import DispatchAudit, DispatchItem
+from app.dispatch_model import OPEN_STATUSES, DispatchAudit, DispatchItem
 from app.models import RepairOrder
 
 URGENT_LINES = {"towing", "mobile-roadside"}
@@ -39,12 +39,19 @@ def queue_decision(db: Session, order: RepairOrder, decided: list) -> DispatchIt
     summary = f"Approved {len(yes)} of {len(decided)} items, ${amount:,.2f}."
     if no:
         summary += " Declined: " + "; ".join(li.description[:40] for li in no)
-    item = DispatchItem(
-        quo_conversation_id=f"WEB{order.id}", customer_phone=order.customer.phone or "", customer_id=order.customer_id,
-        vehicle_id=order.vehicle_id, category="approval", urgency="normal", summary=summary[:280],
-        proposed_action=f"Customer decision on job #{order.id}", draft_reply=None, status="needs_owner",
-        last_message_id=f"web:{order.id}:decision", updated_at=datetime.now().astimezone())
-    db.add(item)
+    # Its own key, refreshed in place, so a second round of approvals or an open
+    # website request for the same job can never collide with it.
+    key = f"WEB{order.id}-decision"
+    item = db.query(DispatchItem).filter(DispatchItem.quo_conversation_id == key,
+                                         DispatchItem.status.in_(OPEN_STATUSES)).first()
+    if item is None:
+        item = DispatchItem(quo_conversation_id=key, status="needs_owner")
+        db.add(item)
+    item.customer_phone, item.customer_id, item.vehicle_id = order.customer.phone or "", order.customer_id, order.vehicle_id
+    item.category, item.urgency, item.summary = "approval", "normal", summary[:280]
+    item.proposed_action, item.draft_reply = f"Customer decision on job #{order.id}", None
+    item.last_message_id = f"web:{order.id}:decision:{datetime.now().timestamp():.0f}"
+    item.updated_at = datetime.now().astimezone()
     db.flush()
     db.add(DispatchAudit(item_id=item.id, actor="customer", action="estimate_decided", detail=f"job {order.id}"))
     return item

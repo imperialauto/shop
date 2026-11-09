@@ -472,6 +472,9 @@ FOLLOW_UP_HOURS = range(11, 19)
 def _alert_text(db: Session, item: DispatchItem) -> str:
     said = " ".join(item.summary.split())[:120]
     name = _label(db, item)
+    if item.category == approval_links.CATEGORY:
+        return (f"#{item.id} Approval link for {name}. {said}\nSend: {(item.draft_reply or '')[:300]}\n"
+                f"YES {item.id} texts it to them. NO {item.id} skips it.")
     if website_alerts.is_website(item) and item.category == "approval":
         return f"Estimate #{item.id} {name}: {said}\nOpen the job to start the approved work. DONE {item.id} when handled."
     if website_alerts.is_website(item):
