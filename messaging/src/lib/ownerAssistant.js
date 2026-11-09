@@ -166,6 +166,15 @@ function ownerCostEvidence({ question, history, unitCost }) {
 }
 
 
+// Two explicit owner decisions precede customer outreach: verified fitment,
+// then the existing YES flow. No natural-language "send it" guess is accepted.
+function parsePrepareApprovalCommand(question) {
+  const input = String(question || "").trim();
+  const match = input.match(/^prepare\s+(?:customer\s+)?(?:estimate\s+)?approval\s+(?:link\s+)?(?:for\s+)?(?:RO|job)\s*#?\s*(\d{1,9})\s*[,;:.]?\s*fitment\s+verified[.!]?$/i);
+  if (!match) return null;
+  return { action: "prepare_link", itemId: null, roId: Number(match[1]), evidence: input.slice(0, 400) };
+}
+
 // A customer selling price is a financial instruction. Parse a completely
 // explicit owner command, never ask an LLM to guess the RO, rate or hours.
 // Example: "RO #17: customer part price $155; labor 1.0 hr shop".
@@ -189,6 +198,8 @@ const LATER_WORDS = /\b(later|remind|reminder|snooze|tomorrow|tonight|morning|af
 
 // Turns a plain-English text into one action. Anything unclear becomes a normal answer.
 async function interpretOwner({ question, snapshot, history = [], complete = defaultComplete }) {
+  const approval = parsePrepareApprovalCommand(question);
+  if (approval) return approval;
   const quote = parseQuotePartCommand(question);
   if (quote) return quote;
   try {
@@ -233,4 +244,4 @@ async function jobNote({ conversation, complete = defaultComplete }) {
   }
 }
 
-module.exports = { interpretOwner, parseQuotePartCommand, jobNote, answerOwner, recentTurns, customerDetail, mentionedItems, FALLBACK, complete: defaultComplete };
+module.exports = { interpretOwner, parseQuotePartCommand, parsePrepareApprovalCommand, jobNote, answerOwner, recentTurns, customerDetail, mentionedItems, FALLBACK, complete: defaultComplete };
