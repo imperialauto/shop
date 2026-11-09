@@ -113,7 +113,7 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
     const projectReply = brainReply || await answerProjectQuestion({ question: result.ownerQuestion, history });
     const action = projectReply ? null : await interpretOwner({ question: result.ownerQuestion, snapshot: result.snapshot, history });
     const content = projectReply || (action
-      ? (await shopClient.dispatchOwnerAction(action)).ownerReply
+      ? (await shopClient.dispatchOwnerAction({ ...action, ownerPhone: phone, ownerMessageId: messageId })).ownerReply
       : await answerOwner({
           question: result.ownerQuestion,
           snapshot: {
