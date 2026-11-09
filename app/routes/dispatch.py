@@ -780,7 +780,7 @@ def _owner_part_cost(db: Session, request_: OwnerAction) -> dict:
     verified = []
     for ro in active:
         if direct:
-            if re.search(rf"\\b(?:RO|job)\\s*#?\\s*{ro.id}\\b", evidence, re.I):
+            if re.search(rf"\b(?:RO|job)\s*#?\s*{ro.id}\b", evidence, re.I):
                 verified.append(ro)
             continue
         vehicle = db.get(Vehicle, ro.vehicle_id)
