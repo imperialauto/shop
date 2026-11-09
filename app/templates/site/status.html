@@ -9,7 +9,7 @@
     <form class="form" method="post" action="/site/status">
       <fieldset>
         <label for="reference">Reference number</label>
-        <input id="reference" name="reference" required placeholder="WEB-1234" autocomplete="off">
+        <input id="reference" name="reference" type="text" required placeholder="WEB-1234" autocomplete="off">
         <div style="margin-top:14px">
           <label for="phone">Phone number on the job</label>
           <input id="phone" name="phone" type="tel" required autocomplete="tel">
@@ -29,7 +29,7 @@
         <input id="lost-phone" name="phone" type="tel" required autocomplete="tel">
         <div style="margin-top:14px">
           <label for="lost-last">Last name</label>
-          <input id="lost-last" name="last_name" required autocomplete="family-name">
+          <input id="lost-last" name="last_name" type="text" required autocomplete="family-name">
         </div>
       </fieldset>
       <button class="btn btn-light" type="submit">Ask the shop for my reference</button>
