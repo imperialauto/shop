@@ -54,7 +54,7 @@ class DraftInput(BaseModel):
 
 
 class OwnerAction(BaseModel):
-    action: str = Field(pattern="^(propose|done|later|part_cost|quote_part)$")
+    action: str = Field(pattern="^(propose|done|later|part_cost|quote_part|prepare_link)$")
     itemId: int | None = None
     text: str | None = Field(default=None, max_length=1500)
     hours: int | None = Field(default=None, ge=1, le=168)
@@ -69,6 +69,7 @@ class OwnerAction(BaseModel):
     partPrice: float | None = Field(default=None, gt=0, le=50000, allow_inf_nan=False)
     laborHours: float | None = Field(default=None, ge=0, le=40, allow_inf_nan=False)
     rateType: str | None = Field(default=None, pattern="^(shop|mobile|diesel|cspr)$")
+    customerMessageId: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class OutboundResult(BaseModel):
@@ -918,9 +919,74 @@ def _owner_quote_part(db: Session, request_: OwnerAction) -> dict:
     )}
 
 
+def _owner_prepare_link(db: Session, request_: OwnerAction) -> dict:
+    """Queue existing customer approval link; Quo's latest-thread guard sends.
+
+    An explicit owner command attests fitment. Even then the link is only
+    queued for owner YES. Nothing here reaches the customer automatically.
+    """
+    if not request_.ownerPhone or not _is_owner(request_.ownerPhone):
+        raise HTTPException(status_code=403, detail="Owner identity required")
+    message_id = (request_.ownerMessageId or "").strip()
+    evidence = (request_.evidence or "").strip()
+    ro_id = request_.roId
+    if (not ro_id or not message_id or db.query(DispatchEvent).filter(
+        DispatchEvent.quo_message_id == message_id).first() is None
+        or not re.fullmatch(
+            rf"prepare\s+(?:customer\s+)?(?:estimate\s+)?approval\s+"
+            rf"(?:link\s+)?(?:for\s+)?(?:RO|job)\s*#?\s*{ro_id}"
+            rf"\s*[,;:.]?\s*fitment\s+verified[.!]?", evidence, re.I
+        )):
+        return {"ownerReply": "Explicit RO and fitment-verification command required. Nothing changed."}
+    ro = db.query(RepairOrder).filter(
+        RepairOrder.id == ro_id, RepairOrder.status != "delivered"
+    ).with_for_update().first()
+    if ro is None:
+        return {"ownerReply": "Repair order not found or already delivered; nothing changed."}
+    lines = db.query(LineItem).filter(LineItem.repair_order_id == ro.id).all()
+    pending = [li for li in lines if li.approval == "pending"]
+    if (not pending or any(li.approval is None for li in lines)
+            or any(li.unit_price is None or li.unit_price < 0 or li.quantity is None
+                   or li.quantity < 0 for li in pending)):
+        return {"ownerReply": "The RO has incomplete or unreviewed prices. Nothing queued."}
+    phone = approval_links.mobile(ro.customer.phone)
+    if not phone:
+        return {"ownerReply": "No valid customer phone on the RO. Nothing queued."}
+    existing = db.query(DispatchItem).filter(
+        DispatchItem.quo_conversation_id == approval_links.conversation_key(ro.id),
+        DispatchItem.status.in_(("routine", "needs_owner", "approved")),
+    ).first()
+    if existing:
+        return {"ownerReply": f"RO #{ro.id} already has approval item #{existing.id}. Review it before sending another link."}
+    if not request_.customerMessageId:
+        return {"customerThreadPhone": phone,
+                "ownerReply": "Waiting to check current customer Quo messages before queuing the link."}
+    try:
+        task = approval_links.queue(db, ro, request_.customerMessageId, "owner_sms")
+    except ValueError:
+        return {"ownerReply": "Couldn't prepare the approval link safely; review the RO in the dashboard."}
+    ro.status = "waiting_approval"
+    # The pricing task is superseded by one actionable customer-approval item.
+    old = db.query(DispatchItem).filter(
+        DispatchItem.quo_conversation_id == f"PARTPRICE{ro.id}",
+        DispatchItem.status.in_(OPEN_STATUSES),
+    ).all()
+    for item in old:
+        item.status = "closed"
+        item.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"ownerReply": (
+        f"RO #{ro.id}: approval link drafted as item #{task.id}. Nothing sent. "
+        f"Review it, then approve the customer message through the existing YES #{task.id} flow "
+        "after its alert, or use the dashboard."
+    )}
+
+
 @internal_router.post("/owner-action")
 def owner_action(request_: OwnerAction, db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
     """Plain-English owner replies. Nothing here texts a customer: sending still needs YES."""
+    if request_.action == "prepare_link":
+        return _owner_prepare_link(db, request_)
     if request_.action == "quote_part":
         return _owner_quote_part(db, request_)
     if request_.action == "part_cost":
