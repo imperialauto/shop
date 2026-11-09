@@ -724,23 +724,36 @@ def _owner_part_cost(db: Session, request_: OwnerAction) -> dict:
         DispatchEvent.quo_message_id == message_id
     ).first():
         return {"ownerReply": "Could not verify the original owner text. Nothing changed."}
-    item = _active_item(db, request_.itemId)
-    if item is None:
-        return {"ownerReply": "That customer item is no longer open. Please provide the repair-order number."}
-    customer_id = item.customer_id
-    if customer_id is None:
-        phone = _normalize_phone(item.customer_phone)
-        matches = [c for c in db.query(Customer).filter(Customer.phone.isnot(None)).all()
-                   if _normalize_phone(c.phone) == phone]
-        if len(matches) != 1:
-            return {"ownerReply": "Cannot uniquely match the customer. Please provide the RO number; nothing changed."}
-        customer_id = matches[0].id
-    active = db.query(RepairOrder).filter(
-        RepairOrder.customer_id == customer_id,
-        RepairOrder.status != "delivered",
-    ).with_for_update().all()
-    if item.vehicle_id:
-        active = [ro for ro in active if ro.vehicle_id == item.vehicle_id]
+    item = _active_item(db, request_.itemId) if request_.itemId is not None else None
+    direct = request_.roId is not None
+    if direct:
+        chosen = db.query(RepairOrder).filter(
+            RepairOrder.id == request_.roId,
+            RepairOrder.status != "delivered",
+        ).with_for_update().first()
+        if chosen is None:
+            return {"ownerReply": "That RO was not found or is already delivered. Nothing changed."}
+        if item and (item.customer_id and chosen.customer_id != item.customer_id
+                     or item.vehicle_id and chosen.vehicle_id != item.vehicle_id):
+            return {"ownerReply": "The RO does not match the customer item. Nothing changed."}
+        active = [chosen]
+    else:
+        if item is None:
+            return {"ownerReply": "That customer item is no longer open. Please provide the RO number."}
+        customer_id = item.customer_id
+        if customer_id is None:
+            phone = _normalize_phone(item.customer_phone)
+            matches = [c for c in db.query(Customer).filter(Customer.phone.isnot(None)).all()
+                       if _normalize_phone(c.phone) == phone]
+            if len(matches) != 1:
+                return {"ownerReply": "Cannot uniquely match the customer. Please provide the RO number; nothing changed."}
+            customer_id = matches[0].id
+        active = db.query(RepairOrder).filter(
+            RepairOrder.customer_id == customer_id,
+            RepairOrder.status != "delivered",
+        ).with_for_update().all()
+        if item.vehicle_id:
+            active = [ro for ro in active if ro.vehicle_id == item.vehicle_id]
 
     evidence = (request_.evidence or "").strip()
     cost = request_.unitCost
@@ -766,6 +779,10 @@ def _owner_part_cost(db: Session, request_: OwnerAction) -> dict:
     evidence_l = evidence.lower()
     verified = []
     for ro in active:
+        if direct:
+            if re.search(rf"\\b(?:RO|job)\\s*#?\\s*{ro.id}\\b", evidence, re.I):
+                verified.append(ro)
+            continue
         vehicle = db.get(Vehicle, ro.vehicle_id)
         if vehicle and vehicle.make and vehicle.model:
             if vehicle.make.lower() in evidence_l and vehicle.model.lower() in evidence_l:
@@ -774,9 +791,8 @@ def _owner_part_cost(db: Session, request_: OwnerAction) -> dict:
         return {"ownerReply": "I need the exact RO number to safely match that part. Nothing changed."}
     ro = verified[0]
 
-    audit_key = f"owner-msg:{message_id}"
+    audit_key = f"owner-msg:{message_id}|ro:{ro.id}"
     already = db.query(DispatchAudit).filter(
-        DispatchAudit.item_id == item.id,
         DispatchAudit.action == "part_cost_staged",
         DispatchAudit.detail == audit_key,
     ).first()
@@ -818,7 +834,7 @@ def _owner_part_cost(db: Session, request_: OwnerAction) -> dict:
     ).with_for_update().first()
     now = datetime.now(timezone.utc)
     if task is None:
-        task = DispatchItem(quo_conversation_id=queue_key, customer_phone=item.customer_phone,
+        task = DispatchItem(quo_conversation_id=queue_key, customer_phone=(item.customer_phone if item else ro.customer.phone),
                             customer_id=ro.customer_id, vehicle_id=ro.vehicle_id,
                             category="estimate_pricing", urgency="normal",
                             status="needs_owner", last_message_id=message_id,
@@ -828,7 +844,7 @@ def _owner_part_cost(db: Session, request_: OwnerAction) -> dict:
     task.proposed_action = "Verify fitment, selling price, labor and taxes before sending an estimate."
     task.draft_reply = None
     task.updated_at = now
-    db.add(DispatchAudit(item_id=item.id, actor="owner_sms",
+    db.add(DispatchAudit(item_id=(item.id if item else None), actor="owner_sms",
                          action="part_cost_staged", detail=audit_key))
     db.commit()
     return {"ownerReply": (
