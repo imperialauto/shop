@@ -121,3 +121,28 @@ test("private cost is blocked even if the proposed text omits the dollar symbol"
   });
   assert.equal(action, null);
 });
+
+test("bare owner cost stays private and separately approved prices are allowed", async () => {
+  const snapshot = { waitingOnYou: [{ id: 52, who: "Ford Fusion" }] };
+  const history = [
+    { role: "user", content: "The tank was 81.83 my cost." },
+    { role: "user", content: "The approved selling price is $140." },
+  ];
+  const propose = (text) => interpretOwner({
+    question: "draft a reply", snapshot, history,
+    complete: async () => JSON.stringify({ action: "propose", itemId: 52, text }),
+  });
+  assert.equal(await propose("The part is $81.83."), null);
+  assert.equal((await propose("The part is $140.00.")).action, "propose");
+});
+
+test("cost amounts match equivalent formatting but not substrings", async () => {
+  const snapshot = { waitingOnYou: [{ id: 52, who: "Ford Fusion" }] };
+  const history = [{ role: "user", content: "I paid $1,200." }];
+  const propose = (text) => interpretOwner({
+    question: "draft a reply", snapshot, history,
+    complete: async () => JSON.stringify({ action: "propose", itemId: 52, text }),
+  });
+  assert.equal(await propose("The part is $1200.00."), null);
+  assert.equal((await propose("Use reference 12001.")).action, "propose");
+});
