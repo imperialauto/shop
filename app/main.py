@@ -18,7 +18,7 @@ import time
 
 from app.security import limiter
 from app.permissions import ROLES, role_gate
-from app import home_summary, preview_check, preview_seed
+from app import home_summary, preview_check, preview_seed, system_health
 from app.public_site import preview_code
 import hashlib
 import hmac
@@ -295,6 +295,7 @@ def dashboard(request: Request, view: str = "open", db: Session = Depends(get_db
         "now": datetime.now(PHOENIX),
         **dispatch.dashboard_context(db, view),
         "home": home_summary.summary(db, user),
+        "health": system_health.report(db) if user.role in ("owner", "admin") else None,
         "read_only": app.state.read_only,
     })
 
