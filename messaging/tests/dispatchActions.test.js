@@ -11,6 +11,7 @@ function fixture({ newest = "m1", sendError = false, tick = [] } = {}) {
   const outcomes = [];
   const quo = {
     listMessages: async () => ({ data: [{ id: "old", createdAt: "2026-11-01" }, { id: newest, createdAt: "2026-11-02" }] }),
+    listCalls: async () => ({ data: [] }),
     sendMessage: async (m) => { if (sendError) throw new Error("timeout"); sends.push(m); },
   };
   const shopClient = {
