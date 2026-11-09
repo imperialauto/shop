@@ -316,18 +316,20 @@ async def create_ro_from_estimate(
     from app.models import Customer, Vehicle, RepairOrder, LineItem
 
     customer = None
+    normalized = ""
     if phone_number.strip():
-        normalized = "".join(c for c in phone_number if c.isdigit() or c == "+")
-        if not normalized.startswith("+"):
-            normalized = "+1" + normalized.lstrip("1")
-        customer = db.query(Customer).filter(Customer.phone == normalized).first()
+        digits = "".join(c for c in phone_number if c.isdigit())[-10:]
+        normalized = "+1" + digits if len(digits) == 10 else ""
+        # Match however the number was saved before, by its last ten digits.
+        customer = next((c for c in db.query(Customer).filter(Customer.phone.isnot(None)).all()
+                         if digits and "".join(ch for ch in c.phone if ch.isdigit())[-10:] == digits), None)
 
     if not customer:
         parts = data.get("name", "Unknown").split(maxsplit=1)
         customer = Customer(
             first_name=parts[0],
             last_name=parts[1] if len(parts) > 1 else "",
-            phone=phone_number.strip() or "",
+            phone=normalized or phone_number.strip(),
         )
         db.add(customer)
         db.flush()
