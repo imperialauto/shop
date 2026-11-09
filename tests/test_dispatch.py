@@ -1001,5 +1001,28 @@ class QueueWorkflowTests(unittest.TestCase):
             self.assertEqual(db.query(PartsOrder).one().cost, 81.83)
 
 
+    def test_direct_owner_ro_cost_command_works_without_open_customer_queue_item(self):
+        with self.Session() as db:
+            v = Vehicle(customer_id=1, year=2013, make="Ford", model="Fusion")
+            db.add(v)
+            db.flush()
+            db.add(RepairOrder(customer_id=1, vehicle_id=v.id, status="diagnosing"))
+            db.commit()
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            self.owner_text("o-direct", "RO #1: add fuel tank for $81.83 my cost, pickup Thursday")
+            data = {"action": "part_cost", "ownerPhone": OWNER, "ownerMessageId": "o-direct",
+                    "roId": 1, "partDescription": "fuel tank", "unitCost": 81.83, "eta": "Thursday",
+                    "evidence": "RO #1: add fuel tank for $81.83 my cost, pickup Thursday"}
+            accepted = self.client.post("/internal/dispatch/owner-action", headers=HEADERS, json=data)
+            again = self.client.post("/internal/dispatch/owner-action", headers=HEADERS, json=data)
+        self.assertIn("Saved fuel tank to RO #1", accepted.json()["ownerReply"])
+        self.assertIn("Already recorded", again.json()["ownerReply"])
+        with self.Session() as db:
+            self.assertEqual(db.query(PartsOrder).one().cost, 81.83)
+            self.assertEqual(db.query(DispatchItem).count(), 1)
+            self.assertEqual(db.query(LineItem).count(), 0)
+            self.assertEqual(db.query(DispatchOutbound).count(), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
