@@ -163,10 +163,19 @@
   <div class="text-right text-gold-300 font-bold">Subtotal: ${{ "%.2f"|format(subtotal) }}</div>
   {% if user.role != 'tech' %}
   {% set undecided = ro.line_items|selectattr('approval', 'none')|list %}
-  {% if request.query_params.get('asked') %}<p class="text-sm text-green-400 mt-2">Approval link is ready. Nothing was sent. Send the customer their status link: <span class="text-stone-200 break-all">{{ request.url.scheme }}://{{ request.url.netloc }}/status/{{ ro.public_token }}</span></p>{% endif %}
+  {% set link = request.query_params.get('link', '') %}
+  {% if link.startswith('queued') %}<p class="text-sm text-green-400 mt-2">Approval text is waiting for you as #{{ link[6:] }}. Reply YES {{ link[6:] }} to the alert, or approve it on the dashboard, to text the customer their link. Nothing has been sent yet.</p>
+  {% elif link == 'no_phone' %}<p class="text-sm text-amber-300 mt-2">This customer has no mobile number, so no text was queued. <a class="underline" href="/customers/{{ ro.customer_id }}/edit">Add one</a>, then tap the button again. Their link: <span class="text-stone-200 break-all">{{ request.url.scheme }}://{{ request.url.netloc }}/sign/ro/{{ ro.public_token }}</span></p>
+  {% elif link == 'unavailable' %}<p class="text-sm text-amber-300 mt-2">Couldn't check their text thread in Quo, so no text was queued. Try again in a minute.</p>
+  {% elif request.query_params.get('asked') %}<p class="text-sm text-green-400 mt-2">Items are marked as waiting on the customer. Nothing was sent.</p>{% endif %}
+  {% set pending = ro.line_items|selectattr('approval', 'equalto', 'pending')|list %}
   {% if undecided %}
   <form method="post" action="/ro/{{ ro.id }}/request-approval" class="mt-3 text-right">
     <button type="submit" class="btn-primary" style="min-height:44px">Ask customer to approve {{ undecided|length }} item{{ 's' if undecided|length != 1 }}</button>
+  </form>
+  {% elif pending %}
+  <form method="post" action="/ro/{{ ro.id }}/request-approval" class="mt-3 text-right">
+    <button type="submit" class="btn-secondary" style="min-height:44px">Queue the approval text again</button>
   </form>
   {% endif %}
   {% endif %}

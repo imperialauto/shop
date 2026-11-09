@@ -7,6 +7,7 @@ from app.database import get_db
 from app.models import RepairOrder, Customer, Vehicle, User, LineItem, Communication, PartsOrder
 from app.auth import get_current_user
 from app.config import GOOGLE_REVIEW_LINK
+from app import approval_links, customer_file
 import os, secrets
 
 router = APIRouter()
@@ -229,7 +230,8 @@ def update_status(
 
 @router.post("/{ro_id}/request-approval")
 def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db)):
-    """Marks every line not yet decided as waiting on the customer. Sends nothing."""
+    """Marks undecided lines as waiting on the customer and queues the approval
+    text for the owner's YES. Nothing is sent from here."""
     user = require_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=302)
@@ -242,7 +244,21 @@ def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db)
     if fresh:
         ro.status = "waiting_approval"
     db.commit()
-    return RedirectResponse(f"/ro/{ro_id}?asked={len(fresh)}", status_code=302)
+    link = "none"
+    phone = approval_links.mobile(ro.customer.phone)
+    if phone is None:
+        link = "no_phone"
+    elif any(li.approval == "pending" for li in ro.line_items):
+        thread, problem = customer_file._bridge("/conversation", phone[-10:])
+        if problem:
+            link = "unavailable"
+        else:
+            messages = thread.get("messages") or []
+            newest = messages[-1].get("id") if messages else "none"
+            item = approval_links.queue(db, ro, newest or "none", user.username)
+            db.commit()
+            link = f"queued{item.id}"
+    return RedirectResponse(f"/ro/{ro_id}?asked={len(fresh)}&link={link}", status_code=302)
 
 
 @router.post("/{ro_id}/assign")

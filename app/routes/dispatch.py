@@ -19,7 +19,7 @@ from app.database import get_db
 from app.config import OWNER_PHONE
 from app.dispatch import AUTO_POLICIES, LOCKED_POLICIES, MAKES, POLICIES, PROMISE, apply_policies, assess, auto_reply, is_reaction, parse_owner_command, propose
 from app.appointment_model import Appointment
-from app import alert_rules, website_alerts
+from app import alert_rules, approval_links, website_alerts
 from app.sending_pause import is_paused, pause, resume
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync, OPEN_STATUSES
 from app.models import Communication, Customer, RepairOrder, Vehicle
@@ -472,6 +472,9 @@ FOLLOW_UP_HOURS = range(11, 19)
 def _alert_text(db: Session, item: DispatchItem) -> str:
     said = " ".join(item.summary.split())[:120]
     name = _label(db, item)
+    if item.category == approval_links.CATEGORY:
+        return (f"#{item.id} Approval link for {name}. {said}\nSend: {(item.draft_reply or '')[:300]}\n"
+                f"YES {item.id} texts it to them. NO {item.id} skips it.")
     if website_alerts.is_website(item) and item.category == "approval":
         return f"Estimate #{item.id} {name}: {said}\nOpen the job to start the approved work. DONE {item.id} when handled."
     if website_alerts.is_website(item):
