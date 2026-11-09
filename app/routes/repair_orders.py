@@ -165,7 +165,7 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
     if not ro:
         raise HTTPException(status_code=404)
     techs = workers(db)
-    subtotal = sum(li.total for li in ro.line_items)
+    subtotal = sum(li.total for li in ro.line_items if li.billable)
     # Pull all communications for this customer (across all ROs), sorted oldest→newest
     comms = (
         db.query(Communication)
@@ -225,6 +225,24 @@ def update_status(
 
     back = request.query_params.get("back")
     return RedirectResponse("/my-day" if back == "my-day" else f"/ro/{ro_id}", status_code=302)
+
+
+@router.post("/{ro_id}/request-approval")
+def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db)):
+    """Marks every line not yet decided as waiting on the customer. Sends nothing."""
+    user = require_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    ro = db.get(RepairOrder, ro_id)
+    if not ro:
+        raise HTTPException(status_code=404)
+    fresh = [li for li in ro.line_items if li.approval is None]
+    for li in fresh:
+        li.approval = "pending"
+    if fresh:
+        ro.status = "waiting_approval"
+    db.commit()
+    return RedirectResponse(f"/ro/{ro_id}?asked={len(fresh)}", status_code=302)
 
 
 @router.post("/{ro_id}/assign")

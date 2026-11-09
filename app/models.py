@@ -106,6 +106,8 @@ class LineItem(Base):
     quantity = Column(Float, default=1.0)
     unit_price = Column(Float, default=0.0)
     taxable = Column(Boolean, default=True)
+    approval = Column(String(12))  # None: not sent for approval. pending, approved, declined
+    decided_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime, default=datetime.utcnow)
 
     repair_order = relationship("RepairOrder", back_populates="line_items")
@@ -113,6 +115,11 @@ class LineItem(Base):
     @property
     def total(self):
         return self.quantity * self.unit_price
+
+    @property
+    def billable(self):
+        """Declined or still-pending lines are never billed."""
+        return self.approval in (None, "approved")
 
 
 class PartsOrder(Base):

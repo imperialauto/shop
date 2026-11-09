@@ -31,5 +31,24 @@ def queue(db: Session, order: RepairOrder, kind: str, summary: str, service_line
     return item
 
 
+def queue_decision(db: Session, order: RepairOrder, decided: list) -> DispatchItem:
+    """Tells the owner what the customer approved. Never texts the customer."""
+    yes = [li for li in decided if li.approval == "approved"]
+    no = [li for li in decided if li.approval == "declined"]
+    amount = sum(li.total for li in yes)
+    summary = f"Approved {len(yes)} of {len(decided)} items, ${amount:,.2f}."
+    if no:
+        summary += " Declined: " + "; ".join(li.description[:40] for li in no)
+    item = DispatchItem(
+        quo_conversation_id=f"WEB{order.id}", customer_phone=order.customer.phone or "", customer_id=order.customer_id,
+        vehicle_id=order.vehicle_id, category="approval", urgency="normal", summary=summary[:280],
+        proposed_action=f"Customer decision on job #{order.id}", draft_reply=None, status="needs_owner",
+        last_message_id=f"web:{order.id}:decision", updated_at=datetime.now().astimezone())
+    db.add(item)
+    db.flush()
+    db.add(DispatchAudit(item_id=item.id, actor="customer", action="estimate_decided", detail=f"job {order.id}"))
+    return item
+
+
 def is_website(item: DispatchItem) -> bool:
     return (item.quo_conversation_id or "").startswith("WEB")

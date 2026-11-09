@@ -146,7 +146,7 @@
     <tbody>
       {% for li in ro.line_items %}
       <tr>
-        <td>{{ li.description }}</td>
+        <td>{{ li.description }}{% if li.approval == 'pending' %} <span class="text-yellow-400 text-xs">Waiting on customer</span>{% elif li.approval == 'approved' %} <span class="text-green-400 text-xs">Approved</span>{% elif li.approval == 'declined' %} <span class="text-red-400 text-xs">Declined, not billed</span>{% endif %}</td>
         <td class="text-stone-400">{{ li.item_type }}</td>
         <td class="text-right text-stone-400">{{ li.quantity }}</td>
         <td class="text-right text-stone-400">${{ "%.2f"|format(li.unit_price) }}</td>
@@ -161,6 +161,15 @@
     </tbody>
   </table>
   <div class="text-right text-gold-300 font-bold">Subtotal: ${{ "%.2f"|format(subtotal) }}</div>
+  {% if user.role != 'tech' %}
+  {% set undecided = ro.line_items|selectattr('approval', 'none')|list %}
+  {% if request.query_params.get('asked') %}<p class="text-sm text-green-400 mt-2">Approval link is ready. Nothing was sent. Send the customer their status link: <span class="text-stone-200 break-all">{{ request.url.scheme }}://{{ request.url.netloc }}/status/{{ ro.public_token }}</span></p>{% endif %}
+  {% if undecided %}
+  <form method="post" action="/ro/{{ ro.id }}/request-approval" class="mt-3 text-right">
+    <button type="submit" class="btn-primary" style="min-height:44px">Ask customer to approve {{ undecided|length }} item{{ 's' if undecided|length != 1 }}</button>
+  </form>
+  {% endif %}
+  {% endif %}
   {% endif %}
 
   <!-- Add Line Item -->
