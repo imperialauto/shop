@@ -44,9 +44,9 @@ class HomeSummaryTests(unittest.TestCase):
             db.flush()
             db.add(Payment(invoice_id=invoice.id, amount=200, paid_at=datetime.utcnow()))
             db.add(DispatchItem(quo_conversation_id="CN1", customer_phone="+16025550100", summary="x", category="repair",
-                                urgency="safety", status="needs_owner"))
+                                urgency="safety", status="needs_owner", last_message_id="m1"))
             db.add(DispatchItem(quo_conversation_id="CN2", customer_phone="+16025550101", summary="y", category="repair",
-                                urgency="normal", status="routine"))
+                                urgency="normal", status="routine", last_message_id="m2"))
             db.commit()
 
     def tearDown(self):
