@@ -149,7 +149,8 @@ def pricing(request: Request):
 
 @router.get("/rentals", response_class=HTMLResponse)
 def rentals(request: Request):
-    return render(request, "site/service.html", active="rentals", line=SERVICE_LINE_BY_SLUG["rentals"])
+    return render(request, "site/service.html", active="rentals", line=SERVICE_LINE_BY_SLUG["rentals"],
+                  actions=line_actions("rentals"), roadside=False)
 
 
 @router.get("/faq", response_class=HTMLResponse)
