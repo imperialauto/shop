@@ -91,7 +91,7 @@
       <tbody>
         {% for ro in open_ros %}
         <tr class="cursor-pointer" onclick="window.location='/ro/{{ ro.id }}'" style="cursor:pointer;">
-          <td style="padding-left:16px; color: var(--imp-purple); font-weight:600; font-family:monospace;">#{{ ro.id }}</td>
+          <td style="padding-left:16px; color: var(--imp-heading); font-weight:600; font-family:monospace;">#{{ ro.id }}</td>
           <td>
             {% if ro.customer.customer_type == 'fleet' %}
             <span class="badge badge-fleet" style="margin-right:6px;">FLEET</span>{{ ro.customer.fleet_name }}
@@ -112,7 +112,7 @@
     {% else %}
     <div style="padding:40px 20px; text-align:center; color:var(--imp-muted); font-size:13.5px;">
       No open repair orders.
-      <a href="/ro/new" style="color: var(--imp-purple); text-decoration:none; margin-left:4px;">Create one →</a>
+      <a href="/ro/new" style="color: var(--imp-heading); text-decoration:none; margin-left:4px;">Create one →</a>
     </div>
     {% endif %}
   </div>

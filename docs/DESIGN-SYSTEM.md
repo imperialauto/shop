@@ -2,6 +2,8 @@
 
 One look for every Imperial screen: the public website, booking and estimate forms, customer status and approval pages, the owner dashboard, staff and technician screens, finance, Imperial AI, the Knowledge Center, divisions, and alerts.
 
+**Owner direction (Nov 9, after rollout step 1):** "purple, grey and gold": a deeper purple-grey base mixed between purple and grey so the gold pops, with several tones rather than one colour. Tokens below are superseded by `app/static/imperial.css`: header #16111C, page #221C29, cards #2C2534, raised #362E40, lines #463C52, text #F1EDF4, grey text #B4ABBF, brand purple #2D0245 and #5A3A78 for fills and active items, gold #EAD272 for titles, primary buttons and the active page.
+
 **Status:** proposed. The preview needs owner approval before production templates change. Until then, the website keeps `app/static/site.css`, and the dashboard keeps the black and gold look in `app/templates/base.html`.
 
 ## Audit (Nov 9)

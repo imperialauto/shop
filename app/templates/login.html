@@ -10,20 +10,20 @@
   <style>
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100dvh; display: grid; place-items: center; padding: 20px; font-family: var(--imp-sans);
-           background: linear-gradient(160deg, var(--imp-purple) 0%, var(--imp-purple-deep) 75%); color: var(--imp-ink); }
+           background: radial-gradient(120% 80% at 50% 0%, #3A2650 0%, var(--imp-paper) 55%, var(--imp-header) 100%); color: var(--imp-ink); }
     .wrap { width: 100%; max-width: 380px; }
     .brand { text-align: center; margin-bottom: 22px; }
     .mark { width: 52px; height: 52px; border-radius: 12px; border: 2px solid var(--imp-gold); display: inline-flex; align-items: center; justify-content: center;
             font-family: var(--imp-serif); font-weight: 700; font-size: 30px; color: var(--imp-gold); }
     .brand h1 { margin: 10px 0 2px; font-family: var(--imp-serif); font-size: 32px; color: var(--imp-gold); }
     .brand p { margin: 0; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: #D9CDE3; }
-    .panel { background: var(--imp-surface); border-radius: var(--imp-radius-card); padding: 24px; box-shadow: 0 18px 40px rgba(26,1,41,0.35); }
+    .panel { background: var(--imp-surface); border-radius: var(--imp-radius-card); padding: 24px; border: 1px solid var(--imp-line); box-shadow: 0 18px 40px rgba(0,0,0,0.35); }
     label { display: block; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--imp-muted); margin-bottom: 6px; }
-    input { width: 100%; min-height: 48px; padding: 10px 12px; font-size: 16px; border: 1.5px solid #CFC5D8; border-radius: var(--imp-radius); color: var(--imp-ink); background: var(--imp-surface); }
-    input:focus { outline: 3px solid rgba(203,176,107,0.5); border-color: var(--imp-purple); }
+    input { width: 100%; min-height: 48px; padding: 10px 12px; font-size: 16px; border: 1.5px solid var(--imp-line); border-radius: var(--imp-radius); color: var(--imp-ink); background: var(--imp-header); }
+    input:focus { outline: 3px solid rgba(203,176,107,0.5); border-color: var(--imp-gold-dark); }
     .field { margin-bottom: 16px; }
-    button { width: 100%; min-height: 50px; border: 0; border-radius: var(--imp-radius); background: var(--imp-purple); color: #FFFFFF; font-size: 16px; font-weight: 700; cursor: pointer; }
-    button:hover { background: var(--imp-purple-soft); }
+    button { width: 100%; min-height: 50px; border: 0; border-radius: var(--imp-radius); background: var(--imp-gold); color: var(--imp-on-gold); font-size: 16px; font-weight: 700; cursor: pointer; }
+    button:hover { background: #F2DF8E; }
     .error { background: var(--imp-danger-tint); color: var(--imp-danger); border-radius: 8px; padding: 10px 12px; font-size: 14px; margin-bottom: 16px; }
   </style>
 </head>
