@@ -108,7 +108,7 @@ class PublicBooking(unittest.TestCase):
         response = self.client.post('/site/book', data=self.form(slot_id), follow_redirects=False)
         self.assertEqual(response.status_code, 303, response.text)
         received = self.client.get('/site/book/received')
-        self.assertIn('Diagnostic appointment', received.text)
+        self.assertIn('Basic in-shop diagnostic screening', received.text)
         self.assertIn('booked', received.text)
         self.assertIn('/status/', received.text)
         self.assertIn('Your reference', received.text)
@@ -133,7 +133,7 @@ class PublicBooking(unittest.TestCase):
             self.assertEqual(appointment.buffer_after_minutes, 60)
             order = db.get(RepairOrder, appointment.repair_order_id)
             self.assertEqual(order.status, 'intake')
-            self.assertTrue(order.concern.startswith('Online booking: Diagnostic appointment on '))
+            self.assertTrue(order.concern.startswith('Online booking: Basic in-shop diagnostic screening on '))
             self.assertIn('Made-up test: shudders from a stop.', order.concern)
             self.assertEqual(order.customer.last_name, 'Sampleton')
             self.assertEqual(db.query(Communication).count(), 0)
@@ -444,7 +444,7 @@ class PublicBooking(unittest.TestCase):
     def test_only_approved_services_can_be_booked(self):
         slot_id = self.slot(weekday_at(11))
         with patch.dict(os.environ, {'PUBLIC_BOOKING_SERVICES': 'oil-service'}):
-            self.assertNotIn('Diagnostic appointment', self.client.get('/site/book').text)
+            self.assertNotIn('Basic in-shop diagnostic screening', self.client.get('/site/book').text)
             response = self.client.post('/site/book', data=self.form(slot_id))
             self.assertEqual(response.status_code, 422)
             self.assertIn('Choose a service', response.text)
