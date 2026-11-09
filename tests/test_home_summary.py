@@ -57,7 +57,9 @@ class HomeSummaryTests(unittest.TestCase):
         with self.Session() as db, patch.object(calendar_feed, "upcoming", return_value=[]):
             data = home_summary.summary(db, SimpleNamespace(role="owner"), datetime.now(PHOENIX))
         self.assertEqual((data["needs_you"], data["urgent"], data["awaiting"]), (1, 1, 2))
-        self.assertEqual(data["money"], {"owed": 300, "owed_count": 1, "paid_week": 200})
+        money = dict(data["money"])
+        self.assertEqual(money.pop("cycle")["days"], 30)  # first contact to paid, checked in test_cycle_time
+        self.assertEqual(money, {"owed": 300, "owed_count": 1, "paid_week": 200})
         stages = {s["key"]: s["count"] for s in data["stages"]}
         self.assertEqual((stages["intake"], stages["in_progress"], stages["waiting_approval"]), (1, 1, 1))
 
