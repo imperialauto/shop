@@ -2,7 +2,9 @@ name: App walkthrough
 on:
   workflow_dispatch:
   push:
-    branches: ['claude/**']
+    branches: ['claude/**', 'main']
+  pull_request:
+    branches: ['main']
 jobs:
   walkthrough:
     runs-on: ubuntu-latest
