@@ -122,7 +122,7 @@ class QuoImportTests(unittest.TestCase):
         with patch.object(quo_import, "fetch_directory", lambda: (None, "Quo couldn't be read right now.")):
             owner = TestClient(app, follow_redirects=False)
             owner.post("/login", data={"username": "owner", "password": PASSWORD})
-            self.assertIn("couldn't be read", owner.get("/customers/import").text)
+            self.assertIn("be read right now", owner.get("/customers/import").text)
             owner.post("/customers/import", data={"phone": "6025550101"})
         with self.Session() as db:
             self.assertEqual(db.query(Customer).count(), 1)
