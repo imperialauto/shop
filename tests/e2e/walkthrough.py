@@ -334,7 +334,7 @@ def flows(page, device):
         visitor.fill("[name=zip]", "85000")
         visitor.click("button:has-text('Update times')")
         assert "$5.00" in visitor.inner_text("body") and "$45.00" in visitor.inner_text("body")
-        visitor.locator("label.choice", has=visitor.locator("input[name=slot_id]")).last.click()
+        visitor.locator("details[open] label.choice", has=visitor.locator("input[name=slot_id]")).last.click()
         visitor.fill("[name=street]", "100 Test St")
         visitor.fill("[name=year]", "2016")
         visitor.fill("[name=make]", "Ford")

@@ -70,14 +70,15 @@
           <legend>2. Choose a time</legend>
           {% if days %}
             {% for day, times in days.items() %}
-            <div class="day">
-              <h3>{{ day }}</h3>
+            {% set chosen = values.slot_id in times|map(attribute='id')|map('string')|list %}
+            <details class="day" {% if loop.index <= 3 or chosen %}open{% endif %}>
+              <summary><h3 style="display:inline">{{ day }}</h3> <span class="hint">{{ times|length }} time{{ '' if times|length == 1 else 's' }}</span></summary>
               <div class="choices">
                 {% for t in times %}
                 <label class="choice"><input type="radio" name="slot_id" value="{{ t.id }}" required {% if values.slot_id == t.id|string %}checked{% endif %}><span>{{ t.label }}</span></label>
                 {% endfor %}
               </div>
-            </div>
+            </details>
             {% endfor %}
           {% else %}
             <p class="alert alert-info" id="no-times">No online times fit this service in the next few weeks. <a href="/site/estimate?about={{ service.slug }}">Send a request online</a> and we'll offer you a time.</p>
