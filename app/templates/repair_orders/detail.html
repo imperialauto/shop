@@ -46,10 +46,8 @@
     <a href="/appointments/calendar?ro={{ ro.id }}" class="btn-secondary">Schedule</a>
     {% if open_invoice %}
     <a href="/invoices/{{ open_invoice.id }}" class="btn-primary">View Invoice</a>
-    {% elif ro.line_items %}
+    {% elif ro.line_items|selectattr('approval', 'equalto', 'approved')|list %}
     {% if user.role != 'tech' %}<form method="post" action="/invoices/create/{{ ro.id }}"><button type="submit" class="btn-primary">Create Invoice</button></form>{% endif %}
-    {% else %}
-    <span class="text-stone-400 text-sm self-center">Add a line item to create an invoice</span>
     {% endif %}
   </div>
 </div>
@@ -99,10 +97,13 @@
     {% if ro.signed_at %}
     <p style="color:var(--imp-ok); font-size:12px;">✓ Signed by {{ ro.approved_by }}<br><span style="color:var(--imp-muted);">{{ ro.signed_at.strftime('%b %d %I:%M %p') }}</span></p>
     {% else %}
-    <div style="display:flex; flex-direction:column; gap:5px;">
+    <details>
+    <summary class="text-sm text-stone-400" style="cursor:pointer">Signature link (by hand)</summary>
+    <div style="display:flex; flex-direction:column; gap:5px; margin-top:6px;">
       <a href="/sign/ro/{{ ro.public_token }}" target="_blank" class="btn-secondary" style="font-size:11.5px; padding:5px 10px;">🖊 Open Signature Page</a>
       <button onclick="navigator.clipboard.writeText(window.location.origin+'/sign/ro/{{ ro.public_token }}').then(()=>{this.textContent='✓ Copied!';setTimeout(()=>this.textContent='📋 Copy Sig Link',2000)})" class="btn-secondary" style="font-size:11.5px; padding:5px 10px;">📋 Copy Sig Link</button>
     </div>
+    </details>
     {% endif %}
   </div>
 </div>
@@ -195,7 +196,7 @@
   {% set pending = ro.line_items|selectattr('approval', 'equalto', 'pending')|list %}
   {% if undecided %}
   <form method="post" action="/ro/{{ ro.id }}/request-approval" class="mt-3 text-right">
-    <button type="submit" class="btn-primary" style="min-height:44px">Ask customer to approve {{ undecided|length }} item{{ 's' if undecided|length != 1 }}</button>
+    <button type="submit" class="btn-secondary" style="min-height:44px">Ask customer to approve {{ undecided|length }} item{{ 's' if undecided|length != 1 }}</button>
   </form>
   {% elif pending %}
   <form method="post" action="/ro/{{ ro.id }}/request-approval" class="mt-3 text-right">
