@@ -85,7 +85,7 @@ SERVICE_LINES: tuple[ServiceLine, ...] = (
         "Most work is done at the shop. When a vehicle cannot get here, ask us about an on-site visit or a bring-in.",
         ("Class 8 semi roadside: starters, alternators, belts, water pumps and air systems",
          "Selected on-site repairs", "Shop transport for vehicles coming in for major repairs"),
-        note="Mobile and roadside work is quoted by request. Call or send an estimate request.",
+        note="Mobile and roadside work is quoted by request. Send a roadside request online; call for emergencies.",
     ),
     ServiceLine(
         "towing", "Towing and roadside dispatch",
@@ -113,6 +113,22 @@ SERVICE_LINES: tuple[ServiceLine, ...] = (
 
 SERVICE_LINE_BY_SLUG = {line.slug: line for line in SERVICE_LINES}
 
+# The main online action for each service line. Phone stays available, but never as the main path,
+# except as the emergency option on roadside and towing.
+ROADSIDE_LINES = {"towing", "mobile-roadside"}
+
+
+def line_actions(slug: str) -> list[tuple[str, str]]:
+    """[(label, href)], main action first."""
+    estimate = ("Request an estimate", f"/site/estimate?service={slug}")
+    if slug in ROADSIDE_LINES:
+        return [("Request roadside help", "/site/roadside"), estimate]
+    if slug == "auto-repair":
+        return [("Book a diagnostic", "/site/book?service=diagnostic"), estimate]
+    if slug in ("diesel", "european-sprinter", "dps6-transmission", "fleet"):
+        return [estimate, ("Book a diagnostic", "/site/book?service=diagnostic")]
+    return [("Request online", f"/site/estimate?service={slug}")]
+
 
 @dataclass(frozen=True)
 class BookableService:
@@ -124,25 +140,38 @@ class BookableService:
     price: float | None = None
     price_type: str = "exact"  # "exact" for predictable work, "starting" for variable work
     mobile: bool = False
+    # Vehicle-class starting prices for a package (e.g. brakes): {"sedan": 349, ...}. Never a final price.
+    tiers: tuple = ()
+    per: str = ""  # unit the price covers, e.g. "axle"
 
     @property
     def price_label(self) -> str:
         if self.price is None:
             return "Price coming soon"
         amount = f"${self.price:,.2f}".removesuffix(".00")
-        return f"From {amount}" if self.price_type == "starting" else amount
+        label = f"From {amount}" if self.price_type == "starting" else amount
+        return f"{label} per {self.per}" if self.per else label
+
+    def tier(self, key: str):
+        return next((t for t in self.tiers if t[0] == key), None)
 
 
 # Owner approved these six on 2026-11-05, subject to final prices and times.
 # Final values come from PUBLIC_SERVICE_CATALOG. No price is ever assumed here.
 BOOKABLE_SERVICES: tuple[BookableService, ...] = (
-    BookableService("diagnostic", "Diagnostic appointment", "Check engine light, warning lights, noises or drivability. We find the cause and give you an estimate.", 60),
+    BookableService("diagnostic", "Basic in-shop diagnostic screening", "Initial screening for warning lights, noises or drivability concerns. Advanced diagnostic testing requires a separate estimate and your approval.", 60),
     BookableService("oil-service", "Oil and filter service", "Gas or diesel. Includes a quick look over the vehicle.", 60),
     BookableService("brake-inspection", "Brake inspection", "Pads, rotors, fluid and hardware checked, with an estimate if anything needs work.", 60),
     BookableService("ac-check", "A/C performance check", "We check how the A/C is cooling and look for leaks.", 60),
     BookableService("battery-charging", "Battery and charging test", "Battery, starter and alternator tested.", 30),
     BookableService("pre-purchase", "Pre-purchase inspection", "A full look over a vehicle before you buy it.", 90),
+    # Package with vehicle-class starting prices. Parts fitment, labor time and margin are checked
+    # by the shop before the price is final, so it is always shown as a starting price.
+    BookableService("brake-pads-rotors", "Brake pads and rotors", "New pads and rotors on one axle. The final price is confirmed after we check parts for your exact vehicle.", 120,
+                    price_type="starting", per="axle"),
 )
+
+VEHICLE_CLASSES = {"sedan": "Sedan or compact", "suv": "SUV or crossover", "pickup": "Pickup or large SUV"}
 
 
 def preview_mode() -> bool:
@@ -179,8 +208,17 @@ def _with_catalog(service: BookableService, entry: dict) -> BookableService:
         return service
     if (price is not None and price < 0) or not 15 <= minutes <= 480:
         return service
-    kind = "starting" if entry.get("price_type") == "starting" else "exact"
-    return replace(service, price=price, minutes=minutes, price_type=kind, mobile=entry.get("mobile") is True)
+    kind = "starting" if entry.get("price_type") == "starting" or service.tiers or entry.get("tiers") else "exact"
+    tiers = ()
+    if isinstance(entry.get("tiers"), dict):
+        try:
+            tiers = tuple((k, VEHICLE_CLASSES[k], float(v)) for k, v in entry["tiers"].items() if k in VEHICLE_CLASSES and float(v) >= 0)
+        except (TypeError, ValueError):
+            tiers = ()
+        if tiers and price is None:
+            price = min(t[2] for t in tiers)
+        kind = "starting"
+    return replace(service, price=price, minutes=minutes, price_type=kind, mobile=entry.get("mobile") is True, tiers=tiers)
 
 
 def approved_bookable_services() -> list[BookableService]:
@@ -191,13 +229,40 @@ def approved_bookable_services() -> list[BookableService]:
     return [_with_catalog(s, catalog.get(s.slug) or {}) for s in BOOKABLE_SERVICES if wanted is None or s.slug in wanted]
 
 
+def _unpriced_preview() -> bool:
+    """A disposable preview with no prices at all may book unpriced services to test the flow.
+    Once any price is configured, the preview behaves exactly like production."""
+    return preview_mode() and not any(isinstance(e, dict) and (e.get("price") is not None or e.get("tiers"))
+                                      for e in service_catalog().values())
+
+
 def bookable_services() -> list[BookableService]:
-    """Only services with a final price can be booked, except in a disposable preview."""
-    return [s for s in approved_bookable_services() if s.price is not None or preview_mode()]
+    """Only services with a price can be booked, except in an unpriced disposable preview."""
+    return [s for s in approved_bookable_services() if s.price is not None or _unpriced_preview()]
 
 
 def bookable_service(slug: str) -> BookableService | None:
     return next((s for s in bookable_services() if s.slug == slug), None)
+
+
+def requestable_services() -> list[BookableService]:
+    """Approved standard services without a final price yet. They are requested online, not booked,
+    so the customer is never sent to the phone just because a price isn't set."""
+    return [s for s in approved_bookable_services() if s.price is None and not _unpriced_preview()]
+
+
+def auto_times() -> dict:
+    """PUBLIC_AUTO_TIMES: {"resources": ["bay-1"], "step_minutes": 30}. Offers open times straight from
+    shop hours, so nobody has to publish slots by hand. Empty means only published slots are offered."""
+    try:
+        data = json.loads(business_settings.raw("booking_auto_times") or "{}")
+        resources = [str(r).strip()[:80] for r in data.get("resources", []) if str(r).strip()]
+        step = int(data.get("step_minutes", 30))
+    except (ValueError, TypeError, AttributeError):
+        return {}
+    if not resources or step not in (15, 20, 30, 60):
+        return {}
+    return {"resources": resources[:4], "step_minutes": step}
 
 
 @dataclass(frozen=True)
