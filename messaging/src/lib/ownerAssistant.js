@@ -127,8 +127,11 @@ function leaksPrivateAcquisitionCost(question, proposedText, history = []) {
     String(question || ""),
   ];
   const privateCost = /\b(?:my|our|shop|vendor|supplier|wholesale|purchase)\s+(?:(?:parts?|tank|item|unit|acquisition)\s+)?cost\b|\b(?:cost\s+(?:me|us)|(?:i|we)\s+paid)\b/i;
-  const amounts = /\b\d+(?:,\d{3})*(?:\.\d+)?\b/g;
-  const numberValue = (amount) => Number(amount.replace(/,/g, ""));
+  // Match explicit dollar amounts or decimal currency, not model years,
+  // mileage or RO numbers that may appear in both the owner's text and a
+  // legitimate customer response.
+  const amounts = /\$\s*[\d,]+(?:\.\d{1,2})?|\b\d{1,7}\.\d{2}\b/g;
+  const numberValue = (amount) => Number(amount.replace(/[$,\s]/g, ""));
   const proposedAmounts = new Set((proposedText.match(amounts) || []).map(numberValue));
 
   // Treat a cost-marked owner text as private. A price in a separate owner
