@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Add customers from Quo — Imperial Auto Care{% endblock %}
+{% block content %}
+
+<div class="flex items-center gap-3 mb-2">
+  <a href="/customers/" class="text-stone-400 hover:text-gold-300 text-sm">← Customers</a>
+</div>
+<h1 class="text-2xl font-bold text-yellow-400 mb-2">Add customers from Quo</h1>
+<p class="text-sm text-stone-400 mb-4">Everyone in your Quo contacts or texts who isn't a customer yet. Ticked rows become customers with their texts, calls and queue history attached. Nothing existing is changed or deleted, and you can edit names afterward.</p>
+
+{% if done is not none %}
+<div class="card mb-4" style="border-color:rgba(34,197,94,.4)"><p class="text-green-400 font-semibold">Added {{ done }} customer{{ '' if done == '1' else 's' }}.</p>
+<p class="text-sm text-stone-400 mt-1"><a class="underline" href="/customers/">Open Customers →</a></p></div>
+{% endif %}
+
+{% if problem %}
+<div class="card text-amber-300">{{ problem }}</div>
+{% elif not rows %}
+<div class="card text-stone-300">Everyone in Quo is already a customer.</div>
+{% else %}
+{% if not complete %}<p class="text-sm text-amber-300 mb-2">Quo has more contacts than one pass reads. Run this again after adding these to see the rest.</p>{% endif %}
+{% set suggested = rows|selectattr('suggested')|list %}
+<form method="post" action="/customers/import">
+  <div class="card mb-3 flex flex-wrap items-center justify-between gap-3">
+    <span class="text-sm"><strong>{{ suggested|length }}</strong> ticked of {{ rows|length }} new numbers</span>
+    <div class="flex flex-wrap gap-2">
+      <button type="button" class="btn-secondary" onclick="document.querySelectorAll('input[name=phone]:not(:disabled)').forEach(b=>b.checked=true)">Tick all</button>
+      <button type="button" class="btn-secondary" onclick="document.querySelectorAll('input[name=phone]').forEach(b=>b.checked=false)">Untick all</button>
+      <button type="submit" class="btn-primary">Add ticked customers</button>
+    </div>
+  </div>
+  <div class="card">
+    <ul>
+      {% for r in rows %}
+      <li class="flex items-start gap-3 py-2" style="border-bottom:1px solid rgba(255,255,255,.05)">
+        <input type="checkbox" name="phone" value="{{ r.phone }}" {% if r.suggested %}checked{% endif %} {% if r.skip %}disabled{% endif %} style="width:22px;height:22px;margin-top:2px">
+        <div class="min-w-0">
+          <div class="text-sm font-semibold">{{ (r.first ~ ' ' ~ r.last).strip() or r.company or 'No name in Quo' }} <span class="text-stone-400 font-normal">{{ pretty(r.phone) }}</span></div>
+          <div class="text-xs text-stone-500">
+            {% if r.contact %}Saved Quo contact · {% endif %}
+            {% if r.inbound or r.outbound %}{{ r.inbound }} texts from them, {{ r.outbound }} from the shop{% if r.last_at %} · last {{ r.last_at[:10] }}{% endif %}{% else %}No texts{% endif %}
+            {% if r.skip %} · <span class="text-amber-300">Skipped: {{ r.skip }}</span>{% elif not r.suggested %} · <span class="text-stone-400">Not ticked: they never texted the shop</span>{% endif %}
+          </div>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div class="mt-3 text-right"><button type="submit" class="btn-primary">Add ticked customers</button></div>
+</form>
+{% endif %}
+{% endblock %}

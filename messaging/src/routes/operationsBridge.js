@@ -34,6 +34,22 @@ function createOperationsBridge({prisma,quo,generateDraftReply,shopClient,token=
   if(rejected)return res.json({...rejected,requestId});
   return res.json({state:'uncertain',requestId,mayRetry:false,message:'This request is reserved without a verified provider receipt. Reconcile the Quo thread before another attempt.'});
  }
+ if(req.method==='GET'&&action==='/directory'){
+  // Read-only list of every number that has texted, and every saved Quo contact, for the customer import.
+  const convs=await prisma.conversation.findMany({select:{id:true,customerPhone:true,lastMessageAt:true}});
+  const counts=await prisma.message.groupBy({by:['conversationId','direction'],_count:{_all:true}});
+  const tally=new Map();for(const r of counts){const t=tally.get(r.conversationId)||{inbound:0,outbound:0};t[r.direction==='INBOUND'?'inbound':'outbound']+=r._count._all;tally.set(r.conversationId,t);}
+  const phones=new Map();
+  for(const c of convs){const d=String(c.customerPhone||'').replace(/\D/g,'').slice(-10);if(d.length!==10)continue;const t=tally.get(c.id)||{inbound:0,outbound:0};const p=phones.get(d)||{phone:d,inbound:0,outbound:0,lastMessageAt:null};p.inbound+=t.inbound;p.outbound+=t.outbound;if(!p.lastMessageAt||c.lastMessageAt>p.lastMessageAt)p.lastMessageAt=c.lastMessageAt;phones.set(d,p);}
+  const contacts=[];let pageToken,complete=true;
+  for(let page=0;page<40;page++){
+   const r=await quo.listContacts({maxResults:50,pageToken});
+   for(const c of (r?.data||[])){const f=c.defaultFields||c;contacts.push({firstName:String(f.firstName||'').slice(0,64),lastName:String(f.lastName||'').slice(0,64),company:String(f.company||'').slice(0,128),phones:(f.phoneNumbers||[]).map(p=>String(p.value||p).replace(/\D/g,'').slice(-10)).filter(p=>p.length===10)});}
+   pageToken=r?.nextPageToken;if(!pageToken)break;if(page===39)complete=false;
+   await new Promise(ok=>setTimeout(ok,250));
+  }
+  return res.json({texted:[...phones.values()],contacts,complete,checkedAt:new Date().toISOString()});
+ }
  if(req.method==='GET'&&action==='/calls'){
   // Read-only call history for one customer file. Summaries and voicemails are best-effort per call.
   const phone=normalizePhone(req.query?.phone);

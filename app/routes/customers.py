@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Customer
 from app.auth import get_current_user
-from app import customer_file
+from app import customer_file, quo_import
 from app.appointments import PHOENIX
 import os
 
@@ -48,6 +48,38 @@ def matches(customer: Customer, search: str) -> bool:
         return digits[-10:] in phone[-10:] or phone[-10:].endswith(digits[-10:])
     text = " ".join(filter(None, (customer.first_name, customer.last_name, customer.fleet_name, customer.email))).lower()
     return all(word in text for word in search.lower().split())
+
+
+@router.get("/import", response_class=HTMLResponse)
+def import_preview(request: Request, db: Session = Depends(get_db)):
+    """Owner-only: everyone in Quo who isn't a customer yet. Nothing is saved here."""
+    user = require_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    if user.role != "owner":
+        raise HTTPException(status_code=403)
+    directory, problem = quo_import.fetch_directory()
+    rows = quo_import.preview(db, directory) if directory else []
+    return templates.TemplateResponse("customers/import.html", {
+        "request": request, "user": user, "rows": rows, "problem": problem, "pretty": quo_import.pretty,
+        "complete": (directory or {}).get("complete", True), "done": request.query_params.get("done"),
+    })
+
+
+@router.post("/import")
+async def import_run(request: Request, db: Session = Depends(get_db)):
+    user = require_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    if user.role != "owner":
+        raise HTTPException(status_code=403)
+    form = await request.form()
+    chosen = {p for p in form.getlist("phone") if p.isdigit() and len(p) == 10}
+    directory, problem = quo_import.fetch_directory()
+    if problem:
+        return RedirectResponse("/customers/import", status_code=303)
+    made = quo_import.import_rows(db, quo_import.preview(db, directory), chosen, user.username)
+    return RedirectResponse(f"/customers/import?done={made}", status_code=303)
 
 
 @router.get("/new", response_class=HTMLResponse)
