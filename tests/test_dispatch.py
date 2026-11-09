@@ -19,7 +19,7 @@ from app.database import Base, get_db
 from app.dispatch import apply_policies, assess, parse_owner_command
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync
 from app.main import app
-from app.models import Customer, User
+from app.models import Customer, LineItem, PartsOrder, RepairOrder, User, Vehicle
 from app.routes import dispatch, internal_messaging
 
 KEY = "fixture-internal-key"
@@ -807,6 +807,75 @@ class QueueWorkflowTests(unittest.TestCase):
     def test_reasons_are_stored_as_json(self):
         self.post("m1", "How much for brakes on a 2011 Ford Focus?")
         self.assertEqual(json.loads(self.items()[0].approval_reasons), ["unverified_estimate"])
+
+
+    def _fusion_sourcing_setup(self, duplicate_ro=False):
+        with self.Session() as db:
+            vehicle = Vehicle(customer_id=1, year=2013, make="Ford", model="Fusion")
+            db.add(vehicle)
+            db.flush()
+            db.add(RepairOrder(customer_id=1, vehicle_id=vehicle.id, status="diagnosing",
+                               concern="Customer requests tank replacement"))
+            if duplicate_ro:
+                db.add(RepairOrder(customer_id=1, vehicle_id=vehicle.id, status="waiting_parts"))
+            db.commit()
+        self.post("m-fusion", "I need a fuel tank for my 2013 Ford Fusion.")
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            self.owner_text("o-fusion-cost", "add it to the estimate")
+        return {
+            "action": "part_cost", "itemId": 1, "ownerPhone": OWNER,
+            "ownerMessageId": "o-fusion-cost", "partDescription": "fuel tank",
+            "unitCost": 81.83, "eta": "Thursday",
+            "evidence": "I sourced the tank for the Ford Fusion for $81.83 my cost, pickup around Thursday.",
+        }
+
+    def _save_fusion_cost(self, body):
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            return self.client.post("/internal/dispatch/owner-action", json=body, headers=HEADERS)
+
+    def test_owner_sms_stages_private_parts_cost_not_a_customer_estimate(self):
+        body = self._fusion_sourcing_setup()
+        response = self._save_fusion_cost(body)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("private sourcing cost", response.json()["ownerReply"])
+        self.assertIn("No customer quote or message sent", response.json()["ownerReply"])
+        with self.Session() as db:
+            part = db.query(PartsOrder).one()
+            self.assertEqual(part.status, "sourcing")
+            self.assertEqual(part.cost, 81.83)
+            self.assertIn("unconfirmed", part.description)
+            self.assertEqual(db.query(LineItem).count(), 0)
+            self.assertEqual(db.query(DispatchOutbound).count(), 0)
+            review = db.query(DispatchItem).filter(DispatchItem.category == "estimate_pricing").one()
+            self.assertEqual(review.customer_id, 1)
+            self.assertIsNone(review.draft_reply)
+            self.assertIn("selling price", review.proposed_action)
+        again = self._save_fusion_cost(body)
+        self.assertIn("Already recorded", again.json()["ownerReply"])
+        with self.Session() as db:
+            self.assertEqual(db.query(PartsOrder).count(), 1)
+            self.assertEqual(db.query(DispatchItem).count(), 2)
+
+    def test_owner_sms_cannot_guess_ambiguous_ro_or_invent_source_cost(self):
+        body = self._fusion_sourcing_setup(duplicate_ro=True)
+        ambiguous = self._save_fusion_cost(body)
+        self.assertIn("exact RO number", ambiguous.json()["ownerReply"])
+        with self.Session() as db:
+            self.assertEqual(db.query(PartsOrder).count(), 0)
+        body["evidence"] = "I bought a tank for $81.83 but don't know the car."
+        missing = self._save_fusion_cost(body)
+        self.assertIn("verify", missing.json()["ownerReply"])
+        with self.Session() as db:
+            self.assertEqual(db.query(PartsOrder).count(), 0)
+
+    def test_owner_sms_part_cost_requires_verified_owner_identity_and_event(self):
+        body = self._fusion_sourcing_setup()
+        wrong_owner = self._save_fusion_cost({**body, "ownerPhone": "+16025550188"})
+        self.assertEqual(wrong_owner.status_code, 403)
+        missing_event = self._save_fusion_cost({**body, "ownerMessageId": "never-arrived"})
+        self.assertIn("Could not verify", missing_event.json()["ownerReply"])
+        with self.Session() as db:
+            self.assertEqual(db.query(PartsOrder).count(), 0)
 
 
 if __name__ == "__main__":
