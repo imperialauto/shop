@@ -22,7 +22,7 @@ from app.appointment_model import Appointment
 from app import alert_rules, approval_links, name_finder, next_action, quo_import, website_alerts
 from app.sending_pause import is_paused, pause, resume
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync, OPEN_STATUSES
-from app.models import Communication, Customer, RepairOrder, Vehicle
+from app.models import Communication, Customer, PartsOrder, RepairOrder, Vehicle
 from app.routes.internal_messaging import _find_customer_by_phone, _normalize_phone, require_internal_key
 
 router = APIRouter()
@@ -54,10 +54,17 @@ class DraftInput(BaseModel):
 
 
 class OwnerAction(BaseModel):
-    action: str = Field(pattern="^(propose|done|later)$")
+    action: str = Field(pattern="^(propose|done|later|part_cost)$")
     itemId: int
     text: str | None = Field(default=None, max_length=1500)
     hours: int | None = Field(default=None, ge=1, le=168)
+    # Only part_cost uses these; it never writes a billable estimate line.
+    ownerPhone: str | None = Field(default=None, max_length=32)
+    ownerMessageId: str | None = Field(default=None, max_length=128)
+    partDescription: str | None = Field(default=None, max_length=120)
+    unitCost: float | None = Field(default=None, gt=0, le=50000, allow_inf_nan=False)
+    eta: str | None = Field(default=None, max_length=64)
+    evidence: str | None = Field(default=None, max_length=400)
 
 
 class OutboundResult(BaseModel):
@@ -699,9 +706,130 @@ def save_draft(draft: DraftInput, db: Session = Depends(get_db), _auth: bool = D
     return {"recorded": True, "itemId": item.id}
 
 
+def _owner_part_cost(db: Session, request_: OwnerAction) -> dict:
+    """Save private parts sourcing to a verified job, never a customer quote.
+
+    No retail price, customer line item, outbound message, or approval link is
+    created. The shop must verify fitment/labor and approve its selling price.
+    """
+    if not request_.ownerPhone or not _is_owner(request_.ownerPhone):
+        raise HTTPException(status_code=403, detail="Owner identity required")
+    message_id = (request_.ownerMessageId or "").strip()
+    if not message_id or not db.query(DispatchEvent).filter(
+        DispatchEvent.quo_message_id == message_id
+    ).first():
+        return {"ownerReply": "Could not verify the original owner text. Nothing changed."}
+    item = _active_item(db, request_.itemId)
+    if item is None:
+        return {"ownerReply": "That customer item is no longer open. Please provide the repair-order number."}
+    customer_id = item.customer_id
+    if customer_id is None:
+        phone = _normalize_phone(item.customer_phone)
+        matches = [c for c in db.query(Customer).filter(Customer.phone.isnot(None)).all()
+                   if _normalize_phone(c.phone) == phone]
+        if len(matches) != 1:
+            return {"ownerReply": "Cannot uniquely match the customer. Please provide the RO number; nothing changed."}
+        customer_id = matches[0].id
+    active = db.query(RepairOrder).filter(
+        RepairOrder.customer_id == customer_id,
+        RepairOrder.status != "delivered",
+    ).with_for_update().all()
+    if item.vehicle_id:
+        active = [ro for ro in active if ro.vehicle_id == item.vehicle_id]
+
+    evidence = (request_.evidence or "").strip()
+    cost = request_.unitCost
+    description = (request_.partDescription or "").strip()
+    private_cost = re.search(
+        r"\b(?:my|our|shop|vendor|supplier|wholesale|purchase)\s+"
+        r"(?:(?:parts?|tank|item|unit)\s+)?cost\b|"
+        r"\b(?:cost\s+(?:me|us)|(?:i|we)\s+paid)\b", evidence, re.I,
+    )
+    prices = re.findall(r"\$\s*[\d,]+(?:\.\d{1,2})?", evidence)
+    quoted = any(
+        abs(float(p.replace("$", "").replace(",", "").strip()) - cost) < 0.001
+        for p in prices
+    ) if cost is not None else False
+    part_words = [w.lower() for w in re.findall(r"[A-Za-z]{4,}", description)
+                  if w.lower() not in ("part", "parts", "replacement", "assembly")]
+    mentioned = any(w in evidence.lower() for w in part_words)
+    if not private_cost or not quoted or not description or not mentioned:
+        return {"ownerReply": "Could not verify that part and private cost from your text. Nothing changed."}
+
+    # The original cost message must name the same vehicle as the selected RO.
+    # A label or model-selected item number alone is not sufficient.
+    evidence_l = evidence.lower()
+    verified = []
+    for ro in active:
+        vehicle = db.get(Vehicle, ro.vehicle_id)
+        if vehicle and vehicle.make and vehicle.model:
+            if vehicle.make.lower() in evidence_l and vehicle.model.lower() in evidence_l:
+                verified.append(ro)
+    if len(verified) != 1:
+        return {"ownerReply": "I need the exact RO number to safely match that part. Nothing changed."}
+    ro = verified[0]
+
+    audit_key = f"owner-msg:{message_id}"
+    already = db.query(DispatchAudit).filter(
+        DispatchAudit.item_id == item.id,
+        DispatchAudit.action == "part_cost_staged",
+        DispatchAudit.detail == audit_key,
+    ).first()
+    if already:
+        return {"ownerReply": f"Already recorded for RO #{ro.id}. No duplicate part was created."}
+
+    eta = (request_.eta or "").strip()
+    if eta and not any(w.lower() in evidence_l for w in re.findall(r"[A-Za-z]{4,}", eta)):
+        eta = ""
+    desc = description + (f" — anticipated pickup {eta} (unconfirmed)" if eta else "")
+    sources = db.query(PartsOrder).filter(
+        PartsOrder.repair_order_id == ro.id,
+        PartsOrder.status == "sourcing",
+    ).with_for_update().all()
+    candidates = [p for p in sources if
+                  (p.description or "").split(" — anticipated pickup")[0].lower() == description.lower()]
+    if len(candidates) > 1:
+        return {"ownerReply": "Multiple sourcing records matched. Review the RO; nothing changed."}
+    part = candidates[0] if candidates else PartsOrder(
+        repair_order_id=ro.id, quantity=1, vendor=None, status="sourcing")
+    part.description = desc
+    part.cost = cost
+    db.add(part)
+    db.flush()
+
+    # Keep one pricing task linked to the existing customer and RO.
+    queue_key = f"PARTPRICE{ro.id}"
+    task = db.query(DispatchItem).filter(
+        DispatchItem.quo_conversation_id == queue_key,
+        DispatchItem.status.in_(OPEN_STATUSES),
+    ).with_for_update().first()
+    now = datetime.now(timezone.utc)
+    if task is None:
+        task = DispatchItem(quo_conversation_id=queue_key, customer_phone=item.customer_phone,
+                            customer_id=ro.customer_id, vehicle_id=ro.vehicle_id,
+                            category="estimate_pricing", urgency="normal",
+                            status="needs_owner", last_message_id=message_id,
+                            created_at=now, updated_at=now)
+        db.add(task)
+    task.summary = f"RO #{ro.id}: {description} sourced internally. Customer quote needs owner review."
+    task.proposed_action = "Verify fitment, selling price, labor and taxes before sending an estimate."
+    task.draft_reply = None
+    task.updated_at = now
+    db.add(DispatchAudit(item_id=item.id, actor="owner_sms",
+                         action="part_cost_staged", detail=audit_key))
+    db.commit()
+    return {"ownerReply": (
+        f"Saved {description} to RO #{ro.id} as private sourcing cost USD {cost:.2f}"
+        + (f" (pickup {eta}, unconfirmed)" if eta else "")
+        + ". No customer quote or message sent. Next: approve selling price and labor."
+    )}
+
+
 @internal_router.post("/owner-action")
 def owner_action(request_: OwnerAction, db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
     """Plain-English owner replies. Nothing here texts a customer: sending still needs YES."""
+    if request_.action == "part_cost":
+        return _owner_part_cost(db, request_)
     if request_.action == "done":
         return {"ownerReply": _mark_done(db, [request_.itemId])}
     if request_.action == "later":
