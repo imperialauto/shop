@@ -73,14 +73,15 @@ def preview(db: Session, directory: dict) -> list[dict]:
         row = rows.setdefault(t["phone"], {"phone": t["phone"], "first": "", "last": "", "company": None, "fleet": False,
                                            "contact": False, "inbound": 0, "outbound": 0, "last_at": None})
         row["inbound"], row["outbound"], row["last_at"] = t.get("inbound", 0), t.get("outbound", 0), t.get("lastMessageAt")
+        row["in_quo"] = bool(t.get("inQuo"))
     out = []
     for row in rows.values():
         reason = "already a customer" if row["phone"] in known else skip_reason(row["phone"])
         if reason == "already a customer":
             continue
         row["skip"] = reason
-        # Ticked by default when they're a saved contact or have texted the shop themselves.
-        row["suggested"] = reason is None and (row["contact"] or row["inbound"] > 0)
+        # Every real number is ticked: unnamed ones get their name looked up from their own texts and calls.
+        row["suggested"] = reason is None
         out.append(row)
     out.sort(key=lambda r: (r["skip"] is not None, not r["suggested"], -(r["inbound"] + r["outbound"]),
                             str(r["last_at"] or "")), reverse=False)
@@ -97,7 +98,8 @@ def create(db: Session, row: dict, how: str) -> Customer:
     customer = Customer(first_name=first[:64], last_name=last[:64] or "-", phone="+1" + row["phone"],
                         customer_type="fleet" if row.get("fleet") else "individual",
                         fleet_name=row.get("company") if row.get("fleet") else None,
-                        notes=f"Added {how} on {datetime.now().strftime('%b %-d, %Y')}. Edit the name if needed.")
+                        notes=f"Added {how} on {datetime.now().strftime('%b %-d, %Y')}." + ("" if row.get("first") else " Imperial is looking for their name in their texts and calls."),
+                        name_source=row.get("source") or ("quo_contact" if row.get("contact") and row.get("first") else ("quo" if row.get("first") else None)))
     db.add(customer)
     db.flush()
     # Earlier queue items from this number now belong to the customer file.

@@ -80,7 +80,7 @@ class QuoImportTests(unittest.TestCase):
         self.assertEqual(rows["6025550101"]["inbound"], 4)
         self.assertTrue(rows["4805550122"]["suggested"])  # saved contact, never texted
         self.assertTrue(rows["6235550133"]["suggested"])  # texted the shop
-        self.assertFalse(rows["6235550144"]["suggested"])  # only the shop texted them
+        self.assertTrue(rows["6235550144"]["suggested"])  # every real number is ticked
         self.assertEqual(rows["8005550100"]["skip"], "toll-free")
         self.assertEqual(rows["4809144144"]["skip"], "shop or owner number")
         self.assertEqual(rows["6025550199"]["skip"], "shop or owner number")
@@ -114,7 +114,10 @@ class QuoImportTests(unittest.TestCase):
             self.assertIn("Skipped: toll-free", page)
             done = owner.post("/customers/import", data={"phone": ["6025550101", "6235550144"]})
             self.assertEqual(done.headers["location"], "/customers/import?done=2")
-            self.assertIn("Added 2 customers", owner.get("/customers/import?done=2").text)
+            result = owner.get("/customers/import?done=2").text
+            self.assertIn("Added 2 customers", result)
+            self.assertIn("You now have 3 customers", result)
+            self.assertIn("Adding… this can take a minute", result)
         with self.Session() as db:
             self.assertEqual(db.query(Customer).count(), 3)
 

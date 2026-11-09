@@ -153,4 +153,4 @@ async function jobNote({ conversation, complete = defaultComplete }) {
   }
 }
 
-module.exports = { interpretOwner, jobNote, answerOwner, recentTurns, customerDetail, mentionedItems, FALLBACK };
+module.exports = { interpretOwner, jobNote, answerOwner, recentTurns, customerDetail, mentionedItems, FALLBACK, complete: defaultComplete };

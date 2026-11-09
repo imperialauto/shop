@@ -44,6 +44,8 @@ class Customer(Base):
     address = Column(String(256))
     notes = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
+    name_source = Column(String(24))  # staff, quo_contact, text, call, call summary; empty on older records
+    name_checked_at = Column(DateTime(timezone=True))  # last time Imperial looked in Quo for a name
 
     vehicles = relationship("Vehicle", back_populates="customer")
     repair_orders = relationship("RepairOrder", back_populates="customer")
