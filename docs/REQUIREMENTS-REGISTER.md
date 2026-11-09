@@ -53,7 +53,7 @@ The AI assistant is named **Imperial**.
 | R32 | Divisions | NVZN Customs | partial | Model on `feature/nvzn-customs-division`, unmerged |
 | R33 | Channels | Instagram, Messenger, TikTok | proposed | |
 | R34 | Other | Document generation, marketing, inventory, warranties | proposed | PDF estimates exist |
-| R35 | Security | Passkey login, separate accounts, approval levels, STOP ALL, automatic backups | in progress | Two-step login, STOP ALL, nightly backups, backup failure alerts, and staff logins with role limits deployed. Off-site copy and owner's live checks remain. Production stays read-only until done |
+| R35 | Security | Passkey login, separate accounts, approval levels, STOP ALL, automatic backups | in progress | Two-step login, STOP ALL, nightly backups with a second copy in a separate storage bucket (30 days), backup failure alerts, and staff logins with role limits deployed. Read-only turned off Nov 9. A copy outside Railway (for example Google Drive) would need an owner-made key |
 
 ## Decisions
 | Date | Decision | Status |
@@ -87,3 +87,4 @@ The AI assistant is named **Imperial**.
 | 2026-11-05 | Public website preview, online booking and estimate requests under `/site` (R01, R02, R03), made-up data, no customer messages | PR 52: regression checks run 42170496534 (167 unit tests, 9 appointment and 6 public booking PostgreSQL tests passed); walkthrough run 42170483672, public booking and estimate passed on phone and desktop, no overflow | No |
 | 2026-11-05 | PR 52 corrections: duration enforcement, instant booking, mobile fees and travel, pricing, rentals, FAQ, towing, status lookup, router moved to `app/main.py` | Automated tests, PostgreSQL booking tests and phone and desktop walkthrough passed with made-up data | No |
 | 2026-11-06 | Private PR 52 preview in separate Railway project `imperial-pr52-preview` (website plus disposable database, commit b0555f0, access code, no production links or messaging keys) | 10 of 10 live checks passed on the preview: access code, pages, instant booking, conflict and buffer, Saturday fit, mobile, estimate, roadside, status lookup, dashboard. Production deployments unchanged | Preview only. Delete after acceptance |
+| 2026-11-09 | Second copy of each nightly backup in the `offsite-backups` storage bucket (Virginia), 30 days kept, size checked, upload failure alerts the owner | PR 69, live one-off run: counts 6/6/3/49 and 441/2403 matched, offsite=2 | Yes |
