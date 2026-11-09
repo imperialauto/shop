@@ -29,6 +29,7 @@ test("an AI call summary reaches the owner as one alert", async () => {
   assert.equal(log.intake.length, 1);
   assert.match(log.intake[0].body, /front door.*Next: Call back.*Vehicle: Sample car/);
   assert.equal(log.intake[0].kind, "call");
+  assert.equal(log.intake[0].callOutcome, "answered");
   assert.equal(log.drafts.length, 1);
   assert.equal(log.delivered, 1);
 });

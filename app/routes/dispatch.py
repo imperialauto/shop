@@ -39,6 +39,7 @@ class IntakeMessage(BaseModel):
     body: str = Field(default="", max_length=4000)
     contactName: str | None = Field(default=None, max_length=120)
     kind: str = Field(default="message", pattern="^(message|call)$")
+    callOutcome: str | None = Field(default=None, pattern="^(answered|missed|voicemail|unknown)$")
     threadMessageId: str | None = Field(default=None, max_length=128)
     recovery: bool = False  # replayed by the catch-up job: never reply or act on it
     autoRepliesOn: bool = False
@@ -121,7 +122,12 @@ def _record(db: Session, message: IntakeMessage, result) -> DispatchItem:
         DispatchItem.status.in_(OPEN_STATUSES),
     ).first()
     earlier = json.loads(item.approval_reasons) if item else []
-    reasons = sorted(set(earlier) | set(result.reasons) | ({"missed_call"} if message.kind == "call" else set()))
+    # A Sona-answered call is not a missed call. Older senders omit callOutcome;
+    # keep owner review for them without incorrectly labeling them as missed.
+    call_reasons = set()
+    if message.kind == "call":
+        call_reasons.add("missed_call" if message.callOutcome in ("missed", "voicemail") else "customer_reply")
+    reasons = sorted(set(earlier) | set(result.reasons) | call_reasons)
     needs_owner = apply_policies(reasons, policy_modes(db))
     if message.kind == "message" and not needs_owner and not _rule_answers(db, message, result, item, customer):
         reasons = sorted(set(reasons) | {"customer_reply"})  # nothing goes quiet just because no rule fits
@@ -152,6 +158,11 @@ def _record(db: Session, message: IntakeMessage, result) -> DispatchItem:
     item.last_message_id = message.messageId
     item.updated_at = datetime.now().astimezone()
     db.flush()
+    # The service lead is independent of this short-lived communication task.
+    # If the feature has not been migrated and enabled, existing intake is unchanged.
+    if os.getenv("SERVICE_LEADS_ENABLED", "").strip().lower() == "true":
+        from app.lead_lifecycle import intake_from_quo
+        intake_from_quo(db, message, result, item)
     db.add(DispatchEvent(quo_message_id=message.messageId, item_id=item.id))
     audit(db, item.id, "system", "message_received", f"{item.category}/{item.urgency}/{item.status}")
     db.commit()
@@ -589,6 +600,11 @@ def due_owner_messages(db: Session, now: datetime) -> list[dict]:
         stuck = next_action.stuck_jobs(db, now.astimezone(timezone.utc))
         if stuck:
             due.append((f"stuck:{now.date()}", "owner_stuck", None, next_action.stuck_text(stuck)))
+    if os.getenv("SERVICE_LEADS_ENABLED", "").strip().lower() == "true":
+        from app.lead_lifecycle import due_lead_digest
+        lead_digest = due_lead_digest(db, now)
+        if lead_digest:
+            due.append((lead_digest[0], "owner_leads", None, lead_digest[1]))
     if now.weekday() != 6 and DAILY_HOUR <= now.hour < DAILY_HOUR + 3:
         due.append((f"daily:{now.date()}", "owner_daily", None, _daily_text(db, now)))
 

@@ -47,6 +47,7 @@ test("a missed call is queued with a draft and sends nothing", async () => {
   assert.equal(queued.messageId, "call1");
   assert.equal(queued.threadMessageId, "m1");
   assert.equal(queued.recovery, true);
+  assert.equal(queued.callOutcome, "voicemail");
   assert.equal(drafts[0].body, "Sorry we missed you.");
   assert.equal(f.calls.sends, 0);
 });
