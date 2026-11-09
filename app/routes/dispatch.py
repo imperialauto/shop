@@ -398,6 +398,8 @@ def _owner_command(db: Session, message: IntakeMessage) -> dict:
     item = db.query(DispatchItem).filter(DispatchItem.id == item_id).with_for_update().first()
     if item is None or item.status not in OPEN_STATUSES:
         return {"ownerReply": f"#{item_id} is not open."}
+    if website_alerts.is_website(item) and decision in ("approve", "edit"):
+        return {"ownerReply": f"Website request #{item.id} must be contacted manually."}
     alerted = db.query(DispatchOutbound).filter(
         DispatchOutbound.dedupe_key == f"alert:{item.id}:{item.last_message_id}",
         DispatchOutbound.status == "sent",
@@ -640,7 +642,7 @@ def queued_replies(db: Session) -> list[dict]:
     for row in rows:
         item = db.get(DispatchItem, row.item_id)
         row.status = "reserved"
-        if item is None or not item.customer_phone or not item.draft_reply:
+        if item is None or website_alerts.is_website(item) or not item.customer_phone or not item.draft_reply:
             row.status = "skipped"
             continue
         replies.append({"key": row.dedupe_key, "itemId": item.id, "phone": item.customer_phone,
@@ -679,7 +681,7 @@ def save_draft(draft: DraftInput, db: Session = Depends(get_db), _auth: bool = D
         DispatchItem.status.in_(OPEN_STATUSES),
         DispatchItem.last_message_id == draft.messageId,
     ).first()
-    if item is None:
+    if item is None or website_alerts.is_website(item):
         return {"recorded": False}
     reasons = json.loads(item.approval_reasons or "[]")
     if draft.note and draft.note.strip():
@@ -708,6 +710,8 @@ def owner_action(request_: OwnerAction, db: Session = Depends(get_db), _auth: bo
     text = (request_.text or "").strip()
     if item is None or not text:
         return {"ownerReply": "I couldn't match that to an open customer. Text OPEN for the list."}
+    if website_alerts.is_website(item):
+        return {"ownerReply": f"Website request #{item.id} must be contacted manually."}
     item.draft_reply = text
     item.status = "needs_owner"
     audit(db, item.id, "owner_sms", "owner_proposed")
@@ -799,6 +803,8 @@ def decide(
         raise HTTPException(404, "Item not found.")
     if item.status not in OPEN_STATUSES:
         raise HTTPException(409, "This item was already decided.")
+    if website_alerts.is_website(item) and decision == "approve" and reply_text.strip():
+        raise HTTPException(409, "Website requests must be contacted manually.")
     if item.last_message_id != expected_message_id:
         raise HTTPException(409, "A newer customer message arrived. Review it before deciding.")
     if proposed_action.strip():

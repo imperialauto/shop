@@ -104,6 +104,44 @@ def intake_from_quo(db: Session, message, result, dispatch_item, now: datetime |
     return lead
 
 
+def intake_from_website(db: Session, order: RepairOrder, dispatch_item,
+                        appointment: Appointment | None = None) -> None:
+    """Persist the website submission inside its repair-order transaction."""
+    if not enabled():
+        return
+    now = utc_now()
+    reference = f"web:{order.id}"
+    lead = ServiceLead(
+        source="website", external_thread_id=reference, last_event_id=reference,
+        customer_id=order.customer_id, vehicle_id=order.vehicle_id,
+        customer_phone=dispatch_item.customer_phone, repair_order_id=order.id,
+        last_dispatch_item_id=dispatch_item.id, status="estimate_needed" if appointment is None else "new",
+        category=dispatch_item.category, urgency=dispatch_item.urgency,
+        summary=dispatch_item.summary, next_action="Review the website request and follow up.",
+        next_action_due_at=now if dispatch_item.urgency != "normal" else now + FOLLOW_UP_INTERVAL,
+        last_customer_activity_at=now, created_at=now, updated_at=now,
+    )
+    db.add(lead)
+    db.flush()
+    _audit(db, lead, "lead_opened", "website", evidence=reference)
+    if appointment is not None:
+        confirm_booking(db, lead.id, appointment.id, "website", now)
+
+
+def confirm_website_lead_for_order(db: Session, appointment: Appointment, actor: str) -> None:
+    """Resolve only the website opportunity explicitly linked to this job."""
+    if not enabled():
+        return
+    lead = db.query(ServiceLead).filter(
+        ServiceLead.source == "website",
+        ServiceLead.external_thread_id == f"web:{appointment.repair_order_id}",
+        ServiceLead.repair_order_id == appointment.repair_order_id,
+        ServiceLead.status.in_(ACTIVE_LEAD_STATES),
+    ).with_for_update().one_or_none()
+    if lead is not None:
+        confirm_booking(db, lead.id, appointment.id, actor)
+
+
 def confirm_booking(db: Session, lead_id: int, appointment_id: int,
                     actor: str, now: datetime | None = None) -> ServiceLead:
     """Only a real confirmed appointment linked to the correct customer wins."""
