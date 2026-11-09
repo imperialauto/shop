@@ -7,7 +7,7 @@ from app.database import get_db
 from app.models import RepairOrder, Customer, Vehicle, User, LineItem, Communication, PartsOrder
 from app.auth import get_current_user
 from app.config import GOOGLE_REVIEW_LINK
-from app import approval_links, customer_file, cycle_time, next_action
+from app import approval_links, customer_file, cycle_time, next_action, website_alerts
 import os, secrets
 
 router = APIRouter()
@@ -215,6 +215,8 @@ def update_status(
         raise HTTPException(status_code=403, detail="The front desk marks a job delivered.")
     prev_status = ro.status
     ro.status = status
+    if status != "intake":
+        website_alerts.close_for_job(db, ro, user.username, f"job moved to {status}")
     db.commit()
 
     # Auto-send review request when marked delivered (only once)
@@ -246,6 +248,7 @@ def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db)
         li.approval = "pending"
     if fresh:
         ro.status = "waiting_approval"
+        website_alerts.close_for_job(db, ro, user.username, "approval requested")
     db.commit()
     link = "none"
     phone = approval_links.mobile(ro.customer.phone)

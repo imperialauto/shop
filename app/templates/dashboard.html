@@ -83,7 +83,7 @@
           <th style="padding-left:16px;">RO</th>
           <th>Customer</th>
           <th>Vehicle</th>
-          <th>Concern</th>
+          <th>Next step</th>
           <th>Status</th>
           <th style="padding-right:16px;">Date</th>
         </tr>
@@ -100,7 +100,8 @@
             {% endif %}
           </td>
           <td>{{ ro.vehicle.label }}</td>
-          <td style="max-width:220px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--imp-muted);">{{ ro.concern or '—' }}</td>
+          {% set step = next_steps.get(ro.id) %}
+          <td style="max-width:260px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--imp-muted);">{% if step %}{{ step.who }}: {{ step.title }}{% else %}—{% endif %}</td>
           <td>
             <span class="badge badge-{{ ro.status }}">{{ ro.status.replace('_',' ').title() }}</span>
           </td>

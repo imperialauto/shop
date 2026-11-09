@@ -19,7 +19,7 @@ import time
 
 from app.security import limiter
 from app.permissions import ROLES, role_gate
-from app import home_summary, preview_check, preview_seed, system_health
+from app import home_summary, next_action, preview_check, preview_seed, system_health
 from app.public_site import preview_code
 import hashlib
 import hmac
@@ -295,6 +295,8 @@ def dashboard(request: Request, view: str = "open", db: Session = Depends(get_db
         "imperial_task_snapshot": task_snapshot,
         "user": user,
         "open_ros": open_ros,
+        # Same next step as the Jobs board and job page (one source), not the raw concern text.
+        "next_steps": {ro.id: next_action.for_job(db, ro, user.role) for ro in open_ros},
         "total_customers": total_customers,
         "total_ros": total_ros,
         "open_count": open_count,

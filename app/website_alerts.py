@@ -84,5 +84,18 @@ def queue_reference_help(db: Session, customer, orders: list) -> DispatchItem:
     return item
 
 
+def close_for_job(db: Session, order: RepairOrder, actor: str, reason: str) -> int:
+    """The job moved forward, so its website booking/request item is done.
+    One job, one task: the job page carries it from here. Decision and
+    lost-reference items have their own keys and stay open."""
+    rows = db.query(DispatchItem).filter(DispatchItem.quo_conversation_id == f"WEB{order.id}",
+                                         DispatchItem.status.in_(OPEN_STATUSES)).all()
+    for item in rows:
+        item.status, item.updated_at = "closed", datetime.now().astimezone()
+        db.add(DispatchAudit(item_id=item.id, actor=actor, action="website_item_closed_by_job", detail=reason[:200]))
+    return len(rows)
+
+
+
 def is_website(item: DispatchItem) -> bool:
     return (item.quo_conversation_id or "").startswith("WEB")
