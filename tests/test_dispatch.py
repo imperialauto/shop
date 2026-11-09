@@ -981,5 +981,25 @@ class QueueWorkflowTests(unittest.TestCase):
                 DispatchItem.category == "approval_link").count(), 0)
 
 
+    def test_changed_supplier_cost_cannot_silently_change_existing_quote(self):
+        body = self._fusion_sourcing_setup()
+        self._save_fusion_cost(body)
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            self.owner_text("o-initial-quote", "RO #1 customer part price $155 labor 1 hr shop")
+            initial = self.client.post("/internal/dispatch/owner-action", headers=HEADERS,
+                json={"action": "quote_part", "ownerPhone": OWNER, "ownerMessageId": "o-initial-quote",
+                      "roId": 1, "partPrice": 155, "laborHours": 1, "rateType": "shop",
+                      "evidence": "RO #1 customer part price $155 labor 1 hr shop"})
+            self.assertIn("PENDING", initial.json()["ownerReply"])
+            self.owner_text("o-new-cost", "Now the tank is $90.00 my cost for Ford Fusion")
+        updated = self._save_fusion_cost({
+            **body, "ownerMessageId": "o-new-cost", "unitCost": 90.00,
+            "evidence": "Now the tank is $90.00 my cost for Ford Fusion",
+        })
+        self.assertIn("estimate line already exists", updated.json()["ownerReply"])
+        with self.Session() as db:
+            self.assertEqual(db.query(PartsOrder).one().cost, 81.83)
+
+
 if __name__ == "__main__":
     unittest.main()
