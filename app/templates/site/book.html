@@ -12,7 +12,7 @@
     {% if not forms_open %}
       <p class="alert alert-info">Online booking opens soon. For now, call or text <a href="tel:{{ business.phone_tel }}">{{ business.phone_display }}</a> and we will get you scheduled.</p>
     {% elif unavailable %}
-      <p class="alert alert-info">Online times aren't available right now. <a href="/site/estimate{% if service %}?about={{ service.slug }}{% endif %}">Send a request online</a> and we'll offer you a time.</p>
+      <p class="alert alert-info">Online times are not available right now. <a href="/site/estimate{% if service %}?about={{ service.slug }}{% endif %}">Send a request online</a> and we'll offer you a time.</p>
     {% endif %}
 
     {% if not service %}

@@ -67,6 +67,20 @@ class BusinessSettingsTests(unittest.TestCase):
         client.post("/login", data={"username": name, "password": PASSWORD})
         return client
 
+    def test_brake_package_tiers_save_as_starting_prices(self):
+        owner = self.sign_in()
+        self.assertIn('name="tier_brake-pads-rotors_suv"', owner.get("/settings/business").text)
+        done = owner.post("/settings/business", data=form(**{"minutes_brake-pads-rotors": "120", "tier_brake-pads-rotors_sedan": "349",
+                                                             "tier_brake-pads-rotors_suv": "$399", "tier_brake-pads-rotors_pickup": "449"}))
+        self.assertEqual(done.status_code, 303)
+        with patch.dict(os.environ, {"PUBLIC_SERVICE_CATALOG": "{}"}):
+            brakes = bookable_service("brake-pads-rotors")
+            self.assertEqual(brakes.price_label, "From $349 per axle")
+            self.assertEqual(brakes.tier("suv")[2], 399.0)
+            self.assertEqual(brakes.minutes, 120)
+        bad = owner.post("/settings/business", data=form(**{"minutes_brake-pads-rotors": "120", "tier_brake-pads-rotors_suv": "lots"}))
+        self.assertEqual(bad.status_code, 422)
+
     def test_owner_saves_and_the_app_uses_the_values(self):
         owner = self.sign_in()
         self.assertEqual(owner.get("/settings/business").status_code, 200)
