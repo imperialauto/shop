@@ -24,9 +24,9 @@ The AI assistant is named **Imperial**.
 | R03 | Public site | Complex estimate requests and customer intake with VIN | tested | PR 52, not deployed. Estimate requests create records, including towing, roadside, rentals and NVZN. No owner alert yet, so requests wait in intake until seen |
 | R04 | Customer | Secure portal and status links | partial | Tokenized status page works. PR 52 adds lookup by reference and phone, not deployed. No login portal |
 | R05 | Customer | Drawn signatures | tested | Walkthrough: signature on phone and desktop |
-| R06 | Customer | Line-item estimate approvals | proposed | Signature approves the whole order |
+| R06 | Customer | Line-item estimate approvals | deployed | PR 67: customer approves or declines each line on the signing page; only approved lines are billed |
 | R07 | Customer | Inspection photos and progress | proposed | No data model |
-| R08 | Records | One customer and vehicle record | partial | Pages work. Quo contacts and Operations are not unified |
+| R08 | Records | One customer and vehicle record | deployed | PR 71: each customer page has a Customer file, one timeline of live Quo texts and calls, jobs, approvals, visits, invoices, payments and queue items, matched by record or phone, with Billed/Paid/Owes. Read-only. Owner's live check pending |
 | R09 | Jobs | Repair orders and line items | tested | Walkthrough |
 | R10 | Jobs | Estimates | partial | AI estimate page exists. Full flow still to test |
 | R11 | Jobs | Invoices | tested | Create was broken and is fixed on `claude/launch-audit` |
@@ -88,3 +88,4 @@ The AI assistant is named **Imperial**.
 | 2026-11-05 | PR 52 corrections: duration enforcement, instant booking, mobile fees and travel, pricing, rentals, FAQ, towing, status lookup, router moved to `app/main.py` | Automated tests, PostgreSQL booking tests and phone and desktop walkthrough passed with made-up data | No |
 | 2026-11-06 | Private PR 52 preview in separate Railway project `imperial-pr52-preview` (website plus disposable database, commit b0555f0, access code, no production links or messaging keys) | 10 of 10 live checks passed on the preview: access code, pages, instant booking, conflict and buffer, Saturday fit, mobile, estimate, roadside, status lookup, dashboard. Production deployments unchanged | Preview only. Delete after acceptance |
 | 2026-11-09 | Second copy of each nightly backup in the `offsite-backups` storage bucket (Virginia), 30 days kept, size checked, upload failure alerts the owner | PR 69, live one-off run: counts 6/6/3/49 and 441/2403 matched, offsite=2 | Yes |
+| 2026-11-09 | Customer file timeline on every customer page (R08), live texts and calls through the messaging service's read-only lookups | PR 71: app-tests and messaging tests passed (one test setup fix), deployed | Yes |
