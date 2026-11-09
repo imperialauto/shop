@@ -6,6 +6,24 @@
   <a href="/ro/" class="text-stone-400 hover:text-gold-300 text-sm">← Repair Orders</a>
 </div>
 
+{% if next_step %}
+<div class="card mb-4" style="border-color:rgba(234,210,114,.55); display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px;" id="next-step">
+  <div style="min-width:0">
+    <p class="text-xs uppercase tracking-wide" style="color:#d4a853; margin:0">Next step · {{ next_step.who }}</p>
+    <p class="font-semibold" style="margin:2px 0 0">{{ next_step.title }}</p>
+    <p class="text-sm text-stone-400" style="margin:2px 0 0">{{ next_step.detail }}</p>
+  </div>
+  {% if next_step.post %}
+  <form method="post" action="{{ next_step.post }}">
+    {% for k, v in next_step.fields.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+    <button type="submit" class="btn-primary" style="min-height:48px">{{ next_step.button }}</button>
+  </form>
+  {% else %}
+  <a href="{{ next_step.href }}" class="btn-primary" style="min-height:48px">{{ next_step.button }}</a>
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="flex items-start justify-between mb-4">
   <div>
     <h1 class="text-2xl font-bold text-yellow-400">RO #{{ ro.id }}</h1>

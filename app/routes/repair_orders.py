@@ -7,7 +7,7 @@ from app.database import get_db
 from app.models import RepairOrder, Customer, Vehicle, User, LineItem, Communication, PartsOrder
 from app.auth import get_current_user
 from app.config import GOOGLE_REVIEW_LINK
-from app import approval_links, customer_file
+from app import approval_links, customer_file, next_action
 import os, secrets
 
 router = APIRouter()
@@ -81,7 +81,8 @@ def board_view(request: Request, db: Session = Depends(get_db)):
     counts = dict(db.query(PartsOrder.repair_order_id, func.count(PartsOrder.id)).filter(PartsOrder.repair_order_id.in_(ids), PartsOrder.status == "ordered").group_by(PartsOrder.repair_order_id).all()) if ids else {}
     columns = {key: [] for key, _ in RO_STATUSES if key != "delivered"}
     for ro in ros:
-        ro.next_action = get_next_action(ro, counts.get(ro.id, 0), any(i.status != "paid" for i in ro.invoices))
+        step = next_action.for_job(db, ro, user.role)  # same answer as the job page, one source
+        ro.next_action = f"{step['who']}: {step['title']}" if step else get_next_action(ro, counts.get(ro.id, 0), any(i.status != "paid" for i in ro.invoices))
         columns.setdefault(ro.status, []).append(ro)
     return templates.TemplateResponse("repair_orders/board.html", {"request": request, "user": user, "columns": columns, "statuses": RO_STATUSES})
 
@@ -177,6 +178,7 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
     return templates.TemplateResponse("repair_orders/detail.html", {
         "request": request, "user": user, "ro": ro, "techs": techs,
         "statuses": RO_STATUSES, "subtotal": subtotal, "comms": comms,
+        "next_step": next_action.for_job(db, ro, user.role),
         "open_invoice": next((i for i in ro.invoices if i.status != "void"), None),
     })
 
