@@ -27,7 +27,7 @@ class NameFinderTests(unittest.TestCase):
         self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
         Base.metadata.create_all(self.engine)
         self.Session = sessionmaker(bind=self.engine)
-        name_finder._last_sweep = 0.0
+        name_finder._last_sweep = None
         with self.Session() as db:
             db.add_all([Customer(id=1, first_name="Unknown", last_name="(0177)", phone="+16235550177"),
                         Customer(id=2, first_name="Pat", last_name="Sample", phone="+16025550100", name_source="quo_contact"),
@@ -71,7 +71,7 @@ class NameFinderTests(unittest.TestCase):
         self.assertEqual(name_finder.sweep(self.Session, found), {"skipped": "recent"})
         with self.Session() as db:
             self.assertEqual(name_finder.progress(db), {"unnamed": 1, "waiting": 0})  # the one with no phone stays
-        name_finder._last_sweep = 0.0
+        name_finder._last_sweep = None
         with self.Session() as db:
             for c in db.query(Customer).filter(Customer.id.in_((1, 3))).all():
                 c.first_name, c.name_checked_at = "Unknown", None

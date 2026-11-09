@@ -20,7 +20,7 @@ BATCH = 4
 EVERY_SECONDS = 120
 RECHECK_AFTER = timedelta(days=7)
 _lock = threading.Lock()
-_last_sweep = 0.0
+_last_sweep = None  # monotonic time of the last sweep; None until the first one
 
 
 def unnamed(customer: Customer) -> bool:
@@ -83,7 +83,7 @@ def sweep(session_factory, ask=None, limit: int = BATCH) -> dict:
     if not _lock.acquire(blocking=False):
         return {"skipped": "busy"}
     try:
-        if time.monotonic() - _last_sweep < EVERY_SECONDS:
+        if _last_sweep is not None and time.monotonic() - _last_sweep < EVERY_SECONDS:
             return {"skipped": "recent"}
         _last_sweep = time.monotonic()
         tally = {"found": 0, "none": 0, "unavailable": 0, "skipped": 0}
