@@ -52,3 +52,9 @@ No database has been reset, merged, moved, repointed or given new credentials. N
 - Five unittest groups: non-mutating startup; existing authenticated/customer token read screens; recovery write/outbound blocks; invoice token scope and signature-vs-payment separation; credential-free read-only audit.
 - All Python modules compile and all Jinja templates compile.
 - Tests use only an explicit disposable SQLite database. They do not assert PostgreSQL identity, production login, provider calls or complete launch readiness.
+
+## Production recovery verification (Oct 26, carried over from PR 8)
+- Recovery diagnostic confirmed web uses postgres.railway.internal, database railway. Counts then: customers 6, vehicles 7, repair_orders 6, line_items 7, estimate_sessions 12, communications 6, users 1; invoices/payments/parts_orders 0. Authoritative for the Python shop records; not the separate Sites data.
+- PR 7 merged to main as 52c10725802702a780e30e1ca9e9341025225aa5. Web deployment 3dff9d86-6e14-4da3-b1d7-c618d1d8d6ba and messaging deployment 6882f807-0bc5-47ee-acd5-a9b731c8eaa4 succeeded.
+- /healthz and /readyz returned 200 in read-only mode with the database connected; /login rendered; unauthenticated / redirected to login. Legacy default credentials were rejected; none were rotated or seeded.
+- Both PostgreSQL services were in use, and Sites remained a third separate store with no unified system of record at that time.
