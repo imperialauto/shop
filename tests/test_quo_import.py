@@ -80,7 +80,7 @@ class QuoImportTests(unittest.TestCase):
         self.assertEqual(rows["6025550101"]["inbound"], 4)
         self.assertTrue(rows["4805550122"]["suggested"])  # saved contact, never texted
         self.assertTrue(rows["6235550133"]["suggested"])  # texted the shop
-        self.assertFalse(rows["6235550144"]["suggested"])  # only the shop texted them
+        self.assertTrue(rows["6235550144"]["suggested"])  # every real number is ticked
         self.assertEqual(rows["8005550100"]["skip"], "toll-free")
         self.assertEqual(rows["4809144144"]["skip"], "shop or owner number")
         self.assertEqual(rows["6025550199"]["skip"], "shop or owner number")

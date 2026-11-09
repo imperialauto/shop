@@ -1,5 +1,6 @@
 const crypto=require('node:crypto');
 const {projectRepairContext}=require('../lib/repairContextProjection');
+const {findName}=require('../lib/nameFinder');
 function normalizePhone(value){const s=String(value||'').trim();let digits=s.replace(/\D/g,'');if(digits.length===10)digits='1'+digits;if(!/^\d{11,15}$/.test(digits)||(!s.startsWith('+')&&digits.length!==11))throw Error('Enter a valid customer phone number.');return '+'+digits;}
 function allowed(token,header){if(!token||token.length<32)return false;const expected=Buffer.from('Bearer '+token),actual=Buffer.from(String(header||''));return expected.length===actual.length&&crypto.timingSafeEqual(expected,actual);}
 function publicMessage(m){return {id:String(m.id||''),direction:['INCOMING','INBOUND'].includes(String(m.direction||'').toUpperCase())?'INBOUND':'OUTBOUND',body:String(m.body||m.text||m.content||''),status:String(m.status||m.quoStatus||''),createdAt:m.createdAt||m.quoCreatedAt||null,mediaUrls:[...(Array.isArray(m.mediaUrls)?m.mediaUrls:[]),...(Array.isArray(m.media)?m.media.map(x=>x.url):[])].filter(x=>typeof x==='string'&&x.startsWith('https://'))};}
@@ -9,7 +10,7 @@ function rejectionDetails(status,code){
  return {state:'rejected',mayRetry:false,providerStatus:status,providerCode:code||null,nextAction,message:'Quo rejected this attempt. '+nextAction+' Nothing will be retried automatically.'};
 }
 function storedRejection(status){const match=/^rejected:([0-9]{3})(?::([0-9]{4,10}))?$/.exec(status||'');return match?rejectionDetails(Number(match[1]),match[2]):null;}
-function createOperationsBridge({prisma,quo,generateDraftReply,shopClient,token=()=>process.env.OPERATIONS_BRIDGE_TOKEN,logFailure=detail=>console.error('operations_bridge_failure',JSON.stringify(detail))}){
+function createOperationsBridge({prisma,quo,generateDraftReply,shopClient,complete=(...a)=>require('../lib/ownerAssistant').complete(...a),token=()=>process.env.OPERATIONS_BRIDGE_TOKEN,logFailure=detail=>console.error('operations_bridge_failure',JSON.stringify(detail))}){
  return async function operationsBridge(req,res){
  res.set('Cache-Control','private, no-store');
  if(!allowed(token(),req.headers.authorization))return res.status(401).json({error:'Unauthorized'});
@@ -48,7 +49,22 @@ function createOperationsBridge({prisma,quo,generateDraftReply,shopClient,token=
    pageToken=r?.nextPageToken;if(!pageToken)break;if(page===39)complete=false;
    await new Promise(ok=>setTimeout(ok,250));
   }
+  // Quo's own history too: callers and older texts the webhook store never saw.
+  let convToken;
+  for(let page=0;page<60;page++){
+   const r=typeof quo.listConversations==='function'?await quo.listConversations({maxResults:100,pageToken:convToken}).catch(()=>null):null;
+   if(!r){complete=false;break;}
+   for(const c of (r.data||[])){for(const raw of (c.participants||[])){const d=String(raw||'').replace(/\D/g,'').slice(-10);if(d.length!==10)continue;const p=phones.get(d)||{phone:d,inbound:0,outbound:0,lastMessageAt:null};p.inQuo=true;const at=c.lastActivityAt||c.updatedAt||null;if(at&&(!p.lastMessageAt||at>p.lastMessageAt))p.lastMessageAt=at;phones.set(d,p);}}
+   convToken=r.nextPageToken;if(!convToken)break;if(page===59)complete=false;
+   await new Promise(ok=>setTimeout(ok,250));
+  }
   return res.json({texted:[...phones.values()],contacts,complete,checkedAt:new Date().toISOString()});
+ }
+ if(req.method==='POST'&&action==='/find-name'){
+  // Read-only: looks for the name a customer gave in their own texts or calls. Never writes to Quo.
+  const phone=normalizePhone(req.body?.phone);
+  const result=await findName({quo,phone,complete,phoneNumberId:'PN9UGB5eVf'});
+  return res.json({phone,...result,checkedAt:new Date().toISOString()});
  }
  if(req.method==='GET'&&action==='/calls'){
   // Read-only call history for one customer file. Summaries and voicemails are best-effort per call.

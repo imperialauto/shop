@@ -4,7 +4,8 @@
 
 <div class="flex items-center justify-between mb-6">
   <h1 class="text-2xl font-bold text-yellow-400">Customers</h1>
-  <div class="flex flex-wrap gap-2">
+  <div class="flex flex-wrap gap-2 items-center">
+    {% if names and names.unnamed %}<span class="text-xs text-stone-400">{{ names.unnamed }} without a name{% if names.waiting %}, {{ names.waiting }} still to check in Quo{% endif %}</span>{% endif %}
     {% if user.role == 'owner' %}<a href="/customers/import" class="btn-secondary">Add from Quo</a>{% endif %}
     <a href="/customers/new" class="btn-primary">+ New Customer</a>
   </div>

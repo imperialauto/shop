@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Customer, RepairOrder, Vehicle
 from app.auth import get_current_user
-from app import customer_file, quo_import
+from app import customer_file, name_finder, quo_import
 from app.appointments import PHOENIX
 import os, secrets
 
@@ -36,7 +36,8 @@ def list_customers(request: Request, db: Session = Depends(get_db), search: str 
         customers = [c for c in customers if matches(c, search)]
     return templates.TemplateResponse("customers/list.html", {
         "request": request, "user": user, "customers": customers,
-        "search": search, "type_filter": type_filter
+        "search": search, "type_filter": type_filter,
+        "names": name_finder.progress(db) if user.role == "owner" else None,
     })
 
 
@@ -129,6 +130,7 @@ def create_customer(
         phone=phone or None,
         address=address or None,
         notes=notes or None,
+        name_source="staff",
     )
     db.add(customer)
     db.flush()

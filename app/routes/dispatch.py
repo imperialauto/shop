@@ -7,7 +7,7 @@ import json
 import os
 import re
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -19,7 +19,7 @@ from app.database import get_db
 from app.config import OWNER_PHONE
 from app.dispatch import AUTO_POLICIES, LOCKED_POLICIES, MAKES, POLICIES, PROMISE, apply_policies, assess, auto_reply, is_reaction, parse_owner_command, propose
 from app.appointment_model import Appointment
-from app import alert_rules, approval_links, next_action, quo_import, website_alerts
+from app import alert_rules, approval_links, name_finder, next_action, quo_import, website_alerts
 from app.sending_pause import is_paused, pause, resume
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync, OPEN_STATUSES
 from app.models import Communication, Customer, RepairOrder, Vehicle
@@ -110,6 +110,8 @@ def _record(db: Session, message: IntakeMessage, result) -> DispatchItem:
     if customer is None:
         # A new number starts its customer file right away, so its history collects in one place.
         customer = quo_import.auto_create(db, message.phone, message.contactName)
+    elif name_finder.unnamed(customer):
+        customer.name_checked_at = None  # they may have just said who they are
     vehicle = None
     if customer and result.vin:
         vehicle = db.query(Vehicle).filter(Vehicle.customer_id == customer.id, Vehicle.vin == result.vin).first()
@@ -631,8 +633,22 @@ def queued_replies(db: Session) -> list[dict]:
     return replies
 
 
+def _name_sweep():
+    """Background: a few unnamed customers get their name looked up in Quo. Never texts anyone."""
+    if not os.environ.get("MESSAGING_BRIDGE_URL"):
+        return
+    try:
+        from app.database import SessionLocal
+        result = name_finder.sweep(SessionLocal)
+        if result.get("found") or result.get("none") or result.get("unavailable"):
+            print(f"name_sweep {result}")
+    except Exception as err:  # a failed lookup must never break the alert tick
+        print(f"name_sweep_failed {type(err).__name__}")
+
+
 @internal_router.post("/tick")
-def tick(db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
+def tick(background: BackgroundTasks, db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
+    background.add_task(_name_sweep)
     if is_paused(db):  # nothing is reserved, so held alerts go out after RESUME
         return {"ownerPhone": OWNER_PHONE or None, "messages": [], "customerReplies": [], "paused": True}
     return {"ownerPhone": OWNER_PHONE or None, "messages": due_owner_messages(db, datetime.now(timezone.utc)),
