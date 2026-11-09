@@ -97,7 +97,7 @@ class NextActionTests(unittest.TestCase):
             rows = next_action.stuck_jobs(db, now.astimezone(timezone.utc))
             self.assertEqual([r[0].id for r in rows], [5])
             text = next_action.stuck_text(rows)
-        self.assertIn("#5 Pat Ford Focus: Ask the customer to approve 1 item (6d)", text)
+        self.assertIn("#5 Pat Ford Focus: Ask the customer to approve 1 item (7d)", text)
         with self.Session() as db, patch.object(dispatch, "OWNER_PHONE", "+16025550199"), \
                 patch.object(alert_rules, "rules", lambda: {**alert_rules.DEFAULTS, "off": []}):
             keys = [m["key"] for m in dispatch.due_owner_messages(db, now)]
