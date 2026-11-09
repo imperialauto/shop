@@ -8,6 +8,7 @@
 </div>
 
 <form method="post" action="{% if vehicle %}/vehicles/{{ vehicle.id }}/edit{% else %}/vehicles/new{% endif %}" class="max-w-xl space-y-4">
+  {% if not vehicle and request.query_params.get('next') == 'job' %}<input type="hidden" name="next" value="job">{% endif %}
   <div class="card space-y-4">
 
     <div>

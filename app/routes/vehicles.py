@@ -58,6 +58,7 @@ def create_vehicle(
     mileage: int = Form(None),
     color: str = Form(""),
     notes: str = Form(""),
+    next: str = Form(""),
 ):
     user = require_user(request, db)
     if not user:
@@ -72,6 +73,8 @@ def create_vehicle(
     db.add(vehicle)
     db.commit()
     db.refresh(vehicle)
+    if next == "job":  # came from the new-job form: go straight back with this vehicle picked
+        return RedirectResponse(f"/ro/new?customer_id={customer_id}&vehicle_id={vehicle.id}", status_code=303)
     return RedirectResponse(f"/customers/{customer_id}", status_code=302)
 
 

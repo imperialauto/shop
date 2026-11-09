@@ -1,5 +1,23 @@
 {% extends "base.html" %}
-{% block title %}{% if customer %}Edit{% else %}New{% endif %} Customer — Imperial Auto Care{% endblock %}
+{% block title %}{% if customer %}Edit{% else %}New{% endif %} Customer — Imperial Auto Care{% if not customer %}
+<script>
+  // Same free government VIN lookup the vehicle form uses. Fills only empty boxes.
+  document.getElementById('quick-vin').addEventListener('input', function () {
+    var raw = this.value.trim().toUpperCase();
+    if (raw.length !== 17) return;
+    fetch('https://vpic.nhtsa.dot.gov/api/vehicles/decodevinvalues/' + raw + '?format=json')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var v = (d.Results || [])[0] || {};
+        [['quick-year', v.ModelYear], ['quick-make', v.Make], ['quick-model', v.Model]].forEach(function (pair) {
+          var box = document.getElementById(pair[0]);
+          if (box && !box.value && pair[1]) box.value = pair[1];
+        });
+      }).catch(function () {});
+  });
+</script>
+{% endif %}
+{% endblock %}
 {% block content %}
 
 <div class="flex items-center gap-3 mb-6">
@@ -36,7 +54,7 @@
     <div class="grid grid-cols-2 gap-3">
       <div>
         <label class="form-label">First Name *</label>
-        <input type="text" name="first_name" required value="{{ customer.first_name if customer else '' }}" class="form-input" />
+        <input type="text" name="first_name" required autocomplete="off" value="{{ customer.first_name if customer else request.query_params.get('first', '') }}" class="form-input" />
       </div>
       <div>
         <label class="form-label">Last Name *</label>
@@ -46,7 +64,8 @@
 
     <div>
       <label class="form-label">Phone</label>
-      <input type="text" name="phone" value="{{ customer.phone if customer else '' }}" class="form-input" placeholder="(602) 555-1234" />
+      <input type="tel" name="phone" inputmode="tel" value="{{ customer.phone if customer else request.query_params.get('phone', '') }}" class="form-input" placeholder="(602) 555-1234" />
+      {% if not customer %}<p class="text-xs text-stone-500 mt-1">If this number is already a customer, their file opens instead of making a duplicate.</p>{% endif %}
     </div>
 
     <div>
@@ -65,10 +84,52 @@
     </div>
   </div>
 
-  <div class="flex gap-3">
-    <button type="submit" class="btn-primary">{% if customer %}Save Changes{% else %}Create Customer{% endif %}</button>
+  {% if not customer %}
+  <div class="card space-y-4">
+    <h3 class="text-xs text-stone-400 uppercase tracking-wide">Vehicle and job (optional, saves two more screens)</h3>
+    <div>
+      <label class="form-label">VIN <span style="font-weight:400">(fills year, make and model)</span></label>
+      <input type="text" name="vin" id="quick-vin" maxlength="17" autocomplete="off" class="form-input font-mono" placeholder="17 characters" />
+    </div>
+    <div class="grid grid-cols-3 gap-3">
+      <div><label class="form-label">Year</label><input type="text" inputmode="numeric" name="year" id="quick-year" maxlength="4" class="form-input" /></div>
+      <div><label class="form-label">Make</label><input type="text" name="make" id="quick-make" class="form-input" /></div>
+      <div><label class="form-label">Model</label><input type="text" name="model" id="quick-model" class="form-input" /></div>
+    </div>
+    <div>
+      <label class="form-label">What do they need?</label>
+      <textarea name="concern" rows="2" class="form-input" placeholder="e.g. Brakes grinding, check engine light"></textarea>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="flex flex-wrap gap-3">
+    {% if customer %}
+    <button type="submit" class="btn-primary">Save Changes</button>
+    {% else %}
+    <button type="submit" name="then" value="job" class="btn-primary">Save and start job</button>
+    <button type="submit" name="then" value="customer" class="btn-secondary">Save customer only</button>
+    {% endif %}
     <a href="/customers/" class="btn-secondary">Cancel</a>
   </div>
 </form>
 
+{% if not customer %}
+<script>
+  // Same free government VIN lookup the vehicle form uses. Fills only empty boxes.
+  document.getElementById('quick-vin').addEventListener('input', function () {
+    var raw = this.value.trim().toUpperCase();
+    if (raw.length !== 17) return;
+    fetch('https://vpic.nhtsa.dot.gov/api/vehicles/decodevinvalues/' + raw + '?format=json')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var v = (d.Results || [])[0] || {};
+        [['quick-year', v.ModelYear], ['quick-make', v.Make], ['quick-model', v.Model]].forEach(function (pair) {
+          var box = document.getElementById(pair[0]);
+          if (box && !box.value && pair[1]) box.value = pair[1];
+        });
+      }).catch(function () {});
+  });
+</script>
+{% endif %}
 {% endblock %}
