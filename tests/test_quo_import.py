@@ -114,7 +114,10 @@ class QuoImportTests(unittest.TestCase):
             self.assertIn("Skipped: toll-free", page)
             done = owner.post("/customers/import", data={"phone": ["6025550101", "6235550144"]})
             self.assertEqual(done.headers["location"], "/customers/import?done=2")
-            self.assertIn("Added 2 customers", owner.get("/customers/import?done=2").text)
+            result = owner.get("/customers/import?done=2").text
+            self.assertIn("Added 2 customers", result)
+            self.assertIn("You now have 3 customers", result)
+            self.assertIn("Adding… this can take a minute", result)
         with self.Session() as db:
             self.assertEqual(db.query(Customer).count(), 3)
 

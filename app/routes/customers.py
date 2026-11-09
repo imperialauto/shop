@@ -64,6 +64,7 @@ def import_preview(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("customers/import.html", {
         "request": request, "user": user, "rows": rows, "problem": problem, "pretty": quo_import.pretty,
         "complete": (directory or {}).get("complete", True), "done": request.query_params.get("done"),
+        "total": db.query(Customer).count(), "unnamed": name_finder.progress(db)["unnamed"],
     })
 
 
