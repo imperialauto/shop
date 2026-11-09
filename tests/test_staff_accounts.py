@@ -178,6 +178,20 @@ class StaffLoginTests(unittest.TestCase):
         moved = crew.post(f"/ro/{mine}/update-status?back=my-day", data={"status": "in_progress"})
         self.assertEqual(moved.headers["location"], "/my-day")
 
+    def test_my_day_hides_finished_work_and_none_labels(self):
+        from app.models import RepairOrder, Vehicle
+        done, blank = self.make_job(), self.make_job()
+        with self.Session() as db:
+            db.get(RepairOrder, done).status = "complete"
+            vehicle = db.get(Vehicle, db.get(RepairOrder, blank).vehicle_id)
+            vehicle.year, vehicle.make, vehicle.model = None, "Unknown", "Unknown"
+            db.commit()
+        crew, _ = self.sign_in("crew")
+        page = crew.get("/my-day").text
+        self.assertIn("Not assigned yet (1)", page)
+        self.assertNotIn("Unknown Unknown", page)
+        self.assertNotIn("Take it", page)  # techs don't assign themselves
+
     def test_status_must_be_real_and_tech_cannot_deliver(self):
         job = self.make_job(tech_id=2)
         crew, _ = self.sign_in("crew")

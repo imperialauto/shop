@@ -11,7 +11,7 @@ from app.appointments import PHOENIX
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import RepairOrder
-from app.routes.repair_orders import RO_STATUSES
+from app.routes.repair_orders import RO_STATUSES, workers
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -31,7 +31,9 @@ def my_day(request: Request, db: Session = Depends(get_db)):
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     mine = db.query(RepairOrder).filter(RepairOrder.assigned_tech_id == user.id, RepairOrder.status.in_(OPEN)) \
         .order_by(RepairOrder.updated_at.desc()).all()
-    unassigned = db.query(RepairOrder).filter(RepairOrder.assigned_tech_id.is_(None), RepairOrder.status.in_(OPEN)) \
+    # Finished work isn't waiting for anyone to pick it up.
+    unassigned = db.query(RepairOrder).filter(RepairOrder.assigned_tech_id.is_(None),
+                                              RepairOrder.status.in_([s for s in OPEN if s != "complete"])) \
         .order_by(RepairOrder.created_at.desc()).limit(15).all()
     today = db.query(Appointment).filter(Appointment.status.in_(("tentative", "confirmed")),
                                          Appointment.starts_at >= start.astimezone(timezone.utc),
@@ -40,4 +42,4 @@ def my_day(request: Request, db: Session = Depends(get_db)):
     visits = [{"time": _local(a.starts_at).strftime("%-I:%M %p"), "ro": db.get(RepairOrder, a.repair_order_id),
                "mobile": a.location == "mobile"} for a in today]
     return templates.TemplateResponse("my_day.html", {"request": request, "user": user, "mine": mine, "unassigned": unassigned,
-                                      "visits": visits, "steps": TECH_STEPS, "today": now.strftime("%A, %B %-d")})
+                                      "visits": visits, "steps": TECH_STEPS, "can_take": user.role != "tech" and user in workers(db), "today": now.strftime("%A, %B %-d")})
