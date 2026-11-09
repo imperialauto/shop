@@ -34,6 +34,18 @@ function createOperationsBridge({prisma,quo,generateDraftReply,shopClient,token=
   if(rejected)return res.json({...rejected,requestId});
   return res.json({state:'uncertain',requestId,mayRetry:false,message:'This request is reserved without a verified provider receipt. Reconcile the Quo thread before another attempt.'});
  }
+ if(req.method==='GET'&&action==='/calls'){
+  // Read-only call history for one customer file. Summaries and voicemails are best-effort per call.
+  const phone=normalizePhone(req.query?.phone);
+  const response=await quo.listCalls({phoneNumberId:'PN9UGB5eVf',participants:[phone],maxResults:20});
+  if(!Array.isArray(response?.data))throw Error('Calls unavailable');
+  const calls=await Promise.all(response.data.sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).map(async(c,i)=>{
+   const out={id:String(c.id||''),direction:c.direction==='outgoing'?'OUTBOUND':'INBOUND',status:String(c.status||''),duration:Number(c.duration)||0,aiHandled:!!c.aiHandled,createdAt:c.createdAt||null,summary:null,voicemail:null};
+   if(i<6&&out.duration>0&&typeof quo.getCallSummary==='function'){const s=await quo.getCallSummary(c.id).catch(()=>null);const lines=Array.isArray(s?.summary)?s.summary:s?.summary?[s.summary]:[];out.summary=lines.map(String).join(' ').slice(0,600)||null;}
+   if(i<6&&typeof quo.getVoicemail==='function'&&out.direction==='INBOUND'&&!out.summary){const v=await quo.getVoicemail(c.id).catch(()=>null);out.voicemail=v?.transcript?String(v.transcript).slice(0,600):null;}
+   return out;}));
+  return res.json({phone,calls,checkedAt:new Date().toISOString(),source:'Quo'});
+ }
  if(!((req.method==='GET'&&action==='/conversation')||(req.method==='POST'&&['/draft','/send'].includes(action))))return res.status(404).json({error:'Unknown action'});
  const phone=normalizePhone(req.method==='GET'?req.query.phone:req.body?.phone);
  if(req.method==='GET'||action==='/draft'){
