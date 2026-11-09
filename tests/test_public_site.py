@@ -230,6 +230,61 @@ class PublicPages(unittest.TestCase):
                                       follow_redirects=False).status_code for n in range(6)]
         self.assertEqual(codes, [303] * 5 + [429])
 
+    def test_estimate_starts_from_approved_prices_only(self):
+        from app import business_settings
+        from app.dispatch_model import DispatchItem
+        from app.models import LineItem
+        catalog = json.dumps({"diagnostic": {"price": 75}})
+        with self.open_forms(), patch.dict(os.environ, {"PUBLIC_SERVICE_CATALOG": catalog}), \
+             patch.object(business_settings, "_load", return_value={}), patch.object(socket.socket, "connect", no_network):
+            self.client.post("/site/estimate", data=self.estimate())  # diesel, at the shop
+            self.client.post("/site/estimate", data=self.estimate(service_line="auto-repair", where="onsite", location="Made-up 1 Test St",
+                                                                   description="Made-up test: no start at home."))
+        with self.Session() as db:
+            first, second = db.get(RepairOrder, 1), db.get(RepairOrder, 2)
+            lines = db.query(LineItem).filter(LineItem.repair_order_id == 1).all()
+            self.assertEqual([(l.unit_price, l.approval) for l in lines], [(75.0, None)])  # added, not sent
+            self.assertIn("Labor rate: $175/hr (diesel)", first.concern)
+            self.assertEqual(db.query(LineItem).filter(LineItem.repair_order_id == 2).count(), 0)  # on-site: no guessed diagnostic
+            self.assertIn("$165/hr (mobile)", second.concern)
+            self.assertIn("travel not set", second.concern)
+            item = db.query(DispatchItem).filter(DispatchItem.quo_conversation_id == "WEB1").one()
+            self.assertIn("ALLDATA", item.summary)
+        self.assertEqual(self.counts()[4], 0)  # no message to the customer
+
+    def roadside(self, **changes):
+        data = {"situation": "tow", "location": "Made-up: I-17 north at mile 210", "first_name": "Road", "last_name": "Tester",
+                "phone": "(602) 555-0150", "contact_method": "call", "make": "Ford", "model": "F-150", "description": "Made-up: needs the shop."}
+        return self.client.post("/site/roadside", data={**data, **changes}, follow_redirects=False)
+
+    def test_roadside_request_is_written_urgent_and_never_dispatched(self):
+        from app.dispatch_model import DispatchItem
+        from app.models import LineItem
+        self.assertIn("call 911 first", self.client.get("/site/roadside").text)
+        with self.open_forms(), patch.object(socket.socket, "connect", no_network):
+            for bad, message in (({"situation": ""}, "Choose what"), ({"location": "x"}, "where the vehicle is"),
+                                 ({"make": "", "model": ""}, "make and model")):
+                response = self.roadside(**bad)
+                self.assertEqual(response.status_code, 422)
+                self.assertIn(message, response.text)
+            done = self.roadside()
+            self.assertEqual(done.status_code, 303)
+            page = self.client.get(done.headers["location"]).text
+            self.assertIn("Nothing is dispatched until we call you", page)
+        with self.Session() as db:
+            order = db.query(RepairOrder).one()
+            self.assertIn("Not dispatched", order.concern)
+            self.assertIn("I-17 north at mile 210", order.concern)
+            item = db.query(DispatchItem).one()
+            self.assertEqual((item.urgency, item.status, item.draft_reply), ("urgent", "needs_owner", None))
+            self.assertTrue(item.quo_conversation_id.startswith("WEB"))  # website no-text guards apply
+            self.assertEqual(db.query(LineItem).count(), 0)  # towing is a custom quote
+        self.assertEqual(self.counts()[4], 0)
+
+    def test_roadside_closed_with_forms(self):
+        app.state.read_only = False
+        self.assertEqual(self.roadside().status_code, 503)
+
     def test_sending_the_same_request_again_keeps_one_job(self):
         with self.open_forms():
             first = self.client.post("/site/estimate", data=self.estimate(), follow_redirects=False)

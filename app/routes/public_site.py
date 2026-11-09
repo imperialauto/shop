@@ -13,7 +13,7 @@ PostgreSQL lock the staff booking API uses. Confirmation appears on screen only.
 """
 import logging
 
-from app import business_settings, calendar_feed, lead_lifecycle, website_alerts
+from app import business_settings, calendar_feed, estimate_prefill, lead_lifecycle, website_alerts
 import os
 import re
 import secrets
@@ -625,24 +625,35 @@ async def estimate_submit(request: Request, db: Session = Depends(get_db)):
     except FormError as exc:
         log.info("site_form_rejected form=estimate reason=%s", str(exc)[:60])
         return estimate_page(request, 422, str(exc), values)
+    return save_request(request, db, person, details, line, where, location, description,
+                        retry=lambda code, message: estimate_page(request, code, message, values))
+
+
+def save_request(request: Request, db: Session, person: dict, details: dict, line, where: str, location: str,
+                 description: str, retry, heading: str = "Estimate request from the website."):
+    """One request makes one customer, vehicle, job, lead and owner item, with the estimate started
+    from approved prices. Shared by estimate and roadside requests."""
     resend = fingerprint("estimate", person["phone"], " ".join(description.split()))
     if recent_submission(request, resend):
         request.session["site_estimate"] = recent_submission(request, resend)["item"]
         return RedirectResponse("/site/estimate/received", status_code=303)
     if not limiter.allow(client_key(request), time.time()):
-        return estimate_page(request, 429, "Too many requests from this connection. Please call or text us.", values)
+        return retry(429, "Too many requests from this connection. Please call or text us.")
     try:
         customer, matched = find_or_create_customer(db, person)
         vehicle = find_or_create_vehicle(db, customer, matched, details)
-        concern = concern_text("Estimate request from the website.", person, matched, [
+        concern = concern_text(heading, person, matched, [
             f"Service: {line.name}." if line else "",
             f"Where: {WHERE_OPTIONS[where]}{' — ' + location if location else ''}.",
             f"Mileage given: {details['mileage']:,}" if details["mileage"] else "",
             f"Details: {description}",
         ])
         order = new_repair_order(db, customer, vehicle, concern, details["mileage"])
+        started = estimate_prefill.prefill(db, order, line.slug if line else "", where)
+        order.concern = (order.concern + "\n" + "Estimate started: " + started)[:4000]
         db.flush()
-        item = website_alerts.queue(db, order, "request", f"{line.name if line else 'Estimate'}: {WHERE_OPTIONS[where]}. {description}",
+        item = website_alerts.queue(db, order, "request", f"{line.name if line else 'Estimate'}: {WHERE_OPTIONS[where]}. {description}"[:200]
+                                    + f" | {started}",
                                     service_line=line.slug if line else "",
                                     vehicle_text=" ".join(str(p) for p in (details["year"], details["make"], details["model"]) if p))
         lead_lifecycle.intake_from_website(db, order, item)
@@ -650,9 +661,56 @@ async def estimate_submit(request: Request, db: Session = Depends(get_db)):
     except Exception:
         db.rollback()
         raise
-    request.session["site_estimate"] = {"ref": f"WEB-{order.id}", "token": order.public_token}
+    request.session["site_estimate"] = {"ref": f"WEB-{order.id}", "token": order.public_token,
+                                        "roadside": where == "roadside"}
     remember_submission(request, resend, "estimate", request.session["site_estimate"])
     return RedirectResponse("/site/estimate/received", status_code=303)
+
+
+ROADSIDE_SITUATIONS = OrderedDict([
+    ("tow", "Needs a tow"), ("no-start", "Won't start or dead battery"), ("flat", "Flat tire"),
+    ("overheat", "Overheating or leaking"), ("accident", "Accident, no one hurt"), ("other", "Something else"),
+])
+
+
+def roadside_page(request: Request, status_code: int = 200, error: str = "", values: dict | None = None):
+    return render(request, "site/roadside.html", status_code=status_code, form_page=True, active="roadside",
+                  error=error, values=values or {}, situations=ROADSIDE_SITUATIONS, contact_options=CONTACT_OPTIONS)
+
+
+@router.get("/roadside", response_class=HTMLResponse)
+def roadside(request: Request):
+    return roadside_page(request)
+
+
+@router.post("/roadside", response_class=HTMLResponse)
+async def roadside_submit(request: Request, db: Session = Depends(get_db)):
+    """A written roadside or tow request. It is never dispatched automatically: the owner confirms it first."""
+    form = await request.form()
+    values = form_values(form)
+    if not forms_enabled(request.app.state.read_only):
+        return roadside_page(request, 503, "Online roadside requests are not open yet. Please call us.", values)
+    if values.get("company"):
+        request.session["site_estimate"] = {"ref": ""}
+        return RedirectResponse("/site/estimate/received", status_code=303)
+    try:
+        situation = values.get("situation", "")
+        if situation not in ROADSIDE_SITUATIONS:
+            raise FormError("Choose what's going on.")
+        location = clean_text(form.get("location"), 256)
+        if len(location) < 5:
+            raise FormError("Tell us where the vehicle is: an address, cross streets or a mile marker.")
+        person = person_fields(form)
+        details = vehicle_fields(form, require_make=not normalize_vin(form.get("vin")))
+        extra = clean_text(form.get("description"), TEXT_LIMIT)
+    except FormError as exc:
+        log.info("site_form_rejected form=roadside reason=%s", str(exc)[:60])
+        return roadside_page(request, 422, str(exc), values)
+    line = SERVICE_LINE_BY_SLUG["towing" if situation in ("tow", "accident") else "mobile-roadside"]
+    description = f"Roadside: {ROADSIDE_SITUATIONS[situation]}." + (f" {extra}" if extra else "")
+    return save_request(request, db, person, details, line, "roadside", location, description,
+                        retry=lambda code, message: roadside_page(request, code, message, values),
+                        heading="Roadside request from the website. Not dispatched: confirm with the customer first.")
 
 
 @router.get("/estimate/received", response_class=HTMLResponse)
