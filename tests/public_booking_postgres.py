@@ -110,7 +110,13 @@ class PublicBooking(unittest.TestCase):
         self.assertIn('Diagnostic appointment', received.text)
         self.assertIn('booked', received.text)
         self.assertIn('/status/', received.text)
-        self.assertIn('Reference WEB-', received.text)
+        self.assertIn('Your reference', received.text)
+        self.assertIn('visit.ics', received.text)
+        # The same booking sent again (double tap or resend) returns the first reference.
+        again = self.client.post('/site/book', data=self.form(slot_id), follow_redirects=False)
+        self.assertEqual(again.status_code, 303, again.text)
+        with SessionLocal() as db:
+            self.assertEqual(db.query(Appointment).count(), 1)
 
         with SessionLocal() as db:
             appointment = db.query(Appointment).one()
@@ -199,6 +205,34 @@ class PublicBooking(unittest.TestCase):
 
         self.assertEqual(self.client.post('/site/book', data=self.form(999999)).status_code, 409)
         self.assertEqual((self.count(Appointment), self.count(RepairOrder), self.count(Customer)), (1, 1, 1))
+
+    def test_linked_calendar_events_block_online_times(self):
+        from unittest.mock import patch
+        from app import calendar_feed
+        first = weekday_at(11)
+        clash, clear = self.slot(first), self.slot(first + timedelta(hours=3))
+        busy = [{"start": (first + timedelta(minutes=30)).astimezone(timezone.utc), "end": (first + timedelta(minutes=45)).astimezone(timezone.utc),
+                 "allDay": False, "title": "Made-up phone booking", "location": ""},
+                {"start": (first + timedelta(hours=3)).astimezone(timezone.utc), "end": (first + timedelta(hours=27)).astimezone(timezone.utc),
+                 "allDay": True, "title": "Made-up birthday", "location": ""}]
+        with patch.object(calendar_feed, "feed_urls", return_value=["https://calendar.invalid/x.ics"]), \
+             patch.object(calendar_feed, "upcoming", return_value=busy):
+            page = self.client.get('/site/book?service=diagnostic').text
+            self.assertNotIn(f'value="{clash}"', page)
+            self.assertIn(f'value="{clear}"', page)  # all-day entries don't block
+            self.assertEqual(self.client.post('/site/book', data=self.form(clash)).status_code, 409)
+        self.assertEqual(self.count(Appointment), 0)
+
+    def test_unreadable_linked_calendar_offers_no_times(self):
+        from unittest.mock import patch
+        from app import calendar_feed
+        slot_id = self.slot(weekday_at(11))
+        with patch.object(calendar_feed, "feed_urls", return_value=["https://calendar.invalid/x.ics"]), \
+             patch.object(calendar_feed, "upcoming", return_value=None):
+            page = self.client.get('/site/book?service=diagnostic')
+            self.assertNotIn(f'value="{slot_id}"', page.text)
+            self.assertNotEqual(self.client.post('/site/book', data=self.form(slot_id), follow_redirects=False).status_code, 303)
+        self.assertEqual(self.count(Appointment), 0)
 
     def test_buffer_after_existing_booking_is_respected(self):
         first = weekday_at(11)

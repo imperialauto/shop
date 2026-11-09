@@ -6,12 +6,25 @@
     <div class="eyebrow">Received</div>
     <h1>{% if kind == 'booking' %}You're booked{% else %}We have your request{% endif %}</h1>
     <p class="alert alert-ok" role="status">
-      {% if kind == 'booking' and item.time %}{{ item.service }} on {{ item.time }} (Arizona time).{% else %}Thanks. Your request is in.{% endif %}
-      {% if item.ref %}Reference {{ item.ref }}.{% endif %}{% if kind == 'booking' and item.price %} Price: {{ item.price }}{% if item.fee %}, plus a ${{ '%.2f'|format(item.fee) }} mobile fee{% endif %}.{% endif %}
+      {% if kind == 'booking' and item.time %}Confirmed: {{ item.service }} on {{ item.time }} (Arizona time).{% if item.price %} Price: {{ item.price }}{% if item.fee %}, plus a ${{ '%.2f'|format(item.fee) }} mobile fee{% endif %}.{% endif %}
+      {% elif kind == 'booking' %}Thanks. Your request is in.
+      {% else %}Request received. This is not a booking yet: we will review it and contact you about an estimate and a time.{% endif %}
     </p>
-    <p>{% if kind == 'booking' %}Your booking is confirmed. Save your reference, because no text or email confirmation is sent.{% else %}We will review the details and get back to you with next steps. Save your reference to check on it.{% endif %}
-       If it is urgent, call or text <a href="tel:{{ business.phone_tel }}">{{ business.phone_display }}</a>.</p>
-    <div class="actions">{% if item.token %}<a class="btn btn-purple" href="/status/{{ item.token }}">View status</a>{% endif %}<a class="btn btn-light" href="/site/">Back to home</a></div>
+    {% if item.ref %}
+    <div class="panel" style="margin:18px 0">
+      <div class="eyebrow">Your reference</div>
+      <p style="font-size:28px; font-weight:700; letter-spacing:0.05em; margin:4px 0 10px; color:var(--gold)" id="ref">{{ item.ref }}</p>
+      <p style="margin:0 0 12px">No text or email is sent, so save it now. You'll need it with your phone number to check on your vehicle.</p>
+      <div class="actions">
+        <button type="button" class="btn btn-light" onclick="navigator.clipboard && navigator.clipboard.writeText('{{ item.ref }}').then(function(){this.textContent='Copied';}.bind(this))">Copy reference</button>
+        {% if item.token %}<a class="btn btn-purple" href="/status/{{ item.token }}">Open my status page</a>{% endif %}
+        {% if kind == 'booking' and item.token and item.time %}<a class="btn btn-light" href="/status/{{ item.token }}/visit.ics">Add to my calendar</a>{% endif %}
+      </div>
+      {% if item.token %}<p style="margin:12px 0 0; font-size:14px; color:var(--muted)">Tip: bookmark your status page. It keeps your reference and is private to you.</p>{% endif %}
+    </div>
+    {% endif %}
+    <p>If it is urgent, call or text <a href="tel:{{ business.phone_tel }}">{{ business.phone_display }}</a>.</p>
+    <div class="actions"><a class="btn btn-light" href="/site/">Back to home</a></div>
   </div>
 </section>
 {% endblock %}

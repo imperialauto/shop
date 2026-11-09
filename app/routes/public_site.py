@@ -13,10 +13,11 @@ PostgreSQL lock the staff booking API uses. Confirmation appears on screen only.
 """
 import logging
 
-from app import business_settings, lead_lifecycle, website_alerts
+from app import business_settings, calendar_feed, lead_lifecycle, website_alerts
 import os
 import re
 import secrets
+import hashlib
 import time
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
@@ -59,6 +60,27 @@ FAQ = (
     ("Do you do tint, wraps and detailing?", "Yes, through NVZN Customs, our appearance division."),
 )
 STATUS_LIMIT = SubmissionLimiter(limit=20)
+RECENT_MINUTES = 30  # the same form sent again in this window returns the first reference
+
+
+def fingerprint(*parts) -> str:
+    return hashlib.sha256("|".join(str(p).strip().lower() for p in parts).encode()).hexdigest()[:24]
+
+
+def recent_submission(request: Request, key: str) -> dict | None:
+    """A double tap, back-and-resend or refresh-resubmit returns the first result instead of a second job."""
+    recent = request.session.get("site_recent") or {}
+    item = recent.get(key)
+    if item and time.time() - item.get("at", 0) < RECENT_MINUTES * 60:
+        return item
+    return None
+
+
+def remember_submission(request: Request, key: str, kind: str, item: dict) -> None:
+    now = time.time()
+    recent = {k: v for k, v in (request.session.get("site_recent") or {}).items() if now - v.get("at", 0) < RECENT_MINUTES * 60}
+    recent[key] = {"kind": kind, "item": item, "at": now}
+    request.session["site_recent"] = dict(list(recent.items())[-5:])
 
 
 def lead_minutes() -> int:
@@ -133,8 +155,8 @@ def faq(request: Request):
     return render(request, "site/faq.html", active="faq", questions=FAQ)
 
 
-def status_page(request: Request, status_code: int = 200, error: str = ""):
-    return render(request, "site/status.html", status_code=status_code, form_page=True, active="status", error=error)
+def status_page(request: Request, status_code: int = 200, error: str = "", lost: str = ""):
+    return render(request, "site/status.html", status_code=status_code, form_page=True, active="status", error=error, lost=lost)
 
 
 @router.get("/status", response_class=HTMLResponse)
@@ -157,6 +179,37 @@ async def status_find(request: Request, db: Session = Depends(get_db)):
     if order is None or not order.public_token or not phone or phone_digits(order.customer.phone) != phone:
         return status_page(request, 404, "We could not match that reference and phone number.")
     return RedirectResponse(f"/status/{order.public_token}", status_code=303)
+
+
+LOST_REPLY = ("Thanks. If that matches a booking or request, someone from the shop will call or text you at that number "
+              "during business hours with your reference. Nothing is sent automatically.")
+
+
+@router.post("/status/lost", response_class=HTMLResponse)
+async def status_lost(request: Request, db: Session = Depends(get_db)):
+    """Lost reference. The reply is the same whether or not anything matches, so it reveals nothing.
+    A match puts one item in the owner's queue; no booking is created and nothing is sent."""
+    if not forms_enabled(request.app.state.read_only):
+        return status_page(request, 503, "Please call or text us and we'll find your booking.")
+    form = await request.form()
+    if not STATUS_LIMIT.allow(client_key(request), time.time()):
+        return status_page(request, 429, "Too many tries. Please call or text us.")
+    try:
+        phone = normalize_phone(form.get("phone"))
+    except FormError:
+        phone = ""
+    last = clean_text(form.get("last_name"), NAME_LIMIT).lower()
+    if phone and last:
+        candidates = db.query(Customer).filter(func.lower(Customer.last_name) == last).limit(200).all()
+        customer = next((c for c in candidates if phone_digits(c.phone) == phone), None)
+        if customer is not None:
+            orders = (db.query(RepairOrder).filter(RepairOrder.customer_id == customer.id, RepairOrder.public_token.isnot(None),
+                                                   RepairOrder.status != "delivered")
+                      .order_by(RepairOrder.id.desc()).limit(5).all())
+            if orders:
+                website_alerts.queue_reference_help(db, customer, orders)
+                db.commit()
+    return status_page(request, 200, lost=LOST_REPLY)
 
 
 # ── Shared record creation ───────────────────────────────────────────────────
@@ -255,8 +308,18 @@ def booking_window(slot: BookingSlot, service, zone) -> AppointmentWindow:
                              travel if zone else shop_buffer_minutes())
 
 
-def fits(db: Session, window: AppointmentWindow) -> bool:
+def calendar_busy(now: datetime) -> list[dict] | None:
+    """Events on the owner's linked calendar for the booking window. [] when no calendar is linked;
+    None when one is linked but can't be read, and then nothing is offered (no double booking)."""
+    if not calendar_feed.feed_urls():
+        return []
+    return calendar_feed.upcoming(now, days=BOOKING_DAYS + 2)
+
+
+def fits(db: Session, window: AppointmentWindow, busy: list[dict] | None = ()) -> bool:
     if window.starts_at.astimezone(PHOENIX).weekday() in booking_closed_days():
+        return False
+    if busy is None or calendar_feed.busy_overlaps(busy, window.blocked_from, window.blocked_until):
         return False
     try:  # the buffer or trip back must also end inside open hours
         held = AppointmentWindow(window.starts_at, window.blocked_until, window.resource_id)
@@ -271,9 +334,10 @@ def booking_times(db: Session, service, zone) -> "OrderedDict[str, list[dict]]":
     earliest = now + timedelta(minutes=lead_minutes())
     latest = now + timedelta(days=BOOKING_DAYS)
     days: OrderedDict[str, list[dict]] = OrderedDict()
+    busy = calendar_busy(now)
     for slot in open_slots(db, now):
         start = utc(slot.starts_at)
-        if not earliest <= start <= latest or not fits(db, booking_window(slot, service, zone)):
+        if not earliest <= start <= latest or not fits(db, booking_window(slot, service, zone), busy):
             continue
         local = start.astimezone(PHOENIX)
         hour = local.hour % 12 or 12
@@ -292,6 +356,8 @@ def booking_unavailable_reason(db: Session) -> str:
         return "Shop hours are not set up for online booking."
     if db.bind.dialect.name != "postgresql":
         return "Online booking needs the PostgreSQL database."
+    if calendar_busy(datetime.now(timezone.utc)) is None:
+        return "The shop calendar can't be checked right now."
     return ""
 
 
@@ -354,6 +420,10 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
     except FormError as exc:
         log.info("site_form_rejected form=booking reason=%s", str(exc)[:60])  # the message only, never what was typed
         return booking_page(request, db, 422, str(exc), values)
+    resend = fingerprint("book", person["phone"], service.slug if hasattr(service, "slug") else service.name, slot_id)
+    if recent_submission(request, resend):
+        request.session["site_booking"] = recent_submission(request, resend)["item"]
+        return RedirectResponse("/site/book/received", status_code=303)
     # Counted after validation so a typo does not use up a visitor's tries.
     if not limiter.allow(client_key(request), time.time()):
         return booking_page(request, db, 429, "Too many requests from this connection. Please call or text us.", values)
@@ -370,7 +440,7 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
         if slot.removed_at is not None or starts_at < datetime.now(timezone.utc) + timedelta(minutes=lead_minutes()):
             raise FormError(taken)
         candidate = booking_window(slot, service, zone)
-        if not fits(db, candidate):
+        if not fits(db, candidate, calendar_busy(datetime.now(timezone.utc))):
             raise FormError(taken)
         customer, matched = find_or_create_customer(db, person)
         vehicle = find_or_create_vehicle(db, customer, matched, vehicle_details)
@@ -400,12 +470,14 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
         raise
     request.session["site_booking"] = {"ref": f"WEB-{order.id}", "service": service.name, "time": label,
                                        "price": service.price_label, "fee": (zone.fee or 0) if zone else 0, "token": order.public_token}
+    remember_submission(request, resend, "booking", request.session["site_booking"])
     return RedirectResponse("/site/book/received", status_code=303)
 
 
 @router.get("/book/received", response_class=HTMLResponse)
 def book_received(request: Request):
-    booking = request.session.pop("site_booking", None)
+    # Kept (not popped) so a refresh still shows the reference in this browser.
+    booking = request.session.get("site_booking")
     if booking is None:
         return RedirectResponse("/site/book", status_code=303)
     return render(request, "site/received.html", form_page=True, active="book", kind="booking", item=booking)
@@ -450,6 +522,10 @@ async def estimate_submit(request: Request, db: Session = Depends(get_db)):
     except FormError as exc:
         log.info("site_form_rejected form=estimate reason=%s", str(exc)[:60])
         return estimate_page(request, 422, str(exc), values)
+    resend = fingerprint("estimate", person["phone"], " ".join(description.split()))
+    if recent_submission(request, resend):
+        request.session["site_estimate"] = recent_submission(request, resend)["item"]
+        return RedirectResponse("/site/estimate/received", status_code=303)
     if not limiter.allow(client_key(request), time.time()):
         return estimate_page(request, 429, "Too many requests from this connection. Please call or text us.", values)
     try:
@@ -472,12 +548,13 @@ async def estimate_submit(request: Request, db: Session = Depends(get_db)):
         db.rollback()
         raise
     request.session["site_estimate"] = {"ref": f"WEB-{order.id}", "token": order.public_token}
+    remember_submission(request, resend, "estimate", request.session["site_estimate"])
     return RedirectResponse("/site/estimate/received", status_code=303)
 
 
 @router.get("/estimate/received", response_class=HTMLResponse)
 def estimate_received(request: Request):
-    item = request.session.pop("site_estimate", None)
+    item = request.session.get("site_estimate")
     if item is None:
         return RedirectResponse("/site/estimate", status_code=303)
     return render(request, "site/received.html", form_page=True, active="estimate", kind="estimate", item=item)
