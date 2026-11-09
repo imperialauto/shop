@@ -2,7 +2,7 @@ name: App walkthrough
 on:
   workflow_dispatch:
   push:
-    branches: ['claude/launch-audit', 'claude/login-security', 'claude/staff-accounts', 'claude/public-site-booking', 'claude/settings-center', 'claude/alert-center', 'claude/staff-home', 'claude/price-rates', 'claude/line-approvals']
+    branches: ['claude/launch-audit', 'claude/login-security', 'claude/staff-accounts', 'claude/public-site-booking', 'claude/settings-center', 'claude/alert-center', 'claude/staff-home', 'claude/price-rates', 'claude/line-approvals', 'claude/home-summary']
 jobs:
   walkthrough:
     runs-on: ubuntu-latest

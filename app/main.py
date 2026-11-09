@@ -18,7 +18,7 @@ import time
 
 from app.security import limiter
 from app.permissions import ROLES, role_gate
-from app import preview_check, preview_seed
+from app import home_summary, preview_check, preview_seed
 from app.public_site import preview_code
 import hashlib
 import hmac
@@ -294,6 +294,7 @@ def dashboard(request: Request, view: str = "open", db: Session = Depends(get_db
         "total_invoices": db.query(Invoice).filter(Invoice.status == "sent").count(),
         "now": datetime.now(PHOENIX),
         **dispatch.dashboard_context(db, view),
+        "home": home_summary.summary(db, user),
         "read_only": app.state.read_only,
     })
 
