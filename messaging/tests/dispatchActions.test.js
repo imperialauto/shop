@@ -152,3 +152,60 @@ test("no approval link is queued when current Quo call context fails closed", as
   assert.equal(sent[0].to, OWNER);
   assert.match(sent[0].content, /No approval link queued/);
 });
+
+test("old YES-approved quote is BLOCKED when it repeats a private vendor cost from owner history", async () => {
+  process.env.OWNER_TEXTS_ENABLED = "true";
+  const sent = [];
+  const results = [];
+  const quo = {
+    listMessages: async ({ participants }) => ({ data: participants[0] === OWNER
+      ? [{ id: "owner-cost", createdAt: "2026-11-09T21:00:00Z", direction: "incoming",
+           text: "I sourced the tank for the Ford Fusion for $81.83 my cost." }]
+      : [{ id: "customer-current", createdAt: "2026-11-09T20:00:00Z", direction: "incoming",
+           text: "Any update on my Fusion?" }],
+    }),
+    listCalls: async () => ({ data: [] }),
+    sendMessage: async (msg) => sent.push(msg),
+  };
+  const shopClient = {
+    dispatchOutbound: async (r) => results.push(r),
+    logCommunication: async () => { throw Error("customer must not be contacted"); },
+  };
+  const draft = { key: "reply:52:customer-current", itemId: 52, phone: PHONE,
+    text: "We sourced your Ford Fusion tank for $81.83.", messageId: "customer-current",
+    conversationId: "CNfusion" };
+  await handleIntakeResult({ result: { customerReply: draft },
+    messageId: "owner-yes", phone: OWNER, quo, shopClient });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].to, OWNER);
+  assert.match(sent[0].content, /BLOCKED/);
+  assert.equal(results[0].status, "skipped");
+});
+
+test("a distinct approved selling price can still be sent after private-cost screening", async () => {
+  process.env.OWNER_TEXTS_ENABLED = "true";
+  const sent = [];
+  const outcomes = [];
+  const quo = {
+    listMessages: async ({ participants }) => ({ data: participants[0] === OWNER
+      ? [{ id: "owner-cost", createdAt: "2026-11-09T21:00:00Z", direction: "incoming",
+           text: "I sourced the tank for $81.83 my cost." }]
+      : [{ id: "customer-current", createdAt: "2026-11-09T20:00:00Z", direction: "incoming",
+           text: "Can I get a quote?" }],
+    }),
+    listCalls: async () => ({ data: [] }),
+    sendMessage: async (msg) => sent.push(msg),
+  };
+  const shopClient = {
+    dispatchOutbound: async (r) => outcomes.push(r),
+    logCommunication: async () => ({ logged: true }),
+  };
+  await handleIntakeResult({ result: { customerReply: {
+    key: "reply:53:customer-current", itemId: 53, phone: PHONE,
+    text: "Your approved part selling price is $155, labor quoted separately.",
+    messageId: "customer-current", conversationId: "CNfusion",
+  } }, messageId: "owner-yes", phone: OWNER, quo, shopClient });
+  assert.equal(sent.length, 2);
+  assert.equal(sent[0].to, PHONE);
+  assert.equal(outcomes[0].status, "sent");
+});
