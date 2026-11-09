@@ -65,3 +65,32 @@ test("a request to check prices is not turned into a reminder", async () => {
   assert.equal(asked.action, "later");
 });
 
+
+test("an internal vendor cost is never a YES-sendable proposed customer quote", async () => {
+  const snapshot = { waitingOnYou: [{ id: 52, who: "2013 Ford Fusion" }] };
+  const question = "I sourced the tank for $81.83 my cost and can pick up Thursday. Draft a reply.";
+  const rejected = await interpretOwner({
+    question, snapshot,
+    complete: async () => JSON.stringify({ action: "propose", itemId: 52,
+      text: "I found a tank for your Fusion for $81.83. I can pick it up Thursday." }),
+  });
+  assert.equal(rejected, null);
+  const safe = await interpretOwner({
+    question, snapshot,
+    complete: async () => JSON.stringify({ action: "propose", itemId: 52,
+      text: "We've located the tank and are confirming the total estimate and availability." }),
+  });
+  assert.equal(safe.action, "propose");
+  assert.doesNotMatch(safe.text, /81\.83/);
+});
+
+test("a distinct owner-approved selling price can still be proposed", async () => {
+  const snapshot = { waitingOnYou: [{ id: 52, who: "2013 Ford Fusion" }] };
+  const action = await interpretOwner({
+    question: "The approved customer selling price is $140 for the part, draft a reply.",
+    snapshot,
+    complete: async () => JSON.stringify({ action: "propose", itemId: 52,
+      text: "The approved part price is $140, before installation labor." }),
+  });
+  assert.equal(action.action, "propose");
+});
