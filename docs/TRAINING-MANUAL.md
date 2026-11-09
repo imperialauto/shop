@@ -54,10 +54,13 @@ Label every price **confirmed current**, **working promotional**, **historical r
 | Item | Source | Value |
 |---|---|---|
 | Fuel tank R&R | ALLDATA | 3.5 hr standard (2.5 warranty); draining the tank not included |
-| Filler neck R&R | ALLDATA | 0.6 hr standard |
+| Filler neck R&R | ALLDATA | 0.6 hr standard (not used: neck reused) |
 | Fuel tank, OEM EG9Z9002F | ALLDATA list | $847.30 |
 | Filler neck, OEM DG9Z9034R (FWD, non-plug-in) | ALLDATA list | $385.00 |
-| Aftermarket tank or neck | AutoZonePro | Not listed for this vehicle |
+| Aftermarket tank or neck | AutoZonePro | Not listed for this vehicle (searched "fuel tank", "gas tank", Fuel & Air Delivery category) |
+| Tank or filler hose for this car | AutoZonePro | No match for "fuel filler hose" or "fuel tank filler neck hose". Measure the hose's inside diameter and buy universal fuel filler hose by size |
+| Used tank | LKQ Online | None listed Nov 9. Call a local LKQ yard and give the hybrid part number EG9Z9002F |
+| Confirmed scope | Owner, from inspection | Tank plus the rubber filler hose between tank and neck. The filler neck itself is reused (ALLDATA's neck assembly DG9Z9034R is **not** needed) |
 | Misfire testing P0303/P0316 | Price sheet | $150 advanced in-shop diagnostic |
 
 Misfire testing plan for one cylinder: live misfire counters and fuel trims → swap that cylinder's coil and plug to another cylinder (does the misfire follow?) → inspect the plug → compression test (leak-down if low) → injector check → look for vacuum leaks. **Hybrid:** the engine only runs when the computer commands it, so use the scan tool's engine-running service mode. Follow ALLDATA's high-voltage safety steps before any underbody work near hybrid wiring.
