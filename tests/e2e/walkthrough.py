@@ -305,7 +305,7 @@ def flows(page, device):
         visitor.click("a:has-text('Open my status page')")
         assert "/status/" in visitor.url
         status_body = visitor.inner_text("body")
-        assert reference in status_body and "Booked" in status_body, status_body[:300]
+        assert reference in status_body and "Arizona time" in status_body, status_body[:300]  # labels are styled in capitals
         assert "Confirm before contacting" not in status_body
         measure(visitor, "site-status-result", device, 200, [])
         visitor.goto(BASE + "/site/status")
