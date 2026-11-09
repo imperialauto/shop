@@ -24,6 +24,12 @@
 </div>
 {% endif %}
 
+{% if timeline and timeline.steps|length > 1 %}
+<p class="text-xs text-stone-400 mb-3" id="job-timeline">
+  {% for s in timeline.steps %}{{ s.label }}{% if not loop.first %} +{{ (s.hours / 24)|round(1) if s.hours >= 24 else s.hours }}{{ 'd' if s.hours >= 24 else 'h' }}{% endif %}{% if not loop.last %} → {% endif %}{% endfor %}
+</p>
+{% endif %}
+
 <div class="flex items-start justify-between mb-4">
   <div>
     <h1 class="text-2xl font-bold text-yellow-400">RO #{{ ro.id }}</h1>

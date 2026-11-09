@@ -50,6 +50,7 @@
     <a href="/invoices/" class="card-sm" style="display:block; text-decoration:none;">
       <div style="font-size:24px; font-weight:700; color:#fafafa; line-height:1;">${{ '{:,.0f}'.format(home.money.owed) }}</div>
       <div style="font-size:12px; color:#a1a1aa; margin-top:4px;">Owed on {{ home.money.owed_count }} invoice{{ 's' if home.money.owed_count != 1 }} · ${{ '{:,.0f}'.format(home.money.paid_week) }} paid this week</div>
+      {% if home.money.cycle.median_hours is not none %}<div style="font-size:12px; color:#a1a1aa; margin-top:2px;">First contact to paid: {{ (home.money.cycle.median_hours / 24)|round(1) }} days typical ({{ home.money.cycle.jobs }} job{{ 's' if home.money.cycle.jobs != 1 }}, last 30 days)</div>{% endif %}
     </a>
     {% else %}
     <a href="/ro/" class="card-sm" style="display:block; text-decoration:none;">
