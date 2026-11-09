@@ -42,7 +42,7 @@
   {% endif %}
   <nav aria-label="Queue filters" style="display:flex; flex-wrap:wrap; gap:6px; padding:10px 16px; border-bottom:1px solid var(--imp-line);">
     {% for key, label in dispatch_views.items() %}
-    <a class="queue-filter" href="/dashboard?view={{ key }}" style="font-size:12px; text-decoration:none; color:{{ 'var(--imp-purple)' if key == dispatch_view else 'var(--imp-muted)' }};"{% if key == dispatch_view %} aria-current="true"{% endif %}>{{ label }}</a>
+    <a class="queue-filter" href="/dashboard?view={{ key }}" style="font-size:12px; text-decoration:none; padding:4px 10px; border-radius:999px; {{ 'background:var(--imp-gold); color:var(--imp-on-gold); font-weight:700;' if key == dispatch_view else 'color:var(--imp-muted);' }}"{% if key == dispatch_view %} aria-current="true"{% endif %}>{{ label }}</a>
     {% endfor %}
   </nav>
   {% for row in dispatch_items %}{% set item = row.item %}
