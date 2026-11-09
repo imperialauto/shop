@@ -19,41 +19,42 @@ The AI assistant is named **Imperial**.
 ## Requirements
 | ID | Area | Requirement | Status | Evidence or gap |
 |---|---|---|---|---|
-| R01 | Public site | Replacement public website (auto, diesel, mobile, roadside, fleet, NVZN) | tested | PR 52 preview under `/site`, not deployed. Home, services, towing, rentals, pricing, FAQ, status and contact pass walkthrough with made-up data. Rentals needs real rates and terms. Pricing needs final prices. No cutover |
-| R02 | Public site | Online booking for approved standard services | tested | PR 52, not deployed. Six services approved subject to prices and times. Instant confirmed booking, full duration plus buffer, mobile fee and travel tested with made-up prices. Forms remain off. Needs final prices, durations, ZIP fees and published times |
-| R03 | Public site | Complex estimate requests and customer intake with VIN | tested | PR 52, not deployed. Estimate requests create records, including towing, roadside, rentals and NVZN. No owner alert yet, so requests wait in intake until seen |
-| R04 | Customer | Secure portal and status links | partial | Tokenized status page works. PR 52 adds lookup by reference and phone, not deployed. No login portal |
+| R01 | Public site | Replacement public website (auto, diesel, mobile, roadside, fleet, NVZN) | deployed | PR 52 merged Nov 8 and live under `/site` with public forms off and hidden from search. Domain still on Squarespace. Rentals need real rates and terms, pricing needs verified prices. Not yet in the shared purple and gold design (R36). No cutover |
+| R02 | Public site | Online booking for approved standard services | deployed | PR 52 live with forms off. Instant booking, duration plus one-hour buffer, mobile fee and travel tested on made-up data and in the private preview. Needs final prices, durations and ZIP fees, then owner acceptance before forms are switched on |
+| R03 | Public site | Complex estimate requests and customer intake with VIN | deployed | PR 52 live with forms off. Requests create records and an owner queue item. Lead lifecycle work in draft PRs 55, 58 and 59 is not merged |
+| R04 | Customer | Secure portal and status links | partial | Tokenized status page and PR 52 lookup by reference and phone are live. No customer login portal |
 | R05 | Customer | Drawn signatures | tested | Walkthrough: signature on phone and desktop |
-| R06 | Customer | Line-item estimate approvals | deployed | PR 67: customer approves or declines each line on the signing page; only approved lines are billed |
+| R06 | Customer | Line-item estimate approvals | deployed | PR 67: customer approves or declines each line; only approved lines are billed. PR 73: the link reaches the customer by text only after the owner's YES. Not yet used on a real job |
 | R07 | Customer | Inspection photos and progress | proposed | No data model |
-| R08 | Records | One customer and vehicle record | deployed | PR 71: each customer page has a Customer file, one timeline of live Quo texts and calls, jobs, approvals, visits, invoices, payments and queue items, matched by record or phone, with Billed/Paid/Owes. Read-only. Owner's live check pending |
+| R08 | Records | One customer and vehicle record | deployed | PR 71 Customer file timeline (live Quo texts and calls, jobs, approvals, visits, invoices, payments, queue items). PR 74 phone search in any format and vehicle list on new jobs. PR 75 owner-reviewed Quo import and automatic customer records for new texters and callers. Import not yet run by the owner; Customer file opened once in production without errors. Not verified against Quo |
 | R09 | Jobs | Repair orders and line items | tested | Walkthrough |
-| R10 | Jobs | Estimates | partial | AI estimate page exists. Full flow still to test |
-| R11 | Jobs | Invoices | tested | Create was broken and is fixed on `claude/launch-audit` |
+| R10 | Jobs | Estimates | partial | PR 66 sets labor from the price sheet and fixes duplicate customers. The AI part has never run in production |
+| R11 | Jobs | Invoices | tested | Create fixed in PR 42 (`claude/launch-audit`), merged. No real invoice yet (0 invoices in production) |
 | R12 | Jobs | Parts taxed at 9.2%, labor itemized and untaxed | tested | ADOR June 2026 table and TPR 93-31. Accountant to confirm city labor treatment, sublet and shop fees. Older code charged 8.75% on all items |
-| R13 | Scheduling | Booking, buffers, conflicts on PostgreSQL | tested | Walkthrough and PostgreSQL tests |
+| R13 | Scheduling | Booking, buffers, conflicts on PostgreSQL | deployed | PostgreSQL tests pass; booking engine live with PR 52, forms off. 0 appointments in production |
 | R14 | Scheduling | Calendar reading | partial | Apple linked. Google link not provided. No calendar writes |
-| R15 | Quo | Message and call intake, alerts, drafts | deployed | Live since Nov 3. `YES` and FYI seen working |
+| R15 | Quo | Message and call intake, alerts, drafts | deployed | Live since Nov 3; intake runs every few minutes in production logs. PR 75 adds a customer record for each new number |
 | R16 | Quo | AI call answering | deployed | Sona live. Owner must confirm rules were added |
-| R17 | Owner SMS | YES, NO, EDIT, DONE, LATER, OLD | deployed | `YES` verified. Others unproven live |
+| R17 | Owner SMS | YES, NO, EDIT, DONE, LATER, OLD, STOP ALL, RESUME | deployed | YES verified live. PAUSE ALL and RESUME tested by the owner Nov 8. PR 63 stops price questions being treated as LATER. NO, EDIT, DONE, LATER and OLD unproven live |
 | R18 | Imperial AI | One short text per item and plain-English replies | deployed | PR 45 live since Nov 5. Plain-English replies not yet proven on real texts |
 | R19 | Imperial AI | Job files for each customer | deployed | Texts done through OpenAI. Calls not yet covered, and not proven on real messages |
-| R20 | Imperial AI | Dashboard and SMS commands that take audited actions | proposed | Assistant is read-only |
-| R21 | Tasks | Unified task and project engine | proposed | Dispatch queue only |
-| R22 | Staff | Employee mobile portal, roles and delegation | partial | Mobile layout and tech finance block tested. No assignments portal |
+| R20 | Imperial AI | Dashboard and SMS commands that take audited actions | partial | Audited owner actions exist for queue items, STOP ALL and approval-link sends (PR 73). Project questions by SMS are in draft PR 57, not merged |
+| R21 | Tasks | Unified task and project engine | proposed | Dispatch queue, My day and Home summary read the same queue and job records. No separate task records yet. Duplication concern to audit |
+| R22 | Staff | Employee mobile portal, roles and delegation | partial | PR 50 roles, PR 65 My day and job assignment live. Logins for Rico (tech) and office coordinator created Nov 8. Not used by staff yet |
 | R23 | Staff | Inspections, photos, timers | proposed | No data model |
-| R24 | Finance | Financial Command Center | partial | Owner view on main. Fuller module in PR 38, unmerged and overlapping |
-| R25 | Finance | 2023-2026 reconciliation | in progress | PR 38 import path. Exceptions need owner review |
+| R24 | Finance | Financial Command Center | partial | Owner view on main. PR 51 (replaces closed PR 38) open, not merged |
+| R25 | Finance | 2023-2026 reconciliation | in progress | PR 51 import path. Exceptions need owner review |
 | R26 | Finance | $500 daily target, job profit, investor reports | proposed | |
-| R27 | Alerts | Centralized Alert Center with editable rules and delivery history | partial | Owner SMS history exists. No center, rules or staff channel |
-| R28 | Settings | Editable Settings Center | partial | Password and dispatch policies only |
+| R27 | Alerts | Centralized Alert Center with editable rules and delivery history | deployed | PR 64: text history, optional texts and quiet hours. Customer, urgent and backup alerts cannot be turned off. No staff alert channel yet |
+| R28 | Settings | Editable Settings Center | deployed | PR 61: hours, buffer, booking services, mobile zones, labor rates, with change history. Owner saved settings Nov 8 |
 | R29 | Knowledge | Knowledge Center, inbox, decisions, memory | proposed | Acceptance tests in the owner's requirement |
 | R30 | Payments | Payment processing | blocked | Payments Hub trial. Waiting on rep answers |
 | R31 | Divisions | Fleet, rentals, roadside | partial | Fleet customer type only |
 | R32 | Divisions | NVZN Customs | partial | Model on `feature/nvzn-customs-division`, unmerged |
 | R33 | Channels | Instagram, Messenger, TikTok | proposed | |
 | R34 | Other | Document generation, marketing, inventory, warranties | proposed | PDF estimates exist |
-| R35 | Security | Passkey login, separate accounts, approval levels, STOP ALL, automatic backups | in progress | Two-step login, STOP ALL, nightly backups with a second copy in a separate storage bucket (30 days), backup failure alerts, and staff logins with role limits deployed. Read-only turned off Nov 9. A copy outside Railway (for example Google Drive) would need an owner-made key |
+| R35 | Security | Passkey login, separate accounts, approval levels, STOP ALL, automatic backups | in progress | Two-step login, STOP ALL, staff logins with role limits, nightly verified backups plus a second copy in a separate storage bucket (PR 69). Read-only off Nov 9. Both production databases have an unapplied PostgreSQL security patch (12 CVEs, notice Aug 20) that Railway's weekend window never applied; owner decision needed. No passkeys. A copy outside Railway needs an owner-made key |
+| R36 | Design | One Imperial visual identity (purple and gold) across website, booking, customer pages, dashboard, staff, finance, AI, Knowledge Center, divisions and alerts; NVZN has its own division mark | approved | Owner requirement Nov 9 overrides the black and gold dashboard. Preview first, owner approval before rolling into production |
 
 ## Decisions
 | Date | Decision | Status |
@@ -73,6 +74,9 @@ The AI assistant is named **Imperial**.
 | 2026-11-08 | Master price sheet in `docs/PRICE-SHEET.md` is the pricing reference: $150 shop, $165 mobile, $175 diesel, $165 customer-supplied parts, $75 service call plus travel. No parts markup approved. Live website prices change only after owner verification | current |
 | 2026-11-08 | ChatGPT reviews only until the owner assigns it work. Keep the QA services ChatGPT added to the preview project until testing ends | current |
 | 2026-11-05 | Owner texts PAUSE ALL or STOP ALL to stop automated texting, RESUME to restart | current |
+| 2026-11-09 | The whole platform uses one Imperial purple and gold design. The black and gold dashboard is not approved as final. Preview first, then production after owner approval | current |
+| 2026-11-09 | Customers are created from Quo: owner reviews and ticks past contacts; new texters and callers get a record automatically | current |
+| 2026-11-09 | Approval links reach customers only after the owner's YES | current |
 
 ## Completion log
 | Date | Change | Evidence | Deployed |
@@ -89,3 +93,12 @@ The AI assistant is named **Imperial**.
 | 2026-11-06 | Private PR 52 preview in separate Railway project `imperial-pr52-preview` (website plus disposable database, commit b0555f0, access code, no production links or messaging keys) | 10 of 10 live checks passed on the preview: access code, pages, instant booking, conflict and buffer, Saturday fit, mobile, estimate, roadside, status lookup, dashboard. Production deployments unchanged | Preview only. Delete after acceptance |
 | 2026-11-09 | Second copy of each nightly backup in the `offsite-backups` storage bucket (Virginia), 30 days kept, size checked, upload failure alerts the owner | PR 69, live one-off run: counts 6/6/3/49 and 441/2403 matched, offsite=2 | Yes |
 | 2026-11-09 | Customer file timeline on every customer page (R08), live texts and calls through the messaging service's read-only lookups | PR 71: app-tests and messaging tests passed (one test setup fix), deployed | Yes |
+| 2026-11-08 | PR 52 website and PR 61 Settings Center live, forms off, domain unchanged | Merged 18:22 and 18:24, CI passed, Railway deploys succeeded | Yes |
+| 2026-11-08 | PR 62 sign-in returns to the opened page; PR 63 price questions are answered, not snoozed | CI passed, merged 19:22 | Yes |
+| 2026-11-08 | PR 64 Alert Center; PR 65 My day and job assignment | CI passed, merged 19:53 and 20:12 | Yes |
+| 2026-11-08 | Staff logins for Rico (tech) and the office coordinator | Created in production; first sign-in forces a password change | Yes |
+| 2026-11-09 | Production read-only turned off after a verified backup | APP_READ_ONLY=false at 02:09 UTC | Yes |
+| 2026-11-09 | PR 66 labor rates and estimate fixes; PR 67 per-line approvals (migration after verified backup); PR 68 Home summary | CI passed, merged 02:32, 02:44, 03:02 | Yes |
+| 2026-11-09 | PR 73 approval links by text through the owner's YES; fixes a crash on a second approval round | CI passed after two fixes the tests caught, owner approved, merged 05:49 | Yes, not yet used |
+| 2026-11-09 | PR 74 new-job vehicle list and phone search; PR 75 Quo import and automatic customer records | CI passed, merged 05:58 and 06:04, both services started clean | Yes, import not yet run |
+| 2026-11-09 | Audit: web build for register-only PR 72 failed once at image build (transient; later deploys fine). Postgres warnings are an unapplied security patch, not data problems. Open PRs: 51, 55, 57, 58, 59 and old 4, 5, 8 | Railway environment status and Railway agent read-only check | n/a |
