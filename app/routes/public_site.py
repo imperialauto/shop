@@ -13,7 +13,7 @@ PostgreSQL lock the staff booking API uses. Confirmation appears on screen only.
 """
 import logging
 
-from app import business_settings, calendar_feed, estimate_prefill, lead_lifecycle, website_alerts
+from app import business_settings, calendar_feed, estimate_prefill, lead_lifecycle, status_links, website_alerts
 import os
 import re
 import secrets
@@ -220,6 +220,15 @@ async def status_lost(request: Request, db: Session = Depends(get_db)):
                 website_alerts.queue_reference_help(db, customer, orders)
                 db.commit()
     return status_page(request, 200, lost=LOST_REPLY)
+
+
+@router.get("/status/recover/{ticket}", response_class=HTMLResponse)
+def status_recover(request: Request, ticket: str, db: Session = Depends(get_db)):
+    order = status_links.resolve(db, ticket)
+    if order is None:
+        return status_page(request, 404, "This status link expired or is unavailable. Ask the shop for a new link.")
+    return RedirectResponse(f"/status/{order.public_token}", status_code=303,
+                            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
 
 
 # ── Shared record creation ───────────────────────────────────────────────────
