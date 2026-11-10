@@ -32,12 +32,22 @@ def mobile(phone) -> str | None:
     return "+1" + digits if len(digits) == 10 else None
 
 
+def greeting_for(ro: RepairOrder) -> str:
+    """Never address a customer by an auto-imported vehicle year or placeholder."""
+    parts = (ro.customer.first_name or "").strip().split()
+    first = parts[0].strip(".,:-") if parts else ""
+    if not first.isalpha() or first.casefold() in {"unknown", "customer", "guest", "lead", "vehicle", "new", "test"}:
+        return "there"
+    return first
+
+
 def message_for(ro: RepairOrder) -> str:
     v = ro.vehicle
     car = " ".join(str(x) for x in (v.year, v.make, v.model) if x) if v else "vehicle"
-    first = (ro.customer.first_name or "").strip().split(" ")[0] or "there"
+    first = greeting_for(ro)
     return (f"Hi {first}, your estimate for the {car} is ready. Open your vehicle status and tap Review & Approve: "
-            f"{base_url()}/status/{ro.public_token} Reply here with any questions. - Imperial Auto Care")
+            f"{base_url()}/status/{ro.public_token} Amounts shown are before applicable taxes. "
+            "Reply here with any questions. - Imperial Auto Care")
 
 
 def queue(db: Session, ro: RepairOrder, newest_message_id: str, actor: str) -> DispatchItem:
@@ -51,7 +61,7 @@ def queue(db: Session, ro: RepairOrder, newest_message_id: str, actor: str) -> D
     if not ro.public_token:
         ro.public_token = secrets.token_urlsafe(32)
     total = sum(li.total for li in waiting)
-    summary = f"Job #{ro.id}: {len(waiting)} repair{'s' if len(waiting) != 1 else ''}, ${total:,.2f} for the customer to approve."
+    summary = f"Job #{ro.id}: {len(waiting)} repair{'s' if len(waiting) != 1 else ''}, ${total:,.2f} subtotal before tax for customer review."
     now = datetime.now().astimezone()
     # Everything is worked out before the item joins the session, so no early save sees it half-filled.
     fields = dict(customer_phone=phone, customer_id=ro.customer_id, vehicle_id=ro.vehicle_id,
