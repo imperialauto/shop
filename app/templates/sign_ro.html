@@ -141,6 +141,7 @@
       </div>
 
       <p class="auth-notice">By signing, I authorize Imperial Auto Care to perform the repairs I approved above and agree to pay the estimated amount upon completion. Final invoice may vary based on actual parts and labor required.</p>
+      {% if journey_enabled %}<p class="auth-notice">We count page and approval steps to improve this process. We do not record your name entry, signature image, or form values in analytics.</p>{% endif %}
     </div>
 
     <button type="submit" class="submit-btn" onclick="return prepareSubmit()">✓ Authorize Work</button>
