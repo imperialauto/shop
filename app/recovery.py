@@ -2,6 +2,7 @@
 import os
 from sqlalchemy import inspect, text
 from app.database import engine, Base
+from app import journey
 
 
 def read_only_enabled():
@@ -27,6 +28,8 @@ def database_audit(include_counts=True):
             schema = inspect(conn)
             existing = set(schema.get_table_names())
             for name, model in sorted(Base.metadata.tables.items()):
+                if name == "journey_events" and not journey.enabled():
+                    continue  # staged, additive schema must not affect readiness until approved
                 if not tasks_enabled and name in ("imperial_tasks", "imperial_task_audit"):
                     continue  # WIP task schema intentionally absent until approved migration
                 if not leads_enabled and name in ("service_leads", "service_lead_audit"):
