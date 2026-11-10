@@ -139,6 +139,16 @@ class LineApprovalTests(unittest.TestCase):
         self.owner.post(f"/invoices/{invoice_id}/mark-sent")
         self.assertIn("Review &amp; Sign Invoice", self.customer.get(f"/status/{token}").text)
         self.assertEqual(self.customer.get(link).status_code, 200)
+        with self.Session() as db:
+            db.get(Invoice, invoice_id).status = "paid"
+            db.commit()
+
+        status = self.customer.get(f"/status/{token}").text
+        self.assertIn("View receipt", status)
+        receipt = self.customer.get(link).text
+        self.assertIn("Paid Receipt", receipt)
+        self.assertNotIn("Sign &amp; Confirm Receipt", receipt)
+        self.assertEqual(self.customer.post(link, data={"signature_data": SIGNATURE}).status_code, 303)
 
     def test_lines_never_sent_still_bill_as_before(self):
         self.owner.post(f"/invoices/create/{self.job}")

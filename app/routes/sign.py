@@ -106,6 +106,9 @@ async def sign_invoice_submit(request: Request, invoice_id: int, token: str = ""
     ):
         raise HTTPException(status_code=404, detail="Not found")
 
+    if invoice.customer_signed_at or invoice.status == "paid":
+        return RedirectResponse(f"/sign/invoice/{invoice_id}?token={token}", status_code=303)
+
     form = await request.form()
     signature_data = form.get("signature_data", "").strip()
     approved_by = form.get("approved_by", "").strip()
