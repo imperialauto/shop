@@ -11,7 +11,7 @@
 <div class="page-body">
 {% if not tracking_enabled %}
   <div class="card" style="padding:20px">
-    <h2 style="font-size:18px;font-weight:700;margin-bottom:8px">Tracking is not enabled</h2>
+    <h2 style="font-size:18px;font-weight:700;margin-bottom:8px">{{ 'Database migration is required' if migration_needed else 'Tracking is not enabled' }}</h2>
     <p style="color:var(--imp-muted);font-size:14px">Install and verify the additive journey_events database migration first, then explicitly set CUSTOMER_JOURNEY_ENABLED=true. This screen stays off until the database is ready. No launch or public-form settings are changed.</p>
   </div>
 {% else %}
