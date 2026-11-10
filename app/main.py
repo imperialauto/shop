@@ -10,7 +10,7 @@ from app.config import SECRET_KEY
 from app.database import get_db, init_db
 from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user, after_login
-from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, my_day, business_settings_page, dispatch, imperial_tasks, live, finance, owner_setup, public_site, staff
+from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, my_day, business_settings_page, dispatch, imperial_tasks, live, finance, owner_setup, public_site, staff, journey
 from app.routes import account_security
 from app.scheduler import start_scheduler
 
@@ -19,7 +19,7 @@ import time
 
 from app.security import limiter
 from app.permissions import ROLES, role_gate
-from app import home_summary, next_action, preview_check, preview_seed, system_health
+from app import home_summary, next_action, preview_check, preview_seed, system_health, journey as journey_metrics
 from app.public_site import preview_code
 import hashlib
 import hmac
@@ -54,6 +54,7 @@ app.include_router(business_settings_page.router, tags=["settings"])
 app.include_router(alert_center.router, tags=["alerts"])
 app.include_router(my_day.router, tags=["my_day"])
 app.include_router(public_site.router, tags=["public_site"])
+app.include_router(journey.router, tags=["journey"])
 app.include_router(ai_assist.router, prefix="/ai", tags=["ai"])
 app.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
 app.include_router(estimate_gen.router, prefix="/estimates", tags=["estimates"])
@@ -374,6 +375,7 @@ def public_status(request: Request, token: str, db: Session = Depends(get_db)):
         "request": request, "ro": ro, "reference": f"WEB-{ro.id}",
         "visit": visit, "visit_label": phoenix_label(visit.starts_at) if visit else "",
         "status_url": str(request.url_for("public_status", token=token)),
+        "journey_enabled": journey_metrics.enabled(), "journey_context": journey_metrics.context_for(ro.id),
     }, headers=PRIVATE_PAGE)
 
 
