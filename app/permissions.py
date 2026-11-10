@@ -8,8 +8,8 @@ from app.database import get_db
 from app.models import User
 
 ROLES = {"admin": "Admin", "office": "Office Coordinator", "tech": "Technician"}
-PUBLIC = ("/site", "/login", "/logout", "/status", "/sign", "/webhooks", "/internal", "/healthz", "/readyz", "/live/overlay", "/owner-setup")
-OWNER_ONLY = ("/finance", "/settings/users", "/settings/business", "/alerts")
+PUBLIC = ("/journey/event", "/site", "/login", "/logout", "/status", "/sign", "/webhooks", "/internal", "/healthz", "/readyz", "/live/overlay", "/owner-setup")
+OWNER_ONLY = ("/journey", "/finance", "/settings/users", "/settings/business", "/alerts")
 ADMIN_ONLY = ("/live", "/dispatch/sending", "/dispatch/policies")
 OFFICE = ("/my-day", "/dashboard", "/customers", "/vehicles", "/ro", "/appointments", "/invoices", "/estimates", "/dispatch", "/ai", "/settings")
 TECH_READ = re.compile(r"^/(my-day|ro(/board|/|/\d+(/vehicles)?)?|vehicles/\d+|appointments/?|appointments/calendar|settings(/security)?)$")
