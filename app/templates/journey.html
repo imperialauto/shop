@@ -46,6 +46,25 @@
     </table>
     <p style="font-size:12px;color:var(--imp-muted);margin-top:10px">Each stage counts distinct anonymous sessions. Stages are not guaranteed to form a linear sequence; reloads, blocked scripts and device changes can affect counts.</p>
   </div>
+  {% if metrics.issues %}
+  <div class="card" style="padding:18px;margin-bottom:16px;overflow-x:auto">
+    <h2 style="font-size:16px;font-weight:700;margin-bottom:8px">Where visitors may be getting stuck</h2>
+    <p style="font-size:12px;color:var(--imp-muted);margin-bottom:10px">Grouped by workflow and field category only — never by what a customer entered.</p>
+    <table style="min-width:380px;width:100%">
+      <thead><tr><th>Workflow</th><th>Stage</th><th>Validation / form errors</th><th>Possible pauses</th></tr></thead>
+      <tbody>
+      {% for issue in metrics.issues %}
+      <tr>
+        <td style="padding:10px">{{ issue.page.replace('_', ' ')|title }}</td>
+        <td style="padding:10px">{{ issue.step.replace('_', ' ')|title }}</td>
+        <td style="padding:10px">{{ issue.invalid }}</td>
+        <td style="padding:10px">{{ issue.pauses }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
   <div class="card" style="padding:18px">
     <h2 style="font-size:16px;font-weight:700;margin-bottom:8px">Recent visitor workflows</h2>
     <p style="font-size:12px;color:var(--imp-muted);margin-bottom:14px">A possible pause is inferred when a visitor hasn't progressed for at least 10 minutes. It does not prove they had difficulty. Only page names, stage labels and timestamps are saved.</p>
