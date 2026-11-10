@@ -166,6 +166,16 @@ class ApprovalLinkTests(unittest.TestCase):
             db.commit()
         self.assertIn("No vehicles on file", self.owner.get("/ro/new?customer_id=2").text)
 
+    def test_vehicle_year_placeholder_uses_neutral_greeting(self):
+        with self.Session() as db:
+            db.get(Customer, 1).first_name = "2013 Ford fusion"
+            db.commit()
+        self.ask()
+        item = self.items()[0]
+        self.assertIn("Hi there, your estimate for the 2016 Ford Focus", item.draft_reply)
+        self.assertIn("Amounts shown are before applicable taxes", item.draft_reply)
+        self.assertIn("subtotal before tax", item.summary)
+
     def test_mobile_numbers(self):
         self.assertEqual(approval_links.mobile("1 (602) 555-0100"), "+16025550100")
         self.assertIsNone(approval_links.mobile("555-0100"))
