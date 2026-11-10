@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Customer Journey — Imperial Operations{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title">Customer Journey</div>
+    <div style="font-size:13px;color:var(--imp-muted);margin-top:5px;">See page steps, form friction and estimate approvals without recording what visitors type.</div>
+  </div>
+  <a href="/dashboard" class="btn-secondary">Dashboard</a>
+</div>
+<div class="page-body">
+{% if not tracking_enabled %}
+  <div class="card" style="padding:20px">
+    <h2 style="font-size:18px;font-weight:700;margin-bottom:8px">Tracking is not enabled</h2>
+    <p style="color:var(--imp-muted);font-size:14px">Install and verify the additive journey_events database migration first, then explicitly set CUSTOMER_JOURNEY_ENABLED=true. This screen stays off until the database is ready. No launch or public-form settings are changed.</p>
+  </div>
+{% else %}
+  <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px">
+    <a class="btn-secondary" href="/journey/?days=7&amp;environment={{ environment }}" {% if days == 7 %}aria-current="page"{% endif %}>Last 7 days</a>
+    <a class="btn-secondary" href="/journey/?days=30&amp;environment={{ environment }}" {% if days == 30 %}aria-current="page"{% endif %}>Last 30 days</a>
+    <a class="btn-secondary" href="/journey/?days={{ days }}&amp;environment=live" {% if environment == 'live' %}aria-current="page"{% endif %}>Live visitors</a>
+    <a class="btn-secondary" href="/journey/?days={{ days }}&amp;environment=preview" {% if environment == 'preview' %}aria-current="page"{% endif %}>Preview / QA</a>
+  </div>
+  <div class="stat-row" style="margin-bottom:16px">
+    <div class="card-sm"><div style="font-size:28px;font-weight:700">{{ metrics.visitors }}</div><div style="font-size:13px;color:var(--imp-muted)">Anonymous visitor sessions</div></div>
+    <div class="card-sm"><div style="font-size:28px;font-weight:700">{{ metrics.rows.approval.view }}</div><div style="font-size:13px;color:var(--imp-muted)">Approval pages opened</div></div>
+    <div class="card-sm"><div style="font-size:28px;font-weight:700">{{ metrics.rows.approval.approval_complete }}</div><div style="font-size:13px;color:var(--imp-muted)">Estimate approvals signed</div></div>
+    <div class="card-sm"><div style="font-size:28px;font-weight:700">{{ metrics.possible_pauses }}</div><div style="font-size:13px;color:var(--imp-muted)">Possible customer pauses</div></div>
+  </div>
+  <div class="card" style="padding:18px;margin-bottom:16px;overflow-x:auto">
+    <h2 style="font-size:16px;font-weight:700;margin-bottom:10px">Customer funnel</h2>
+    <table style="min-width:560px;width:100%">
+      <thead><tr><th>Flow</th><th>Viewed</th><th>Started</th><th>Submitted</th><th>Errors / invalid</th><th>Completed</th></tr></thead>
+      <tbody>
+      {% for flow, vals in metrics.rows.items() %}
+      <tr>
+        <td style="padding:10px">{{ flow.replace('_', ' ')|title }}</td>
+        <td style="padding:10px">{{ vals.view }}</td>
+        <td style="padding:10px">{{ vals.focus }}</td>
+        <td style="padding:10px">{{ vals.submit }}</td>
+        <td style="padding:10px">{{ vals.invalid + vals.error }}</td>
+        <td style="padding:10px">{{ vals.complete + vals.approval_complete }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p style="font-size:12px;color:var(--imp-muted);margin-top:10px">Each stage counts distinct anonymous sessions. Stages are not guaranteed to form a linear sequence; reloads, blocked scripts and device changes can affect counts.</p>
+  </div>
+  <div class="card" style="padding:18px">
+    <h2 style="font-size:16px;font-weight:700;margin-bottom:8px">Recent visitor workflows</h2>
+    <p style="font-size:12px;color:var(--imp-muted);margin-bottom:14px">A possible pause is inferred when a visitor hasn't progressed for at least 10 minutes. It does not prove they had difficulty. Only page names, stage labels and timestamps are saved.</p>
+    {% if metrics.recent %}
+    <div style="display:grid;gap:12px">
+      {% for visit in metrics.recent %}
+      <div style="border:1px solid var(--imp-line);border-radius:10px;padding:14px">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          {% if visit.ro_id %}<a href="/ro/{{ visit.ro_id }}" style="font-weight:700;color:var(--imp-link)">Job #{{ visit.ro_id }}</a>{% else %}<strong>Anonymous visit {{ visit.visitor }}</strong>{% endif %}
+          <span style="font-size:12px;color:var(--imp-muted)">{{ visit.last_at.strftime('%b %d, %I:%M %p') }} Arizona</span>
+          {% if visit.friction %}<span style="font-size:12px;color:var(--imp-danger)">{{ visit.friction }}</span>{% elif visit.completed %}<span style="font-size:12px;color:var(--imp-ok)">Completed a step</span>{% endif %}
+        </div>
+        <p style="font-size:13px;line-height:1.6;color:var(--imp-muted);margin-top:8px">{{ visit.steps|join(' → ') }}</p>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}<p style="font-size:14px;color:var(--imp-muted)">No journey events in this time range.</p>{% endif %}
+  </div>
+  {% if metrics.truncated %}<p style="font-size:12px;color:var(--imp-danger);margin-top:10px">Showing only the most recent 10,000 events; shorten the date range for complete totals.</p>{% endif %}
+  <p style="font-size:12px;color:var(--imp-muted);margin:14px 0">First-party, short-lived sessions only. No replay videos, keystrokes, personal details, form contents, IP addresses, full URLs or approval signatures. Events are automatically pruned after 30 days when active.</p>
+{% endif %}
+</div>
+{% endblock %}
