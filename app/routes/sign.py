@@ -6,7 +6,7 @@ from app.database import get_db
 from app.models import RepairOrder, Invoice
 from datetime import datetime, timezone
 
-from app import approval_links, website_alerts
+from app import approval_links, website_alerts, journey
 import os
 import secrets
 
@@ -25,6 +25,7 @@ def _sign_page(request, ro, error=None, status=200):
     subtotal = sum(li.total for li in ro.line_items if li.approval in ("approved", "pending"))
     return templates.TemplateResponse("sign_ro.html", {
         "request": request, "ro": ro, "subtotal": subtotal, "pending": pending, "error": error,
+        "journey_enabled": journey.enabled(), "journey_context": journey.context_for(ro.id),
     }, status_code=status, headers=PRIVATE_PAGE)
 
 
@@ -69,6 +70,8 @@ async def sign_ro_submit(request: Request, token: str, db: Session = Depends(get
         website_alerts.queue_decision(db, ro, pending)
         approval_links.close_for(db, ro)
     # A signature records authorization; starting repair work is a separate staff decision.
+    # Optional, anonymous milestone: never store signature bytes, names or decisions.
+    journey.record(db, form.get("journey_sid", ""), "approval", "approval_complete", "success", ro_id=ro.id)
     db.commit()
 
     return templates.TemplateResponse("sign_complete.html", {
