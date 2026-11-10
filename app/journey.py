@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, func
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, func, inspect
 
 from app.config import SECRET_KEY
 from app.database import Base
@@ -55,9 +55,14 @@ def enabled() -> bool:
     return os.getenv("CUSTOMER_JOURNEY_ENABLED", "false").lower() == "true"
 
 
-def preview() -> bool:
-    # Dedicated QA deployments are distinguished from live customer traffic.
-    return bool(os.getenv("IMPERIAL_PREVIEW_ACCESS_CODE")) or bool(os.getenv("SITE_PREVIEW_CODE"))
+def ready(db) -> bool:
+    """Feature stays inert until its approved table is actually present."""
+    if not enabled():
+        return False
+    try:
+        return inspect(db.bind).has_table("journey_events")
+    except Exception:
+        return False
 
 
 def _signer():
@@ -98,7 +103,7 @@ def prune(db, now: datetime) -> None:
 def record(db, sid: str, page: str, event: str, step: str,
            *, ro_id: int | None = None, is_preview: bool = False) -> bool:
     """Allowlisted, bounded append. Does not persist IP, user agent, URLs or form contents."""
-    if not enabled() or not valid_sid(sid):
+    if not ready(db) or not valid_sid(sid):
         return False
     if page not in PAGES or event not in EVENTS or step not in STEPS:
         return False
