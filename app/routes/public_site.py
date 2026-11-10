@@ -184,7 +184,7 @@ async def status_find(request: Request, db: Session = Depends(get_db)):
 
 
 LOST_REPLY = ("Thanks. If that matches a booking or request, someone from the shop will call or text you at that number "
-              "during business hours with your reference. Nothing is sent automatically.")
+              "during business hours to help you get back to your vehicle status page.")
 
 
 @router.post("/status/lost", response_class=HTMLResponse)
@@ -200,12 +200,20 @@ async def status_lost(request: Request, db: Session = Depends(get_db)):
         phone = normalize_phone(form.get("phone"))
     except FormError:
         phone = ""
-    last = clean_text(form.get("last_name"), NAME_LIMIT).lower()
-    if phone and last:
-        candidates = db.query(Customer).filter(func.lower(Customer.last_name) == last).limit(200).all()
-        customer = next((c for c in candidates if phone_digits(c.phone) == phone), None)
-        if customer is not None:
-            orders = (db.query(RepairOrder).filter(RepairOrder.customer_id == customer.id, RepairOrder.public_token.isnot(None),
+    if phone:
+        eligible = (db.query(Customer).join(RepairOrder, RepairOrder.customer_id == Customer.id)
+                    .filter(Customer.phone.isnot(None), RepairOrder.public_token.isnot(None),
+                            RepairOrder.status != "delivered").distinct())
+        matches = []
+        for customer in eligible.yield_per(200):
+            if phone_digits(customer.phone) == phone:
+                matches.append(customer)
+                if len(matches) == 2:
+                    break
+        if len(matches) == 1:
+            customer = matches[0]
+            orders = (db.query(RepairOrder).filter(RepairOrder.customer_id == customer.id,
+                                                   RepairOrder.public_token.isnot(None),
                                                    RepairOrder.status != "delivered")
                       .order_by(RepairOrder.id.desc()).limit(5).all())
             if orders:

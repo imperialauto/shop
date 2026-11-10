@@ -19,20 +19,16 @@
     </form>
     <p style="margin-top:14px; font-size:14px; color:var(--muted)">Your reference starts with WEB- and is on the page you saw after booking, on your status page, and in the calendar entry if you added one.</p>
 
-    <h2 style="margin-top:32px" id="lost">Lost your reference?</h2>
+    <h2 style="margin-top:32px" id="lost">Lost your status link?</h2>
     {% if lost %}<p class="alert alert-info" role="status">{{ lost }}</p>
     {% elif forms_open %}
-    <p>Don't book again. Tell us the phone number and last name you used and the shop will get back to you with it.</p>
+    <p>Enter the phone number you used. The shop can help you get back to your vehicle status page.</p>
     <form class="form" method="post" action="/site/status/lost">
       <fieldset>
         <label for="lost-phone">Phone number you used</label>
         <input id="lost-phone" name="phone" type="tel" required autocomplete="tel">
-        <div style="margin-top:14px">
-          <label for="lost-last">Last name</label>
-          <input id="lost-last" name="last_name" type="text" required autocomplete="family-name">
-        </div>
       </fieldset>
-      <button class="btn btn-light" type="submit">Ask the shop for my reference</button>
+      <button class="btn btn-light" type="submit">Ask the shop for my status link</button>
     </form>
     {% else %}
     <p>Don't book again. Call or text <a href="tel:{{ business.phone_tel }}">{{ business.phone_display }}</a> and we'll find it.</p>
