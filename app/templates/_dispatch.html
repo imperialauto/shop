@@ -61,6 +61,15 @@
         {% if item.customer_id %}<a class="btn-secondary" href="/customers/{{ item.customer_id }}#file">Customer file</a>{% endif %}
         {% if not row.open_ro %}<a class="btn-secondary" href="{{ row.start_job }}">Start job</a>{% endif %}
       </p>
+      {% if row.recovery_links and user.role in ('owner', 'admin') %}
+      <details style="margin-bottom:8px;">
+        <summary style="cursor:pointer;">Private status links for verified follow-up</summary>
+        <p>Verify the caller and repair order before sharing a link. Links expire after 30 minutes.</p>
+        {% for order, ticket in row.recovery_links %}
+        <p><a href="{{ request.url_for('status_recover', ticket=ticket) }}">WEB-{{ order.id }} · {{ order.vehicle.label }}</a> — copy the link address to share.</p>
+        {% endfor %}
+      </details>
+      {% endif %}
       {% if row.history %}<details style="margin-bottom:8px;"><summary style="cursor:pointer;">Recent history</summary>
         {% for entry in row.history %}<p style="margin:6px 0 0; overflow-wrap:anywhere;">{{ entry.direction|capitalize }}: {{ (entry.body or '')[:160] }}</p>{% endfor %}
       </details>{% endif %}

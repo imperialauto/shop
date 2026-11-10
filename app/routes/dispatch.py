@@ -19,7 +19,7 @@ from app.database import get_db
 from app.config import OWNER_PHONE
 from app.dispatch import AUTO_POLICIES, LOCKED_POLICIES, MAKES, POLICIES, PROMISE, apply_policies, assess, auto_reply, is_reaction, parse_owner_command, propose
 from app.appointment_model import Appointment
-from app import alert_rules, approval_links, name_finder, next_action, quo_import, website_alerts
+from app import alert_rules, approval_links, name_finder, next_action, quo_import, status_links, website_alerts
 from app.sending_pause import is_paused, pause, resume
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync, OPEN_STATUSES
 from app.models import Communication, Customer, RepairOrder, Vehicle
@@ -927,6 +927,13 @@ def _card(db: Session, item: DispatchItem, scheduled: dict[int, datetime]) -> di
         ).order_by(RepairOrder.created_at.desc()).first()
         if open_ro and open_ro.line_items:
             estimate = sum(line.quantity * line.unit_price for line in open_ro.line_items)
+    recovery_links = []
+    if customer and item.category == "reference_help":
+        orders = db.query(RepairOrder).filter(
+            RepairOrder.customer_id == customer.id, RepairOrder.public_token.isnot(None),
+            RepairOrder.status != "delivered",
+        ).order_by(RepairOrder.id.desc()).limit(5).all()
+        recovery_links = [(order, status_links.issue(order)) for order in orders]
     return {
         "item": item,
         "customer_name": (f"{customer.first_name or ''} {customer.last_name or ''}".strip() if customer else None) or item.contact_name,
@@ -935,6 +942,7 @@ def _card(db: Session, item: DispatchItem, scheduled: dict[int, datetime]) -> di
         "open_ro": open_ro,
         "estimate": estimate,
         "next_appointment": scheduled.get(item.customer_id),
+        "recovery_links": recovery_links,
         "start_job": _start_job_url(customer, item),
     }
 

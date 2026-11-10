@@ -338,6 +338,25 @@ class PublicPages(unittest.TestCase):
             self.assertEqual(db.query(Customer).count(), 2)
             self.assertEqual(db.query(DispatchItem).filter_by(category="reference_help").count(), 0)
 
+    def test_recovery_link_expires_and_is_bound_to_the_job(self):
+        from app import status_links
+        with self.open_forms():
+            self.client.post("/site/estimate", data=self.estimate())
+        with self.Session() as db:
+            order = db.get(RepairOrder, 1)
+            ticket = status_links.issue(order)
+            expected = f"/status/{order.public_token}"
+
+        url = f"/site/status/recover/{ticket}"
+        self.assertEqual(self.client.get(url, follow_redirects=False).headers["location"], expected)
+        self.assertEqual(self.client.get(f"{url}invalid", follow_redirects=False).status_code, 404)
+        with patch.object(status_links, "MAX_AGE_SECONDS", -1):
+            self.assertEqual(self.client.get(url, follow_redirects=False).status_code, 404)
+        with self.Session() as db:
+            db.get(RepairOrder, 1).public_token = "rotated-test-token"
+            db.commit()
+        self.assertEqual(self.client.get(url, follow_redirects=False).status_code, 404)
+
     def test_lost_reference_closed_with_forms(self):
         app.state.read_only = False
         self.assertEqual(self.lost().status_code, 503)
