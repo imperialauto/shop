@@ -46,7 +46,7 @@ def message_for(ro: RepairOrder) -> str:
     car = " ".join(str(x) for x in (v.year, v.make, v.model) if x) if v else "vehicle"
     first = greeting_for(ro)
     return (f"Hi {first}, your estimate for the {car} is ready. Open your vehicle status and tap Review & Approve: "
-            f"{base_url()}/status/{ro.public_token} Amounts shown are before applicable taxes. "
+            f"{base_url()}/status/{ro.public_token} Review the itemized charges and any applicable tax before approving. "
             "Reply here with any questions. - Imperial Auto Care")
 
 
@@ -61,7 +61,7 @@ def queue(db: Session, ro: RepairOrder, newest_message_id: str, actor: str) -> D
     if not ro.public_token:
         ro.public_token = secrets.token_urlsafe(32)
     total = sum(li.total for li in waiting)
-    summary = f"Job #{ro.id}: {len(waiting)} repair{'s' if len(waiting) != 1 else ''}, ${total:,.2f} subtotal before tax for customer review."
+    summary = f"Job #{ro.id}: {len(waiting)} repair{'s' if len(waiting) != 1 else ''}, ${total:,.2f} in pending line items for review; verify tax treatment."
     now = datetime.now().astimezone()
     # Everything is worked out before the item joins the session, so no early save sees it half-filled.
     fields = dict(customer_phone=phone, customer_id=ro.customer_id, vehicle_id=ro.vehicle_id,
