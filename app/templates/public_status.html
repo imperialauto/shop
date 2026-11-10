@@ -83,7 +83,7 @@
       <div style="font-size:13px; color:var(--imp-muted); margin-bottom:12px;">{{ pending|length }} item{{ 's' if pending|length != 1 }} to approve or decline. You only pay for what you approve.</div>
       <a href="/sign/ro/{{ ro.public_token }}" class="sign-btn">Review &amp; Approve →</a>
     </div>
-  {% elif ro.status == 'waiting_approval' %}
+  {% elif ro.status in ['waiting_approval', 'approval_received'] %}
     {% if ro.signed_at %}
     <div class="signed-badge">
       ✓ Estimate signed by {{ ro.approved_by }} on {{ ro.signed_at.strftime('%B %d, %Y') }}
