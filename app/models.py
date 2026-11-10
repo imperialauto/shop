@@ -16,6 +16,7 @@ class ROStatus(str, enum.Enum):
     waiting_parts = "waiting_parts"
     in_progress = "in_progress"
     waiting_approval = "waiting_approval"
+    approval_received = "approval_received"
     complete = "complete"
     delivered = "delivered"
 
