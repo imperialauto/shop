@@ -13,7 +13,7 @@ PostgreSQL lock the staff booking API uses. Confirmation appears on screen only.
 """
 import logging
 
-from app import business_settings, calendar_feed, estimate_prefill, lead_lifecycle, website_alerts
+from app import business_settings, calendar_feed, estimate_prefill, lead_lifecycle, website_alerts, journey
 import os
 import re
 import secrets
@@ -110,6 +110,7 @@ def render(request: Request, name: str, status_code: int = 200, form_page: bool 
     base = {
         "request": request, "business": BUSINESS, "service_lines": SERVICE_LINES, "line_actions": line_actions,
         "indexable": indexable(), "forms_open": forms_enabled(request.app.state.read_only),
+        "journey_enabled": journey.enabled(),
         "year": datetime.now(PHOENIX).year,
     }
     return templates.TemplateResponse(name, {**base, **context}, status_code=status_code,
