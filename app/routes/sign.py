@@ -81,7 +81,13 @@ async def sign_ro_submit(request: Request, token: str, db: Session = Depends(get
 @router.get("/invoice/{invoice_id}", response_class=HTMLResponse)
 def sign_invoice_page(request: Request, invoice_id: int, token: str = "", db: Session = Depends(get_db)):
     invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
-    if not invoice or len(token) < 16 or not invoice.repair_order.public_token or not secrets.compare_digest(invoice.repair_order.public_token, token):
+    if (
+        not invoice
+        or invoice.status not in ("sent", "paid")
+        or len(token) < 16
+        or not invoice.repair_order.public_token
+        or not secrets.compare_digest(invoice.repair_order.public_token, token)
+    ):
         raise HTTPException(status_code=404, detail="Not found")
     return templates.TemplateResponse("sign_invoice.html", {
         "request": request, "invoice": invoice, "ro": invoice.repair_order,
@@ -91,7 +97,13 @@ def sign_invoice_page(request: Request, invoice_id: int, token: str = "", db: Se
 @router.post("/invoice/{invoice_id}", response_class=HTMLResponse)
 async def sign_invoice_submit(request: Request, invoice_id: int, token: str = "", db: Session = Depends(get_db)):
     invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
-    if not invoice or len(token) < 16 or not invoice.repair_order.public_token or not secrets.compare_digest(invoice.repair_order.public_token, token):
+    if (
+        not invoice
+        or invoice.status not in ("sent", "paid")
+        or len(token) < 16
+        or not invoice.repair_order.public_token
+        or not secrets.compare_digest(invoice.repair_order.public_token, token)
+    ):
         raise HTTPException(status_code=404, detail="Not found")
 
     form = await request.form()
