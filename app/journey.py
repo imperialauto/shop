@@ -137,6 +137,10 @@ def report(db, *, days: int = 7, show_preview: bool = False) -> dict:
             event: len({e.session_id for e in rows if e.event == event})
             for event in ("view", "focus", "invalid", "submit", "error", "complete", "next", "approval_complete")
         }
+    step_issues = defaultdict(lambda: {"invalid": set(), "pauses": set()})
+    for e in events:
+        if e.event in ("invalid", "error"):
+            step_issues[(e.page, e.step)]["invalid"].add(e.session_id)
     sessions = defaultdict(list)
     for e in events:
         sessions[e.session_id].append(e)
@@ -169,13 +173,25 @@ def report(db, *, days: int = 7, show_preview: bool = False) -> dict:
                 label += f" · {e.step}"
             if not compact or compact[-1] != label:
                 compact.append(label)
+        if friction:
+            # Last meaningful field stage in the current flow, not text or a field value.
+            last_stage = next((e.step for e in reversed(current_flow)
+                               if e.event in ("focus", "invalid", "error", "choice")), "open")
+            step_issues[(last.page, last_stage)]["pauses"].add(sid)
         recent.append({
             "visitor": sid[-6:], "ro_id": ro_id, "last_at": _aware(last.occurred_at).astimezone(local),
             "friction": friction, "completed": completed,
             "steps": compact[-12:],
         })
     recent.sort(key=lambda s: s["last_at"], reverse=True)
+    issue_rows = [
+        {"page": page, "step": step, "invalid": len(value["invalid"]),
+         "pauses": len(value["pauses"])}
+        for (page, step), value in step_issues.items()
+    ]
+    issue_rows.sort(key=lambda row: (row["invalid"] + row["pauses"], row["pauses"]), reverse=True)
     return {"rows": summary, "visitors": len(sessions), "recent": recent[:50],
+            "issues": issue_rows[:12],
             "possible_pauses": sum(bool(s["friction"]) for s in recent),
             "truncated": truncated, "days": days, "preview": show_preview}
 
