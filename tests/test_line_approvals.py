@@ -39,7 +39,7 @@ class LineApprovalTests(unittest.TestCase):
             vehicle = Vehicle(customer_id=customer.id, year=2016, make="Ford", model="Focus")
             db.add(vehicle)
             db.flush()
-            order = RepairOrder(customer_id=customer.id, vehicle_id=vehicle.id, status="diagnosing", public_token="made-up-token")
+            order = RepairOrder(customer_id=customer.id, vehicle_id=vehicle.id, status="diagnosing", concern="Internal vendor margin note", public_token="made-up-token")
             db.add(order)
             db.flush()
             for description, kind, price in (("Front brakes", "labor", 349), ("Rear brakes", "labor", 349), ("Brake pads", "part", 100)):
@@ -66,7 +66,10 @@ class LineApprovalTests(unittest.TestCase):
     def test_full_approval_flow(self):
         self.assertIn("asked=3", self.owner.post(f"/ro/{self.job}/request-approval").headers["location"])
         self.assertEqual(set(self.lines().values()), {"pending"})
-        self.assertIn("3 items to approve", self.customer.get("/status/made-up-token").text)
+        status = self.customer.get("/status/made-up-token").text
+        self.assertIn("3 items to approve", status)
+        self.assertIn("/sign/ro/made-up-token", status)
+        self.assertNotIn("Internal vendor margin note", self.customer.get("/sign/ro/made-up-token").text)
         ids = self.ids()
         missing = self.customer.post("/sign/ro/made-up-token", data={"approved_by": "Pat", "signature_data": SIGNATURE,
                                                                      f"line_{ids['Front brakes']}": "approved"})
@@ -78,6 +81,7 @@ class LineApprovalTests(unittest.TestCase):
         self.assertEqual(done.status_code, 200)
         self.assertEqual(self.lines(), {"Front brakes": "approved", "Rear brakes": "declined", "Brake pads": "approved"})
         with self.Session() as db:
+            self.assertEqual(db.get(RepairOrder, self.job).status, "approval_received")
             alert = db.query(DispatchItem).one()
             self.assertEqual((alert.category, alert.status), ("approval", "needs_owner"))
             self.assertIn("Approved 2 of 3 items, $449.00", alert.summary)
@@ -85,6 +89,16 @@ class LineApprovalTests(unittest.TestCase):
         self.owner.post(f"/invoices/create/{self.job}")
         with self.Session() as db:
             self.assertEqual(db.query(Invoice).one().subtotal, 449)
+
+    def test_draft_lines_cannot_be_signed_or_seen(self):
+        page = self.customer.get("/sign/ro/made-up-token")
+        self.assertIn("No estimate is ready for approval.", page.text)
+        self.assertNotIn("Authorize Work", page.text)
+        self.assertNotIn("Front brakes", page.text)
+        response = self.customer.post("/sign/ro/made-up-token", data={"signature_data": SIGNATURE})
+        self.assertEqual(response.status_code, 422)
+        with self.Session() as db:
+            self.assertIsNone(db.get(RepairOrder, self.job).signed_at)
 
     def test_approval_pages_are_never_cached_or_indexed(self):
         page = self.customer.get("/sign/ro/made-up-token")
@@ -101,7 +115,11 @@ class LineApprovalTests(unittest.TestCase):
         self.customer.post("/sign/ro/made-up-token", data={**form, **{f"line_{i}": "approved" for i in ids.values()}})
         self.assertEqual(set(self.lines().values()), {"declined"})
         with self.Session() as db:
+            self.assertEqual(db.get(RepairOrder, self.job).status, "approval_received")
             self.assertEqual(db.query(DispatchItem).count(), 1)
+        job = self.owner.get(f"/ro/{self.job}").text
+        self.assertIn("Review declined work", job)
+        self.assertNotIn("Approved. Start the work", job)
 
     def test_lines_never_sent_still_bill_as_before(self):
         self.owner.post(f"/invoices/create/{self.job}")

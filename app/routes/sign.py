@@ -22,7 +22,7 @@ templates = Jinja2Templates(
 
 def _sign_page(request, ro, error=None, status=200):
     pending = [li for li in ro.line_items if li.approval == "pending"]
-    subtotal = sum(li.total for li in ro.line_items if li.approval in (None, "approved", "pending"))
+    subtotal = sum(li.total for li in ro.line_items if li.approval in ("approved", "pending"))
     return templates.TemplateResponse("sign_ro.html", {
         "request": request, "ro": ro, "subtotal": subtotal, "pending": pending, "error": error,
     }, status_code=status, headers=PRIVATE_PAGE)
@@ -47,8 +47,10 @@ async def sign_ro_submit(request: Request, token: str, db: Session = Depends(get
     approved_by = form.get("approved_by", "").strip()
 
     pending = [li for li in ro.line_items if li.approval == "pending"]
-    if ro.signed_at and not pending:
-        return _sign_page(request, ro)  # already decided; nothing changes on a repeat submit
+    if not pending:
+        if ro.signed_at:
+            return _sign_page(request, ro)  # already decided
+        return _sign_page(request, ro, "No estimate is ready for approval.", 422)
     decisions = {li.id: form.get(f"line_{li.id}") for li in pending}
     if any(choice not in ("approved", "declined") for choice in decisions.values()):
         return _sign_page(request, ro, "Choose Approve or Decline for each item.", 422)
@@ -62,6 +64,8 @@ async def sign_ro_submit(request: Request, token: str, db: Session = Depends(get
     ro.approved_by = (approved_by or "Customer")[:128]
     ro.signed_at = datetime.utcnow()
     if pending:
+        if ro.status == "waiting_approval":
+            ro.status = "approval_received"
         website_alerts.queue_decision(db, ro, pending)
         approval_links.close_for(db, ro)
     # A signature records authorization; starting repair work is a separate staff decision.

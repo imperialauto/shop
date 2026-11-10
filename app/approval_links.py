@@ -1,7 +1,7 @@
 """Approval links by text, through the owner's normal YES flow.
 
 "Send for approval" on a job queues one item for the owner holding the text
-and the signing link. Nothing reaches the customer until the owner replies
+and the vehicle status link. Nothing reaches the customer until the owner replies
 YES (or approves it on the dashboard), and the messaging service still
 refuses to send if the customer has texted since the item was made.
 """
@@ -36,8 +36,8 @@ def message_for(ro: RepairOrder) -> str:
     v = ro.vehicle
     car = " ".join(str(x) for x in (v.year, v.make, v.model) if x) if v else "vehicle"
     first = (ro.customer.first_name or "").strip().split(" ")[0] or "there"
-    return (f"Hi {first}, your estimate for the {car} is ready. You can approve or decline each repair here: "
-            f"{base_url()}/sign/ro/{ro.public_token} Reply here with any questions. - Imperial Auto Care")
+    return (f"Hi {first}, your estimate for the {car} is ready. Open your vehicle status and tap Review & Approve: "
+            f"{base_url()}/status/{ro.public_token} Reply here with any questions. - Imperial Auto Care")
 
 
 def queue(db: Session, ro: RepairOrder, newest_message_id: str, actor: str) -> DispatchItem:
