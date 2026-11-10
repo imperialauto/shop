@@ -148,11 +148,13 @@ def report(db, *, days: int = 7, show_preview: bool = False) -> dict:
     for sid, rows in sessions.items():
         last = rows[-1]
         ro_id = next((e.ro_id for e in reversed(rows) if e.ro_id), None)
-        completed = any(e.event in ("complete", "approval_complete") for e in rows)
+        # Completion on an earlier flow must not hide a later stuck approval/form.
+        current_flow = [e for e in rows if e.page == last.page]
+        completed = any(e.event in ("complete", "approval_complete") for e in current_flow)
         age_minutes = (now - _aware(last.occurred_at)).total_seconds() / 60
         friction = ""
         if not completed and age_minutes >= 10:
-            if any(e.event in ("invalid", "error") for e in rows):
+            if any(e.event in ("invalid", "error") for e in current_flow):
                 friction = "Validation / form error"
             elif last.page == "approval":
                 friction = "Approval not finished"
