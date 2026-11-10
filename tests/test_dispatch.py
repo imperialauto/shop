@@ -15,11 +15,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app import website_alerts
+from app.appointment_model import Appointment
 from app.database import Base, get_db
 from app.dispatch import apply_policies, assess, parse_owner_command
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync
 from app.main import app
-from app.models import Customer, User
+from app.models import Customer, RepairOrder, User, Vehicle
 from app.routes import dispatch, internal_messaging
 
 KEY = "fixture-internal-key"
@@ -144,6 +146,32 @@ class QueueWorkflowTests(unittest.TestCase):
 
     def post_auto(self, *args):
         return self.client.post(INTAKE, json={**message(*args), "autoRepliesOn": True}, headers=HEADERS)
+
+    def test_website_cards_and_scheduled_filter_use_the_specific_job(self):
+        with self.Session() as db:
+            vehicle = Vehicle(customer_id=1, year=2017, make="Ford", model="F-150")
+            db.add(vehicle)
+            db.flush()
+            booking = RepairOrder(customer_id=1, vehicle_id=vehicle.id, status="intake")
+            roadside = RepairOrder(customer_id=1, vehicle_id=vehicle.id, status="intake")
+            db.add_all([booking, roadside])
+            db.flush()
+            starts_at = datetime.now(timezone.utc) + timedelta(days=1)
+            db.add(Appointment(repair_order_id=booking.id, resource_id="bay-1", starts_at=starts_at,
+                               ends_at=starts_at + timedelta(hours=1), status="confirmed"))
+            booking_item = website_alerts.queue(db, booking, "booking", "Test diagnostic")
+            roadside_item = website_alerts.queue(db, roadside, "request", "Test tow request", "towing")
+            db.commit()
+
+            scheduled, scheduled_jobs = dispatch._scheduled_appointments(db)
+            booking_card = dispatch._card(db, booking_item, scheduled, scheduled_jobs)
+            roadside_card = dispatch._card(db, roadside_item, scheduled, scheduled_jobs)
+            self.assertEqual(booking_card["open_ro"].id, booking.id)
+            self.assertIsNotNone(booking_card["next_appointment"])
+            self.assertEqual(roadside_card["open_ro"].id, roadside.id)
+            self.assertIsNone(roadside_card["next_appointment"])
+            self.assertEqual([item.id for item in dispatch._select(db, "scheduled", scheduled, scheduled_jobs)],
+                             [booking_item.id])
 
     def test_intake_works_in_read_only_and_requires_the_key(self):
         app.state.read_only = True

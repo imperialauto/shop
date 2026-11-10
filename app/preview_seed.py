@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from app.appointment_model import Appointment, BookingSlot  # noqa: F401
 from app.appointments import PHOENIX
-from app.auth import hash_password
+from app.auth import hash_password, verify_password
 from app.database import Base, SessionLocal, engine
 from app.dispatch_model import DispatchAudit  # noqa: F401
 from app.models import Customer, LineItem, RepairOrder, User, Vehicle
@@ -48,8 +48,9 @@ def seed() -> bool:
     with SessionLocal() as db:
         owner = db.query(User).filter(User.username == "preview-owner").first()
         if owner is not None:  # lets a test password be replaced without rebuilding the data
-            owner.password_hash = hash_password(password)
-            db.commit()
+            if not verify_password(password, owner.password_hash):
+                owner.password_hash = hash_password(password)
+                db.commit()
             return False
         db.add(User(username="preview-owner", full_name="Preview Owner", password_hash=hash_password(password), role="owner"))
         for n, (first, last) in enumerate([("Pat", "Sample"), ("Lee", "Testcase"), ("Sam", "Example")], 1):
