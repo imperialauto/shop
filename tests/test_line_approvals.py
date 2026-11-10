@@ -121,6 +121,35 @@ class LineApprovalTests(unittest.TestCase):
         self.assertIn("Review declined work", job)
         self.assertNotIn("Approved. Start the work", job)
 
+    def test_customer_cannot_open_or_sign_draft_invoice(self):
+        token = "made-up-invoice-token"
+        self.owner.post(f"/invoices/create/{self.job}")
+        with self.Session() as db:
+            db.get(RepairOrder, self.job).public_token = token
+            invoice_id = db.query(Invoice).one().id
+            db.commit()
+
+        link = f"/sign/invoice/{invoice_id}?token={token}"
+        self.assertNotIn("Review &amp; Sign Invoice", self.customer.get(f"/status/{token}").text)
+        self.assertEqual(self.customer.get(link).status_code, 404)
+        self.assertEqual(self.customer.post(link, data={"signature_data": SIGNATURE}).status_code, 404)
+        with self.Session() as db:
+            self.assertIsNone(db.get(Invoice, invoice_id).customer_signed_at)
+
+        self.owner.post(f"/invoices/{invoice_id}/mark-sent")
+        self.assertIn("Review &amp; Sign Invoice", self.customer.get(f"/status/{token}").text)
+        self.assertEqual(self.customer.get(link).status_code, 200)
+        with self.Session() as db:
+            db.get(Invoice, invoice_id).status = "paid"
+            db.commit()
+
+        status = self.customer.get(f"/status/{token}").text
+        self.assertIn("View receipt", status)
+        receipt = self.customer.get(link).text
+        self.assertIn("Paid Receipt", receipt)
+        self.assertNotIn("Sign &amp; Confirm Receipt", receipt)
+        self.assertEqual(self.customer.post(link, data={"signature_data": SIGNATURE}).status_code, 303)
+
     def test_lines_never_sent_still_bill_as_before(self):
         self.owner.post(f"/invoices/create/{self.job}")
         with self.Session() as db:

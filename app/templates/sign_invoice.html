@@ -58,9 +58,9 @@
   <div class="already-signed" style="margin-top:20px;">
     ✓ Invoice signed by {{ invoice.customer_approved_by }} on {{ invoice.customer_signed_at.strftime('%B %d, %Y') }}
   </div>
-  {% else %}
+  {% endif %}
 
-  <h2 style="font-size:18px; font-weight:700; color:var(--imp-ink); margin:16px 0 14px;">Final Invoice #{{ invoice.id }}</h2>
+  <h2 style="font-size:18px; font-weight:700; color:var(--imp-ink); margin:16px 0 14px;">{% if invoice.status == "paid" %}Paid Receipt{% else %}Final Invoice{% endif %} #{{ invoice.id }}</h2>
 
   {% if error %}
   <div class="error-msg">{{ error }}</div>
@@ -99,11 +99,15 @@
       {% if invoice.tax_amount > 0 %}
       <div class="total-line"><span>Tax ({{ "%.1f"|format(invoice.tax_rate * 100) }}%)</span><span>${{ "%.2f"|format(invoice.tax_amount) }}</span></div>
       {% endif %}
-      <div class="total-final"><span>Total Due</span><span>${{ "%.2f"|format(invoice.total) }}</span></div>
+      <div class="total-final"><span>Invoice Total</span><span>${{ "%.2f"|format(invoice.total) }}</span></div>
+      {% set paid = invoice.payments | sum(attribute="amount") %}
+      <div class="total-line"><span>Paid</span><span>${{ "%.2f"|format(paid) }}</span></div>
+      <div class="total-line"><span>Balance</span><span>${{ "%.2f"|format([invoice.total - paid, 0]|max) }}</span></div>
     </div>
   </div>
   {% endif %}
 
+  {% if not invoice.customer_signed_at and invoice.status == "sent" %}
   <form method="post" id="sign-form">
     <input type="hidden" name="signature_data" id="sig-data" />
     <div class="card">
@@ -125,6 +129,7 @@
   {% endif %}
 </div>
 
+{% if not invoice.customer_signed_at and invoice.status == "sent" %}
 <script>
   const canvas = document.getElementById('sig-canvas');
   const hint = document.getElementById('sig-hint');

@@ -60,7 +60,7 @@
     </div>
 
     <div style="margin-top:14px;">
-      {% if visit %}
+      {% if visit and ro.status != "delivered" %}
       <div class="label">Booked</div>
       <div style="font-size:15px; color:var(--imp-ink);">{{ visit_label }} (Arizona time){% if visit.location == 'mobile' %}, at your location{% else %}, at the shop{% endif %}</div>
       <a href="/status/{{ ro.public_token }}/visit.ics" style="display:inline-flex; align-items:center; min-height:44px; margin-top:4px; font-size:14px; color:var(--imp-link);">Add to my calendar</a>
@@ -91,7 +91,12 @@
 
   {% if ro.invoices %}
     {% set inv = ro.invoices[-1] %}
-    {% if inv.status in ['sent', 'draft'] %}
+    {% if inv.status == 'paid' %}
+    <div class="card">
+      <div class="label">Paid invoice</div>
+      <a href="/sign/invoice/{{ inv.id }}?token={{ ro.public_token }}" class="sign-btn">View receipt →</a>
+    </div>
+    {% elif inv.status == 'sent' %}
     <div class="card" style="border-color: rgba(96,165,250,0.3);">
       <div style="font-size:14px; font-weight:600; color:var(--imp-ink); margin-bottom:6px;">Final Invoice Ready</div>
       {% if inv.customer_signed_at %}
