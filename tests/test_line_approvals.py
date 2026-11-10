@@ -78,6 +78,7 @@ class LineApprovalTests(unittest.TestCase):
         self.assertEqual(done.status_code, 200)
         self.assertEqual(self.lines(), {"Front brakes": "approved", "Rear brakes": "declined", "Brake pads": "approved"})
         with self.Session() as db:
+            self.assertEqual(db.get(RepairOrder, self.job).status, "approval_received")
             alert = db.query(DispatchItem).one()
             self.assertEqual((alert.category, alert.status), ("approval", "needs_owner"))
             self.assertIn("Approved 2 of 3 items, $449.00", alert.summary)
@@ -101,7 +102,11 @@ class LineApprovalTests(unittest.TestCase):
         self.customer.post("/sign/ro/made-up-token", data={**form, **{f"line_{i}": "approved" for i in ids.values()}})
         self.assertEqual(set(self.lines().values()), {"declined"})
         with self.Session() as db:
+            self.assertEqual(db.get(RepairOrder, self.job).status, "approval_received")
             self.assertEqual(db.query(DispatchItem).count(), 1)
+        job = self.owner.get(f"/ro/{self.job}").text
+        self.assertIn("Review declined work", job)
+        self.assertNotIn("Approved. Start the work", job)
 
     def test_lines_never_sent_still_bill_as_before(self):
         self.owner.post(f"/invoices/create/{self.job}")
