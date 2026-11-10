@@ -2,6 +2,7 @@
 import os
 import unittest
 from unittest.mock import patch
+from datetime import datetime, timedelta, timezone
 
 import fixture_environment  # noqa: F401
 from fastapi.testclient import TestClient
@@ -79,6 +80,7 @@ class JourneyTests(unittest.TestCase):
         self.assertEqual(self.send(event="typing_password").status_code, 400)
         self.assertEqual(self.send(page="/status/sensitive-token").status_code, 400)
         self.assertEqual(self.send(step="my address").status_code, 400)
+        self.assertEqual(self.send(event=[]).status_code, 400)
         self.assertEqual(len(self.events()), 0)
 
     def test_secure_job_link_requires_signed_short_lived_context(self):
@@ -123,6 +125,18 @@ class JourneyTests(unittest.TestCase):
         self.assertFalse(any(s in str(self.events()[0].__dict__) for s in
                              ("Synthetic Customer", "data:image", "aGVsbG8")))
 
+    def test_possible_pause_is_marked_only_after_a_gap(self):
+        self.send(page="approval", context=journey.context_for(7))
+        self.send(page="approval", event="focus", step="decision",
+                  context=journey.context_for(7))
+        with self.Session() as db:
+            for event in db.query(journey.JourneyEvent).all():
+                event.occurred_at = datetime.now(timezone.utc) - timedelta(minutes=25)
+            db.commit()
+            result = journey.report(db)
+            self.assertEqual(result["possible_pauses"], 1)
+            self.assertEqual(result["recent"][0]["friction"], "Approval not finished")
+
     def test_owner_only_dashboard_and_funnel(self):
         self.send()
         self.send(page="book", event="focus", step="contact")
@@ -135,7 +149,6 @@ class JourneyTests(unittest.TestCase):
         page = self.client.get("/journey/")
         self.assertEqual(page.status_code, 200)
         self.assertIn("Customer Journey", page.text)
-        self.assertIn("Validation / form error", page.text) if False else None
         with self.Session() as db:
             data = journey.report(db)
         self.assertEqual(data["rows"]["book"]["view"], 1)
