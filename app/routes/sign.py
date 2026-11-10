@@ -62,6 +62,8 @@ async def sign_ro_submit(request: Request, token: str, db: Session = Depends(get
     ro.approved_by = (approved_by or "Customer")[:128]
     ro.signed_at = datetime.utcnow()
     if pending:
+        if ro.status == "waiting_approval":
+            ro.status = "approval_received"
         website_alerts.queue_decision(db, ro, pending)
         approval_links.close_for(db, ro)
     # A signature records authorization; starting repair work is a separate staff decision.
