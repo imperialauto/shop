@@ -307,19 +307,19 @@ class PublicPages(unittest.TestCase):
         self.assertEqual(self.counts()[2], 1)
 
     def lost(self, **data):
-        return self.client.post("/site/status/lost", data={"phone": "(602) 555-0142", "last_name": "Sampleton", **data})
+        return self.client.post("/site/status/lost", data={"phone": "(602) 555-0142", **data})
 
     def test_lost_reference_queues_help_without_revealing_or_booking(self):
         from app.dispatch_model import DispatchItem
         with self.open_forms(), patch.object(socket.socket, "connect", no_network):
             self.client.post("/site/estimate", data=self.estimate())
             before = self.counts()
-            hit, miss, wrong_name = self.lost(), self.lost(phone="(602) 555-0199"), self.lost(last_name="Nobody")
+            hit, miss, malformed = self.lost(), self.lost(phone="(602) 555-0199"), self.lost(phone="123")
             again = self.lost()
-        for page in (hit, miss, wrong_name, again):
+        for page in (hit, miss, malformed, again):
             self.assertEqual(page.status_code, 200)
             self.assertIn("If that matches a booking or request", page.text)
-            self.assertNotIn("WEB-", page.text.split("Lost your reference")[1])  # nothing about the record is shown
+            self.assertNotIn("WEB-", page.text.split("Lost your status link")[1])  # nothing about the record is shown
         self.assertEqual(self.counts(), before)  # no booking, customer or message created
         with self.Session() as db:
             items = db.query(DispatchItem).filter(DispatchItem.category == "reference_help").all()
@@ -327,6 +327,16 @@ class PublicPages(unittest.TestCase):
             self.assertTrue(items[0].quo_conversation_id.startswith("WEB"))  # website no-text guards apply
             self.assertIn("WEB-1", items[0].summary)
             self.assertIsNone(items[0].draft_reply)
+
+    def test_phone_only_recovery_does_not_guess_between_customers(self):
+        from app.dispatch_model import DispatchItem
+        with self.open_forms():
+            self.client.post("/site/estimate", data=self.estimate())
+            self.client.post("/site/estimate", data=self.estimate(last_name="Other Customer", description="Second test request."))
+            self.assertEqual(self.lost().status_code, 200)
+        with self.Session() as db:
+            self.assertEqual(db.query(Customer).count(), 2)
+            self.assertEqual(db.query(DispatchItem).filter_by(category="reference_help").count(), 0)
 
     def test_lost_reference_closed_with_forms(self):
         app.state.read_only = False
