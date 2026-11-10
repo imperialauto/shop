@@ -173,8 +173,11 @@ class ApprovalLinkTests(unittest.TestCase):
         self.ask()
         item = self.items()[0]
         self.assertIn("Hi there, your estimate for the 2016 Ford Focus", item.draft_reply)
-        self.assertIn("Amounts shown are before applicable taxes", item.draft_reply)
-        self.assertIn("subtotal before tax", item.summary)
+        self.assertIn("Review the itemized charges and any applicable tax", item.draft_reply)
+        self.assertIn("verify tax treatment", item.summary)
+        sign_page = TestClient(app).get("/sign/ro/made-up-token").text
+        self.assertIn("Review the itemized charges and any applicable taxes", sign_page)
+        self.assertNotIn("Before tax. Declined items", sign_page)
 
     def test_mobile_numbers(self):
         self.assertEqual(approval_links.mobile("1 (602) 555-0100"), "+16025550100")
