@@ -59,7 +59,7 @@ def for_job(db: Session, ro: RepairOrder, role: str) -> dict | None:
         return {"who": "Office", "title": f"Ask the customer to approve {len(undecided)} item{'s' if len(undecided) != 1 else ''}",
                 "detail": "Queues the approval text for your YES. Nothing goes out on its own.",
                 "post": f"/ro/{ro.id}/request-approval", "fields": {}, "button": "Ask for approval"} if office else None
-    if pending and not approved:
+    if pending and (not approved or ro.status not in STARTED):
         link = db.query(DispatchItem).filter(DispatchItem.quo_conversation_id == conversation_key(ro.id),
                                              DispatchItem.status.in_(OPEN_STATUSES + ("approved",))).first()
         waited = _since(min((li.created_at for li in pending if li.created_at), default=None))
@@ -71,6 +71,10 @@ def for_job(db: Session, ro: RepairOrder, role: str) -> dict | None:
                 "detail": "They have the link. Queue a reminder if it's been a while.",
                 "post": f"/ro/{ro.id}/request-approval", "fields": {}, "button": "Queue a reminder"} if office else None
     if ro.status not in STARTED:
+        if not approved:
+            return {"who": "Office", "title": "Review declined work",
+                    "detail": "The customer declined all quoted work.",
+                    "href": "#li-description", "button": "Review lines"} if office else None
         if ro.assigned_tech_id is None and office:
             return {"who": "Office", "title": "Approved. Assign a tech", "detail": f"{len(approved)} approved item{'s' if len(approved) != 1 else ''}.",
                     "href": "#assign-tech", "button": "Choose tech"}
