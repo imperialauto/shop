@@ -2,7 +2,7 @@
 {% block title %}Request received — {{ business.name }}{% endblock %}
 {% block content %}
 <section class="section">
-  <div class="wrap" style="max-width:720px">
+  <div class="wrap" style="max-width:720px" {% if item.ref %}data-journey-complete="{{ 'book' if kind == 'booking' else ('roadside' if item.roadside else 'estimate') }}"{% endif %}>
     <div class="eyebrow">Received</div>
     <h1>{% if kind == 'booking' %}You're booked{% elif item.roadside %}We have your location{% else %}We have your request{% endif %}</h1>
     <p class="alert alert-ok" role="status">
