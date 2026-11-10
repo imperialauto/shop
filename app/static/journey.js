@@ -20,6 +20,10 @@
 
   var page = pageForPath(path);
   if (!page) return;
+  var completed = document.querySelector("[data-journey-complete]");
+  if (completed && completed.getAttribute("data-journey-complete") === "roadside") {
+    page = "roadside"; // the generic /estimate/received route also handles roadside
+  }
   var context = document.querySelector('meta[name="imperial-journey-context"]');
   var signed = context ? context.getAttribute("content") : "";
   if ((page === "status" || page === "approval") && !signed) return;
@@ -66,7 +70,16 @@
   }
 
   emit("view", "open", null, true);
-  var completed = document.querySelector("[data-journey-complete]");
+  // A successful reference lookup redirects to a private status page in this tab.
+  if (page === "status") {
+    try {
+      var pendingAt = Number(sessionStorage.getItem("imperial-status-lookup-started") || 0);
+      sessionStorage.removeItem("imperial-status-lookup-started");
+      if (pendingAt > 0 && Date.now() - pendingAt < 5 * 60 * 1000) {
+        emit("complete", "success", "status_lookup", true);
+      }
+    } catch (_) {}
+  }
   if (completed) {
     var completedPage = completed.getAttribute("data-journey-complete");
     if (["book", "estimate", "roadside"].indexOf(completedPage) >= 0) {
@@ -92,7 +105,14 @@
   }, true);
   document.addEventListener("submit", function (e) {
     if (!e.target || e.target.tagName !== "FORM") return;
+    if ((e.target.method || "").toLowerCase() === "get") {
+      emit("next", "location", null, true); // update booking options, not a booking request
+      return;
+    }
     emit("submit", "send", null, true);
+    if (page === "status_lookup" && (e.target.action || "").indexOf("/site/status/lost") < 0) {
+      try { sessionStorage.setItem("imperial-status-lookup-started", String(Date.now())); } catch (_) {}
+    }
     if (page === "approval") {
       var el = document.createElement("input");
       el.type = "hidden";
