@@ -8,6 +8,7 @@
   {% if not indexable %}<meta name="robots" content="noindex, nofollow">{% endif %}
   <meta name="theme-color" content="#2D0245">
   <link rel="stylesheet" href="/static/site.css">
+  {% if journey_enabled %}<script src="/static/journey.js" defer></script>{% endif %}
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"AutoRepair","name":{{ business.name|tojson }},"telephone":{{ business.phone_tel|tojson }},"email":{{ business.email|tojson }},
    "address":{"@type":"PostalAddress","streetAddress":{{ business.street|tojson }},"addressLocality":{{ business.city|tojson }},"addressRegion":{{ business.region|tojson }},"postalCode":{{ business.postal|tojson }},"addressCountry":"US"},
@@ -58,6 +59,7 @@
       </div>
     </div>
     <div class="legal">© {{ year }} {{ business.legal_name }}. NVZN Customs is a division of {{ business.legal_name }}.</div>
+    {% if journey_enabled %}<div style="font-size:12px; margin-top:8px; opacity:.75;">We count anonymous navigation steps to improve this site; we do not record form entries or private URLs. Browser privacy preferences are respected.</div>{% endif %}
   </div>
 </footer>
 </body>
