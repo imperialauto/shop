@@ -155,6 +155,8 @@ class JourneyTests(unittest.TestCase):
         self.assertEqual(data["rows"]["book"]["focus"], 1)
         self.assertEqual(data["rows"]["book"]["complete"], 1)
         self.assertEqual(data["visitors"], 2)
+        self.assertTrue(any(i["page"] == "book" and i["step"] == "server_error"
+                            and i["invalid"] == 1 for i in data["issues"]))
 
 
 if __name__ == "__main__":
