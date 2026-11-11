@@ -96,6 +96,31 @@ code tasks from the private Imperial SMS queue with no paid AI API usage.
   stop-at-budget is enabled. This plan avoids *additional AI inference
   charges* within the confirmed Groq Free Plan. Never silently upgrade.
 
+## Cost controls verified Nov 10, 2026
+
+- Groq Free Plan API usage has no inference charge while the account is
+  **actually on Free**. Rate-limited calls return HTTP 429 rather than a
+  charge. Confirm this in the specific organization before enabling.
+- GitHub Actions in a **private** repo consumes its plan's included monthly
+  runner allowance. An hourly schedule can generate up to 720 invocations
+  in a 30-day month. If each used the 10-minute maximum, that could be
+  up to **7,200 runner minutes**, beyond some included allowances. This is
+  a conservative upper bound, not a measured spend forecast.
+- Require owner verification of GitHub's **Stop usage when budget limit is
+  reached** protection and zero-dollar overage tolerance; do not substitute
+  email usage alerts for a hard stop.
+- The pilot uses GitHub-hosted compute (not an extra 24/7 Railway coding
+  service). The existing Railway app and Quo subscriptions still carry
+  their normal metered usage and fair-use limits. No new phone seat is
+  intended for owner-only milestone notices.
+- First controlled test should use one explicitly authorized
+  `workflow_dispatch` invocation with a synthetic owner job before
+  making hourly polling available; a passing CI suite is NOT a live
+  cost or SMS delivery benchmark.
+- Paid OpenAI/Anthropic or Groq Developer fallback is **disabled**. The
+  intended additional AI inference spending cap is $0 until the owner
+  separately approves a budget change.
+
 ## Limitations and next acceptance milestone
 
 - Free Groq is rate-limited at the **organization** level. The worker reads
