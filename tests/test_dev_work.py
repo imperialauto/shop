@@ -107,6 +107,22 @@ class DevelopmentWorkTests(unittest.TestCase):
         with self.Session() as db:
             self.assertEqual(db.query(DevWorkJob).count(), 0)
 
+    def test_inactive_schema_does_not_trigger_recovery_audit(self):
+        # The migration has not run in production. Disabled features must not
+        # cause the entire shop app to report missing required tables.
+        from app import recovery
+        DevWorkEvent.__table__.drop(bind=self.engine)
+        DevWorkJob.__table__.drop(bind=self.engine)
+        with patch.object(recovery, "engine", self.engine):
+            with patch.dict(os.environ, {"DEV_COORDINATOR_CAPTURE_ENABLED": "false"}):
+                result = recovery.database_audit(include_counts=False)
+                self.assertNotIn("dev_work_jobs", result["missing_tables"])
+                self.assertNotIn("dev_work_events", result["missing_tables"])
+            with patch.dict(os.environ, {"DEV_COORDINATOR_CAPTURE_ENABLED": "true"}):
+                result = recovery.database_audit(include_counts=False)
+                self.assertIn("dev_work_jobs", result["missing_tables"])
+                self.assertIn("dev_work_events", result["missing_tables"])
+
     def test_list_and_dashboard_report_real_status_and_limits(self):
         self.assertEqual(self.submit().status_code, 200)
         result = self.client.get("/internal/imperial/dev-work/jobs", headers=self.headers)
