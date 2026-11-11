@@ -113,10 +113,18 @@ def flows(page, device):
         page.wait_for_load_state("networkidle")
 
     def status():
-        with page.expect_navigation():
-            page.select_option("[name=status]", "complete")
-        page.wait_for_load_state("networkidle")
-        assert page.input_value("[name=status]") == "complete"
+        # Customer approval must already have been recorded by the signature
+        # flow. Work starts before it can be marked complete; do not jump
+        # directly from intake/approval_received to complete.
+        for next_status in ("in_progress", "complete"):
+            with page.expect_navigation():
+                page.select_option("select[name=status]", next_status)
+            page.wait_for_load_state("networkidle")
+            actual = page.input_value("select[name=status]")
+            assert actual == next_status, (
+                f"expected {next_status}, got {actual!r}; url={page.url}; "
+                f"available={page.locator('select[name=status] option').evaluate_all('(opts) => opts.map(o => o.value)')}"
+            )
 
     def invoice():
         page.click(f"form[action='/invoices/create/{context['ro']}'] button[type=submit]")
@@ -248,10 +256,21 @@ def flows(page, device):
 
     def signature():
         page.goto(f"{BASE}/ro/{context['ro']}")
+        # Status-first approvals: the customer can only approve lines the shop has sent for approval.
+        # This marks them waiting on the customer; any approval text is only queued for the owner's YES.
+        ask = page.locator(f"form[action='/ro/{context['ro']}/request-approval'] button[type=submit]")
+        if ask.count():
+            with page.expect_navigation():
+                ask.first.click()
+            page.wait_for_load_state("networkidle")
         link = page.locator("a[href*='/sign/ro/']")
         assert link.count(), "no signature link"
         href = link.first.get_attribute("href")
         page.goto(href if href.startswith("http") else BASE + href)
+        choices = page.locator("input[type=radio][value=approved]")
+        assert choices.count(), "no lines waiting for the customer's decision"
+        for i in range(choices.count()):
+            choices.nth(i).check()
         page.fill("[name=approved_by]", "Flow Check")
         box = page.locator("#sig-canvas").bounding_box()
         page.mouse.move(box["x"] + 20, box["y"] + 40)
@@ -261,7 +280,9 @@ def flows(page, device):
         page.click("button[type=submit]")
         page.wait_for_load_state("networkidle")
         measure(page, "signed", device, 200, [])
-        assert "sign" in page.inner_text("body").lower() or "thank" in page.inner_text("body").lower()
+        assert "estimate response received" in page.inner_text("body").lower(), "no confirmation after signing"
+        page.goto(f"{BASE}/ro/{context['ro']}")
+        assert "Approved" in page.inner_text("body"), "customer's approval not shown on the job"
 
     def booking():
         day = "2027-01-05" if device == "phone" else "2027-01-06"
@@ -430,9 +451,10 @@ def flows(page, device):
 
     for name, action in [("wrong password", wrong_password), ("login", login), ("public site booking", site_booking), ("public mobile booking", site_mobile_booking), ("public time conflict", site_taken_time), ("public site estimate", site_estimate),
                          ("public brake package", site_brake_package), ("public unpriced request", site_request_unpriced), ("public roadside", site_roadside), ("new customer", customer), ("new vehicle", vehicle), ("new repair order", repair_order),
-                         ("add line item", line_item), ("add part", part_item), ("change status", status), ("create invoice", invoice),
-                         ("no duplicate invoice", duplicate_invoice), ("record payment", payment), ("customer status link", public_status),
-                         ("customer signature", signature), ("book appointment", booking), ("search customers", search),
+                         ("add line item", line_item), ("add part", part_item), ("customer status link", public_status),
+                         ("customer signature", signature), ("change status", status), ("create invoice", invoice),
+                         ("no duplicate invoice", duplicate_invoice), ("record payment", payment),
+                         ("book appointment", booking), ("search customers", search),
                          ("send reply from dashboard", queue_reply), ("logged out redirect", logged_out_redirect),
                          ("tech limits", tech_blocked_from_finance),
                          ("admin limits", admin_limits), ("office limits", office_limits), ("new login", new_login_must_change_password)]:
