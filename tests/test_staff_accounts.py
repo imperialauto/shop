@@ -173,10 +173,54 @@ class StaffLoginTests(unittest.TestCase):
         self.assertEqual(response.headers["location"], "/my-day")
         self.assertEqual(crew.get("/dashboard").headers["location"], "/my-day")
         page = crew.get("/my-day").text
-        self.assertIn(f'/ro/{mine}/update-status?back=my-day', page)
+        self.assertIn(f'/ro/{mine}#li-description', page)
+        self.assertIn("Add the repairs and prices", page)
+        # My Day must not show eight unrelated status buttons for an unpriced job.
+        self.assertNotIn(f'/ro/{mine}/update-status?back=my-day', page)
         self.assertIn("Not assigned yet (1)", page)
         moved = crew.post(f"/ro/{mine}/update-status?back=my-day", data={"status": "in_progress"})
         self.assertEqual(moved.headers["location"], "/my-day")
+
+    def test_my_day_uses_single_next_step_after_approval(self):
+        from app.models import LineItem
+        job = self.make_job(tech_id=2)
+        with self.Session() as db:
+            db.add(LineItem(repair_order_id=job, description="Approved repair",
+                            item_type="labor", quantity=1, unit_price=150,
+                            approval="approved"))
+            db.commit()
+        crew, _ = self.sign_in("crew")
+        page = crew.get("/my-day").text
+        self.assertIn("Approved. Start the work", page)
+        self.assertIn(f'action="/ro/{job}/update-status?back=my-day"', page)
+        self.assertEqual(page.count(f'action="/ro/{job}/update-status?back=my-day"'), 1)
+        self.assertIn('name="status" value="in_progress"', page)
+        self.assertNotIn('name="status" value="complete"', page)
+        self.assertNotIn('name="status" value="waiting_approval"', page)
+
+    def test_my_day_appointment_is_on_job_card_not_repeated(self):
+        from datetime import datetime, timedelta, timezone
+        from zoneinfo import ZoneInfo
+        from app.appointment_model import Appointment
+        job = self.make_job(tech_id=2)
+        other = self.make_job()
+        phoenix_now = datetime.now(ZoneInfo("America/Phoenix"))
+        at = phoenix_now.replace(hour=14, minute=30, second=0, microsecond=0).astimezone(timezone.utc)
+        with self.Session() as db:
+            for idx, ro_id in enumerate((job, other)):
+                db.add(Appointment(repair_order_id=ro_id, resource_id="shop",
+                                   starts_at=at + timedelta(hours=idx),
+                                   ends_at=at + timedelta(hours=idx + 1),
+                                   status="confirmed", location="shop"))
+            db.commit()
+        crew, _ = self.sign_in("crew")
+        page = crew.get("/my-day").text
+        self.assertIn("2 total appointments today", page)
+        self.assertIn("Additional appointments (0)", page)
+        self.assertIn("Today 2:30 PM", page)
+        self.assertIn("Today 3:30 PM", page)
+        self.assertIn(f'/ro/{job}', page)
+        self.assertIn(f'/ro/{other}', page)
 
     def test_my_day_hides_finished_work_and_none_labels(self):
         from app.models import RepairOrder, Vehicle
