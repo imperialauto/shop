@@ -53,6 +53,11 @@ class FreeWorkerSafetyTests(unittest.TestCase):
             "{% for customer in customers %}",
             "{{ config.SECRET_KEY }}",
             "https://example.com/track?key=secret",
+            "<img src='//tracker.example/pixel'>",
+            "@import url(//tracker.example/style.css);",
+            "background: url(data:image/svg+xml;base64,PHN2Zz4=)",
+            "<meta http-equiv='refresh' content='0;url=/internal'>",
+            "<link href='blob:untrusted' rel='stylesheet'>",
         ):
             self.assertFalse(runner.safe_replacement(text), text)
         self.assertTrue(runner.safe_replacement("<p>Book a diagnostic online</p>"))
