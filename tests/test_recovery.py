@@ -46,7 +46,10 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(client.post('/login',data={'username':'fixture-owner','password':'fixture-only-pass'},follow_redirects=False).status_code,302)
             for path in ['/dashboard','/customers/','/customers/1','/vehicles/1','/ro/','/ro/board','/ro/1','/invoices/','/invoices/1','/estimates/','/settings','/status/fixture-token-123456789','/sign/ro/fixture-token-123456789']:
                 with self.subTest(path=path): self.assertEqual(client.get(path).status_code,200)
-            self.assertIn('Office: Collect $75.00',client.get('/ro/board').text)  # same next step as the job page
+            # A premature invoice cannot replace the customer's pending repair approval.
+            board = client.get('/ro/board').text
+            self.assertIn('Office: Ask the customer to approve 1 item', board)
+            self.assertNotIn('Office: Collect $75.00', board)
 
     def test_03_recovery_blocks_production_mutations_and_outbound_actions(self):
         with TestClient(app) as client:
