@@ -6,6 +6,14 @@
     <div class="eyebrow">Repair status</div>
     <h1>Check on your vehicle</h1>
     {% if error %}<p class="alert alert-error" role="alert">{{ error }}</p>{% endif %}
+    {% if saved_status %}
+    <div class="panel" style="margin:16px 0 22px" aria-label="Your recently opened vehicle status">
+      <h2 style="margin-top:0">Your saved status link</h2>
+      <p>Recently viewed in this browser: <strong>{{ saved_status.ref }}</strong></p>
+      <a class="btn btn-gold" href="/status/{{ saved_status.token }}">Open my saved status</a>
+      <p class="hint" style="margin-top:12px">This shortcut is kept in this browser. You can also bookmark the status page. On a different device, use your reference and the phone number entered when booking.</p>
+    </div>
+    {% endif %}
     <form class="form" method="post" action="/site/status">
       <fieldset>
         <label for="reference">Reference number</label>
