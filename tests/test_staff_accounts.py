@@ -178,7 +178,7 @@ class StaffLoginTests(unittest.TestCase):
         # My Day must not show eight unrelated status buttons for an unpriced job.
         self.assertNotIn(f'/ro/{mine}/update-status?back=my-day', page)
         self.assertIn("Not assigned yet (1)", page)
-        moved = crew.post(f"/ro/{mine}/update-status?back=my-day", data={"status": "in_progress"})
+        moved = crew.post(f"/ro/{mine}/update-status?back=my-day", data={"status": "diagnosing"})
         self.assertEqual(moved.headers["location"], "/my-day")
 
     def test_my_day_uses_single_next_step_after_approval(self):
