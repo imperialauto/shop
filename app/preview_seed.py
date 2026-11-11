@@ -15,11 +15,36 @@ from app.security import UserMfa  # noqa: F401
 SLOT_HOURS = {5: (12, 14, 15), **{day: (11, 13, 15, 17) for day in range(5)}}
 
 
+def add_missing_columns() -> list[str]:
+    """Preview only: an older disposable preview database gets new nullable columns, so the preview can run
+    current code. Never runs outside preview mode; production uses reviewed migrations."""
+    if not preview_mode():
+        return []
+    from sqlalchemy import inspect, text
+    added = []
+    with engine.begin() as conn:
+        schema = inspect(conn)
+        existing = set(schema.get_table_names())
+        for name, table in Base.metadata.tables.items():
+            if name not in existing:
+                continue
+            have = {c["name"] for c in schema.get_columns(name)}
+            for column in table.columns:
+                if column.name in have or not column.nullable or column.primary_key:
+                    continue
+                kind = column.type.compile(dialect=conn.dialect)
+                conn.execute(text(f'ALTER TABLE "{name}" ADD COLUMN IF NOT EXISTS "{column.name}" {kind}'))
+                added.append(f"{name}.{column.name}")
+    return added
+
+
 def seed() -> bool:
     password = os.getenv("PREVIEW_OWNER_PASSWORD", "")
     if not preview_mode() or len(password) < 12:
         return False
+    from app import business_settings, lead_model  # noqa: F401  register every table for the preview
     Base.metadata.create_all(engine)
+    add_missing_columns()
     with SessionLocal() as db:
         owner = db.query(User).filter(User.username == "preview-owner").first()
         if owner is not None:  # lets a test password be replaced without rebuilding the data

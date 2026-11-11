@@ -248,10 +248,21 @@ def flows(page, device):
 
     def signature():
         page.goto(f"{BASE}/ro/{context['ro']}")
+        # Status-first approvals: the customer can only approve lines the shop has sent for approval.
+        # This marks them waiting on the customer; any approval text is only queued for the owner's YES.
+        ask = page.locator(f"form[action='/ro/{context['ro']}/request-approval'] button[type=submit]")
+        if ask.count():
+            with page.expect_navigation():
+                ask.first.click()
+            page.wait_for_load_state("networkidle")
         link = page.locator("a[href*='/sign/ro/']")
         assert link.count(), "no signature link"
         href = link.first.get_attribute("href")
         page.goto(href if href.startswith("http") else BASE + href)
+        choices = page.locator("input[type=radio][value=approved]")
+        assert choices.count(), "no lines waiting for the customer's decision"
+        for i in range(choices.count()):
+            choices.nth(i).check()
         page.fill("[name=approved_by]", "Flow Check")
         box = page.locator("#sig-canvas").bounding_box()
         page.mouse.move(box["x"] + 20, box["y"] + 40)
@@ -261,7 +272,9 @@ def flows(page, device):
         page.click("button[type=submit]")
         page.wait_for_load_state("networkidle")
         measure(page, "signed", device, 200, [])
-        assert "sign" in page.inner_text("body").lower() or "thank" in page.inner_text("body").lower()
+        assert "estimate response received" in page.inner_text("body").lower(), "no confirmation after signing"
+        page.goto(f"{BASE}/ro/{context['ro']}")
+        assert "Approved" in page.inner_text("body"), "customer's approval not shown on the job"
 
     def booking():
         day = "2027-01-05" if device == "phone" else "2027-01-06"
@@ -334,7 +347,7 @@ def flows(page, device):
         visitor.fill("[name=zip]", "85000")
         visitor.click("button:has-text('Update times')")
         assert "$5.00" in visitor.inner_text("body") and "$45.00" in visitor.inner_text("body")
-        visitor.locator("label.choice", has=visitor.locator("input[name=slot_id]")).last.click()
+        visitor.locator("details[open] label.choice", has=visitor.locator("input[name=slot_id]")).last.click()
         visitor.fill("[name=street]", "100 Test St")
         visitor.fill("[name=year]", "2016")
         visitor.fill("[name=make]", "Ford")
@@ -378,7 +391,58 @@ def flows(page, device):
         measure(visitor, "site-estimate-received", device, 200, [])
         visitor.context.close()
 
-    for name, action in [("wrong password", wrong_password), ("login", login), ("public site booking", site_booking), ("public mobile booking", site_mobile_booking), ("public time conflict", site_taken_time), ("public site estimate", site_estimate), ("new customer", customer), ("new vehicle", vehicle), ("new repair order", repair_order),
+    def site_brake_package():
+        visitor = page.context.browser.new_context(**page_options).new_page()
+        visitor.goto(BASE + "/site/book")
+        visitor.click("a[href='/site/book?service=brake-pads-rotors']")
+        body = visitor.inner_text("body")
+        assert "From $300 per axle" in body and "Final price confirmed before work" in body, body[:400]
+        visitor.locator("label.choice", has=visitor.locator("input[value=pickup]")).click()
+        visitor.select_option("#axles", "2")
+        visitor.locator("details[open] label.choice", has=visitor.locator("input[name=slot_id]")).last.click()
+        visitor.fill("[name=year]", "2019")
+        visitor.fill("[name=make]", "Ram")
+        visitor.fill("[name=model]", "1500")
+        visitor.fill("[name=first_name]", "Brake" + device)
+        visitor.fill("[name=last_name]", "Visitor")
+        visitor.fill("[name=phone]", "6025550131" if device == "phone" else "6025550132")
+        measure(visitor, "site-brake-package", device, 200, [])
+        visitor.click("button:has-text('Book this time')")
+        visitor.wait_for_url("**/site/book/received")
+        body = visitor.inner_text("body")
+        assert "From $800 for 2 axles" in body and "Final price is confirmed" in body, body[:400]
+        measure(visitor, "site-brake-booked", device, 200, [])
+        visitor.context.close()
+
+    def site_request_unpriced():
+        visitor = page.context.browser.new_context(**page_options).new_page()
+        visitor.goto(BASE + "/site/book")
+        assert "call or text" not in visitor.inner_text("main").lower()
+        visitor.click("a[href='/site/estimate?about=ac-check']")
+        assert "A/C performance check" in visitor.input_value("textarea[name=description]")
+        measure(visitor, "site-request-unpriced", device, 200, [])
+        visitor.context.close()
+
+    def site_roadside():
+        visitor = page.context.browser.new_context(**page_options).new_page()
+        visitor.goto(BASE + "/site/services/towing")
+        visitor.click("a.btn-gold[href='/site/roadside']")
+        visitor.locator("label.choice", has=visitor.locator("input[value=tow]")).click()
+        visitor.fill("#location", "Made-up: 59th Ave and Northern")
+        visitor.fill("[name=make]", "Ford")
+        visitor.fill("[name=model]", "Focus")
+        visitor.fill("[name=first_name]", "Road" + device)
+        visitor.fill("[name=last_name]", "Visitor")
+        visitor.fill("[name=phone]", "6025550141" if device == "phone" else "6025550142")
+        measure(visitor, "site-roadside", device, 200, [])
+        visitor.click("form[action='/site/roadside'] button[type=submit]")
+        visitor.wait_for_url("**/site/estimate/received")
+        assert "Nothing is dispatched until we call you" in visitor.inner_text("body")
+        measure(visitor, "site-roadside-received", device, 200, [])
+        visitor.context.close()
+
+    for name, action in [("wrong password", wrong_password), ("login", login), ("public site booking", site_booking), ("public mobile booking", site_mobile_booking), ("public time conflict", site_taken_time), ("public site estimate", site_estimate),
+                         ("public brake package", site_brake_package), ("public unpriced request", site_request_unpriced), ("public roadside", site_roadside), ("new customer", customer), ("new vehicle", vehicle), ("new repair order", repair_order),
                          ("add line item", line_item), ("add part", part_item), ("change status", status), ("create invoice", invoice),
                          ("no duplicate invoice", duplicate_invoice), ("record payment", payment), ("customer status link", public_status),
                          ("customer signature", signature), ("book appointment", booking), ("search customers", search),
@@ -417,7 +481,19 @@ with sync_playwright() as p:
         context.close()
     browser.close()
 (OUT / "report.json").write_text(json.dumps(results, indent=1))
-bad = [r for r in results if r.get("ok") is False or r.get("status", 200) >= 400 or r.get("overflow", 0) > 2]
-print(json.dumps(bad, indent=1))
-print(f"{len(results)} checks, {len(bad)} failures")
-sys.exit(1 if [r for r in bad if r.get("page") != "missing-page"] else 0)
+# A nonexistent repair order is deliberately probed on each device. A 404 is
+# the expected security/error-handling result, not a failed acceptance check.
+# Fail the walkthrough if that page unexpectedly succeeds or gives a 5xx.
+unexpected = []
+expected_not_found = []
+for result in results:
+    if result.get("page") == "missing-page":
+        if result.get("status") == 404:
+            expected_not_found.append(result)
+        else:
+            unexpected.append(result)
+    elif result.get("ok") is False or result.get("status", 200) >= 400 or result.get("overflow", 0) > 2:
+        unexpected.append(result)
+print(json.dumps(unexpected, indent=1))
+print(f"{len(results)} checks, {len(unexpected)} failures, {len(expected_not_found)} expected 404 probes")
+sys.exit(1 if unexpected else 0)

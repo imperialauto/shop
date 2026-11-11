@@ -37,6 +37,7 @@ RO_STATUSES = [
     ("waiting_parts", "Waiting Parts"),
     ("in_progress", "In Progress"),
     ("waiting_approval", "Waiting Approval"),
+    ("approval_received", "Approval Received"),
     ("complete", "Complete"),
     ("delivered", "Delivered"),
 ]
@@ -96,8 +97,8 @@ def list_ros(request: Request, db: Session = Depends(get_db), status: str = "ope
     query = db.query(RepairOrder)
     if status == "open":
         query = query.filter(RepairOrder.status != "delivered")
-    elif status == "delivered":
-        query = query.filter(RepairOrder.status == "delivered")
+    elif status in dict(RO_STATUSES):
+        query = query.filter(RepairOrder.status == status)
     if search:
         query = query.join(Customer).filter(
             (Customer.first_name.ilike(f"%{search}%")) |
