@@ -113,10 +113,14 @@ def flows(page, device):
         page.wait_for_load_state("networkidle")
 
     def status():
-        with page.expect_navigation():
-            page.select_option("[name=status]", "complete")
-        page.wait_for_load_state("networkidle")
-        assert page.input_value("[name=status]") == "complete"
+        # Customer approval must already have been recorded by the signature
+        # flow. Work starts before it can be marked complete; do not jump
+        # directly from intake/approval_received to complete.
+        for next_status in ("in_progress", "complete"):
+            with page.expect_navigation():
+                page.select_option("[name=status]", next_status)
+            page.wait_for_load_state("networkidle")
+            assert page.input_value("[name=status]") == next_status
 
     def invoice():
         page.click(f"form[action='/invoices/create/{context['ro']}'] button[type=submit]")
@@ -443,9 +447,10 @@ def flows(page, device):
 
     for name, action in [("wrong password", wrong_password), ("login", login), ("public site booking", site_booking), ("public mobile booking", site_mobile_booking), ("public time conflict", site_taken_time), ("public site estimate", site_estimate),
                          ("public brake package", site_brake_package), ("public unpriced request", site_request_unpriced), ("public roadside", site_roadside), ("new customer", customer), ("new vehicle", vehicle), ("new repair order", repair_order),
-                         ("add line item", line_item), ("add part", part_item), ("change status", status), ("create invoice", invoice),
-                         ("no duplicate invoice", duplicate_invoice), ("record payment", payment), ("customer status link", public_status),
-                         ("customer signature", signature), ("book appointment", booking), ("search customers", search),
+                         ("add line item", line_item), ("add part", part_item), ("customer status link", public_status),
+                         ("customer signature", signature), ("change status", status), ("create invoice", invoice),
+                         ("no duplicate invoice", duplicate_invoice), ("record payment", payment),
+                         ("book appointment", booking), ("search customers", search),
                          ("send reply from dashboard", queue_reply), ("logged out redirect", logged_out_redirect),
                          ("tech limits", tech_blocked_from_finance),
                          ("admin limits", admin_limits), ("office limits", office_limits), ("new login", new_login_must_change_password)]:
