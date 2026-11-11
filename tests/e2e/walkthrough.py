@@ -248,10 +248,21 @@ def flows(page, device):
 
     def signature():
         page.goto(f"{BASE}/ro/{context['ro']}")
+        # Status-first approvals: the customer can only approve lines the shop has sent for approval.
+        # This marks them waiting on the customer; any approval text is only queued for the owner's YES.
+        ask = page.locator(f"form[action='/ro/{context['ro']}/request-approval'] button[type=submit]")
+        if ask.count():
+            with page.expect_navigation():
+                ask.first.click()
+            page.wait_for_load_state("networkidle")
         link = page.locator("a[href*='/sign/ro/']")
         assert link.count(), "no signature link"
         href = link.first.get_attribute("href")
         page.goto(href if href.startswith("http") else BASE + href)
+        choices = page.locator("input[type=radio][value=approved]")
+        assert choices.count(), "no lines waiting for the customer's decision"
+        for i in range(choices.count()):
+            choices.nth(i).check()
         page.fill("[name=approved_by]", "Flow Check")
         box = page.locator("#sig-canvas").bounding_box()
         page.mouse.move(box["x"] + 20, box["y"] + 40)
@@ -261,7 +272,9 @@ def flows(page, device):
         page.click("button[type=submit]")
         page.wait_for_load_state("networkidle")
         measure(page, "signed", device, 200, [])
-        assert "sign" in page.inner_text("body").lower() or "thank" in page.inner_text("body").lower()
+        assert "estimate response received" in page.inner_text("body").lower(), "no confirmation after signing"
+        page.goto(f"{BASE}/ro/{context['ro']}")
+        assert "Approved" in page.inner_text("body"), "customer's approval not shown on the job"
 
     def booking():
         day = "2027-01-05" if device == "phone" else "2027-01-06"
