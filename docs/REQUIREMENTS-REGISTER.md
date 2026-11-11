@@ -49,7 +49,7 @@ The AI assistant is named **Imperial**.
 | R26 | Finance | $500 daily target, job profit, investor reports | proposed | |
 | R27 | Alerts | Centralized Alert Center with editable rules and delivery history | deployed | PR 64: text history, optional texts and quiet hours. Customer, urgent and backup alerts cannot be turned off. No staff alert channel yet |
 | R28 | Settings | Editable Settings Center | deployed | PR 61: hours, buffer, booking services, mobile zones, labor rates, with change history. Owner saved settings Nov 8 |
-| R29 | Knowledge | Knowledge Center, inbox, decisions, memory | proposed | Acceptance tests in the owner's requirement |
+| R29 | Knowledge | Knowledge Center, inbox, decisions, memory | proposed | Acceptance tests in the owner's requirement. Training manual started Nov 9 in `docs/TRAINING-MANUAL.md` (employees and Imperial): ch. 1 estimate procedure. Not yet read by Imperial |
 | R30 | Payments | Payment processing | blocked | Payments Hub trial. Waiting on rep answers |
 | R31 | Divisions | Fleet, rentals, roadside | partial | Fleet customer type only |
 | R32 | Divisions | NVZN Customs | partial | Model on `feature/nvzn-customs-division`, unmerged |
