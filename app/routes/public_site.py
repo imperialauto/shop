@@ -159,7 +159,17 @@ def faq(request: Request):
 
 
 def status_page(request: Request, status_code: int = 200, error: str = "", lost: str = ""):
-    return render(request, "site/status.html", status_code=status_code, form_page=True, active="status", error=error, lost=lost)
+    # Reuse a status link already authorized by a booking or direct URL visit.
+    # Never turn reference alone into public access; other browsers still
+    # require the reference plus the exact booking phone number.
+    recent = request.session.get("site_recent_status") or request.session.get("site_booking") or {}
+    recent = recent if isinstance(recent, dict) else {}
+    ref, token = str(recent.get("ref") or ""), str(recent.get("token") or "")
+    saved_status = {"ref": ref, "token": token} if (
+        re.fullmatch(r"WEB-\\d{1,9}", ref) and re.fullmatch(r"[A-Za-z0-9_-]{20,128}", token)
+    ) else None
+    return render(request, "site/status.html", status_code=status_code, form_page=True, active="status",
+                  error=error, lost=lost, saved_status=saved_status)
 
 
 @router.get("/status", response_class=HTMLResponse)
