@@ -33,7 +33,7 @@ function developmentWorkIntent(question) {
   let projectKey = null;
   if (/\b(website|web\s?site|booking|landing page|public site|preview|domain)\b/i.test(instruction)) projectKey = "website";
   else if (/\b(finance|financial|reconcil|ledger|accounting)\b/i.test(instruction)) projectKey = "finance";
-  else if (/\b(integration|connector|agent api)\b/i.test(instruction)) projectKey = "integrations";
+  else if (/\b(integrations?|connectors?|agent api)\b/i.test(instruction)) projectKey = "integrations";
   else if (/\b(dashboard|operations|knowledge hub|imperial assistant|project tasks|task hub|pull request|pr\s*#?\d+|github)\b/i.test(instruction)) projectKey = "operations";
   return { instruction: q.slice(0, 1600), projectKey };
 }
