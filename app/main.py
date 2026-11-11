@@ -146,7 +146,10 @@ PREVIEW_FORM = ('<!doctype html><meta name="viewport" content="width=device-widt
 async def preview_gate(request: Request):
     """Only a disposable preview has a code. Every other deployment skips this."""
     code = preview_code()
-    if not code or request.url.path in ("/healthz", "/readyz"):
+    # The outbound workstation authenticates with its dedicated X-Local-Node-Key;
+    # it cannot complete the browser-only preview access-code challenge.
+    if (not code or request.url.path in ("/healthz", "/readyz")
+            or request.url.path.startswith("/internal/local-node/")):
         return None
     expected = hashlib.sha256(code.encode()).hexdigest()
     if hmac.compare_digest(request.cookies.get(PREVIEW_COOKIE, ""), expected):
