@@ -30,6 +30,11 @@
     .sign-btn { display: block; width: 100%; background: var(--imp-gold); color: var(--imp-purple-deep); font-size: 15px; font-weight: 700; padding: 14px; border-radius: 10px; text-decoration: none; text-align: center; margin-top: 6px; }
     .signed-badge { background: rgba(74,222,128,0.08); border: 1px solid rgba(74,222,128,0.2); color: var(--imp-ok); border-radius: 10px; padding: 12px 16px; font-size: 13.5px; text-align: center; }
     .contact-note { font-size: 12px; color: var(--imp-muted); text-align: center; margin-top: 20px; }
+    .status-navigation { max-width: 420px; margin: 0 auto; padding: 18px 16px 0; display: flex; flex-wrap: wrap; gap: 10px; }
+    .status-navigation a { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 10px 14px; border: 1px solid var(--imp-gold); border-radius: 10px; color: var(--imp-gold); text-decoration: none; font-weight: 700; font-size: 14px; }
+    .status-navigation a:first-child { color: var(--imp-purple-deep); background: var(--imp-gold); }
+    .status-navigation a:focus-visible { outline: 3px solid var(--imp-gold); outline-offset: 3px; }
+    @media (max-width: 420px) { .status-navigation a { flex: 1 1 100%; } }
   </style>
 </head>
 <body>
@@ -42,6 +47,10 @@
   </div>
 </div>
 
+<nav class="status-navigation" aria-label="Return to Imperial website">
+  <a href="/site/">← Imperial website home</a>
+  <a href="/site/status">Look up another vehicle</a>
+</nav>
 <div class="container">
 
   <div class="card">
