@@ -9,7 +9,6 @@ This module has no side effects, database writes, or outbound messaging.
 from app.models import RepairOrder
 
 
-WORK_TARGETS = frozenset(("in_progress", "waiting_parts", "complete"))
 FINISH_FROM = frozenset(("diagnosing", "in_progress", "waiting_parts", "complete"))
 
 
@@ -33,8 +32,13 @@ def status_error(ro: RepairOrder, target: str, role: str) -> tuple[int, str] | N
     ):
         return 409, "Record the customer's decision on each quoted line before marking approval received."
 
-    if target in WORK_TARGETS and unresolved and not approved:
-        return 409, "No quoted work has been approved. Review the estimate before starting or completing repairs."
+    # Diagnosis can begin before a repair estimate exists, but a repair or
+    # parts-hold status must have at least one approved item on file.
+    if target in ("in_progress", "waiting_parts") and not approved:
+        return 409, "Approve at least one quoted repair before starting work or waiting for repair parts."
+
+    if target == "complete" and unresolved and not approved:
+        return 409, "No quoted work has been approved. Resolve the estimate before completing repairs."
 
     if target == "complete" and ro.status not in FINISH_FROM:
         return 409, "Work must enter diagnosis or repair before it can be marked complete."
