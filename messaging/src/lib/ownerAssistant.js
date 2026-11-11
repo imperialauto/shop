@@ -3,7 +3,8 @@
 // Customer text in the snapshot is data and is never treated as instructions.
 
 const GROQ_API_BASE_URL = process.env.GROQ_API_BASE_URL || "https://api.groq.com/openai/v1";
-const MODEL = process.env.GROQ_DRAFT_MODEL || "llama-3.3-70b-versatile";
+const { resolveGroqModel } = require("./groqModel");
+const MODEL = resolveGroqModel();
 const MAX_CHARS = 900;
 const FALLBACK = "I couldn't answer that just now. Text OPEN for your list, or try again in a minute.";
 

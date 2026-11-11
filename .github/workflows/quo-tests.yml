@@ -23,7 +23,7 @@ jobs:
       - name: Install test dependencies
         run: python -m pip install -r requirements.txt pytest passlib
       - name: Dispatch recovery tests
-        run: node --test messaging/tests/dispatchRecovery.test.js messaging/tests/dispatchActions.test.js messaging/tests/quoContacts.test.js messaging/tests/callIntake.test.js messaging/tests/callEvents.test.js messaging/tests/ownerAssistant.test.js
+        run: node --test messaging/tests/dispatchRecovery.test.js messaging/tests/dispatchActions.test.js messaging/tests/quoContacts.test.js messaging/tests/callIntake.test.js messaging/tests/callEvents.test.js messaging/tests/ownerAssistant.test.js messaging/tests/groqModel.test.js
       - name: Project status natural-language tests (synthetic GitHub data)
         run: node --test messaging/tests/projectStatus.test.js
       - name: Imperial brain source routing tests (synthetic records)
