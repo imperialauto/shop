@@ -45,6 +45,10 @@ def for_job(db: Session, ro: RepairOrder, role: str) -> dict | None:
                 "detail": "Marking it picked up closes the job everywhere.",
                 "post": f"/ro/{ro.id}/update-status", "fields": {"status": "delivered"}, "button": "Mark picked up"} if office else None
     if not lines:
+        if ro.status == "complete":
+            return {"who": "Office", "title": "Review completed job with no charges",
+                    "detail": "Confirm whether a diagnostic or service charge is needed, or close out as no-charge.",
+                    "href": "#li-description", "button": "Review charges"} if office else None
         return {"who": "Tech or office", "title": "Add the repairs and prices",
                 "detail": "Use the line items below, or the estimate tool.", "href": "#li-description", "button": "Add a line"}
     undecided = [li for li in lines if li.approval is None]
