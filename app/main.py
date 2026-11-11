@@ -1,5 +1,6 @@
+from datetime import datetime, timezone
 from fastapi import FastAPI, Request, Depends, Form, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -9,7 +10,7 @@ from app.config import SECRET_KEY
 from app.database import get_db, init_db
 from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user, after_login
-from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, my_day, business_settings_page, dispatch, imperial_tasks, live, finance, owner_setup, public_site, staff
+from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, my_day, business_settings_page, dispatch, imperial_tasks, dev_work, live, finance, owner_setup, public_site, staff
 from app.routes import account_security
 from app.scheduler import start_scheduler
 
@@ -18,7 +19,7 @@ import time
 
 from app.security import limiter
 from app.permissions import ROLES, role_gate
-from app import home_summary, preview_check, preview_seed, system_health
+from app import home_summary, next_action, preview_check, preview_seed, system_health
 from app.public_site import preview_code
 import hashlib
 import hmac
@@ -41,6 +42,7 @@ app.include_router(appointments.router, prefix="/appointments", tags=["appointme
 app.include_router(dispatch.router, prefix="/dispatch", tags=["dispatch"])
 app.include_router(dispatch.internal_router, prefix="/internal/dispatch", tags=["internal"])
 app.include_router(imperial_tasks.router, prefix="/internal/imperial/tasks", tags=["internal"])
+app.include_router(dev_work.router, prefix="/internal/imperial/dev-work", tags=["internal"])
 app.include_router(live.router, prefix="/live", tags=["live"])
 app.include_router(vehicles.router, prefix="/vehicles", tags=["vehicles"])
 app.include_router(repair_orders.router, prefix="/ro", tags=["repair_orders"])
@@ -288,12 +290,16 @@ def dashboard(request: Request, view: str = "open", db: Session = Depends(get_db
     # Saved internal tasks share the existing dashboard attention list.
     # Feature remains off until its additive migration is verified.
     task_snapshot = imperial_tasks.owner_dashboard_tasks(db, user.role)
+    dev_work_snapshot = dev_work.dashboard_snapshot(db, user.role)
 
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "imperial_task_snapshot": task_snapshot,
+        "dev_work_snapshot": dev_work_snapshot,
         "user": user,
         "open_ros": open_ros,
+        # Same next step as the Jobs board and job page (one source), not the raw concern text.
+        "next_steps": {ro.id: next_action.for_job(db, ro, user.role) for ro in open_ros},
         "total_customers": total_customers,
         "total_ros": total_ros,
         "open_count": open_count,
@@ -345,11 +351,57 @@ def change_password(
     return _settings(request, db, user, success="Password updated!")
 
 
-@app.get("/status/{token}", response_class=HTMLResponse)
-def public_status(request: Request, token: str, db: Session = Depends(get_db)):
+PRIVATE_PAGE = {"Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow"}
+
+
+def _status_order(db: Session, token: str):
     from app.models import RepairOrder
-    ro = db.query(RepairOrder).filter(RepairOrder.public_token == token).first()
+    ro = db.query(RepairOrder).filter(RepairOrder.public_token == token).first() if token else None
     if not ro:
         raise HTTPException(status_code=404, detail="Not found")
-    return templates.TemplateResponse("public_status.html", {"request": request, "ro": ro})
+    return ro
+
+
+def _next_visit(db: Session, ro):
+    from app.appointment_model import Appointment
+    return (db.query(Appointment).filter(Appointment.repair_order_id == ro.id, Appointment.status.in_(("confirmed", "tentative")))
+            .order_by(Appointment.starts_at).first())
+
+
+@app.get("/status/{token}", response_class=HTMLResponse)
+def public_status(request: Request, token: str, db: Session = Depends(get_db)):
+    from app.routes.live import phoenix_label
+    ro = _status_order(db, token)
+    visit = _next_visit(db, ro)
+    return templates.TemplateResponse("public_status.html", {
+        "request": request, "ro": ro, "reference": f"WEB-{ro.id}",
+        "visit": visit, "visit_label": phoenix_label(visit.starts_at) if visit else "",
+        "status_url": str(request.url_for("public_status", token=token)),
+    }, headers=PRIVATE_PAGE)
+
+
+@app.get("/status/{token}/visit.ics")
+def public_status_calendar(request: Request, token: str, db: Session = Depends(get_db)):
+    """Saves the booking, its reference and the status link to the customer's own calendar."""
+    from app.public_site import BUSINESS
+    ro = _status_order(db, token)
+    visit = _next_visit(db, ro)
+    if visit is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    from app.routes.live import utc
+    stamp = lambda d: utc(d).astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    esc = lambda t: str(t).replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+    link = str(request.url_for("public_status", token=token))
+    where = (f"{BUSINESS['street']}, {BUSINESS['city']}, {BUSINESS['region']} {BUSINESS['postal']}"
+             if visit.location == "shop" else "Mobile visit at your location")
+    body = "\r\n".join([
+        "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Imperial Auto Care//Booking//EN", "BEGIN:VEVENT",
+        f"UID:visit-{visit.id}@imperialautocare", f"DTSTAMP:{stamp(datetime.now(timezone.utc))}",
+        f"DTSTART:{stamp(visit.starts_at)}", f"DTEND:{stamp(visit.ends_at)}",
+        f"SUMMARY:{esc('Imperial Auto Care visit, WEB-' + str(ro.id))}",
+        f"LOCATION:{esc(where)}",
+        f"DESCRIPTION:{esc(f'Reference WEB-{ro.id}. Check status: {link}')}",
+        f"URL:{link}", "END:VEVENT", "END:VCALENDAR", ""])
+    return Response(body, media_type="text/calendar",
+                    headers={**PRIVATE_PAGE, "Content-Disposition": f'attachment; filename="imperial-WEB-{ro.id}.ics"'})
 

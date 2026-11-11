@@ -7,7 +7,7 @@ from app.database import get_db
 from app.models import RepairOrder, Customer, Vehicle, User, LineItem, Communication, PartsOrder
 from app.auth import get_current_user
 from app.config import GOOGLE_REVIEW_LINK
-from app import approval_links, customer_file, cycle_time, next_action
+from app import approval_links, customer_file, cycle_time, next_action, ro_status_policy, website_alerts
 import os, secrets
 
 router = APIRouter()
@@ -37,6 +37,7 @@ RO_STATUSES = [
     ("waiting_parts", "Waiting Parts"),
     ("in_progress", "In Progress"),
     ("waiting_approval", "Waiting Approval"),
+    ("approval_received", "Approval Received"),
     ("complete", "Complete"),
     ("delivered", "Delivered"),
 ]
@@ -96,8 +97,8 @@ def list_ros(request: Request, db: Session = Depends(get_db), status: str = "ope
     query = db.query(RepairOrder)
     if status == "open":
         query = query.filter(RepairOrder.status != "delivered")
-    elif status == "delivered":
-        query = query.filter(RepairOrder.status == "delivered")
+    elif status in dict(RO_STATUSES):
+        query = query.filter(RepairOrder.status == status)
     if search:
         query = query.join(Customer).filter(
             (Customer.first_name.ilike(f"%{search}%")) |
@@ -168,6 +169,11 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404)
     techs = workers(db)
     subtotal = sum(li.total for li in ro.line_items if li.billable)
+    # Private sourcing context stays on the existing RO screen rather than a
+    # second disconnected estimating system.
+    sourced_parts = db.query(PartsOrder).filter(
+        PartsOrder.repair_order_id == ro.id,
+    ).order_by(PartsOrder.id.desc()).all()
     # Pull all communications for this customer (across all ROs), sorted oldest→newest
     comms = (
         db.query(Communication)
@@ -177,7 +183,8 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
     )
     return templates.TemplateResponse("repair_orders/detail.html", {
         "request": request, "user": user, "ro": ro, "techs": techs,
-        "statuses": RO_STATUSES, "subtotal": subtotal, "comms": comms,
+        "statuses": ro_status_policy.manual_status_options(ro, user.role, RO_STATUSES), "subtotal": subtotal, "comms": comms,
+        "sourced_parts": sourced_parts,
         "next_step": next_action.for_job(db, ro, user.role),
         "timeline": cycle_time.for_job(db, ro) if user.role in ("owner", "admin") else None,
         "open_invoice": next((i for i in ro.invoices if i.status != "void"), None),
@@ -211,10 +218,14 @@ def update_status(
 
     if status not in dict(RO_STATUSES):
         raise HTTPException(status_code=422, detail="Unknown status.")
-    if user.role == "tech" and status == "delivered":
-        raise HTTPException(status_code=403, detail="The front desk marks a job delivered.")
+    blocked = ro_status_policy.status_error(ro, status, user.role)
+    if blocked:
+        code, reason = blocked
+        raise HTTPException(status_code=code, detail=reason)
     prev_status = ro.status
     ro.status = status
+    if status != "intake":
+        website_alerts.close_for_job(db, ro, user.username, f"job moved to {status}")
     db.commit()
 
     # Auto-send review request when marked delivered (only once)
@@ -246,6 +257,7 @@ def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db)
         li.approval = "pending"
     if fresh:
         ro.status = "waiting_approval"
+        website_alerts.close_for_job(db, ro, user.username, "approval requested")
     db.commit()
     link = "none"
     phone = approval_links.mobile(ro.customer.phone)

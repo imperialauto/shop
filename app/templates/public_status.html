@@ -54,12 +54,26 @@
       <div class="status-pill status-{{ ro.status }}">{{ ro.status.replace('_', ' ').title() }}</div>
     </div>
 
-    {% if ro.concern %}
     <div style="margin-top:14px;">
-      <div class="label">Concern on File</div>
-      <div class="concern-text">{{ ro.concern }}</div>
+      <div class="label">Reference</div>
+      <div style="font-size:18px; font-weight:700; letter-spacing:0.04em; color:var(--imp-gold);">{{ reference }}</div>
     </div>
-    {% endif %}
+
+    <div style="margin-top:14px;">
+      {% if visit and ro.status != "delivered" %}
+      <div class="label">Booked</div>
+      <div style="font-size:15px; color:var(--imp-ink);">{{ visit_label }} (Arizona time){% if visit.location == 'mobile' %}, at your location{% else %}, at the shop{% endif %}</div>
+      <a href="/status/{{ ro.public_token }}/visit.ics" style="display:inline-flex; align-items:center; min-height:44px; margin-top:4px; font-size:14px; color:var(--imp-link);">Add to my calendar</a>
+      {% elif ro.status == 'intake' %}
+      <div class="label">Next step</div>
+      <div style="font-size:14px; color:var(--imp-muted);">Request received, not booked yet. We'll review it and contact you about an estimate and a time.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label">Keep this page</div>
+    <div style="font-size:13px; color:var(--imp-muted);">Bookmark this page or add it to your home screen to check back any time. It is private to you, so please don't share the link.</div>
   </div>
 
   {% set pending = ro.line_items|selectattr('approval', 'equalto', 'pending')|list %}
@@ -69,23 +83,20 @@
       <div style="font-size:13px; color:var(--imp-muted); margin-bottom:12px;">{{ pending|length }} item{{ 's' if pending|length != 1 }} to approve or decline. You only pay for what you approve.</div>
       <a href="/sign/ro/{{ ro.public_token }}" class="sign-btn">Review &amp; Approve →</a>
     </div>
-  {% elif ro.status == 'waiting_approval' %}
-    {% if ro.signed_at %}
+  {% elif ro.signed_at %}
     <div class="signed-badge">
       ✓ Estimate signed by {{ ro.approved_by }} on {{ ro.signed_at.strftime('%B %d, %Y') }}
     </div>
-    {% else %}
-    <div class="card" style="border-color: rgba(203,176,107,0.3);">
-      <div style="font-size:14px; font-weight:600; color:var(--imp-ink); margin-bottom:6px;">Your approval is needed</div>
-      <div style="font-size:13px; color:var(--imp-muted); margin-bottom:12px;">Review the estimate below and sign to authorize us to begin work.</div>
-      <a href="/sign/ro/{{ ro.public_token }}" class="sign-btn">Review &amp; Sign Estimate →</a>
-    </div>
-    {% endif %}
   {% endif %}
 
   {% if ro.invoices %}
     {% set inv = ro.invoices[-1] %}
-    {% if inv.status in ['sent', 'draft'] %}
+    {% if inv.status == 'paid' %}
+    <div class="card">
+      <div class="label">Paid invoice</div>
+      <a href="/sign/invoice/{{ inv.id }}?token={{ ro.public_token }}" class="sign-btn">View receipt →</a>
+    </div>
+    {% elif inv.status == 'sent' %}
     <div class="card" style="border-color: rgba(96,165,250,0.3);">
       <div style="font-size:14px; font-weight:600; color:var(--imp-ink); margin-bottom:6px;">Final Invoice Ready</div>
       {% if inv.customer_signed_at %}

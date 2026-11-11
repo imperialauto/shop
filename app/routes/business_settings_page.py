@@ -12,7 +12,7 @@ from app import business_settings as store
 from app.auth import get_current_user
 from app.database import get_db
 from app import pricing
-from app.public_site import BOOKABLE_SERVICES
+from app.public_site import BOOKABLE_SERVICES, VEHICLE_CLASSES
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -47,7 +47,8 @@ def current() -> dict:
     return {
         "hours": [{"day": name, "open": str(i) in hours, "opens": (hours.get(str(i)) or ["", ""])[0],
                    "closes": (hours.get(str(i)) or ["", ""])[1], "online": i not in closed} for i, name in enumerate(DAYS)],
-        "services": [{"slug": s.slug, "name": s.name, "price": (services.get(s.slug) or {}).get("price"),
+        "services": [{"slug": s.slug, "name": s.name, "per": s.per, "price": (services.get(s.slug) or {}).get("price"),
+                      "tiers": (services.get(s.slug) or {}).get("tiers") or {},
                       "price_type": (services.get(s.slug) or {}).get("price_type", "exact"),
                       "minutes": (services.get(s.slug) or {}).get("minutes", s.minutes),
                       "mobile": (services.get(s.slug) or {}).get("mobile") is True} for s in BOOKABLE_SERVICES],
@@ -80,7 +81,24 @@ def parse(form) -> dict:
             raise Invalid(f"{name}: enter an opening time before the closing time.")
         hours[str(i)] = [opens, closes]
     services = {}
+    saved = _json("booking_services", {})
     for s in BOOKABLE_SERVICES:
+        if f"minutes_{s.slug}" not in form:  # not on this form: keep what is saved
+            if isinstance(saved.get(s.slug), dict):
+                services[s.slug] = saved[s.slug]
+            continue
+        if s.per:  # package: starting price per vehicle class
+            tiers = {}
+            for key, label in VEHICLE_CLASSES.items():
+                text = form.get(f"tier_{s.slug}_{key}", "").strip().lstrip("$").replace(",", "")
+                if text:
+                    tiers[key] = _number(text, f"{s.name} {label} price", 0, 100000, whole=False)
+            entry = {"minutes": _number(form.get(f"minutes_{s.slug}", "").strip(), f"{s.name} length", 15, 480),
+                     "price_type": "starting", "mobile": form.get(f"mobile_{s.slug}") == "on"}
+            if tiers:
+                entry["tiers"] = tiers
+            services[s.slug] = entry
+            continue
         price_text = form.get(f"price_{s.slug}", "").strip().lstrip("$").replace(",", "")
         entry = {"minutes": _number(form.get(f"minutes_{s.slug}", "").strip(), f"{s.name} length", 15, 480),
                  "price_type": "starting" if form.get(f"type_{s.slug}") == "starting" else "exact",
@@ -110,7 +128,7 @@ def page(request: Request, db: Session, user, status: int = 200, **extra):
     except SQLAlchemyError:  # the settings tables are not created yet
         db.rollback()
         history, extra = [], {"not_ready": True, **extra}
-    return templates.TemplateResponse("business_settings.html", {"request": request, "user": user, "settings": current(),
+    return templates.TemplateResponse("business_settings.html", {"request": request, "user": user, "settings": current(), "vehicle_classes": VEHICLE_CLASSES,
                                       "history": history, **extra}, status_code=status)
 
 

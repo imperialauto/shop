@@ -96,7 +96,7 @@ class ServiceLeadTests(unittest.TestCase):
         self.assertEqual(len(self.leads()), 1)
         self.assertNotIn(self.leads()[0].status, ("booked", "declined"))
 
-    def test_four_day_old_lead_remains_due_every_half_hour(self):
+    def test_old_lead_remains_open_but_unchanged_digest_is_not_spammed(self):
         self.post()
         with self.Session() as db:
             lead = db.query(ServiceLead).one()
@@ -105,8 +105,46 @@ class ServiceLeadTests(unittest.TestCase):
             first = due_lead_digest(db, NOW)
             later = due_lead_digest(db, NOW + timedelta(minutes=30))
             self.assertIn("1 service leads", first[1])
-            self.assertNotEqual(first[0], later[0])
+            self.assertEqual(first[0], later[0])
             self.assertEqual(lead.status, "new")
+            self.assertTrue(dispatch.reserve(db, first[0], "owner_leads"))
+            self.assertFalse(dispatch.reserve(db, later[0], "owner_leads"),
+                             "unchanged half-hour digest should not be reserved twice")
+            lead.next_action_due_at = NOW - timedelta(days=3)
+            db.commit()
+            self.assertEqual(due_lead_digest(db, NOW + timedelta(hours=1))[0], first[0],
+                             "timer movement alone is not a new customer interaction")
+            lead.last_event_id = "genuine-new-customer-message"
+            db.commit()
+            changed = due_lead_digest(db, NOW + timedelta(hours=1))
+            self.assertNotEqual(first[0], changed[0],
+                                "new customer activity must alert promptly")
+            self.assertTrue(dispatch.reserve(db, changed[0], "owner_leads"))
+            following_day = due_lead_digest(db, NOW + timedelta(days=1, hours=1))  # Saturday 12:30 Phoenix
+            self.assertNotEqual(changed[0], following_day[0],
+                                "daily follow-up remains available for unresolved work")
+
+    def test_unmodified_multi_lead_digest_key_ignores_due_order(self):
+        first = self.post(message_id="lead-a", body="Brake repair quote needed")
+        second = self.post(message_id="lead-b", body="Starter replacement estimate needed",
+                           conversationId="CNsynthetic2", phone="+16025550101")
+        self.assertEqual((first.status_code, second.status_code), (200, 200))
+        with self.Session() as db:
+            leads = db.query(ServiceLead).order_by(ServiceLead.id).all()
+            self.assertEqual(len(leads), 2)
+            leads[0].next_action_due_at = NOW - timedelta(days=3)
+            leads[1].next_action_due_at = NOW - timedelta(days=2)
+            db.commit()
+            before = due_lead_digest(db, NOW)
+            self.assertIsNotNone(before)
+            # The same two unresolved conversations are still outstanding,
+            # but their due timestamps were shuffled by a routine scheduler.
+            leads[0].next_action_due_at = NOW - timedelta(days=1)
+            leads[1].next_action_due_at = NOW - timedelta(days=4)
+            db.commit()
+            after = due_lead_digest(db, NOW + timedelta(minutes=30))
+            self.assertEqual(before[0], after[0],
+                             "due-only reordering cannot trigger a duplicate owner SMS")
 
     def test_tentative_booking_cannot_close_lead_but_confirmed_can(self):
         self.post()

@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.approval_links import conversation_key
-from app.dispatch_model import OPEN_STATUSES, DispatchItem
+from app.dispatch_model import OPEN_STATUSES, DispatchItem, DispatchOutbound
 from app.models import RepairOrder
 
 STARTED = ("in_progress", "waiting_parts")
@@ -33,7 +33,9 @@ def for_job(db: Session, ro: RepairOrder, role: str) -> dict | None:
 
     if ro.status == "delivered":
         return None
-    if invoice is not None:
+    # An invoice may be issued or paid before repair work is finished.
+    # Payment alone never means the vehicle is ready to be released.
+    if invoice is not None and ro.status == "complete":
         paid = sum(p.amount for p in invoice.payments)
         due = round((invoice.total or 0) - paid, 2)
         if due > 0.009:
@@ -43,6 +45,10 @@ def for_job(db: Session, ro: RepairOrder, role: str) -> dict | None:
                 "detail": "Marking it picked up closes the job everywhere.",
                 "post": f"/ro/{ro.id}/update-status", "fields": {"status": "delivered"}, "button": "Mark picked up"} if office else None
     if not lines:
+        if ro.status == "complete":
+            return {"who": "Office", "title": "Review completed job with no charges",
+                    "detail": "Confirm whether a diagnostic or service charge is needed, or close out as no-charge.",
+                    "href": "#li-description", "button": "Review charges"} if office else None
         return {"who": "Tech or office", "title": "Add the repairs and prices",
                 "detail": "Use the line items below, or the estimate tool.", "href": "#li-description", "button": "Add a line"}
     undecided = [li for li in lines if li.approval is None]
@@ -59,18 +65,34 @@ def for_job(db: Session, ro: RepairOrder, role: str) -> dict | None:
         return {"who": "Office", "title": f"Ask the customer to approve {len(undecided)} item{'s' if len(undecided) != 1 else ''}",
                 "detail": "Queues the approval text for your YES. Nothing goes out on its own.",
                 "post": f"/ro/{ro.id}/request-approval", "fields": {}, "button": "Ask for approval"} if office else None
-    if pending and not approved:
+    if pending and (not approved or ro.status not in STARTED):
         link = db.query(DispatchItem).filter(DispatchItem.quo_conversation_id == conversation_key(ro.id),
-                                             DispatchItem.status.in_(OPEN_STATUSES + ("approved",))).first()
+                                             DispatchItem.status.in_(OPEN_STATUSES + ("approved",))).order_by(
+                                                 DispatchItem.id.desc()).first()
         waited = _since(min((li.created_at for li in pending if li.created_at), default=None))
         if link is not None and link.status in OPEN_STATUSES:
             return {"who": "Owner", "title": f"Approval text #{link.id} is waiting for your YES",
                     "detail": f"Reply YES {link.id} to the alert, or send it from the dashboard.", "href": "/dashboard#queue",
                     "button": "Open queue"}
-        return {"who": "Customer", "title": f"Waiting on the customer's approval{waited}",
-                "detail": "They have the link. Queue a reminder if it's been a while.",
-                "post": f"/ro/{ro.id}/request-approval", "fields": {}, "button": "Queue a reminder"} if office else None
+        # An owner YES marks the queue item approved before the Quo send succeeds.
+        # Only a successful *customer* outbound result proves the send was recorded.
+        sent = (link is not None and db.query(DispatchOutbound).filter(
+            DispatchOutbound.item_id == link.id,
+            DispatchOutbound.kind.in_(("customer", "dashboard_reply")),
+            DispatchOutbound.status == "sent",
+        ).first() is not None)
+        if sent:
+            return {"who": "Customer", "title": f"Waiting on the customer's approval{waited}",
+                    "detail": "The approval text send was recorded. Queue a reminder if needed.",
+                    "post": f"/ro/{ro.id}/request-approval", "fields": {}, "button": "Queue a reminder"} if office else None
+        return {"who": "Office", "title": "Approval link send is not confirmed",
+                "detail": "No successful customer text send is recorded for this job. Check Quo; queue a new link if needed. Nothing sends without approval.",
+                "post": f"/ro/{ro.id}/request-approval", "fields": {}, "button": "Queue approval link"} if office else None
     if ro.status not in STARTED:
+        if not approved:
+            return {"who": "Office", "title": "Review declined work",
+                    "detail": "The customer declined all quoted work.",
+                    "href": "#li-description", "button": "Review lines"} if office else None
         if ro.assigned_tech_id is None and office:
             return {"who": "Office", "title": "Approved. Assign a tech", "detail": f"{len(approved)} approved item{'s' if len(approved) != 1 else ''}.",
                     "href": "#assign-tech", "button": "Choose tech"}

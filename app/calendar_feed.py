@@ -141,7 +141,7 @@ def events_between(text: str, start: datetime, end: datetime) -> list[dict]:
             if when in event["exdates"] or (event.get("rule") and (event.get("uid"), when) in moved):
                 continue
             if when < end and (when >= start or when + length > start):
-                found.append({"start": when, "allDay": bool(event.get("allDay")),
+                found.append({"start": when, "end": when + length, "allDay": bool(event.get("allDay")),
                               "title": event.get("title") or "Busy", "location": event.get("location") or ""})
     return sorted(found, key=lambda row: row["start"])
 
@@ -187,6 +187,20 @@ def upcoming(now: datetime, days: int = 7) -> list[dict] | None:
     except (ValueError, KeyError) as error:
         log.warning("calendar_feed_parse_failed %s", type(error).__name__)
         return None
+
+
+def busy_overlaps(events: list[dict], start: datetime, end: datetime) -> bool:
+    """True when a timed calendar event overlaps [start, end). All-day entries
+    (birthdays, reminders) don't block; put real time off in as timed events."""
+    for event in events:
+        if event.get("allDay"):
+            continue
+        ends = event.get("end") or event["start"]
+        if ends <= event["start"]:
+            ends = event["start"] + timedelta(minutes=1)
+        if event["start"] < end and start < ends:
+            return True
+    return False
 
 
 def describe(event: dict, with_day: bool = True) -> str:

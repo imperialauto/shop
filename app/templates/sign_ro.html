@@ -36,7 +36,6 @@
     .total-label { font-size: 13px; color: var(--imp-muted); }
     .total-amount { font-size: 20px; font-weight: 700; color: var(--imp-heading); }
 
-    .concern-box { font-size: 13.5px; color: var(--imp-muted); line-height: 1.55; }
 
     .sig-pad-wrap { position: relative; border-radius: 10px; overflow: hidden; border: 2px solid var(--imp-line); background: var(--imp-ink); touch-action: none; }
     .sig-pad-wrap canvas { display: block; width: 100%; height: 160px; cursor: crosshair; touch-action: none; }
@@ -75,6 +74,8 @@
   <div class="already-signed" style="margin-top:20px;">
     ✓ Already signed by {{ ro.approved_by }} on {{ ro.signed_at.strftime('%B %d, %Y') }}
   </div>
+  {% elif not pending %}
+  <div class="card" style="margin-top:20px;">No estimate is ready for approval.</div>
   {% else %}
 
   <h2 style="font-size:18px; font-weight:700; color:var(--imp-ink); margin:16px 0 14px;">Authorize Repair Work</h2>
@@ -88,24 +89,17 @@
     <div class="section-title">Vehicle</div>
     <div class="vehicle-line">{{ ro.vehicle.label }}</div>
     {% if ro.vehicle.engine %}<div class="vehicle-sub">{{ ro.vehicle.engine }}</div>{% endif %}
-    {% if ro.concern %}
-    <div style="margin-top:10px;">
-      <div class="section-title">Concern</div>
-      <div class="concern-box">{{ ro.concern }}</div>
-    </div>
-    {% endif %}
   </div>
 
   <form method="post" id="sign-form">
     <input type="hidden" name="signature_data" id="sig-data" />
 
   <!-- Line Items -->
-  {% if ro.line_items %}
   <div class="card">
-    <div class="section-title">{% if pending %}Approve or decline each item{% else %}Estimated Work &amp; Parts{% endif %}</div>
+    <div class="section-title">Approve or decline each item</div>
     <table>
       <tbody>
-        {% for li in ro.line_items if li.approval != 'declined' or not pending %}
+        {% for li in ro.line_items if li.approval in ['approved', 'pending'] %}
         <tr>
           <td class="td-desc">
             {{ li.description }}
@@ -123,12 +117,11 @@
       </tbody>
     </table>
     <div class="total-row">
-      <span class="total-label">{% if pending %}Total you approve{% else %}Estimated Total{% endif %}</span>
+      <span class="total-label">Total you approve</span>
       <span class="total-amount" id="approved-total">${{ "%.2f"|format(subtotal) }}</span>
     </div>
-    {% if pending %}<p style="font-size:12px; color:var(--imp-muted); margin-top:8px;">Before tax. Declined items are not done or charged.</p>{% endif %}
+    <p style="font-size:12px; color:var(--imp-muted); margin-top:8px;">Review the itemized charges and any applicable taxes before authorizing. Declined items are not performed or charged.</p>
   </div>
-  {% endif %}
 
     <div class="card">
       <div class="section-title">Your Name</div>
@@ -153,6 +146,7 @@
 
 </div>
 
+{% if pending %}
 <script>
   // ── Signature pad ──────────────────────────────────────────────────────────
   const canvas = document.getElementById('sig-canvas');
@@ -239,5 +233,6 @@
     update();
   })();
 </script>
+{% endif %}
 </body>
 </html>

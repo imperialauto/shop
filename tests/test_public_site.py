@@ -1,4 +1,5 @@
 """Public website pages and estimate requests. Made-up data only; nothing is sent to anyone."""
+import json
 import os
 import unittest
 from unittest.mock import patch
@@ -47,6 +48,26 @@ class InputRules(unittest.TestCase):
         with patch.dict(os.environ, {"PUBLIC_BOOKING_SERVICES": ""}):
             self.assertEqual(public_site.approved_bookable_services(), [])
 
+    def test_package_tiers_are_starting_prices_and_unpriced_services_are_requestable(self):
+        from app import business_settings
+        catalog = {"diagnostic": {"price": 75}, "brake-pads-rotors": {"tiers": {"sedan": 349, "suv": "399", "boat": 1, "pickup": 449}}}
+        with patch.dict(os.environ, {"PUBLIC_SERVICE_CATALOG": json.dumps(catalog)}), patch.object(business_settings, "_load", return_value={}):
+            brakes = public_site.bookable_service("brake-pads-rotors")
+            self.assertEqual(brakes.price_label, "From $349 per axle")
+            self.assertEqual([t[0] for t in brakes.tiers], ["sedan", "suv", "pickup"])  # unknown classes dropped
+            self.assertEqual(brakes.tier("suv")[2], 399.0)
+            self.assertEqual(public_site.bookable_service("diagnostic").price_label, "$75")
+            self.assertIn("ac-check", [s.slug for s in public_site.requestable_services()])
+            self.assertNotIn("diagnostic", [s.slug for s in public_site.requestable_services()])
+
+    def test_auto_times_setting(self):
+        from app import business_settings
+        cases = [('{"resources": ["bay-1"], "step_minutes": 30}', {"resources": ["bay-1"], "step_minutes": 30}),
+                 ('{"resources": ["bay-1"], "step_minutes": 7}', {}), ('{"resources": []}', {}), ("nonsense", {}), ("", {})]
+        for raw, expected in cases:
+            with patch.dict(os.environ, {"PUBLIC_AUTO_TIMES": raw}), patch.object(business_settings, "_load", return_value={}):
+                self.assertEqual(public_site.auto_times(), expected, raw)
+
     def test_forms_need_switch_and_writable_app(self):
         with patch.dict(os.environ, {"PUBLIC_FORMS_ENABLED": "true"}):
             self.assertTrue(public_site.forms_enabled(read_only=False))
@@ -78,6 +99,7 @@ class PublicPages(unittest.TestCase):
         app.dependency_overrides[get_db] = override
         self.read_only = app.state.read_only
         public_routes.limiter.seen.clear()
+        public_routes.STATUS_LIMIT.seen.clear()
         self.client = TestClient(app)
 
     def tearDown(self):
@@ -98,6 +120,18 @@ class PublicPages(unittest.TestCase):
             self.assertIn("(480) 914-4144", response.text, path)
         self.assertEqual(self.client.get("/site/services/not-a-service").status_code, 404)
         self.assertEqual(self.client.get("/static/site.css").status_code, 200)
+
+    def test_every_service_leads_to_an_online_action(self):
+        import re
+        for line in public_site.SERVICE_LINES:
+            page = self.client.get(f"/site/services/{line.slug}").text
+            hero = page.split('class="hero"')[1].split("</section>")[0]
+            buttons = re.findall(r'<a class="btn[^"]*" href="([^"]+)"', hero)
+            self.assertTrue(buttons and buttons[0].startswith("/site/"), (line.slug, buttons))  # main action is online
+            phones = [b for b in buttons if b.startswith("tel:")]
+            self.assertEqual(bool(phones), line.slug in public_site.ROADSIDE_LINES, line.slug)  # phone only as emergency
+        home = self.client.get("/site/").text
+        self.assertIn('href="/site/roadside"', home)
 
     def test_indexable_after_cutover_setting(self):
         with patch.dict(os.environ, {"PUBLIC_SITE_INDEXABLE": "true"}):
@@ -144,9 +178,12 @@ class PublicPages(unittest.TestCase):
             response = self.client.post("/site/estimate", data=self.estimate(), follow_redirects=False)
             self.assertEqual(response.status_code, 303, response.text)
             received = self.client.get(response.headers["location"])
-            self.assertIn("Reference WEB-", received.text)
-            # The confirmation is shown once, then the page sends visitors back to the form.
-            self.assertEqual(self.client.get("/site/estimate/received", follow_redirects=False).status_code, 303)
+            self.assertIn("Your reference", received.text)
+            self.assertIn("WEB-1", received.text)
+            # A refresh keeps the reference on screen in the same browser.
+            again = self.client.get("/site/estimate/received", follow_redirects=False)
+            self.assertEqual(again.status_code, 200)
+            self.assertIn("not a booking yet", again.text)
         self.assertEqual(self.counts(), (1, 1, 1, 0, 0))
         with self.Session() as db:
             order = db.query(RepairOrder).one()
@@ -201,8 +238,137 @@ class PublicPages(unittest.TestCase):
 
     def test_submissions_are_limited_per_connection(self):
         with self.open_forms():
-            codes = [self.client.post("/site/estimate", data=self.estimate(), follow_redirects=False).status_code for _ in range(6)]
+            codes = [self.client.post("/site/estimate", data=self.estimate(description=f"Made-up test number {n}: rough idle."),
+                                      follow_redirects=False).status_code for n in range(6)]
         self.assertEqual(codes, [303] * 5 + [429])
+
+    def test_estimate_starts_from_approved_prices_only(self):
+        from app import business_settings
+        from app.dispatch_model import DispatchItem
+        from app.models import LineItem
+        catalog = json.dumps({"diagnostic": {"price": 75}})
+        with self.open_forms(), patch.dict(os.environ, {"PUBLIC_SERVICE_CATALOG": catalog}), \
+             patch.object(business_settings, "_load", return_value={}), patch.object(socket.socket, "connect", no_network):
+            self.client.post("/site/estimate", data=self.estimate())  # diesel, at the shop
+            self.client.post("/site/estimate", data=self.estimate(service_line="auto-repair", where="onsite", location="Made-up 1 Test St",
+                                                                   description="Made-up test: no start at home."))
+        with self.Session() as db:
+            first, second = db.get(RepairOrder, 1), db.get(RepairOrder, 2)
+            lines = db.query(LineItem).filter(LineItem.repair_order_id == 1).all()
+            self.assertEqual([(l.unit_price, l.approval) for l in lines], [(75.0, None)])  # added, not sent
+            self.assertIn("Labor rate: $175/hr (diesel)", first.concern)
+            self.assertEqual(db.query(LineItem).filter(LineItem.repair_order_id == 2).count(), 0)  # on-site: no guessed diagnostic
+            self.assertIn("$165/hr (mobile)", second.concern)
+            self.assertIn("travel not set", second.concern)
+            item = db.query(DispatchItem).filter(DispatchItem.quo_conversation_id == "WEB1").one()
+            self.assertIn("ALLDATA", item.summary)
+        self.assertEqual(self.counts()[4], 0)  # no message to the customer
+
+    def roadside(self, **changes):
+        data = {"situation": "tow", "location": "Made-up: I-17 north at mile 210", "first_name": "Road", "last_name": "Tester",
+                "phone": "(602) 555-0150", "contact_method": "call", "make": "Ford", "model": "F-150", "description": "Made-up: needs the shop."}
+        return self.client.post("/site/roadside", data={**data, **changes}, follow_redirects=False)
+
+    def test_roadside_request_is_written_urgent_and_never_dispatched(self):
+        from app.dispatch_model import DispatchItem
+        from app.models import LineItem
+        self.assertIn("call 911 first", self.client.get("/site/roadside").text)
+        with self.open_forms(), patch.object(socket.socket, "connect", no_network):
+            for bad, message in (({"situation": ""}, "Choose what"), ({"location": "x"}, "where the vehicle is"),
+                                 ({"make": "", "model": ""}, "make and model")):
+                response = self.roadside(**bad)
+                self.assertEqual(response.status_code, 422)
+                self.assertIn(message, response.text)
+            done = self.roadside()
+            self.assertEqual(done.status_code, 303)
+            page = self.client.get(done.headers["location"]).text
+            self.assertIn("Nothing is dispatched until we call you", page)
+        with self.Session() as db:
+            order = db.query(RepairOrder).one()
+            self.assertIn("Not dispatched", order.concern)
+            self.assertIn("I-17 north at mile 210", order.concern)
+            item = db.query(DispatchItem).one()
+            self.assertEqual((item.urgency, item.status, item.draft_reply), ("urgent", "needs_owner", None))
+            self.assertTrue(item.quo_conversation_id.startswith("WEB"))  # website no-text guards apply
+            self.assertEqual(db.query(LineItem).count(), 0)  # towing is a custom quote
+        self.assertEqual(self.counts()[4], 0)
+
+    def test_roadside_closed_with_forms(self):
+        app.state.read_only = False
+        self.assertEqual(self.roadside().status_code, 503)
+
+    def test_sending_the_same_request_again_keeps_one_job(self):
+        with self.open_forms():
+            first = self.client.post("/site/estimate", data=self.estimate(), follow_redirects=False)
+            ref = self.client.get(first.headers["location"]).text.split("WEB-")[1][:3]
+            again = self.client.post("/site/estimate", data=self.estimate(description="  made-up test: hard start when cold,  white smoke for a minute. "), follow_redirects=False)
+            self.assertEqual(again.status_code, 303)
+            self.assertIn("WEB-" + ref, self.client.get(again.headers["location"]).text)
+        self.assertEqual(self.counts()[2], 1)
+
+    def lost(self, **data):
+        return self.client.post("/site/status/lost", data={"phone": "(602) 555-0142", "last_name": "Sampleton", **data})
+
+    def test_lost_reference_queues_help_without_revealing_or_booking(self):
+        from app.dispatch_model import DispatchItem
+        with self.open_forms(), patch.object(socket.socket, "connect", no_network):
+            self.client.post("/site/estimate", data=self.estimate())
+            before = self.counts()
+            hit, miss, wrong_name = self.lost(), self.lost(phone="(602) 555-0199"), self.lost(last_name="Nobody")
+            again = self.lost()
+        for page in (hit, miss, wrong_name, again):
+            self.assertEqual(page.status_code, 200)
+            self.assertIn("If that matches a booking or request", page.text)
+            self.assertNotIn("WEB-", page.text.split("Lost your reference")[1])  # nothing about the record is shown
+        self.assertEqual(self.counts(), before)  # no booking, customer or message created
+        with self.Session() as db:
+            items = db.query(DispatchItem).filter(DispatchItem.category == "reference_help").all()
+            self.assertEqual(len(items), 1)  # asking twice refreshes the same item
+            self.assertTrue(items[0].quo_conversation_id.startswith("WEB"))  # website no-text guards apply
+            self.assertIn("WEB-1", items[0].summary)
+            self.assertIsNone(items[0].draft_reply)
+
+    def test_lost_reference_closed_with_forms(self):
+        app.state.read_only = False
+        self.assertEqual(self.lost().status_code, 503)
+
+    def test_status_page_is_private_and_shows_no_internal_notes(self):
+        with self.open_forms():
+            self.client.post("/site/estimate", data=self.estimate())
+            self.client.post("/site/estimate", data=self.estimate(description="Made-up test: second visit, same truck."))
+        with self.Session() as db:
+            token = db.get(RepairOrder, 2).public_token
+        page = self.client.get(f"/status/{token}")
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.headers["cache-control"], "no-store")
+        self.assertIn("noindex", page.headers["x-robots-tag"])
+        self.assertIn("WEB-2", page.text)
+        self.assertIn("not booked yet", page.text)
+        for internal in ("Confirm before contacting", "No message has been sent", "Preferred contact"):
+            self.assertNotIn(internal, page.text)
+        self.assertEqual(self.client.get(f"/status/{token}/visit.ics").status_code, 404)  # nothing booked
+        self.assertEqual(self.client.get("/status/not-a-token").status_code, 404)
+
+    def test_booked_visit_shows_on_status_page_and_calendar_file(self):
+        from datetime import datetime, timedelta, timezone
+        with self.open_forms():
+            self.client.post("/site/estimate", data=self.estimate())
+        with self.Session() as db:
+            order = db.get(RepairOrder, 1)
+            start = datetime(2026, 12, 1, 18, 0, tzinfo=timezone.utc)
+            db.add(Appointment(repair_order_id=1, resource_id="bay-1", starts_at=start, ends_at=start + timedelta(hours=1),
+                               status="confirmed", location="shop"))
+            db.commit()
+            token = order.public_token
+        page = self.client.get(f"/status/{token}")
+        self.assertIn("Booked", page.text)
+        self.assertIn("Dec 1, 11:00 AM", page.text)
+        ics = self.client.get(f"/status/{token}/visit.ics")
+        self.assertEqual(ics.status_code, 200)
+        self.assertIn("text/calendar", ics.headers["content-type"])
+        self.assertIn("DTSTART:20261201T180000Z", ics.text)
+        self.assertIn("WEB-1", ics.text)
+        self.assertIn(f"/status/{token}", ics.text)
 
     def test_another_site_cannot_post(self):
         with self.open_forms():
