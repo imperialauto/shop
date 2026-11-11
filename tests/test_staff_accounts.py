@@ -244,8 +244,9 @@ class StaffLoginTests(unittest.TestCase):
         owner, _ = self.sign_in()
         # Even the owner cannot jump directly from intake to delivered.
         self.assertEqual(owner.post(f"/ro/{job}/update-status", data={"status": "delivered"}).status_code, 409)
+        from app.models import RepairOrder
         with self.Session() as db:
-            db.get(__import__("app.models", fromlist=["RepairOrder"]).RepairOrder, job).status = "complete"
+            db.get(RepairOrder, job).status = "complete"
             db.commit()
         self.assertEqual(owner.post(f"/ro/{job}/update-status", data={"status": "delivered"}).status_code, 302)
 
