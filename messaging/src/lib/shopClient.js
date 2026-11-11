@@ -176,6 +176,22 @@ async function listDevelopmentWork(limit = 8) {
   return request(`/internal/imperial/dev-work/jobs?limit=${encodeURIComponent(limit)}`);
 }
 
+// The owner-only development notice outbox is kept separate from customer
+// dispatch. Claimed notices are deliberately at-most-once, never auto-retried.
+async function claimDevelopmentNotice() {
+  return request("/internal/imperial/dev-work/notices/claim", { method: "POST", body: "{}" });
+}
+
+async function ackDevelopmentNotice({ id, claimNonce, status }) {
+  if (!Number.isSafeInteger(id) || id < 1 || !/^[a-f0-9]{32}$/.test(claimNonce || "")) {
+    throw new Error("Invalid development notice claim");
+  }
+  if (status !== "sent" && status !== "failed") throw new Error("Invalid notice result");
+  return request(`/internal/imperial/dev-work/notices/${id}/ack`, {
+    method: "POST", body: JSON.stringify({ claimNonce, status }),
+  });
+}
+
 async function dispatchTick() {
   return request("/internal/dispatch/tick", { method: "POST", body: "{}" });
 }
@@ -193,5 +209,6 @@ module.exports = {
   configured, getContext, getContextStrict, getSigningLink, logCommunication,
   dispatchIntake, dispatchOwnerAction, dispatchHandled, dispatchSync, dispatchTick, dispatchOutbound, dispatchDraft,
   captureOwnerTask, openOwnerTasks, submitDevelopmentWork, listDevelopmentWork,
+  claimDevelopmentNotice, ackDevelopmentNotice,
 };
 

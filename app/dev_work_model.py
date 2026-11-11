@@ -25,6 +25,9 @@ class DevWorkJob(Base):
     model_preference = Column(String(16), nullable=False, default="auto")
     status = Column(String(24), nullable=False, default="queued")
     assigned_worker = Column(String(64))
+    attempt_count = Column(Integer, nullable=False, default=0)
+    lease_until = Column(DateTime(timezone=True))
+    retry_after = Column(DateTime(timezone=True))
     latest_summary = Column(Text)
     result_url = Column(Text)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
@@ -43,4 +46,19 @@ class DevWorkEvent(Base):
     actor = Column(String(32), nullable=False)
     action = Column(String(32), nullable=False)
     detail = Column(Text)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class DevWorkNotice(Base):
+    """At-most-once owner-only notification: never automatically retry claims."""
+
+    __tablename__ = "dev_work_notices"
+    id = Column(Integer, primary_key=True)
+    event_id = Column(Integer, ForeignKey("dev_work_events.id"), nullable=False, unique=True)
+    job_id = Column(Integer, ForeignKey("dev_work_jobs.id"), nullable=False, index=True)
+    status = Column(String(24), nullable=False, default="pending")
+    text = Column(Text, nullable=False)
+    claim_nonce = Column(String(64))
+    claimed_at = Column(DateTime(timezone=True))
+    delivered_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)

@@ -1,0 +1,52 @@
+name: Imperial free Groq agent (owner-gated)
+
+# This workflow is inert until BOTH repository variables are set to "true"
+# and its required secrets are provided. Running it uses GitHub Actions minutes.
+# It NEVER merges PRs or deploys to Railway.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "13 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: imperial-free-groq-agent
+  cancel-in-progress: false
+
+jobs:
+  pilot:
+    if: ${{ github.repository == 'imperialauto/shop' && vars.IMPERIAL_FREE_WORKER_ENABLED == 'true' && vars.GROQ_FREE_PLAN_CONFIRMED == 'true' && vars.IMPERIAL_ACTIONS_ZERO_BUDGET_CONFIRMED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Confirm required secret configuration without revealing values
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          DEV_WORKER_KEY: ${{ secrets.DEV_WORKER_KEY }}
+          IMPERIAL_WORK_API_URL: ${{ secrets.IMPERIAL_WORK_API_URL }}
+        run: |
+          test -n "$GROQ_API_KEY" && test -n "$DEV_WORKER_KEY" && test -n "$IMPERIAL_WORK_API_URL" || {
+            echo "Worker secrets not configured; no job claimed"; exit 1;
+          }
+      - name: Claim at most one owner job, generate bounded draft patch, report result
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          DEV_WORKER_KEY: ${{ secrets.DEV_WORKER_KEY }}
+          IMPERIAL_WORK_API_URL: ${{ secrets.IMPERIAL_WORK_API_URL }}
+          GH_TOKEN: ${{ github.token }}
+          GROQ_FREE_PLAN_CONFIRMED: ${{ vars.GROQ_FREE_PLAN_CONFIRMED }}
+          IMPERIAL_FREE_WORKER_ENABLED: ${{ vars.IMPERIAL_FREE_WORKER_ENABLED }}
+        run: python scripts/free_groq_worker.py

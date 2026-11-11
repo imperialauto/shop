@@ -1,9 +1,13 @@
 name: Shop appointment and regression checks
 on:
+  workflow_dispatch:
   pull_request:
-    branches: [main]
+    branches: [main, codex/imperial-dev-coordinator-foundation-20261110]
   push:
     branches: [feature/appointment-foundation-20261031, claude/settings-center, claude/signin-redirect, claude/alert-center, claude/staff-home, claude/price-rates, claude/line-approvals, claude/home-summary]
+permissions:
+  contents: read
+
 jobs:
   app-tests:
     runs-on: ubuntu-latest
@@ -81,3 +85,8 @@ jobs:
         env:
           TEST_DATABASE_URL: postgresql://test:test-only@127.0.0.1:5432/appointment_test
         run: PYTHONPATH=. python tests/imperial_task_postgres.py
+
+      - name: Free worker and owner notices migration on disposable PostgreSQL
+        env:
+          TEST_DATABASE_URL: postgresql://test:test-only@127.0.0.1:5432/appointment_test
+        run: PYTHONPATH=. python tests/dev_work_postgres.py

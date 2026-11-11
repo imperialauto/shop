@@ -60,6 +60,32 @@ async function deliverOwnerMessages({ quo, shopClient }) {
       await shopClient.dispatchOutbound({ key: message.key, status: "failed" });
     }
   }
+  // Owner-only development updates. This path is disabled separately and
+  // never receives a customer phone. A claimed notice is intentionally not
+  // retried if the send outcome is uncertain.
+  if (ownerPhone && enabled("DEV_WORK_NOTICES_ENABLED") &&
+      typeof shopClient.claimDevelopmentNotice === "function" &&
+      typeof shopClient.ackDevelopmentNotice === "function") {
+    try {
+      const result = await shopClient.claimDevelopmentNotice();
+      const n = result?.notice;
+      if (n && Number.isSafeInteger(n.id) && /^[a-f0-9]{32}$/.test(n.claimNonce) && typeof n.text === "string") {
+        let status = "failed";
+        try {
+          await quo.sendMessage({ to: ownerPhone, content: n.text.slice(0, 900) });
+          status = "sent";
+          sent += 1;
+        } catch (err) {
+          console.error("Imperial owner dev notice send failed:", err.message);
+        }
+        // A lost ack must NOT cause an automatic resend; the server keeps
+        // this notice claimed until manually reviewed.
+        await shopClient.ackDevelopmentNotice({ id: n.id, claimNonce: n.claimNonce, status });
+      }
+    } catch (err) {
+      console.error("Imperial development notice check failed:", err.message);
+    }
+  }
   return { sent };
 }
 

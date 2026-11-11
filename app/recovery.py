@@ -30,7 +30,7 @@ def database_audit(include_counts=True):
             for name, model in sorted(Base.metadata.tables.items()):
                 if not tasks_enabled and name in ("imperial_tasks", "imperial_task_audit"):
                     continue  # WIP task schema intentionally absent until approved migration
-                if not dev_work_enabled and name in ("dev_work_jobs", "dev_work_events"):
+                if not dev_work_enabled and name in ("dev_work_jobs", "dev_work_events", "dev_work_notices"):
                     continue  # Coordinator tables are uncreated until separately approved migration
                 if not leads_enabled and name in ("service_leads", "service_lead_audit"):
                     continue  # WIP lead schema intentionally absent until approved migration

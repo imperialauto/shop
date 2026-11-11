@@ -1,5 +1,6 @@
 name: Quo messaging regression tests
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - 'app/**'
@@ -9,6 +10,9 @@ on:
   push:
     branches:
       - fix/quo-communication-idempotency
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -27,7 +31,7 @@ jobs:
       - name: Project status natural-language tests (synthetic GitHub data)
         run: node --test messaging/tests/projectStatus.test.js
       - name: Imperial brain source routing tests (synthetic records)
-        run: node --test messaging/tests/imperialBrain.test.js messaging/tests/devWorkIntake.test.js
+        run: node --test messaging/tests/imperialBrain.test.js messaging/tests/devWorkIntake.test.js messaging/tests/devWorkNotices.test.js
       - name: Call and SMS draft revalidation (synthetic Quo)
         run: node --test messaging/tests/replyContext.test.js
       - name: Run isolated Quo, Imperial tasks and lead lifecycle tests
