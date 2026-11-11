@@ -120,7 +120,7 @@ class ServiceLeadTests(unittest.TestCase):
             self.assertNotEqual(first[0], changed[0],
                                 "new customer activity must alert promptly")
             self.assertTrue(dispatch.reserve(db, changed[0], "owner_leads"))
-            following_day = due_lead_digest(db, NOW + timedelta(days=1))
+            following_day = due_lead_digest(db, NOW + timedelta(days=1, hours=1))  # Saturday 12:30 Phoenix
             self.assertNotEqual(changed[0], following_day[0],
                                 "daily follow-up remains available for unresolved work")
 
