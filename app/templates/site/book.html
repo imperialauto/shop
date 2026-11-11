@@ -176,11 +176,14 @@
       nextHeading.scrollIntoView({behavior: 'auto', block: 'start'});
     }
   }
-  form.addEventListener('change', function (event) {
-    if (event.target && event.target.matches('input[name="slot_id"]')) {
+  function onSlotPick(event) {
+    if (event.target && event.target.matches('input[name="slot_id"]') && !options.hidden) {
+      // A click on an already-selected slot should still advance after Change time.
       showSelectedTime(true);
     }
-  });
+  }
+  form.addEventListener('change', onSlotPick);
+  form.addEventListener('click', onSlotPick);
   changeButton.addEventListener('click', function () {
     selection.hidden = true;
     next.hidden = true;
