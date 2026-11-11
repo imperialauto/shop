@@ -117,6 +117,33 @@ class FreeWorkerSafetyTests(unittest.TestCase):
             finally:
                 os.chdir(previous)
 
+    def test_private_or_internal_source_file_never_reaches_model(self):
+        self.assertFalse(runner.safe_path("docs/IMPERIAL-ASSISTANT-CORE-CONTRACT.md", "website"))
+        self.assertFalse(runner.safe_path("docs/IMPERIAL-ASSISTANT-CORE-CONTRACT.md", "operations"))
+        self.assertFalse(runner.safe_source_content("customer email: customer@example.com"))
+        self.assertFalse(runner.safe_source_content("Please do not expose password in this template"))
+        self.assertTrue(runner.safe_source_content("<h1>Welcome to Imperial Auto Care</h1>"))
+        with TemporaryDirectory() as root:
+            previous = os.getcwd()
+            try:
+                os.chdir(root)
+                target = Path("app/templates/site/home.html")
+                target.parent.mkdir(parents=True)
+                original = "<p>Customer token or password is in a template.</p>"
+                target.write_text(original, encoding="utf-8")
+                answers = [{"path":str(target),"reason":"Homepage candidate"}]
+                with patch.object(runner, "eligible_files", return_value=[str(target)]):
+                    with patch.object(runner, "groq_json", side_effect=answers) as mock:
+                        with self.assertRaisesRegex(runner.WorkerFailure, "Source may contain private data"):
+                            runner.plan_and_apply({
+                                "projectKey":"website",
+                                "instruction":"Continue working on the website navigation",
+                            })
+                self.assertEqual(mock.call_count,1)
+                self.assertEqual(target.read_text(encoding="utf-8"),original)
+            finally:
+                os.chdir(previous)
+
     def test_free_worker_with_missing_secrets_never_claims_job(self):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaisesRegex(runner.WorkerFailure, "Required worker secrets missing"):
@@ -204,6 +231,36 @@ class WorkerQueueTests(unittest.TestCase):
         self.assertTrue(result["claimed"])
         self.assertEqual(result["attempt"], 1)
         self.assertFalse(self.claim().json()["claimed"])
+
+    def test_free_worker_skips_finance_and_operations_jobs_without_claiming_them(self):
+        for i, key in enumerate(("finance", "operations", "integrations"), start=1):
+            result = self.c.post("/internal/imperial/dev-work/submit", headers=self.owner,
+                json={"messageId":f"unsupported-{i}", "projectKey":key,
+                      "instruction":"Continue working on outstanding "+key+" tasks",
+                      "modelPreference":"auto"})
+            self.assertEqual(result.status_code,200)
+            self.assertEqual(result.json()["status"],"queued")
+        self.assertFalse(self.claim().json()["claimed"], "pilot must not claim unsupported jobs")
+        self.submit(id="eligible-website")
+        picked=self.claim().json()
+        self.assertTrue(picked["claimed"])
+        self.assertEqual(picked["projectKey"],"website")
+        with self.Session() as db:
+            other=db.query(DevWorkJob).filter(DevWorkJob.project_key != "website").all()
+            self.assertEqual(len(other),3)
+            self.assertTrue(all(x.status == "queued" and not x.attempt_count for x in other))
+
+    def test_ready_for_review_job_is_visible_in_owner_dashboard(self):
+        saved=self.submit().json()
+        self.assertTrue(saved["workerConfigured"])
+        claimed=self.claim().json()
+        self.assertEqual(claimed["id"],saved["id"])
+        self.assertEqual(self.report(claimed["id"],"review_needed",
+            resultUrl="https://github.com/imperialauto/shop/pull/990").status_code,200)
+        with self.Session() as db:
+            snapshot=dev_work.dashboard_snapshot(db,"owner")
+            self.assertIn("review_needed",[j["status"] for j in snapshot["jobs"]])
+            self.assertTrue(snapshot["workerConfigured"])
 
     def test_worker_cannot_claim_sensitive_approval_request(self):
         self.assertEqual(self.submit(instruction="Continue working on the website and deploy").json()["status"], "needs_approval")
