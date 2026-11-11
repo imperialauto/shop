@@ -166,7 +166,7 @@ def status_page(request: Request, status_code: int = 200, error: str = "", lost:
     recent = recent if isinstance(recent, dict) else {}
     ref, token = str(recent.get("ref") or ""), str(recent.get("token") or "")
     saved_status = {"ref": ref, "token": token} if (
-        re.fullmatch(r"WEB-\\d{1,9}", ref) and re.fullmatch(r"[A-Za-z0-9_-]{20,128}", token)
+        re.fullmatch(r"WEB-\d{1,9}", ref) and re.fullmatch(r"[A-Za-z0-9_-]{20,128}", token)
     ) else None
     return render(request, "site/status.html", status_code=status_code, form_page=True, active="status",
                   error=error, lost=lost, saved_status=saved_status)
