@@ -26,7 +26,7 @@ router = APIRouter()
 
 PROJECTS = {"website", "operations", "finance", "integrations"}
 MODELS = {"auto", "groq", "openai", "anthropic"}
-_ACTIVE = ("queued", "needs_approval", "running", "blocked")
+_ACTIVE = ("queued", "needs_approval", "running", "review_needed", "blocked", "failed")
 _REQUIRES_APPROVAL = re.compile(
     r"\b(?:merge|deploy|publish|launch|turn on|enable|send|email|text|message|"
     r"delete|erase|remove data|migrat(?:e|ion)|purchase|pay|charge|spend|"
@@ -37,6 +37,13 @@ _REQUIRES_APPROVAL = re.compile(
 
 def capture_enabled() -> bool:
     return os.getenv("DEV_COORDINATOR_CAPTURE_ENABLED", "").strip().lower() == "true"
+
+
+def worker_configured():
+    """Configuration is not evidence a GitHub runner has started."""
+    return (capture_enabled() and os.getenv("DEV_WORKER_ENABLED", "").lower() == "true"
+            and os.getenv("GROQ_FREE_PLAN_CONFIRMED", "").lower() == "true"
+            and bool(os.getenv("DEV_WORKER_KEY")))
 
 
 def require_capture():
@@ -92,7 +99,7 @@ def submit_development_work(
     if existing:
         return {"recorded": True, "duplicate": True, **serialise_job(existing),
                 "executionStarted": False if existing.status in ("queued", "needs_approval") else None,
-                "workerConnected": False}
+                "workerConnected": False, "workerConfigured": worker_configured()}
 
     # The queue accepts an intent, not approval to change production or contact
     # customers. Risky requests are saved as needing explicit owner review.
@@ -123,10 +130,10 @@ def submit_development_work(
         if not existing:
             raise
         return {"recorded": True, "duplicate": True, **serialise_job(existing),
-                "executionStarted": False, "workerConnected": False}
+                "executionStarted": False, "workerConnected": False, "workerConfigured": worker_configured()}
     db.refresh(job)
     return {"recorded": True, "duplicate": False, **serialise_job(job),
-            "executionStarted": False, "workerConnected": False}
+            "executionStarted": False, "workerConnected": False, "workerConfigured": worker_configured()}
 
 
 @router.get("/jobs")
@@ -141,7 +148,8 @@ def list_development_work(
     jobs = db.query(DevWorkJob).order_by(DevWorkJob.id.desc()).limit(limit).all()
     return {"jobs": [serialise_job(job) for job in jobs],
             "coverage": "Imperial development work queue only, not all GitHub or customer tasks.",
-            "workerConnected": os.getenv("DEV_WORKER_ENABLED", "").lower() == "true" and os.getenv("GROQ_FREE_PLAN_CONFIRMED", "").lower() == "true",
+            "workerConnected": False,
+            "workerConfigured": worker_configured(),
             "executionStartedByThisAPI": False}
 
 
@@ -157,7 +165,7 @@ def dashboard_snapshot(db: Session, role: str) -> dict:
     except Exception:
         return {"enabled": True, "jobs": [], "error": "Development work records are unavailable. Verify migration."}
     return {"enabled": True, "jobs": [serialise_job(job) for job in jobs], "error": None,
-            "workerConnected": False}
+            "workerConnected": False, "workerConfigured": worker_configured()}
 
 
 # Scoped, separate worker identity. This key can claim/report development jobs,
@@ -230,6 +238,7 @@ def claim_worker_job(
 
     job = db.query(DevWorkJob).filter(
         DevWorkJob.status == "queued",
+        DevWorkJob.project_key == "website",  # narrow free pilot only
         or_(DevWorkJob.retry_after.is_(None), DevWorkJob.retry_after <= now),
         DevWorkJob.attempt_count < 3,
         DevWorkJob.model_preference.in_(("auto", "groq")),
