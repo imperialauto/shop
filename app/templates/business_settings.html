@@ -36,6 +36,16 @@
     {% for s in settings.services %}
     <div class="py-3 border-b border-stone-800">
       <strong>{{ s.name }}</strong>
+      {% if s.per %}
+      <div class="flex flex-wrap items-center gap-3 mt-2">
+        {% for key, label in vehicle_classes.items() %}
+        <label>{{ label }} $ <input name="tier_{{ s.slug }}_{{ key }}" inputmode="decimal" value="{{ s.tiers.get(key, '') }}" class="form-input" style="width:100px"></label>
+        {% endfor %}
+        <span class="text-sm text-stone-400">starting price per {{ s.per }}</span>
+        <label><input name="minutes_{{ s.slug }}" inputmode="numeric" value="{{ s.minutes }}" class="form-input" style="width:80px"> minutes</label>
+        <label><input type="checkbox" name="mobile_{{ s.slug }}" {% if s.mobile %}checked{% endif %}> Can be mobile</label>
+      </div>
+      {% else %}
       <div class="flex flex-wrap items-center gap-3 mt-2">
         <label>Price $ <input name="price_{{ s.slug }}" inputmode="decimal" value="{{ s.price if s.price is not none else '' }}" class="form-input" style="width:110px"></label>
         <select name="type_{{ s.slug }}" class="form-input" style="width:auto">
@@ -45,6 +55,7 @@
         <label><input name="minutes_{{ s.slug }}" inputmode="numeric" value="{{ s.minutes }}" class="form-input" style="width:80px"> minutes</label>
         <label><input type="checkbox" name="mobile_{{ s.slug }}" {% if s.mobile %}checked{% endif %}> Can be mobile</label>
       </div>
+      {% endif %}
     </div>
     {% endfor %}
   </div>

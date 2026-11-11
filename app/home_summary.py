@@ -11,8 +11,11 @@ from app.appointments import PHOENIX
 from app.dispatch_model import DispatchItem
 from app.models import Invoice, LineItem, Payment, RepairOrder
 
+# Every non-delivered status must be represented. In particular, customer approval
+# does not mean work has started, and complete does not prove invoice/payment/pickup.
 STAGES = (("intake", "Intake"), ("diagnosing", "Diagnosing"), ("waiting_approval", "Waiting approval"),
-          ("waiting_parts", "Waiting parts"), ("in_progress", "In progress"), ("complete", "Ready for pickup"))
+          ("approval_received", "Approval received"), ("waiting_parts", "Waiting parts"),
+          ("in_progress", "In progress"), ("complete", "Work complete"))
 
 
 def summary(db: Session, user, now: datetime | None = None) -> dict:

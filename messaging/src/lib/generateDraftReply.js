@@ -16,7 +16,8 @@
 // ─────────────────────────────────────────────────────────
 
 const GROQ_API_BASE_URL = process.env.GROQ_API_BASE_URL || "https://api.groq.com/openai/v1";
-const MODEL = process.env.GROQ_DRAFT_MODEL || "llama-3.3-70b-versatile";
+const { resolveGroqModel } = require("./groqModel");
+const MODEL = resolveGroqModel();
 const MAX_TOKENS = 400;
 const NO_REPLY = "NO_REPLY_NEEDED";
 

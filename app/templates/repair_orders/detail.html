@@ -247,6 +247,38 @@
   </form>
 </div>
 
+{% if sourced_parts %}
+<!-- Internal parts cost is not an approved customer selling price. -->
+<div class="card mb-4" id="parts-sourcing">
+  <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Parts sourcing · internal</h3>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead><tr>
+        <th class="text-left">Part</th><th class="text-left">Status / pickup</th>
+        {% if user.role in ('owner', 'admin') %}<th class="text-right">Our cost (private)</th>{% endif %}
+      </tr></thead>
+      <tbody>
+        {% for part in sourced_parts %}
+        <tr>
+          <td>{{ part.description or 'Part awaiting verification' }}</td>
+          <td>{{ part.status|replace('_', ' ')|title }}</td>
+          {% if user.role in ('owner', 'admin') %}
+          <td class="text-right" title="Supplier cost; never a retail quote">
+            &#36;{{ '%.2f'|format(part.cost or 0) }}
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="text-xs text-stone-400 mt-3">
+    Sourcing records are not customer quotes. Verify fitment, selling price, labor and tax
+    before sending a customer approval link.
+  </p>
+</div>
+{% endif %}
+
 <!-- Communications -->
 <div class="card mb-4">
   <div class="flex items-center justify-between mb-3">

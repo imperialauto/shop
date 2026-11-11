@@ -8,7 +8,9 @@
       <h1>Visit the shop</h1>
       <p>{{ business.street }}<br>{{ business.city }}, {{ business.region }} {{ business.postal }}</p>
       <div class="actions">
-        <a class="btn btn-purple" href="tel:{{ business.phone_tel }}">Call {{ business.phone_display }}</a>
+        <a class="btn btn-purple" href="/site/book">Book online</a>
+        <a class="btn btn-light" href="/site/estimate">Request an estimate</a>
+        <a class="btn btn-light" href="tel:{{ business.phone_tel }}">Call {{ business.phone_display }}</a>
         <a class="btn btn-light" href="sms:{{ business.phone_tel }}">Text us</a>
         <a class="btn btn-light" href="https://www.google.com/maps/search/?api=1&query={{ (business.street ~ ', ' ~ business.city ~ ', ' ~ business.region ~ ' ' ~ business.postal)|urlencode }}" rel="noopener">Directions</a>
       </div>
@@ -17,7 +19,7 @@
     <div class="panel">
       <h3>Hours</h3>
       <table class="hours">{% for day, hrs in business.hours %}<tr><td>{{ day }}</td><td>{{ hrs }}</td></tr>{% endfor %}</table>
-      <p class="hint" style="margin-top:12px">Drop-offs by appointment. Book online or call ahead.</p>
+      <p class="hint" style="margin-top:12px">Drop-offs by appointment. Book online and pick a time.</p>
     </div>
   </div>
 </section>

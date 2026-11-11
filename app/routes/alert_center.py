@@ -17,8 +17,15 @@ from app.dispatch_model import DispatchItem, DispatchOutbound
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 CLOCK = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
-STATUS = {"sent": "Delivered", "failed": "Failed, will retry", "reserved": "Sending", "skipped": "Not sent",
-          "queued": "Waiting to send"}
+# Quo API success is not a carrier or handset delivery receipt, and uncertain
+# customer sends are intentionally never retried automatically.
+STATUS = {"sent": "Sent via Quo (delivery unconfirmed)", "failed": "Failed — review needed",
+          "reserved": "Send unconfirmed", "skipped": "Not sent", "queued": "Waiting to send"}
+
+
+def recipient_for(kind: str) -> str:
+    """Separate owner alerts from customer replies in the same outbound log."""
+    return "Customer" if kind in ("customer", "dashboard_reply") else "Owner"
 
 
 def _owner(request: Request, db: Session):
@@ -34,7 +41,8 @@ def page(request, db, user, status=200, **extra):
     history = [{"when": (r.created_at if r.created_at.tzinfo else r.created_at.replace(tzinfo=timezone.utc)).astimezone(PHOENIX),
                 "what": alert_rules.LABELS.get(r.kind, r.kind.replace("_", " ")), "item": r.item_id,
                 "about": " ".join((items[r.item_id].summary if r.item_id in items else "").split())[:70],
-                "status": STATUS.get(r.status, r.status), "failed": r.status == "failed"} for r in rows]
+                "status": STATUS.get(r.status, r.status), "failed": r.status == "failed",
+                "recipient": recipient_for(r.kind)} for r in rows]
     return templates.TemplateResponse("alert_center.html", {"request": request, "user": user, "rules": alert_rules.rules(),
                                       "optional": alert_rules.OPTIONAL, "history": history, **extra}, status_code=status)
 

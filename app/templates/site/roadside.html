@@ -1,0 +1,41 @@
+{% extends "site/_layout.html" %}
+{% block title %}Roadside and towing — {{ business.name }}{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="wrap" style="max-width:820px">
+    <div class="eyebrow">Roadside and towing</div>
+    <h1>Broken down? Send your location</h1>
+    <p class="alert alert-error" role="note">If anyone is hurt or you're in traffic, call 911 first. For an urgent tow you can also <a href="tel:{{ business.phone_tel }}">call {{ business.phone_display }}</a>.</p>
+    <p>Send the details here and we'll call you back to confirm the price and timing. Nothing is dispatched until we confirm it with you.</p>
+
+    {% if error %}<p class="alert alert-error" role="alert">{{ error }}</p>{% endif %}
+
+    {% if not forms_open %}
+      <p class="alert alert-info">Online roadside requests open soon. For now, call <a href="tel:{{ business.phone_tel }}">{{ business.phone_display }}</a>.</p>
+    {% else %}
+    <form class="form" method="post" action="/site/roadside">
+      <fieldset>
+        <legend>What's going on?</legend>
+        <div class="choices" role="radiogroup" aria-label="What's going on">
+          {% for key, label in situations.items() %}
+          <label class="choice"><input type="radio" name="situation" value="{{ key }}" required {% if values.situation == key %}checked{% endif %}><span>{{ label }}</span></label>
+          {% endfor %}
+        </div>
+        <div style="margin-top:14px">
+          <label for="location">Where is the vehicle? <span class="hint">Address, cross streets, or highway and mile marker.</span></label>
+          <input id="location" name="location" type="text" maxlength="256" required value="{{ values.location or '' }}">
+        </div>
+        <div style="margin-top:14px">
+          <label for="description">Anything else? <span class="hint">Optional. Where it needs to go, keys, parking garage height.</span></label>
+          <textarea id="description" name="description" maxlength="2000">{{ values.description or '' }}</textarea>
+        </div>
+      </fieldset>
+      {% set require_make = false %}
+      {% include "site/_person_vehicle.html" %}
+      <p class="hint">Make and model are needed unless you enter a VIN. We confirm the price with you before anything is dispatched.</p>
+      <button class="btn btn-purple" type="submit">Send roadside request</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

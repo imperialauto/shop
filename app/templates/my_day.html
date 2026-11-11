@@ -14,24 +14,39 @@
     <div class="text-sm text-stone-400">{{ ro.customer.first_name or '' }} · {{ ro.status.replace('_', ' ').title() }}</div>
     {% if ro.concern %}<p class="text-sm mt-1">{{ ro.concern[:160] }}</p>{% endif %}
   </a>
-  <form method="post" action="/ro/{{ ro.id }}/update-status?back=my-day" class="flex flex-wrap gap-2 mt-3">
-    {% for key, label in steps if key != ro.status %}
-    <button type="submit" name="status" value="{{ key }}" class="btn-secondary" style="min-height:44px">{{ label }}</button>
-    {% endfor %}
-  </form>
+  {% if visit_by_ro.get(ro.id) %}
+  <p class="text-sm text-stone-400 mt-1">Today {{ visit_by_ro[ro.id].time }}{% if visit_by_ro[ro.id].mobile %} · Mobile{% else %} · Shop{% endif %}</p>
+  {% endif %}
+  {% set step = next_steps.get(ro.id) %}
+  {% if step %}
+  <div class="mt-3 text-sm">
+    <p class="text-stone-400 mb-2">Next · {{ step.who }}: <strong class="text-stone-100">{{ step.title }}</strong></p>
+    {% if step.post %}
+    <form method="post" action="{{ step.post }}?back=my-day">
+      {% for key, value in step.fields.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+      <button type="submit" class="btn-primary" style="min-height:44px">{{ step.button }}</button>
+    </form>
+    {% elif step.href %}
+    <a href="{{ '/ro/' ~ ro.id ~ step.href if step.href.startswith('#') else step.href }}" class="btn-primary" style="display:inline-block;min-height:44px">{{ step.button }}</a>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="text-sm text-stone-400 mt-3">No technician action is required right now. Check the repair order for its current status.</p>
+  {% endif %}
   <a href="/ro/{{ ro.id }}#notes" class="text-sm text-yellow-400" style="display:inline-block;margin-top:10px;min-height:44px">Add notes →</a>
 </div>
 {% else %}
 <div class="card mb-3 text-sm text-stone-400">No jobs assigned to you right now.</div>
 {% endfor %}
 
-<h2 class="font-bold mt-6 mb-2">Today at the shop ({{ visits|length }})</h2>
+<h2 class="font-bold mt-6 mb-2">Additional appointments ({{ visits|length }})</h2>
+<p class="text-sm text-stone-400 mb-2">{{ appointment_count }} total appointment{{ 's' if appointment_count != 1 }} today; times for listed jobs appear above or below.</p>
 <div class="card mb-3">
 {% for v in visits %}
   <a href="/ro/{{ v.ro.id }}" class="flex justify-between py-2 border-b border-stone-800" style="text-decoration:none;color:inherit;min-height:44px">
     <span><strong>{{ v.time }}</strong> {{ vehicle(v.ro) }}{% if v.mobile %} · Mobile{% endif %}</span><span class="text-stone-400">#{{ v.ro.id }}</span>
   </a>
-{% else %}<p class="text-sm text-stone-400">No appointments booked in the app today. Check the calendar for others.</p>{% endfor %}
+{% else %}<p class="text-sm text-stone-400">No additional appointments outside the job lists. Check the calendar for external events.</p>{% endfor %}
 </div>
 
 <h2 class="font-bold mt-6 mb-2">Not assigned yet ({{ unassigned|length }})</h2>
@@ -40,6 +55,7 @@
   <div class="flex items-center justify-between gap-3 py-2 border-b border-stone-800" style="min-height:44px">
     <a href="/ro/{{ ro.id }}" style="text-decoration:none;color:inherit;flex:1;min-width:0">
       <span>{{ vehicle(ro) }} · {{ ro.status.replace('_', ' ').title() }}</span> <span class="text-stone-400">#{{ ro.id }}</span>
+      {% if visit_by_ro.get(ro.id) %}<span class="text-stone-400 text-xs"> · Today {{ visit_by_ro[ro.id].time }}{% if visit_by_ro[ro.id].mobile %} mobile{% endif %}</span>{% endif %}
     </a>
     {% if can_take %}<form method="post" action="/ro/{{ ro.id }}/assign?back=my-day"><input type="hidden" name="assigned_tech_id" value="{{ user.id }}"><button type="submit" class="btn-primary" style="min-height:44px">Take it</button></form>{% endif %}
   </div>
