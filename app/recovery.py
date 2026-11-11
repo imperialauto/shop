@@ -11,6 +11,7 @@ def read_only_enabled():
 def database_audit(include_counts=True):
     from app import models  # register expected tables; does not create them
     tasks_enabled = os.getenv("IMPERIAL_TASKS_ENABLED", "").strip().lower() == "true"
+    dev_work_enabled = os.getenv("DEV_COORDINATOR_CAPTURE_ENABLED", "").strip().lower() == "true"
     leads_enabled = os.getenv("SERVICE_LEADS_ENABLED", "").strip().lower() == "true"
     if leads_enabled:
         from app import lead_model  # noqa: F401; only audit new tables after enablement
@@ -29,6 +30,8 @@ def database_audit(include_counts=True):
             for name, model in sorted(Base.metadata.tables.items()):
                 if not tasks_enabled and name in ("imperial_tasks", "imperial_task_audit"):
                     continue  # WIP task schema intentionally absent until approved migration
+                if not dev_work_enabled and name in ("dev_work_jobs", "dev_work_events"):
+                    continue  # Coordinator tables are uncreated until separately approved migration
                 if not leads_enabled and name in ("service_leads", "service_lead_audit"):
                     continue  # WIP lead schema intentionally absent until approved migration
                 if name not in existing:

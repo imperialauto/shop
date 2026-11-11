@@ -13,7 +13,8 @@ from app.models import RepairOrder
 URGENT_LINES = {"towing", "mobile-roadside"}
 
 
-def queue(db: Session, order: RepairOrder, kind: str, summary: str, service_line: str = "", vehicle_text: str = "") -> DispatchItem:
+def queue(db: Session, order: RepairOrder, kind: str, summary: str, service_line: str = "", vehicle_text: str = "",
+          review: bool = False) -> DispatchItem:
     """kind is "booking" or "request". Call inside the caller's transaction, before commit."""
     booking = kind == "booking"
     item = DispatchItem(
@@ -22,8 +23,9 @@ def queue(db: Session, order: RepairOrder, kind: str, summary: str, service_line
         category="booking" if booking else "estimate",
         urgency="urgent" if service_line in URGENT_LINES else "normal",
         summary=summary[:280], proposed_action=f"Website {'booking' if booking else 'request'} WEB-{order.id}",
-        draft_reply="" if booking else None,  # a confirmed booking is FYI, a request needs the owner
-        status="routine" if booking else "needs_owner", last_message_id=f"web:{order.id}",
+        # A confirmed fixed-price booking is FYI. A request, or a booking at a starting price, needs the owner.
+        draft_reply="" if booking and not review else None,
+        status="routine" if booking and not review else "needs_owner", last_message_id=f"web:{order.id}",
         updated_at=datetime.now().astimezone())
     db.add(item)
     db.flush()

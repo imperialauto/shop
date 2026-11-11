@@ -8,7 +8,9 @@
     <p>Predictable services show an exact price. Variable services show a starting price. Mobile visits may add a fee based on your address.</p>
     <div class="service-pick">
       {% for s in services %}
-      <div class="card"><h3>{{ s.name }}</h3><p>{{ s.description }}</p><span class="more">{{ s.price_label }} · About {{ s.minutes }} minutes</span></div>
+      <a href="{% if s.price is not none %}/site/book?service={{ s.slug }}{% else %}/site/estimate?about={{ s.slug }}{% endif %}"><div class="card"><h3>{{ s.name }}</h3><p>{{ s.description }}</p>
+        {% if s.tiers %}<p class="hint">{% for key, label, amount in s.tiers %}{{ label }}: from ${{ '%.0f'|format(amount) }}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+        <span class="more">{% if s.price is not none %}{{ s.price_label }} · About {{ s.minutes }} minutes · Book →{% else %}Price on request · Request online →{% endif %}</span></div></a>
       {% endfor %}
     </div>
     <p style="margin-top:18px">Complex repairs need an estimate and your approval. <a href="/site/estimate">Request an estimate</a>.</p>

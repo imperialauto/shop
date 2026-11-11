@@ -4,7 +4,7 @@
 // A customer text is checked against Quo first and is never retried, so an
 // uncertain send cannot reach a customer twice.
 
-const { answerOwner, interpretOwner, recentTurns, customerDetail } = require("./ownerAssistant");
+const { answerOwner, interpretOwner, recentTurns, customerDetail, leaksPrivateAcquisitionCost } = require("./ownerAssistant");
 const { answerProjectQuestion } = require("./projectStatus");
 const { answerImperialBrain } = require("./imperialBrain");
 const { callContext } = require("./callIntake");
@@ -69,22 +69,44 @@ async function sendApprovedReply({ reply, ownerPhone, quo, shopClient }) {
   let status = "skipped";
   let notice = `#${reply.itemId} was not sent. There's a newer message in that thread, so check Quo.`;
   try {
-    const current = process.env.REVALIDATE_APPROVED_REPLIES_ENABLED === "true"
-      ? await verifyApprovedReplyContext({ quo, phone: reply.phone, messageId: reply.messageId })
-      : { ok: ((await latestMessageId(quo, reply.phone)) || "none") === reply.messageId };
-    if (!current.ok && current.notice) {
-      notice = `#${reply.itemId} NOT sent: ${current.notice}. Please refresh the customer history and draft.`;
-    }
-    if (current.ok) {
-      status = "failed";
-      notice = `#${reply.itemId} failed to send. Please reply in Quo.`;
-      await quo.sendMessage({ to: reply.phone, content: reply.text });
-      status = "sent";
-      notice = `Sent #${reply.itemId} to the customer.`;
-      await shopClient.logCommunication({ phone: reply.phone, direction: "outbound", body: reply.text, externalId: null });
+    // Always revalidate BOTH messages and calls immediately before any
+    // owner-approved customer send; a stale draft cannot bypass this via flag.
+    const current = await verifyApprovedReplyContext({
+      quo, phone: reply.phone, messageId: reply.messageId,
+    });
+    if (!current.ok) {
+      notice = `#${reply.itemId} NOT sent: ${current.notice || "customer conversation has changed"}.
+Refresh the customer history and draft.`;
+    } else {
+      // A previously saved bad draft might still be waiting for YES. Inspect
+      // the current owner's Quo history at send-time, not just when drafting.
+      if (!ownerPhone) throw Error("Owner identity unavailable");
+      const { data: ownerRows = [] } = await quo.listMessages({
+        participants: [ownerPhone], maxResults: 100,
+      });
+      if (!Array.isArray(ownerRows)) throw Error("Owner history unavailable");
+      const ownerHistory = ownerRows.filter(m => /^in/i.test(m.direction || ""))
+        .map(m => ({ role: "user", content: m.text || m.body || "" }));
+      const draft = String(reply.text || "");
+      if (/\b(?:my|our|shop|supplier|vendor|wholesale)\s+cost\b/i.test(draft)
+          || leaksPrivateAcquisitionCost("", draft, ownerHistory)) {
+        notice = `#${reply.itemId} BLOCKED: draft repeats a private shop/vendor cost.
+Confirm the customer selling price and make a new draft.`;
+        status = "skipped";
+      } else {
+        status = "failed";
+        notice = `#${reply.itemId} failed to send. Please reply in Quo.`;
+        await quo.sendMessage({ to: reply.phone, content: reply.text });
+        status = "sent";
+        notice = `Sent #${reply.itemId} to the customer.`;
+        await shopClient.logCommunication({
+          phone: reply.phone, direction: "outbound", body: reply.text, externalId: null,
+        });
+      }
     }
   } catch (err) {
     console.error("Approved reply failed:", err.message);
+    notice = `#${reply.itemId} NOT sent: the current customer or owner context could not be verified.`;
   }
   await shopClient.dispatchOutbound({ key: reply.key, status });
   await quo.sendMessage({ to: ownerPhone, content: notice }).catch((err) => console.error("Owner notice failed:", err.message));
@@ -109,19 +131,44 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
       messageId,
       taskWriter: shopClient.captureOwnerTask,
       taskLister: shopClient.openOwnerTasks,
+      developmentWriter: shopClient.submitDevelopmentWork,
+      developmentLister: shopClient.listDevelopmentWork,
     });
     const projectReply = brainReply || await answerProjectQuestion({ question: result.ownerQuestion, history });
     const action = projectReply ? null : await interpretOwner({ question: result.ownerQuestion, snapshot: result.snapshot, history });
-    const content = projectReply || (action
-      ? (await shopClient.dispatchOwnerAction(action)).ownerReply
-      : await answerOwner({
-          question: result.ownerQuestion,
-          snapshot: {
-            ...result.snapshot,
-            customerDetail: await customerDetail({ question: result.ownerQuestion, snapshot: result.snapshot, quo, callContext }),
-          },
-          history,
-        }));
+    let ownerActionReply = null;
+    if (!projectReply && action) {
+      const request = { ...action, ownerPhone: phone, ownerMessageId: messageId };
+      let outcome = await shopClient.dispatchOwnerAction(request);
+      if (outcome.customerThreadPhone) {
+        // The app has found a priced, fitment-verified RO. Fetch the real Quo
+        // customer thread before asking it to queue the signing link.
+        const customerPhone = outcome.customerThreadPhone;
+        try {
+          const { data: messages = [] } = await quo.listMessages({ participants: [customerPhone], maxResults: 10 });
+          const newest = [...messages].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
+          const checked = newest?.id
+            ? await verifyApprovedReplyContext({ quo, phone: customerPhone, messageId: newest.id })
+            : { ok: false, notice: "no current Quo customer text was found" };
+          if (!checked.ok) {
+            outcome = { ownerReply: "No approval link queued: " + checked.notice + ". Review the RO in the dashboard." };
+          } else {
+            outcome = await shopClient.dispatchOwnerAction({ ...request, customerMessageId: newest.id });
+          }
+        } catch (_) {
+          outcome = { ownerReply: "No approval link queued: current customer messages could not be verified." };
+        }
+      }
+      ownerActionReply = outcome.ownerReply;
+    }
+    const content = projectReply || ownerActionReply || await answerOwner({
+      question: result.ownerQuestion,
+      snapshot: {
+        ...result.snapshot,
+        customerDetail: await customerDetail({ question: result.ownerQuestion, snapshot: result.snapshot, quo, callContext }),
+      },
+      history,
+    });
     await quo.sendMessage({ to: phone, content }).catch((err) => console.error("Owner answer failed:", err.message));
   }
   let customerSent = false;

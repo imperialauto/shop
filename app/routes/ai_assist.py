@@ -1,3 +1,5 @@
+from html import escape
+
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
@@ -5,6 +7,7 @@ from app.database import get_db
 from app.models import RepairOrder
 from app.auth import get_current_user
 from app.config import GROQ_API_KEY
+from app.pricing import rates
 from groq import Groq
 
 router = APIRouter()
@@ -69,7 +72,7 @@ Provide a structured diagnostic approach:
 Be specific to the vehicle platform. Keep it practical and actionable for a working tech."""
 
     result = call_claude(prompt)
-    return HTMLResponse(f'<div class="prose prose-invert max-w-none text-sm whitespace-pre-wrap">{result}</div>')
+    return HTMLResponse(f'<div class="prose prose-invert max-w-none text-sm whitespace-pre-wrap">{escape(result or "")}</div>')
 
 
 @router.post("/draft-line-items/{ro_id}", response_class=HTMLResponse)
@@ -84,6 +87,7 @@ def draft_line_items(request: Request, ro_id: int, db: Session = Depends(get_db)
 
     vehicle_ctx = get_vehicle_context(ro)
     notes = ro.tech_notes or "No tech notes"
+    approved_rates = rates()
 
     prompt = f"""You are a shop management assistant for Imperial Auto Care, a repair shop serving everyday daily-driver customers as well as diesel and commercial fleet vehicles.
 
@@ -93,16 +97,21 @@ Tech notes / work performed: {notes}
 Convert these tech notes into invoice line items. Format as a markdown table with columns:
 | Description | Type | Qty | Unit Price |
 
-Pricing guidelines:
-- Diesel labor: $150/hr
-- Gas/other labor: $130/hr
-- Parts markup: 25-30% over cost
+Pricing guidelines (staff-review draft only; never send or save as an approved estimate):
+- In-shop labor: ${approved_rates["shop"]:.2f}/hr
+- Mobile labor: ${approved_rates["mobile"]:.2f}/hr, with separately approved call-out and travel
+- Diesel labor: ${approved_rates["diesel"]:.2f}/hr
+- Customer-supplied-parts labor: ${approved_rates["cspr"]:.2f}/hr, subject to job-specific exceptions
 - Type is one of: labor, part, sublet, misc
+- There is NO approved universal parts markup. Do not invent or apply a percentage.
+- Vendor cost, "my cost" and supplier price are PRIVATE: never present them as customer selling prices.
+- Never invent a parts selling price, labor time, service fees, or taxes. For an unverified amount put REVIEW REQUIRED in Unit Price.
+- Apply labor rates only when labor time and rate category are verified; this is a draft for staff review, not work authorization.
 
 Be specific with descriptions. Separate labor and parts into individual line items."""
 
     result = call_claude(prompt)
-    return HTMLResponse(f'<div class="prose prose-invert max-w-none text-sm">{result}</div>')
+    return HTMLResponse(f'<div class="prose prose-invert max-w-none text-sm">{escape(result or "")}</div>')
 
 
 @router.post("/suggest-upsells/{ro_id}", response_class=HTMLResponse)
@@ -135,4 +144,4 @@ For each suggestion include: what to check/do, why it matters for this specific 
 Keep it honest — only suggest things that genuinely benefit the customer."""
 
     result = call_claude(prompt)
-    return HTMLResponse(f'<div class="prose prose-invert max-w-none text-sm whitespace-pre-wrap">{result}</div>')
+    return HTMLResponse(f'<div class="prose prose-invert max-w-none text-sm whitespace-pre-wrap">{escape(result or "")}</div>')

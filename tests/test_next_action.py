@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app import next_action
 from app.auth import hash_password
 from app.database import Base, get_db
-from app.dispatch_model import DispatchItem
+from app.dispatch_model import DispatchItem, DispatchOutbound
 from app.main import app
 from app.models import Customer, Invoice, LineItem, Payment, RepairOrder, User, Vehicle
 
@@ -58,7 +58,7 @@ class NextActionTests(unittest.TestCase):
         self.assertEqual(self.step()["post"], "/ro/5/request-approval")
         self.assertIsNone(self.step("tech"))  # techs never ask customers for approval
         self.change(lambda db, ro: setattr(ro.line_items[0], "approval", "pending"))
-        self.assertTrue(self.step()["title"].startswith("Waiting on the customer"))
+        self.assertEqual(self.step()["title"], "Approval link send is not confirmed")
         self.change(lambda db, ro: db.add(DispatchItem(quo_conversation_id="LINK5", customer_phone="+16025550100", category="approval_link",
                                                         summary="x", last_message_id="none", status="needs_owner")))
         self.assertIn("waiting for your YES", self.step()["title"])
@@ -77,6 +77,62 @@ class NextActionTests(unittest.TestCase):
         self.assertIsNone(self.step("tech"))  # the front desk hands over the keys
         self.change(lambda db, ro: setattr(ro, "status", "delivered"))
         self.assertIsNone(self.step())
+
+    def test_pending_customer_approval_requires_successful_customer_send_evidence(self):
+        self.change(lambda db, ro: db.add(LineItem(repair_order_id=5, description="Tank",
+                                                   unit_price=280, item_type="part", approval="pending")))
+        # No item or an owner's alert is not evidence that the customer got a text.
+        self.assertEqual(self.step()["title"], "Approval link send is not confirmed")
+        self.assertEqual(self.step()["button"], "Queue approval link")
+        self.change(lambda db, ro: db.add(DispatchItem(
+            id=44, quo_conversation_id="LINK5", customer_phone="+16025550100",
+            category="approval_link", summary="estimate", last_message_id="m2", status="approved")))
+        self.assertEqual(self.step()["title"], "Approval link send is not confirmed")
+        self.change(lambda db, ro: db.add(DispatchOutbound(
+            dedupe_key="alert:44:m2", kind="owner", item_id=44, status="sent")))
+        self.assertEqual(self.step()["title"], "Approval link send is not confirmed")
+        self.change(lambda db, ro: db.add(DispatchOutbound(
+            dedupe_key="reply:44:m2", kind="customer", item_id=44, status="failed")))
+        self.assertEqual(self.step()["title"], "Approval link send is not confirmed")
+        self.change(lambda db, ro: setattr(
+            db.query(DispatchOutbound).filter_by(dedupe_key="reply:44:m2").one(), "status", "sent"))
+        self.assertTrue(self.step()["title"].startswith("Waiting on the customer's approval"))
+        self.assertIn("send was recorded", self.step()["detail"])
+
+    def test_no_charge_completed_job_requires_office_review(self):
+        self.change(lambda db, ro: setattr(ro, "status", "complete"))
+        self.assertEqual(self.step()["title"], "Review completed job with no charges")
+        self.assertEqual(self.step()["button"], "Review charges")
+        self.assertIsNone(self.step("tech"))  # tech is finished; office decides the charge/closeout
+
+    def test_prepaid_invoice_does_not_mark_unfinished_vehicle_ready_for_pickup(self):
+        self.change(lambda db, ro: (
+            db.add(LineItem(repair_order_id=5, description="Repair", unit_price=150,
+                            item_type="labor", approval="approved")),
+            setattr(ro, "status", "in_progress"),
+            setattr(ro, "assigned_tech_id", 2),
+            db.add(Invoice(id=10, repair_order_id=5, total=150.0, status="sent"))))
+        # A full early payment must never skip the actual repair.
+        self.change(lambda db, ro: db.add(Payment(invoice_id=10, amount=150.0, method="cash")))
+        self.assertEqual(self.step()["button"], "Mark complete")
+        self.assertEqual(self.step("tech")["button"], "Mark complete")
+
+        self.change(lambda db, ro: setattr(ro, "status", "waiting_parts"))
+        self.assertEqual(self.step()["button"], "Parts are here")
+
+        self.change(lambda db, ro: setattr(ro, "status", "complete"))
+        self.assertEqual(self.step()["button"], "Mark picked up")
+        self.assertIsNone(self.step("tech"))
+
+    def test_early_unpaid_invoice_does_not_replace_technician_next_step(self):
+        self.change(lambda db, ro: (
+            db.add(LineItem(repair_order_id=5, description="Repair", unit_price=150,
+                            approval="approved")),
+            setattr(ro, "status", "in_progress"),
+            db.add(Invoice(id=11, repair_order_id=5, total=150.0, status="sent"))))
+        self.assertEqual(self.step()["button"], "Mark complete")
+        self.change(lambda db, ro: setattr(ro, "status", "complete"))
+        self.assertEqual(self.step()["button"], "Record payment")
 
     def test_all_declined_is_flagged_not_invoiced(self):
         self.change(lambda db, ro: (db.add(LineItem(repair_order_id=5, description="Rotors", unit_price=200, approval="declined")),
