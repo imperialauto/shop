@@ -190,72 +190,12 @@ async def intake_turn(conversation: list, new_message: str) -> tuple[str, dict |
 
 # â”€â”€ Estimate generation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-ESTIMATE_SYSTEM = """You are a diesel and fleet repair estimator for Imperial Auto Care in Phoenix, AZ.
-
-Standard rates: diesel/fleet $150/hr, gas $130/hr. Parts markup 25-30% over dealer cost.
-Customer-supplied parts rates: diesel $165/hr, gas $145/hr. When customer_supplied_parts=true:
-  - Use the higher labor rate above
-  - Set parts_low and parts_high to 0 (customer is supplying them)
-  - Set total_low/total_high to labor only
-  - Add to notes: "Labor rate reflects customer-supplied parts. We do not warranty parts not sourced by the shop."
-
-CRITICAL â€” ONE-TIME-USE (OTU) PARTS KNOWLEDGE:
-You must flag any OTU parts relevant to the job in the otu_parts array. Common examples:
-- 6.0L Powerstroke: head bolts (TTY), EGR cooler gaskets, oil cooler o-rings, injector cup o-rings, valley cover gasket
-- 6.7L Powerstroke: EGR cooler outlet gasket, turbo pedestal o-rings, DPF/DOC gaskets, some EGR hardware
-- 6.6L Duramax LLY/LBZ/LMM: head bolts (TTY), injector return line o-rings, valley cover gasket, EGR valve gasket
-- 6.6L Duramax LML/L5P: CP4 high-pressure fuel lines (crimped â€” OTU), fuel rail return lines, head bolts
-- Cummins 5.9/6.7: head bolts (TTY), injector copper washers, injector hold-down hardware, flywheel bolts (some)
-- All platforms: stretch/TTY bolts of any kind, copper crush washers, exhaust manifold bolts (heat-stressed, always inspect), combustion seal washers
-
-Respond ONLY with this JSON (no other text):
-{
-  "summary": "One-line description of the work",
-  "labor_hours": 4.5,
-  "labor_rate": 150,
-  "labor_total": 675.0,
-  "parts_low": 800,
-  "parts_high": 1100,
-  "total_low": 1475,
-  "total_high": 1775,
-  "notes": "Important caveats, things to watch for, recommended upsells",
-  "needs_inspection": false,
-  "customer_supplied_parts": false,
-  "otu_parts": ["6.0L head bolts (TTY â€” must replace)", "EGR cooler gaskets (one-time-use)"]
-}
-
-Set needs_inspection=true only when you genuinely cannot estimate without seeing the vehicle.
-Use real flat-rate labor times. otu_parts should be an empty array [] if no OTU parts apply."""
-
-
+# The legacy OpenPhone intake is deprecated and off by default. Never let
+# an AI invent parts markup, labor rates or a retail quote. The supported
+# estimating path is the existing repair order and verified price sheet.
 async def generate_estimate(data: dict) -> dict:
-    client = AsyncGroq(api_key=GROQ_API_KEY)
+    raise RuntimeError("Automatic SMS pricing is disabled; staff must verify labor and parts before quoting.")
 
-    csp = data.get("customer_supplied_parts", False)
-    prompt = (
-        f"Generate a repair estimate:\n"
-        f"Vehicle: {data.get('year')} {data.get('make')} {data.get('model')} â€” {data.get('engine')}\n"
-        f"Mileage: {data.get('mileage')}\n"
-        f"Complaint: {data.get('complaint')}\n"
-        f"Customer: {data.get('name')}\n"
-        f"customer_supplied_parts: {'true' if csp else 'false'}"
-    )
-
-    response = await client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        max_tokens=700,
-        messages=[
-            {"role": "system", "content": ESTIMATE_SYSTEM},
-            {"role": "user", "content": prompt},
-        ],
-    )
-
-    text = response.choices[0].message.content.strip()
-    start = text.find("{")
-    end = text.rfind("}") + 1
-    return json.loads(text[start:end])
-
-# â”€â”€ Mileage parsing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def parse_mileage(raw) -> int:
     s = str(raw).lower().replace(",", "").replace(" ", "").replace("miles", "").replace("mi", "")
@@ -302,7 +242,7 @@ def create_draft_ro(db: Session, session, data: dict, estimate: dict):
     ro = RepairOrder(
         customer_id=customer.id,
         vehicle_id=vehicle.id,
-        status="waiting_approval",
+        status="intake" if estimate.get("needs_inspection") else "waiting_approval",
         concern=data.get("complaint", ""),
         tech_notes=(
             f"SMS Estimate Request â€” {session.phone_number}\n"
@@ -613,93 +553,28 @@ async def openphone_webhook(
     session.conversation = json.dumps(conversation)
 
     if collected and collected.get("done"):
-        # All info collected â€” generate estimate
-        session.status = "generating"
+        # Preserve the intake in the existing RO system without guessed
+        # prices, unapproved free inspections or customer-price promises.
         session.collected_data = json.dumps(collected)
-        db.commit()
-
-        await send_sms(from_number, "Perfect, I have everything I need! Generating your estimate now â€” give me just a moment.")
-
-        try:
-            estimate = await generate_estimate(collected)
-        except Exception as e:
-            print(f"[Estimate generation error] {e}")
-            await send_sms(from_number, "I ran into an issue generating your estimate. Someone from the shop will follow up with you shortly.")
-            session.status = "error"
-            db.commit()
-            return JSONResponse({"status": "ok"})
-
-        ro, customer = create_draft_ro(db, session, collected, estimate)
-        session.status = "draft_ready"
+        draft = {
+            "needs_inspection": True,
+            "notes": "Manual pricing review required. No labor or parts quote approved.",
+        }
+        ro, customer = create_draft_ro(db, session, collected, draft)
+        session.status = "awaiting_price_review"
         session.draft_ro_id = ro.id
         db.commit()
-
-        # Send estimate to customer
-        name = collected.get("name", "there")
-        year = collected.get("year")
-        make = collected.get("make")
-        model = collected.get("model")
-
-        csp = collected.get("customer_supplied_parts", False) or estimate.get("customer_supplied_parts", False)
-
-        if estimate.get("needs_inspection"):
-            customer_msg = (
-                f"Hi {name}! Thanks for the details on your {year} {make} {model}. "
-                f"Based on what you've described, we'd need to do a hands-on inspection before "
-                f"we can give you a solid number â€” there are a few things that can only be confirmed in person. "
-                f"No charge for the inspection. Reply YES to set up a drop-off time, "
-                f"or call us at (480) 914-4144!"
-            )
-        else:
-            summary = estimate.get("summary", "")
-            notes = estimate.get("notes", "")
-            labor_hrs = estimate.get("labor_hours", 0)
-            labor_rate = estimate.get("labor_rate", 150)
-            labor_total = estimate.get("labor_total", 0)
-            parts_low = estimate.get("parts_low", 0)
-            parts_high = estimate.get("parts_high", 0)
-            total_low = estimate.get("total_low", 0)
-            total_high = estimate.get("total_high", 0)
-
-            parts_line = (
-                "Parts: You're supplying â€” no parts charge from us\n"
-                if csp
-                else f"Parts: ${parts_low:,.0f}â€“${parts_high:,.0f}\n"
-            )
-            csp_note = (
-                "\nNote: Since you're supplying your own parts, we use our customer-supplied rate. "
-                "We also can't warranty parts we didn't source â€” just so you know upfront.\n"
-                if csp else ""
-            )
-
-            customer_msg = (
-                f"Hi {name}! Here's what we're looking at for your {year} {make} {model}:\n\n"
-                f"{summary}\n\n"
-                f"Labor: {labor_hrs} hrs @ ${labor_rate}/hr = ${labor_total:,.0f}\n"
-                f"{parts_line}"
-                f"Estimated total: ${total_low:,.0f}â€“${total_high:,.0f}\n"
-                f"{csp_note}"
-                f"{notes}\n\n"
-                f"These are ballpark numbers â€” final price confirmed once we're hands-on. "
-                f"Reply YES to schedule a drop-off, or call us at (480) 914-4144!"
-            )
-
-        await send_sms(from_number, customer_msg)
-
-        # Notify Jaelan
+        await send_sms(
+            from_number,
+            "Thanks, we received your vehicle details. Our team will review the parts and labor "
+            "and send a written estimate for your approval. No work starts without your OK.",
+        )
         if OWNER_PHONE:
-            otu = estimate.get("otu_parts", [])
-            otu_line = f"\nâš  OTU: {', '.join(otu)}" if otu else ""
-            owner_msg = (
-                f"New estimate\n"
-                f"{name} ({from_number})\n"
-                f"{year} {make} {model} â€” {collected.get('engine')}\n"
-                f"Job: {collected.get('complaint')}\n"
-                f"Est: ${estimate.get('total_low', 0):,.0f}â€“${estimate.get('total_high', 0):,.0f}"
-                f"{otu_line}\n"
-                f"Review: https://web-production-94989.up.railway.app/ro/{ro.id}"
+            await send_sms(
+                OWNER_PHONE,
+                f"Estimate intake needs manual pricing review: RO #{ro.id}. "
+                "Verify parts, labor and customer price before sending an approval link.",
             )
-            await send_sms(OWNER_PHONE, owner_msg)
 
     else:
         # Still collecting info â€” send next question

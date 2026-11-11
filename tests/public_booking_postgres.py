@@ -21,7 +21,8 @@ os.environ.pop('PUBLIC_BOOKING_SERVICES', None)
 os.environ['PUBLIC_SERVICE_CATALOG'] = json.dumps({
     'diagnostic': {'price': 10, 'minutes': 60}, 'oil-service': {'price': 20, 'minutes': 60},
     'pre-purchase': {'price': 30, 'price_type': 'starting', 'minutes': 90},
-    'battery-charging': {'price': 40, 'minutes': 30, 'mobile': True}})
+    'battery-charging': {'price': 40, 'minutes': 30, 'mobile': True},
+    'brake-pads-rotors': {'tiers': {'sedan': 300, 'suv': 350, 'pickup': 400}, 'minutes': 120}})
 os.environ['PUBLIC_MOBILE_ZONES'] = json.dumps({'85000': {'fee': 5, 'travel_minutes': 30}})
 from zoneinfo import ZoneInfo
 from fastapi.testclient import TestClient
@@ -107,7 +108,7 @@ class PublicBooking(unittest.TestCase):
         response = self.client.post('/site/book', data=self.form(slot_id), follow_redirects=False)
         self.assertEqual(response.status_code, 303, response.text)
         received = self.client.get('/site/book/received')
-        self.assertIn('Diagnostic appointment', received.text)
+        self.assertIn('Basic in-shop diagnostic screening', received.text)
         self.assertIn('booked', received.text)
         self.assertIn('/status/', received.text)
         self.assertIn('Your reference', received.text)
@@ -132,7 +133,7 @@ class PublicBooking(unittest.TestCase):
             self.assertEqual(appointment.buffer_after_minutes, 60)
             order = db.get(RepairOrder, appointment.repair_order_id)
             self.assertEqual(order.status, 'intake')
-            self.assertTrue(order.concern.startswith('Online booking: Diagnostic appointment on '))
+            self.assertTrue(order.concern.startswith('Online booking: Basic in-shop diagnostic screening on '))
             self.assertIn('Made-up test: shudders from a stop.', order.concern)
             self.assertEqual(order.customer.last_name, 'Sampleton')
             self.assertEqual(db.query(Communication).count(), 0)
@@ -234,6 +235,30 @@ class PublicBooking(unittest.TestCase):
             self.assertNotEqual(self.client.post('/site/book', data=self.form(slot_id), follow_redirects=False).status_code, 303)
         self.assertEqual(self.count(Appointment), 0)
 
+    def test_dead_ends_offer_an_online_request_not_a_call(self):
+        """#109: with forms on, no free times or an unreadable calendar leads to an online request, never 'call us'."""
+        from unittest.mock import patch
+        from app import calendar_feed
+        def alert_text(page, marker):
+            start = page.index(marker)
+            return page[start:page.index('</p>', start)]
+        no_times = self.client.get('/site/book?service=diagnostic').text  # no slots published, no shop-hours times
+        self.assertIn('id="no-times"', no_times)
+        self.assertIn('/site/estimate?about=diagnostic', alert_text(no_times, 'id="no-times"'))
+        self.assertNotIn('tel:', alert_text(no_times, 'id="no-times"'))
+        self.slot(weekday_at(11))
+        with patch.object(calendar_feed, 'feed_urls', return_value=['https://calendar.invalid/x.ics']), \
+             patch.object(calendar_feed, 'upcoming', return_value=None):
+            down = self.client.get('/site/book?service=diagnostic').text
+        notice = alert_text(down, 'Online times are not available right now')
+        self.assertIn('/site/estimate?about=diagnostic', notice)
+        self.assertNotIn('tel:', notice)
+        request_page = self.client.get('/site/estimate?about=diagnostic')
+        self.assertEqual(request_page.status_code, 200)
+        self.assertIn('<form', request_page.text)
+        self.assertIn("I&#39;d like to book", request_page.text)  # the chosen service carries into the request
+        self.assertEqual(self.count(Appointment), 0)
+
     def test_buffer_after_existing_booking_is_respected(self):
         first = weekday_at(11)
         booked = self.slot(first)
@@ -313,8 +338,13 @@ class PublicBooking(unittest.TestCase):
 
     def test_service_without_a_final_price_cannot_be_booked(self):
         slot_id = self.slot(weekday_at(11))
-        self.assertNotIn('A/C performance check', self.client.get('/site/book').text)
-        self.assertIn('Price coming soon', self.client.get('/site/pricing').text)
+        page = self.client.get('/site/book').text
+        # Offered as an online request, never as a bookable time and never as "call us".
+        self.assertIn('/site/estimate?about=ac-check', page)
+        self.assertNotIn('/site/book?service=ac-check', page)
+        self.assertIn('Price on request', self.client.get('/site/pricing').text)
+        request = self.client.get('/site/estimate?about=ac-check').text
+        self.assertIn("I&#39;d like to book: A/C performance check.", request)
         self.assertEqual(self.client.post('/site/book', data=self.form(slot_id, service='ac-check')).status_code, 422)
 
     def saturday_slot(self):
@@ -338,7 +368,8 @@ class PublicBooking(unittest.TestCase):
 
     def test_preview_books_without_any_price(self):
         slot_id = self.slot(weekday_at(11))
-        with patch.dict(os.environ, {'PUBLIC_PREVIEW_MODE': 'true', 'RAILWAY_ENVIRONMENT_NAME': 'preview', 'RAILWAY_PROJECT_ID': 'other'}):
+        with patch.dict(os.environ, {'PUBLIC_PREVIEW_MODE': 'true', 'RAILWAY_ENVIRONMENT_NAME': 'preview', 'RAILWAY_PROJECT_ID': 'other',
+                                     'PUBLIC_SERVICE_CATALOG': '{}'}):
             page = self.client.get('/site/book?service=ac-check').text
             self.assertIn('Price coming soon', page)
             self.assertNotIn('$', page.split('footer')[0])
@@ -348,9 +379,9 @@ class PublicBooking(unittest.TestCase):
 
     def test_preview_switch_cannot_work_in_production(self):
         with patch.dict(os.environ, {'PUBLIC_PREVIEW_MODE': 'true', 'RAILWAY_ENVIRONMENT_NAME': 'production'}):
-            self.assertNotIn('A/C performance check', self.client.get('/site/book').text)
+            self.assertNotIn('/site/book?service=ac-check', self.client.get('/site/book').text)  # requestable, never bookable
         with patch.dict(os.environ, {'PUBLIC_PREVIEW_MODE': 'true', 'RAILWAY_ENVIRONMENT_NAME': 'other', 'RAILWAY_PROJECT_ID': '97a71288-74a7-4405-9789-b74fda7b8939'}):
-            self.assertNotIn('A/C performance check', self.client.get('/site/book').text)
+            self.assertNotIn('/site/book?service=ac-check', self.client.get('/site/book').text)
 
     def test_website_booking_and_request_reach_the_owner_queue(self):
         from app.dispatch_model import DispatchItem
@@ -385,10 +416,59 @@ class PublicBooking(unittest.TestCase):
         self.assertIn('must be contacted manually', response.text)
         self.assertEqual(self.count(DispatchOutbound), 0)
 
+    def test_times_come_from_shop_hours_without_published_slots(self):
+        start = weekday_at(11)
+        auto = f'a0-{int(start.timestamp())}'
+        with patch.dict(os.environ, {'PUBLIC_AUTO_TIMES': json.dumps({'resources': ['bay-1'], 'step_minutes': 30})}):
+            page = self.client.get('/site/book?service=diagnostic').text
+            self.assertIn(f'value="{auto}"', page)
+            self.assertIn(f'value="a0-{int((start + timedelta(minutes=30)).timestamp())}"', page)
+            booked = self.client.post('/site/book', data=self.form(auto), follow_redirects=False)
+            self.assertEqual(booked.status_code, 303, booked.text)
+            page = self.client.get('/site/book?service=diagnostic').text
+            # The hour and the one-hour shop buffer are gone; later times stay open.
+            self.assertNotIn(f'value="{auto}"', page)
+            self.assertNotIn(f'value="a0-{int((start + timedelta(minutes=90)).timestamp())}"', page)
+            self.assertIn(f'value="a0-{int((start + timedelta(hours=2)).timestamp())}"', page)
+            # Forged or misaligned generated times are refused.
+            for forged in (f'a0-{int(start.timestamp()) + 60}', f'a9-{int(start.timestamp())}', 'a0-nope',
+                           f'a0-{int(weekday_at(7).timestamp())}'):
+                self.assertEqual(self.client.post('/site/book', data=self.form(forged, phone='602-555-0188')).status_code, 409, forged)
+        with SessionLocal() as db:
+            appointment = db.query(Appointment).one()
+            self.assertEqual(appointment.resource_id, 'bay-1')
+            self.assertEqual(appointment.starts_at, start.astimezone(timezone.utc))
+        # Turned off: only published slots are offered.
+        self.assertNotIn('value="a0-', self.client.get('/site/book?service=diagnostic').text)
+
+    def test_brake_package_books_at_a_starting_price_for_review(self):
+        from app.dispatch_model import DispatchItem
+        slot_id = self.slot(weekday_at(11), minutes=120)
+        page = self.client.get('/site/book?service=brake-pads-rotors').text
+        self.assertIn('From $300 per axle', page)
+        self.assertIn('Pickup or large SUV · from $400', page)
+        missing = self.client.post('/site/book', data=self.form(slot_id, service='brake-pads-rotors'))
+        self.assertEqual(missing.status_code, 422)
+        self.assertIn('Choose your type of vehicle', missing.text)
+        done = self.client.post('/site/book', data=self.form(slot_id, service='brake-pads-rotors', vehicle_class='suv', axles='2'),
+                                follow_redirects=False)
+        self.assertEqual(done.status_code, 303, done.text)
+        received = self.client.get('/site/book/received').text
+        self.assertIn('From $700 for 2 axles', received)
+        self.assertIn('Final price is confirmed', received)
+        with SessionLocal() as db:
+            appointment = db.query(Appointment).one()
+            self.assertEqual(float(appointment.booked_value), 700)
+            self.assertIn('Confirm VIN parts fitment', appointment.repair_order.concern if hasattr(appointment, 'repair_order') else
+                          db.get(RepairOrder, appointment.repair_order_id).concern)
+            item = db.query(DispatchItem).one()
+            self.assertEqual(item.status, 'needs_owner')  # a starting price is never just FYI
+            self.assertIn('confirm the final price', item.summary)
+
     def test_only_approved_services_can_be_booked(self):
         slot_id = self.slot(weekday_at(11))
         with patch.dict(os.environ, {'PUBLIC_BOOKING_SERVICES': 'oil-service'}):
-            self.assertNotIn('Diagnostic appointment', self.client.get('/site/book').text)
+            self.assertNotIn('Basic in-shop diagnostic screening', self.client.get('/site/book').text)
             response = self.client.post('/site/book', data=self.form(slot_id))
             self.assertEqual(response.status_code, 422)
             self.assertIn('Choose a service', response.text)

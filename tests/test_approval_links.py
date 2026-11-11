@@ -88,7 +88,7 @@ class ApprovalLinkTests(unittest.TestCase):
         self.assertEqual((item.status, item.category, item.customer_phone, item.last_message_id),
                          ("needs_owner", "approval_link", "+16025550100", "AC2"))
         self.assertIn("Hi Pat, your estimate for the 2016 Ford Focus is ready", item.draft_reply)
-        self.assertIn("/sign/ro/made-up-token", item.draft_reply)
+        self.assertIn("/status/made-up-token", item.draft_reply)
         self.assertIn("2 repairs, $448.00", item.summary)
         self.ask()  # a second tap refreshes the same item
         self.assertEqual(len(self.items()), 1)
@@ -107,7 +107,7 @@ class ApprovalLinkTests(unittest.TestCase):
         reply = self.owner_text("o1", f"YES {item.id}")
         sent = reply["customerReply"]
         self.assertEqual((sent["phone"], sent["messageId"]), ("+16025550100", "AC2"))
-        self.assertIn("/sign/ro/made-up-token", sent["text"])
+        self.assertIn("/status/made-up-token", sent["text"])
         self.assertNotIn("customerReply", self.owner_text("o2", f"YES {item.id}"))
 
     def test_stop_all_blocks_the_send(self):
@@ -165,6 +165,19 @@ class ApprovalLinkTests(unittest.TestCase):
             db.add(Customer(id=2, first_name="No", last_name="Car", phone="6025550111"))
             db.commit()
         self.assertIn("No vehicles on file", self.owner.get("/ro/new?customer_id=2").text)
+
+    def test_vehicle_year_placeholder_uses_neutral_greeting(self):
+        with self.Session() as db:
+            db.get(Customer, 1).first_name = "2013 Ford fusion"
+            db.commit()
+        self.ask()
+        item = self.items()[0]
+        self.assertIn("Hi there, your estimate for the 2016 Ford Focus", item.draft_reply)
+        self.assertIn("Review the itemized charges and any applicable tax", item.draft_reply)
+        self.assertIn("verify tax treatment", item.summary)
+        sign_page = TestClient(app).get("/sign/ro/made-up-token").text
+        self.assertIn("Review the itemized charges and any applicable taxes", sign_page)
+        self.assertNotIn("Before tax. Declined items", sign_page)
 
     def test_mobile_numbers(self):
         self.assertEqual(approval_links.mobile("1 (602) 555-0100"), "+16025550100")

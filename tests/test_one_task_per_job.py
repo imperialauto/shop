@@ -45,7 +45,7 @@ class OneTaskPerJob(unittest.TestCase):
             decision = website_alerts.queue_decision(db, db.get(RepairOrder, job), []).id
             db.commit()
         owner, _ = self.sign_in()
-        owner.post(f"/ro/{job}/update-status", data={"status": "in_progress"})
+        owner.post(f"/ro/{job}/update-status", data={"status": "diagnosing"})
         self.assertEqual((self.status(mine), self.status(theirs), self.status(decision)), ("closed", "needs_owner", "needs_owner"))
 
     def test_home_shows_the_same_next_step_as_the_job(self):
