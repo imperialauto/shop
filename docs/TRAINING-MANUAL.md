@@ -3,7 +3,7 @@
 **For employees and for Imperial (the AI).** One manual and one set of steps for both. Pricing rules come from `docs/PRICE-SHEET.md`, and decisions are recorded in `docs/REQUIREMENTS-REGISTER.md`. If this manual disagrees with either of those, they win, and this manual gets fixed.
 Add new chapters here. Don't start a second manual. This file moves into the Knowledge Center (R29) once that exists.
 
-> **Status (Nov 9, 2026):** documentation only. Imperial's live text and draft features do **not** read this file yet. Wiring it into Imperial is tracked under R29.
+> **Status (Nov 11, 2026):** documentation only; operational examples and vendor listings are historical and require fresh verification. Imperial's live text and draft features do **not** read this file yet. Wiring it into Imperial is tracked under R29.
 
 ---
 
@@ -13,13 +13,13 @@ Add new chapters here. Don't start a second manual. This file moves into the Kno
 **Who:** an advisor or the owner. Imperial may prepare it. Complex work, unusual vehicles and price disagreements need the **owner's approval before sending** (price sheet rule 6).
 
 ### Step 1. Identify the exact vehicle (never skip this)
-1. Get the VIN. The fastest source is the scan report: the LAUNCH scanner emails it from `diagnostic_report@cnlaunch.com` to the shop Gmail. The file name is `MAKE_VIN_AllSystemDTC_<date>.pdf`, and it lists the VIN, model, engine, mileage and every code.
+1. Get the VIN. A scan report may provide VIN, model, engine, mileage and DTCs, but confirm the identifiers against the vehicle and repair record. Report sender, filename and included fields vary; never assume all are present.
 2. Check the trim and powertrain from the report, not from the customer's description. Example: the customer said "2013 Fusion", but the report said **Fusion SE Hybrid, 2.0L, 259,572 mi**. A hybrid uses different fuel tank, filler neck and cooling parts, so pricing a regular Fusion would have been wrong.
 3. Write down the mileage and every code, including ones that aren't part of the complaint, so the customer can be told about them separately.
 
 ### Step 2. Look up labor and OEM parts in ALLDATA
 1. Sign in at my.alldata.com (each person uses their own login; never share or store passwords). Go to **Repair**, then enter the VIN or pick it from **Recent Vehicles**.
-2. Check the **Open Recalls** banner and the **Service History**, and note any open recall on the estimate. (Fusion: no open recalls; last service 06/03/2026 at 248,878 mi.)
+2. Review any available recall and service-history information and document the source and date checked. A historical example is not a current recall clearance.
 3. Click **Parts and Labor**, then open each component you're replacing. Write down:
    - The **standard** labor hours. Quote standard hours, not warranty hours (warranty hours are lower and are what Ford pays dealers).
    - Every **Includes / Does not include** note. Anything listed as "not included" is a separate line or must be listed as an exclusion.
@@ -37,10 +37,10 @@ Add new chapters here. Don't start a second manual. This file moves into the Kno
 1. Go to car-part.com. Set the year, make/model and part, enter ZIP **85307**, and search.
 2. Pick the exact trim/engine on the next screen (e.g. **Hybrid SE**). Results are sorted by distance and show grade, stock #, price and phone.
 3. Prefer listings whose trim matches the car (the word "Hybrid", or "VIN U (8th digit)") and Grade A, at the closest yards. Write down the yard, stock #, price and phone.
-4. Fusion result, Nov 9: LKQ-Keystone Phoenix stock P12025, 2014 Fusion Hybrid SE, Grade A, $133.50 (17 mi). Also Matador (M677, $100) and United #1 (5952, call).
+4. Historical Fusion listing, Nov 9 (not confirmed current inventory): LKQ-Keystone Phoenix stock P12025, 2014 Fusion Hybrid SE, Grade A, $133.50 (17 mi). Also Matador (M677, $100) and United #1 (5952, call).
 
 ### Step 3c. Office confirms availability (before the estimate goes out)
-1. Imperial (or the advisor) adds a **[PARTS CHECK]** task to the job's Quo conversation with the yards, stock numbers, prices, phone numbers and the part number to quote.
+1. The advisor records a **[PARTS CHECK]** follow-up in the approved job/task workflow (or Quo if supported) with the yards, stock numbers, prices, phone numbers and the part number to quote.
 2. The office (Mom) calls and confirms: the part is in stock and already off the donor car, it's the right trim (e.g. hybrid), its condition, the price, the warranty and the pickup time. She writes the result in the task.
 3. **Nothing is ordered** until the owner approves the estimate.
 
@@ -49,11 +49,11 @@ Add new chapters here. Don't start a second manual. This file moves into the Kno
 |---|---|
 | Labor | ALLDATA standard hours × the current rate: **$150** shop, $175 diesel, **$165** if the customer supplies the parts |
 | Parts | Supplier price. No markup has been approved (price sheet), so get the owner's OK before adding one |
-| Tax | **9.2% on parts only.** Labor is not taxed (R12) |
+| Tax | Use the currently approved tax configuration; 9.2% parts-only is a documented working reference (R12), pending accountant verification of labor, sublet and shop-fee treatment |
 | Diagnostics | Further testing by approval: $150 advanced in-shop diagnostic. Describe each test in plain words |
 | Exclusions | Everything ALLDATA says is "not included", plus anything not yet diagnosed |
 | Customer-supplied parts | Labor at $165/hr, no warranty on their parts, written authorization |
-| Deposit | 50% on jobs over $1,000 (check with the owner before quoting new terms) |
+| Deposit | Do not quote a deposit percentage or threshold unless confirmed in current approved payment terms |
 Label every price **confirmed current**, **working promotional**, **historical reference** or **custom quote required**.
 
 ### Step 5. Timeline and communication
@@ -61,7 +61,7 @@ Label every price **confirmed current**, **working promotional**, **historical r
 - Recommend cheap diagnostics first on high-mileage cars (e.g. misfire testing before a tank), so the customer doesn't buy parts for an engine that isn't worth fixing.
 - Give the parts arrival date from the supplier and the labor time from ALLDATA, then add the shop's actual schedule.
 - Promise a regular update time (for example, a daily text by 5 PM) and keep it. The Fusion complaint on Nov 9 was about missed updates, not the repair.
-- Every customer message waits for the owner's approval. Before sending, re-read the conversation in Quo so nothing is repeated or out of date.
+- Authorized advisors may send standard estimates under the current price sheet; complex repairs, scope changes and material price discrepancies require owner approval before sending. Customer messaging must follow current channel permissions and approved workflows. Before sending, re-read the Quo conversation to avoid duplicate or outdated messages.
 
 ### Worked example: 2013 Fusion SE Hybrid fuel leak plus misfire (Nov 9, 2026)
 | Item | Source | Value |
