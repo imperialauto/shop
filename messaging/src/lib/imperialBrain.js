@@ -64,9 +64,18 @@ async function respondDevelopmentWork({ question, messageId, submitDevelopmentWo
       if (!result?.recorded || !Number.isSafeInteger(result.id) || result.id < 1) throw Error("Unverified capture");
       const verb = result.duplicate ? "Already saved" : "Saved";
       const status = result.status === "needs_approval"
-        ? "Needs approval before any action."
-        : "Queued for a future worker; no AI coding run started.";
-      return `${verb} development job #${result.id} (${result.projectKey}). ${status} Worker not connected yet.`;
+        ? "Needs owner approval before any action."
+        : result.status === "running"
+          ? "A coding worker claimed this job; completion is NOT verified."
+          : result.status === "review_needed"
+            ? "A draft PR is ready for review; not merged or deployed."
+            : result.status === "blocked" || result.status === "failed"
+              ? "Work is blocked or failed; check the recorded next action."
+              : "Queued; no AI coding run started.";
+      const worker = result.workerConfigured
+        ? "Free worker configured, but a run is confirmed only after it claims the job."
+        : "Free coding worker is not activated.";
+      return `${verb} development job #${result.id} (${result.projectKey}). ${status} ${worker}`.slice(0, 900);
     } catch (_) {
       return "I couldn't confirm the development job was saved. No coding work has been started.";
     }
@@ -78,10 +87,18 @@ async function respondDevelopmentWork({ question, messageId, submitDevelopmentWo
     const result = await listDevelopmentWork(8);
     if (!Array.isArray(result?.jobs)) throw Error("Invalid response");
     if (!result.jobs.length) return "No development jobs are saved in Imperial's new work queue. GitHub tasks are separate.";
+    const active = result.jobs.some(j => j.status === "running");
     return [
-      "Imperial development work (NOT executing yet):",
-      ...result.jobs.slice(0, 5).map(j => `#${j.id} ${j.projectKey}: ${j.status}`),
-      "Coding worker is not connected; GitHub PR progress is tracked separately.",
+      active ? "Imperial development work (running job claimed):"
+        : "Imperial development work (no active execution confirmed):",
+      ...result.jobs.slice(0, 5).map(j => {
+        const link = j.status === "review_needed" && /^https:\/\/github\.com\/imperialauto\/shop\/pull\/\d+$/.test(j.resultUrl || "")
+          ? ` ${j.resultUrl}` : "";
+        return `#${j.id} ${j.projectKey}: ${j.status}${link}`;
+      }),
+      result.workerConfigured
+        ? "Free worker configured. Scheduled runs and PR tests are verified separately."
+        : "Free coding worker not activated. GitHub PR progress is separate.",
     ].join("\n").slice(0, 900);
   } catch (_) {
     return "I can't verify the development work queue right now. I have not marked anything complete.";
