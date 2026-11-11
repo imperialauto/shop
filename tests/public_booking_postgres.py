@@ -235,6 +235,30 @@ class PublicBooking(unittest.TestCase):
             self.assertNotEqual(self.client.post('/site/book', data=self.form(slot_id), follow_redirects=False).status_code, 303)
         self.assertEqual(self.count(Appointment), 0)
 
+    def test_dead_ends_offer_an_online_request_not_a_call(self):
+        """#109: with forms on, no free times or an unreadable calendar leads to an online request, never 'call us'."""
+        from unittest.mock import patch
+        from app import calendar_feed
+        def alert_text(page, marker):
+            start = page.index(marker)
+            return page[start:page.index('</p>', start)]
+        no_times = self.client.get('/site/book?service=diagnostic').text  # no slots published, no shop-hours times
+        self.assertIn('id="no-times"', no_times)
+        self.assertIn('/site/estimate?about=diagnostic', alert_text(no_times, 'id="no-times"'))
+        self.assertNotIn('tel:', alert_text(no_times, 'id="no-times"'))
+        self.slot(weekday_at(11))
+        with patch.object(calendar_feed, 'feed_urls', return_value=['https://calendar.invalid/x.ics']), \
+             patch.object(calendar_feed, 'upcoming', return_value=None):
+            down = self.client.get('/site/book?service=diagnostic').text
+        notice = alert_text(down, 'Online times are not available right now')
+        self.assertIn('/site/estimate?about=diagnostic', notice)
+        self.assertNotIn('tel:', notice)
+        request_page = self.client.get('/site/estimate?about=diagnostic')
+        self.assertEqual(request_page.status_code, 200)
+        self.assertIn('<form', request_page.text)
+        self.assertIn("I&#39;d like to book", request_page.text)  # the chosen service carries into the request
+        self.assertEqual(self.count(Appointment), 0)
+
     def test_buffer_after_existing_booking_is_respected(self):
         first = weekday_at(11)
         booked = self.slot(first)
