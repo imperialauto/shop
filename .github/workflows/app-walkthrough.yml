@@ -1,6 +1,13 @@
 name: App walkthrough
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'tests/e2e/**'
+      - 'tests/public_booking_postgres.py'
+      - '.github/workflows/app-walkthrough.yml'
   push:
     branches: ['claude/**']
 jobs:
