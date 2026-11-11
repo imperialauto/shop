@@ -4,6 +4,7 @@ A communication item may be completed without resolving a lead. Only a
 verified confirmed appointment or a documented explicit customer decision
 can end follow-up. This module has no external network or SMS effects.
 """
+import hashlib
 import os
 import re
 from datetime import datetime, timedelta, timezone
@@ -216,10 +217,10 @@ def reopen_cancelled_booking(db: Session, appointment_id: int,
 
 
 def due_lead_digest(db: Session, now: datetime) -> tuple[str, str] | None:
-    """At most one owner summary per 30-minute window; no customer text.
+    """Send only on meaningful lead changes, or once per day for unchanged work.
 
-    All unresolved records remain eligible regardless of age (including day 4+).
-    Urgent leads also qualify outside regular hours.
+    Open leads are never auto-closed by this digest. Urgent new/changed leads
+    still qualify outside regular hours. No customer text is created.
     """
     if not enabled():
         return None
@@ -240,8 +241,19 @@ def due_lead_digest(db: Session, now: datetime) -> tuple[str, str] | None:
         0 if x.urgency == "safety" else 1 if x.urgency == "urgent" else 2,
         aware(x.next_action_due_at),
     ))
-    half = "00" if local.minute < 30 else "30"
-    key = f"leads:{local:%Y%m%d%H}{half}"
+    # The old half-hour key sent the identical owner message every 30 min.
+    # Persistently dedupe using the date and *substantive state*, including
+    # incoming-message ID and lead ownership/next action. The date permits one
+    # fresh daily summary even when nothing changed; new activity changes the
+    # fingerprint immediately. Do NOT include poll time or a due timer, because
+    # their movement alone is not a new customer/owner action.
+    state = tuple((
+        lead.id, lead.status, lead.urgency, lead.category,
+        lead.last_event_id or "", lead.assigned_user_id,
+        lead.next_action or "",
+    ) for lead in due)
+    fingerprint = hashlib.sha256(repr(state).encode("utf-8")).hexdigest()[:20]
+    key = f"leads:{local:%Y%m%d}:{fingerprint}"
     preview = "; ".join(
         f"#{lead.id} {lead.category} ({lead.status}) {lead.customer_phone or 'unknown'}"
         for lead in due[:3]
