@@ -30,10 +30,10 @@ def _check_messaging(db: Session, now: datetime) -> dict:
     if last is None or now - last > MESSAGING_SILENT_AFTER:
         return {"name": "Quo texts and calls", "ok": False,
                 "detail": "The messaging service hasn't checked in" + (f" since {last.strftime('%-I:%M %p')} UTC" if last else "") + ".",
-                "fix": "New texts may not be reaching the queue. Tell Claude; Quo itself still has everything."}
+                "fix": "Review new customer messages in Quo and check the messaging-service health in Railway."}
     if (row.consecutive_failures or 0) >= 3:
         return {"name": "Quo texts and calls", "ok": False, "detail": f"{row.consecutive_failures} checks in a row had errors.",
-                "fix": "Tell Claude so it can look at the messaging logs."}
+                "fix": "Review the messaging-service logs in Railway and check for missed customer intake."}
     return {"name": "Quo texts and calls", "ok": True, "detail": "Checking in every few minutes."}
 
 
@@ -42,7 +42,7 @@ def _check_backup(db: Session, now: datetime) -> dict:
     last = _utc(row.last_success_at) if row else None
     if last is None or (row.consecutive_failures or 0) >= 1 or now - last > BACKUP_STALE_AFTER:
         return {"name": "Nightly backup", "ok": False, "detail": "Last night's backup didn't finish.",
-                "fix": "Your data is still there. Tell Claude so the backup can be checked."}
+                "fix": "Review the backup job, verify the latest usable backup, and delay database changes until resolved."}
     return {"name": "Nightly backup", "ok": True, "detail": f"Last good copy {last.strftime('%b %-d')}."}
 
 
@@ -52,7 +52,7 @@ def _check_drafts(db: Session, now: datetime) -> dict:
     if waiting:
         return {"name": "AI reply drafts", "ok": False,
                 "detail": f"{len(waiting)} customer message{'s are' if len(waiting) != 1 else ' is'} still waiting for a draft.",
-                "fix": "You can still reply in Quo or tell me what to say by text. Tell Claude if this stays."}
+                "fix": "Reply manually in Quo if needed, then check the AI draft worker and retry only after reviewing the thread."}
     return {"name": "AI reply drafts", "ok": True, "detail": "Drafts are arriving."}
 
 
@@ -105,7 +105,7 @@ def report(db: Session, now: datetime | None = None) -> dict:
         except Exception:  # a broken check is itself a problem worth showing
             db.rollback()
             checks.append({"name": check.__name__.replace("_check_", "").capitalize(), "ok": False,
-                           "detail": "This check couldn't run.", "fix": "Tell Claude."})
+                           "detail": "This check couldn't run.", "fix": "Review the health-check and database logs before trusting the status."})
     try:
         names = _check_names(db)
         if names:
