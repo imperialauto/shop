@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Use the **vehicle and repair Claude is already researching in an authenticated ALLDATA browser session** to prove the customer-to-shop workflow. A passing synthetic website booking test alone does not prove that the actual repair estimate is correct or that the owner avoids manual reentry.
+Use a documented, authorized ALLDATA research case with verified labor evidence to prove the customer-to-shop workflow. Do not assume a prior browser session is still available. A completed synthetic booking and displayed reference alone does not prove that the actual repair estimate is correct or that the owner avoids manual reentry.
 
 Do **not** assume an ALLDATA browser login is an automated ALLDATA integration. Record separately what the staff member manually researched versus what Imperial itself retrieved, calculated, populated or sent.
 
@@ -12,7 +12,7 @@ Do **not** assume an ALLDATA browser login is an automated ALLDATA integration. 
 
 ## Test case selection and price evidence
 
-Use the same vehicle/job Claude currently has open in ALLDATA. Avoid inventing a new sample merely to get a green result.
+Prefer a previously documented, verifiable vehicle/job case; independently recheck labor, parts, availability and scope before testing. Use synthetic customer identifiers and isolated QA records, not production customer data.
 
 Record these facts **before** generating any estimate:
 
@@ -34,6 +34,13 @@ Do not reproduce or upload an ALLDATA manual. Retain only necessary labor-time f
 
 Use `docs/PRICE-SHEET.md` and current editable business settings. Current reference hourly rates: shop $150, mobile $165, diesel $175, CSPR shop $165; mobile service call $75 **once**, plus a separately verified travel charge. No approved universal parts markup. Never automatically stack hourly labor onto a labor-included flat package. Verify the correct scope, shop fee, parts tax, and whether a final price or only a starting estimate is defensible.
 
+## Known owner-observed UX issues to retest (not yet independently verified)
+
+- After selecting a booking time, the dropdowns remain open and the form continues as one long page instead of advancing to the next step. Test progressive disclosure, focus movement, back navigation and mobile scrolling; record clicks and completion time.
+- From the customer status link, the owner reported no obvious route back to the prior page or homepage. Verify visible Back and Home navigation without exposing private data or breaking tokenized access.
+- A synthetic booking was completed and a reference displayed in the preview. This is owner-observed evidence only, not proof that backend persistence, pricing, scheduling, notifications or ALLDATA integration passed.
+- Verify how customers retrieve or locate their booking reference when revisiting status lookup.
+
 ## Acceptance test: actual customer-to-estimate workflow
 
 Run once at desktop width and once at phone width. Record every URL, click, duplicate field entry, manual handoff and failed step.
@@ -42,7 +49,7 @@ Run once at desktop width and once at phone width. Record every URL, click, dupl
 |---|---|---|
 | 1. Service entry | Open `/site/`, select the relevant service | Correct self-service route; **not** an unavoidable Call button |
 | 2. Customer intake | If price is known, use `/site/book`; if vehicle-specific/uncertain, use `/site/estimate` | Vehicle, symptom, location, customer/contact method collected once; VIN optional where valid |
-| 3. Confirmation | Submit the synthetic request | One reference and confirmation; an estimate must clearly say **not yet booked** |
+| 3. Confirmation | Submit the synthetic request | One reference and confirmation; distinguish confirmed booking from estimate request; verify reference retrieval guidance and next action |
 | 4. Persistence | Refresh confirmation and open `/site/status` | Reference persists; authorized reference/phone lookup works; private notes not exposed |
 | 5. Office intake | Open `/dashboard` or the customer/RO view as a permitted staff login | Exactly one customer, one vehicle, one job/lead and one actionable owner/advisor task; no retyping intake |
 | 6. Labor verification | Use the existing ALLDATA browser case | Labor operation/hours match the saved test evidence; note whether entered manually or integrated automatically |
@@ -51,7 +58,7 @@ Run once at desktop width and once at phone width. Record every URL, click, dupl
 | 9. Authorization | Apply the standard-vs-complex estimating permission rules | Complex, unverified or changed scope requires owner approval; no customer text automatically sent |
 | 10. Customer approval | In QA only, open the authorized test `/sign/ro/{token}` page for pending line items | Line-by-line approve/decline, drawn signature, non-cached private page; no real customer delivery |
 | 11. Scheduling | If service is bookable, select a test slot, then inspect `/appointments/` | Shop hours, buffer, mobile travel, linked-calendar conflicts and duplicate submissions enforced |
-| 12. Status & closeout | Open test tracking link and relevant RO/job screen | Consistent status and authorized next action; no staff-only notes on customer page |
+| 12. Status & closeout | Open test tracking link and relevant RO/job screen | Consistent status and authorized next action; visible Back/Home navigation; no staff-only notes on customer page |
 
 ### Required negative tests
 
@@ -89,12 +96,12 @@ For each guide step capture: URL/screen name, action performed, screenshot with 
 - Test case / ALLDATA reference: **NOT RECORDED**
 - QA URL / exact commit: **NOT RECORDED**
 - Approved parts/rate calculation: **NOT RECORDED**
-- Customer flow result: **NOT RUN**
+- Customer flow result: **OWNER REPORTED synthetic preview booking completed and reference displayed; full independent walkthrough NOT RUN**
 - ALLDATA-to-estimate result: **NOT RUN**
 - Approval and scheduling result: **NOT RUN**
 - Total steps, duplicated entries and manual handoffs: **NOT MEASURED**
 - Phone and desktop evidence locations: **NOT RECORDED**
-- Gaps filed, code PRs and linked issues: **NOT RECORDED**
+- Gaps filed, code PRs and linked issues: **Owner-reported booking auto-advance and status-page navigation defects; issue/PR links NOT RECORDED**
 - Owner acceptance: **NOT REQUESTED**
 
 **Do not mark R02/R03/R10/R37/R38 `verified` until the corresponding test evidence exists.**
