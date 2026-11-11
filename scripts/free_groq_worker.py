@@ -64,9 +64,9 @@ def safe_source_content(source):
     # substrings (redaction would invalidate the proposed patch).
     return (isinstance(source, str) and len(source) < MAX_FILE_CHARS
             and not PRIVATE_REQUEST.search(source)
-            and not re.search(r"(?i)\\b(?:secret|credential|private|"
+            and not re.search(r"(?i)\b(?:secret|credential|private|"
                               r"customer[_ -]?(?:id|phone|name|email)|"
-                              r"access[_ -]?code|api[_ -]?key|password|bearer)\\b", source))
+                              r"access[_ -]?code|api[_ -]?key|password|bearer)\b", source))
 
 
 def safe_replacement(replacement):
