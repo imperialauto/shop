@@ -372,6 +372,9 @@ def _next_visit(db: Session, ro):
 def public_status(request: Request, token: str, db: Session = Depends(get_db)):
     from app.routes.live import phoenix_label
     ro = _status_order(db, token)
+    # A private status URL already authorizes read access. Keep this reference
+    # accessible after navigating away in the same signed browser session.
+    request.session["site_recent_status"] = {"ref": f"WEB-{ro.id}", "token": ro.public_token}
     visit = _next_visit(db, ro)
     return templates.TemplateResponse("public_status.html", {
         "request": request, "ro": ro, "reference": f"WEB-{ro.id}",
