@@ -99,6 +99,12 @@ class NextActionTests(unittest.TestCase):
         self.assertTrue(self.step()["title"].startswith("Waiting on the customer's approval"))
         self.assertIn("send was recorded", self.step()["detail"])
 
+    def test_no_charge_completed_job_requires_office_review(self):
+        self.change(lambda db, ro: setattr(ro, "status", "complete"))
+        self.assertEqual(self.step()["title"], "Review completed job with no charges")
+        self.assertEqual(self.step()["button"], "Review charges")
+        self.assertIsNone(self.step("tech"))  # tech is finished; office decides the charge/closeout
+
     def test_prepaid_invoice_does_not_mark_unfinished_vehicle_ready_for_pickup(self):
         self.change(lambda db, ro: (
             db.add(LineItem(repair_order_id=5, description="Repair", unit_price=150,
