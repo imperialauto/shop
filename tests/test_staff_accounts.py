@@ -242,6 +242,11 @@ class StaffLoginTests(unittest.TestCase):
         self.assertEqual(crew.post(f"/ro/{job}/update-status", data={"status": "made-up"}).status_code, 422)
         self.assertEqual(crew.post(f"/ro/{job}/update-status", data={"status": "delivered"}).status_code, 403)
         owner, _ = self.sign_in()
+        # Even the owner cannot jump directly from intake to delivered.
+        self.assertEqual(owner.post(f"/ro/{job}/update-status", data={"status": "delivered"}).status_code, 409)
+        with self.Session() as db:
+            db.get(__import__("app.models", fromlist=["RepairOrder"]).RepairOrder, job).status = "complete"
+            db.commit()
         self.assertEqual(owner.post(f"/ro/{job}/update-status", data={"status": "delivered"}).status_code, 302)
 
     def test_owner_assigns_and_tech_cannot(self):
