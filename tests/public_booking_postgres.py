@@ -466,7 +466,7 @@ class PublicBooking(unittest.TestCase):
             self.assertIn('confirm the final price', item.summary)
 
     def test_only_approved_services_can_be_booked(self):
-        slot_id = self.slot(weekday_at(11))
+        slot_id = self.slot(weekday_at(11), minutes=90)
         with patch.dict(os.environ, {'PUBLIC_BOOKING_SERVICES': 'pre-purchase,oil-service'}):
             self.assertNotIn('Basic in-shop diagnostic screening', self.client.get('/site/book').text)
             response = self.client.post('/site/book', data=self.form(slot_id))
