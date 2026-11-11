@@ -315,7 +315,7 @@ def flows(page, device):
         visitor.locator("#booking-change-time").click()
         assert visitor.locator("#booking-time-choices").is_visible(), "cannot change time"
         assert visitor.locator("#booking-next-step").is_hidden(), "details visible while changing time"
-        visitor.locator("input[name=slot_id]:checked").click(force=True)
+        visitor.locator("label.choice", has=visitor.locator("input[name=slot_id]:checked")).first.click()
         assert visitor.locator("#booking-next-step").is_visible(), "reselecting the same time did not advance"
         visitor.fill("[name=year]", "2016")
         visitor.fill("[name=make]", "Ford")
