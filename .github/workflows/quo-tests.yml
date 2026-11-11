@@ -27,7 +27,7 @@ jobs:
       - name: Project status natural-language tests (synthetic GitHub data)
         run: node --test messaging/tests/projectStatus.test.js
       - name: Imperial brain source routing tests (synthetic records)
-        run: node --test messaging/tests/imperialBrain.test.js
+        run: node --test messaging/tests/imperialBrain.test.js messaging/tests/devWorkIntake.test.js
       - name: Call and SMS draft revalidation (synthetic Quo)
         run: node --test messaging/tests/replyContext.test.js
       - name: Run isolated Quo, Imperial tasks and lead lifecycle tests

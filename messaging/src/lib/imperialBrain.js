@@ -22,6 +22,72 @@ function shopTasksIntent(question) {
     /\bwhat (?:should|do) (?:i|we) (?:work on|do|need to do) today\b/.test(q);
 }
 
+// Explicit owner requests only. This parser is not a general permission to
+// execute tools or delegate customer operations. Unclear projects are refused.
+function developmentWorkIntent(question) {
+  const q = String(question || "").trim().replace(/^(?:hey\s+)?imperial[,!:\s]+/i, "").trim();
+  const match = /^(?:(?:please\s+)?(?:continue|resume|start)\s+(?:working|work)\s+on|(?:please\s+)?work\s+on|(?:please\s+)?fix)\s+(.{4,500})$/i.exec(q);
+  if (!match) return null;
+  const instruction = match[1].replace(/[.!]+$/, "").trim();
+  if (!instruction || instruction.length < 4) return null;
+  let projectKey = null;
+  if (/\b(website|web\s?site|booking|landing page|public site|preview|domain)\b/i.test(instruction)) projectKey = "website";
+  else if (/\b(finance|financial|reconcil|ledger|accounting)\b/i.test(instruction)) projectKey = "finance";
+  else if (/\b(integrations?|connectors?|agent api)\b/i.test(instruction)) projectKey = "integrations";
+  else if (/\b(dashboard|operations|knowledge hub|imperial assistant|project tasks|task hub|pull request|pr\s*#?\d+|github)\b/i.test(instruction)) projectKey = "operations";
+  return { instruction: q.slice(0, 1600), projectKey };
+}
+
+function developmentWorkStatusIntent(question) {
+  const q = String(question || "").toLowerCase().trim();
+  return /\b(?:development|coding|dev\s+work|agent\s+work)\b/.test(q) &&
+    /\b(?:status|progress|running|jobs|work queue|what happened|updates?)\b/.test(q);
+}
+
+async function respondDevelopmentWork({ question, messageId, submitDevelopmentWork, listDevelopmentWork }) {
+  const intent = developmentWorkIntent(question);
+  if (!intent && !developmentWorkStatusIntent(question)) return null;
+  if (process.env.DEV_COORDINATOR_CAPTURE_ENABLED !== "true") {
+    return "Imperial's development work queue is not activated. I have NOT started or queued coding work.";
+  }
+  if (intent) {
+    if (!intent.projectKey) {
+      return "Which project is this for: website, operations, finance or integrations? Nothing was queued.";
+    }
+    if (!messageId || typeof submitDevelopmentWork !== "function") {
+      return "I cannot verify the owner command or task connection. Nothing was confirmed saved or started.";
+    }
+    try {
+      const result = await submitDevelopmentWork({
+        messageId, projectKey: intent.projectKey, instruction: intent.instruction,
+      });
+      if (!result?.recorded || !Number.isSafeInteger(result.id) || result.id < 1) throw Error("Unverified capture");
+      const verb = result.duplicate ? "Already saved" : "Saved";
+      const status = result.status === "needs_approval"
+        ? "Needs approval before any action."
+        : "Queued for a future worker; no AI coding run started.";
+      return `${verb} development job #${result.id} (${result.projectKey}). ${status} Worker not connected yet.`;
+    } catch (_) {
+      return "I couldn't confirm the development job was saved. No coding work has been started.";
+    }
+  }
+  if (typeof listDevelopmentWork !== "function") {
+    return "Development queue status is not connected. I cannot verify any active coding jobs.";
+  }
+  try {
+    const result = await listDevelopmentWork(8);
+    if (!Array.isArray(result?.jobs)) throw Error("Invalid response");
+    if (!result.jobs.length) return "No development jobs are saved in Imperial's new work queue. GitHub tasks are separate.";
+    return [
+      "Imperial development work (NOT executing yet):",
+      ...result.jobs.slice(0, 5).map(j => `#${j.id} ${j.projectKey}: ${j.status}`),
+      "Coding worker is not connected; GitHub PR progress is tracked separately.",
+    ].join("\n").slice(0, 900);
+  } catch (_) {
+    return "I can't verify the development work queue right now. I have not marked anything complete.";
+  }
+}
+
 function taskWriteIntent(question) {
   const q = String(question || "").toLowerCase();
   return /\b(add|create|make|assign|delegate|put|save)\b.{0,65}\b(task|to.?do|checklist|reminder|my list)\b/.test(q) ||
@@ -107,6 +173,7 @@ async function answerImperialBrain({
   question, snapshot, history = [], projectAnswer = answerProjectQuestion,
   developmentAnswer = answerDevelopmentTasks, capabilityAnswer = answerCapabilityQuestion,
   messageId = null, taskWriter = null, taskLister = null,
+  developmentWriter = null, developmentLister = null,
 } = {}) {
   if (process.env.IMPERIAL_BRAIN_ENABLED !== "true") return null;
   const q = String(question || "").trim();
@@ -116,6 +183,13 @@ async function answerImperialBrain({
   if (/\b(?:add|update|record|save|attach|put|quote|prepare)\b.{0,80}\b(?:estimate|repair order|ro\s*#?|quote|approval)\b/i.test(q)
       || /\b(?:RO|job)\s*#?\s*\d+\b.{0,60}\b(?:part price|customer price|labor|fitment)\b/i.test(q))
     return null;
+  // Keep the production SMS quote/estimate safety guard above this router.
+  const developmentResponse = await respondDevelopmentWork({
+    question: q, messageId,
+    submitDevelopmentWork: developmentWriter,
+    listDevelopmentWork: developmentLister,
+  });
+  if (developmentResponse) return developmentResponse;
   const capability = capabilityAnswer({
     question: q, snapshot, projectStatusConfigured: !!process.env.PROJECT_STATUS_GITHUB_TOKEN,
   });
@@ -147,6 +221,7 @@ async function answerImperialBrain({
 }
 
 module.exports = {
-  developmentTasksIntent, shopTasksIntent, taskWriteIntent,
+  developmentTasksIntent, developmentWorkIntent, developmentWorkStatusIntent, respondDevelopmentWork,
+  shopTasksIntent, taskWriteIntent,
   shopTaskSummary, taskCaptureTitle, inferredProjectKey, internalTaskSummary, answerImperialBrain,
 };
