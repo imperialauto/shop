@@ -76,7 +76,7 @@ test("unscoped, unauthorized or failed job requests never report completion", as
       question:"Continue working on the website and deploy it",messageId:"owner-fixture",
       developmentWriter:async()=>({recorded:true,duplicate:false,id:101,projectKey:"website",status:"needs_approval"}),
     });
-    assert.match(review, /Needs approval/);
+    assert.match(review, /Needs owner approval/);
   });
 });
 
@@ -86,10 +86,43 @@ test("development job status distinguishes saved items from active executions", 
       question:"What's the development work status?",
       developmentLister:async()=>({jobs:[{id:19,projectKey:"website",status:"queued"}],workerConnected:false}),
     });
-    assert.match(reply, /NOT executing yet/);
+    assert.match(reply, /no active execution confirmed/);
     assert.match(reply, /#19 website: queued/);
-    assert.match(reply, /not connected/);
+    assert.match(reply, /not activated/);
     const missing=await answerImperialBrain({question:"What's the development work status?"});
     assert.match(missing, /not connected/);
+  });
+});
+
+test("configured free worker status is accurate for claimed and review-needed jobs", async () => {
+  await withFlags({IMPERIAL_BRAIN_ENABLED:"true", DEV_COORDINATOR_CAPTURE_ENABLED:"true"}, async () => {
+    const running = await answerImperialBrain({
+      question:"What's the development work status?",
+      developmentLister:async()=>({
+        workerConfigured:true,
+        jobs:[{id:42, projectKey:"website", status:"running"}],
+      }),
+    });
+    assert.match(running, /running job claimed/);
+    assert.match(running, /#42 website: running/);
+    assert.doesNotMatch(running, /not activated/);
+    const review = await answerImperialBrain({
+      question:"What's the development work status?",
+      developmentLister:async()=>({
+        workerConfigured:true,
+        jobs:[{id:42, projectKey:"website", status:"review_needed",
+          resultUrl:"https://github.com/imperialauto/shop/pull/1234"}],
+      }),
+    });
+    assert.match(review, /no active execution confirmed/);
+    assert.match(review, /review_needed/);
+    assert.match(review, /github.com\/imperialauto\/shop\/pull\/1234/);
+    const save = await answerImperialBrain({
+      question:"Imperial, continue working on the website", messageId:"owner-200",
+      developmentWriter:async()=>({recorded:true,id:43,projectKey:"website",
+        status:"queued",workerConfigured:true}),
+    });
+    assert.match(save,/Queued; no AI coding run started/);
+    assert.match(save,/Free worker configured/);
   });
 });
