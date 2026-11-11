@@ -7,7 +7,7 @@ jobs:
   walkthrough:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     services:
       postgres:
         image: postgres:16
@@ -50,15 +50,6 @@ jobs:
       - name: Show server errors
         if: always()
         run: grep -nE "Traceback|Error|error" server.log | head -40 || true
-      - name: Save results to a review branch
-        if: always()
-        run: |
-          cp server.log walkthrough-output/ || true
-          cd walkthrough-output
-          git init -q && git checkout -q -b walkthrough-results
-          git -c user.name=walkthrough -c user.email=walkthrough@example.com add -A
-          git -c user.name=walkthrough -c user.email=walkthrough@example.com commit -qm "Walkthrough $GITHUB_SHA"
-          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" walkthrough-results
       - uses: actions/upload-artifact@v4
         if: always()
         with:
