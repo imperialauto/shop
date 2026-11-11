@@ -247,11 +247,11 @@ def due_lead_digest(db: Session, now: datetime) -> tuple[str, str] | None:
     # fresh daily summary even when nothing changed; new activity changes the
     # fingerprint immediately. Do NOT include poll time or a due timer, because
     # their movement alone is not a new customer/owner action.
-    state = tuple((
+    state = tuple(sorted((
         lead.id, lead.status, lead.urgency, lead.category,
         lead.last_event_id or "", lead.assigned_user_id,
         lead.next_action or "",
-    ) for lead in due)
+    ) for lead in due))
     fingerprint = hashlib.sha256(repr(state).encode("utf-8")).hexdigest()[:20]
     key = f"leads:{local:%Y%m%d}:{fingerprint}"
     preview = "; ".join(
