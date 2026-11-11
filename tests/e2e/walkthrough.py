@@ -154,6 +154,8 @@ def flows(page, device):
         link = page.locator("a[href*='/status/']")
         assert link.count(), "no customer status link on the RO"
         page.goto(link.first.get_attribute("href") if link.first.get_attribute("href").startswith("http") else BASE + link.first.get_attribute("href"))
+        assert page.locator("nav.status-navigation a[href='/site/']").count() == 1, "no home link from status"
+        assert page.locator("nav.status-navigation a[href='/site/status']").count() == 1, "no other-status lookup link"
         measure(page, "public-status", device, 200, [])
 
     def wrong_password():
@@ -307,6 +309,14 @@ def flows(page, device):
         visitor.click(".hero a[href='/site/book']")
         visitor.click("a[href='/site/book?service=diagnostic']")
         visitor.locator("label.choice", has=visitor.locator("input[name=slot_id]")).first.click()
+        assert visitor.locator("#booking-time-choices").is_hidden(), "times stayed expanded"
+        assert visitor.locator("#booking-time-summary").is_visible(), "no selected-time summary"
+        assert visitor.locator("#booking-next-step").is_visible(), "customer details did not advance"
+        visitor.locator("#booking-change-time").click()
+        assert visitor.locator("#booking-time-choices").is_visible(), "cannot change time"
+        assert visitor.locator("#booking-next-step").is_hidden(), "details visible while changing time"
+        visitor.locator("label.choice", has=visitor.locator("input[name=slot_id]:checked")).first.click()
+        assert visitor.locator("#booking-next-step").is_visible(), "reselecting the same time did not advance"
         visitor.fill("[name=year]", "2016")
         visitor.fill("[name=make]", "Ford")
         visitor.fill("[name=model]", "Focus")
@@ -405,9 +415,11 @@ def flows(page, device):
         visitor.click("a[href='/site/book?service=brake-pads-rotors']")
         body = visitor.inner_text("body")
         assert "From $300 per axle" in body and "Final price confirmed before work" in body, body[:400]
+        # The progressive form reveals vehicle package choices after selecting a time.
+        visitor.locator("details[open] label.choice", has=visitor.locator("input[name=slot_id]")).last.click()
+        assert visitor.locator("#booking-next-step").is_visible(), "package step did not advance"
         visitor.locator("label.choice", has=visitor.locator("input[value=pickup]")).click()
         visitor.select_option("#axles", "2")
-        visitor.locator("details[open] label.choice", has=visitor.locator("input[name=slot_id]")).last.click()
         visitor.fill("[name=year]", "2019")
         visitor.fill("[name=make]", "Ram")
         visitor.fill("[name=model]", "1500")
