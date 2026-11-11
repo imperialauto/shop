@@ -109,6 +109,8 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
       messageId,
       taskWriter: shopClient.captureOwnerTask,
       taskLister: shopClient.openOwnerTasks,
+      developmentWriter: shopClient.submitDevelopmentWork,
+      developmentLister: shopClient.listDevelopmentWork,
     });
     const projectReply = brainReply || await answerProjectQuestion({ question: result.ownerQuestion, history });
     const action = projectReply ? null : await interpretOwner({ question: result.ownerQuestion, snapshot: result.snapshot, history });
