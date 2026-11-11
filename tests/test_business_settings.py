@@ -112,7 +112,7 @@ class BusinessSettingsTests(unittest.TestCase):
     def test_bad_values_save_nothing(self):
         owner = self.sign_in()
         for changes, words in (({"closes_0": "10:00"}, "Monday"), ({"price_diagnostic": "abc"}, "price"),
-                               ({"zones": "85307 25"}, "ZIP line 1"), ({"minutes_oil-service": "5"}, "length")):
+                               ({"zones": "85307 25"}, "ZIP line 1"), ({"minutes_ac-check": "5"}, "length")):
             response = owner.post("/settings/business", data=form(**changes))
             self.assertEqual(response.status_code, 422)
             self.assertIn(words, response.text)

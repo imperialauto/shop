@@ -42,8 +42,8 @@ class InputRules(unittest.TestCase):
         self.assertEqual(public_site.phone_digits("1-602-555-0142"), "6025550142")
 
     def test_approved_services_come_from_setting(self):
-        with patch.dict(os.environ, {"PUBLIC_BOOKING_SERVICES": "oil-service, nope"}):
-            self.assertEqual([s.slug for s in public_site.approved_bookable_services()], ["oil-service"])
+        with patch.dict(os.environ, {"PUBLIC_BOOKING_SERVICES": "ac-check, oil-service, nope"}):
+            self.assertEqual([s.slug for s in public_site.approved_bookable_services()], ["ac-check"])
             self.assertIsNone(public_site.bookable_service("diagnostic"))
         with patch.dict(os.environ, {"PUBLIC_BOOKING_SERVICES": ""}):
             self.assertEqual(public_site.approved_bookable_services(), [])

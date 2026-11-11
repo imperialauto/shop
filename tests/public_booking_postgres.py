@@ -467,12 +467,13 @@ class PublicBooking(unittest.TestCase):
 
     def test_only_approved_services_can_be_booked(self):
         slot_id = self.slot(weekday_at(11))
-        with patch.dict(os.environ, {'PUBLIC_BOOKING_SERVICES': 'oil-service'}):
+        with patch.dict(os.environ, {'PUBLIC_BOOKING_SERVICES': 'pre-purchase,oil-service'}):
             self.assertNotIn('Basic in-shop diagnostic screening', self.client.get('/site/book').text)
             response = self.client.post('/site/book', data=self.form(slot_id))
             self.assertEqual(response.status_code, 422)
             self.assertIn('Choose a service', response.text)
-            self.assertEqual(self.client.post('/site/book', data=self.form(slot_id, service='oil-service'), follow_redirects=False).status_code, 303)
+            self.assertEqual(self.client.post('/site/book', data=self.form(slot_id, service='oil-service'), follow_redirects=False).status_code, 422)
+            self.assertEqual(self.client.post('/site/book', data=self.form(slot_id, service='pre-purchase'), follow_redirects=False).status_code, 303)
         self.assertEqual(self.count(Appointment), 1)
 
     def test_missing_details_book_nothing(self):
