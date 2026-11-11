@@ -178,7 +178,7 @@ class StaffLoginTests(unittest.TestCase):
         # My Day must not show eight unrelated status buttons for an unpriced job.
         self.assertNotIn(f'/ro/{mine}/update-status?back=my-day', page)
         self.assertIn("Not assigned yet (1)", page)
-        moved = crew.post(f"/ro/{mine}/update-status?back=my-day", data={"status": "in_progress"})
+        moved = crew.post(f"/ro/{mine}/update-status?back=my-day", data={"status": "diagnosing"})
         self.assertEqual(moved.headers["location"], "/my-day")
 
     def test_my_day_uses_single_next_step_after_approval(self):
@@ -242,6 +242,12 @@ class StaffLoginTests(unittest.TestCase):
         self.assertEqual(crew.post(f"/ro/{job}/update-status", data={"status": "made-up"}).status_code, 422)
         self.assertEqual(crew.post(f"/ro/{job}/update-status", data={"status": "delivered"}).status_code, 403)
         owner, _ = self.sign_in()
+        # Even the owner cannot jump directly from intake to delivered.
+        self.assertEqual(owner.post(f"/ro/{job}/update-status", data={"status": "delivered"}).status_code, 409)
+        from app.models import RepairOrder
+        with self.Session() as db:
+            db.get(RepairOrder, job).status = "complete"
+            db.commit()
         self.assertEqual(owner.post(f"/ro/{job}/update-status", data={"status": "delivered"}).status_code, 302)
 
     def test_owner_assigns_and_tech_cannot(self):
