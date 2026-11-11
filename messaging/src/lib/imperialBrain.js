@@ -111,6 +111,11 @@ async function answerImperialBrain({
   if (process.env.IMPERIAL_BRAIN_ENABLED !== "true") return null;
   const q = String(question || "").trim();
   if (!q) return null;
+  // Estimate / repair-order write commands belong to the authenticated
+  // owner-action handler, never to the generic task/status summarizer.
+  if (/\b(?:add|update|record|save|attach|put|quote|prepare)\b.{0,80}\b(?:estimate|repair order|ro\s*#?|quote|approval)\b/i.test(q)
+      || /\b(?:RO|job)\s*#?\s*\d+\b.{0,60}\b(?:part price|customer price|labor|fitment)\b/i.test(q))
+    return null;
   const capability = capabilityAnswer({
     question: q, snapshot, projectStatusConfigured: !!process.env.PROJECT_STATUS_GITHUB_TOKEN,
   });
