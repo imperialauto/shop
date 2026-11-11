@@ -339,6 +339,21 @@ def flows(page, device):
         assert reference in status_body and "Arizona time" in status_body, status_body[:300]  # labels are styled in capitals
         assert "Confirm before contacting" not in status_body
         measure(visitor, "site-status-result", device, 200, [])
+        # The booking and an authorized status-link visit are remembered only in
+        # this signed browser session; the unrelated fresh browser sees nothing.
+        visitor.goto(BASE + "/site/status")
+        assert visitor.locator("a:has-text('Open my saved status')").count() == 1
+        assert reference in visitor.locator("[aria-label='Your recently opened vehicle status']").inner_text()
+        visitor.click("a:has-text('Open my saved status')")
+        assert "/status/" in visitor.url
+        fresh = page.context.browser.new_context(**page_options).new_page()
+        fresh.goto(BASE + "/site/status")
+        assert fresh.locator("a:has-text('Open my saved status')").count() == 0
+        fresh.goto(visitor.url)
+        assert fresh.locator("a:has-text('Look up another vehicle')").count() == 1
+        fresh.click("a:has-text('Look up another vehicle')")
+        assert fresh.locator("a:has-text('Open my saved status')").count() == 1
+        fresh.context.close()
         visitor.goto(BASE + "/site/status")
         visitor.fill("[name=reference]", reference)
         visitor.fill("[name=phone]", "6025550123")
