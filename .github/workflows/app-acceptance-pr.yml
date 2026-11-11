@@ -1,0 +1,63 @@
+name: App acceptance PR walkthrough
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'tests/e2e/**'
+      - 'tests/public_booking_postgres.py'
+      - '.github/workflows/app-acceptance-pr.yml'
+jobs:
+  walkthrough:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test-only
+          POSTGRES_DB: walkthrough
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: |
+          pip install -r requirements.txt playwright
+          playwright install --with-deps chromium
+      - name: Seed made-up data and start the app
+        env:
+          DATABASE_URL: postgresql://test:test-only@127.0.0.1:5432/walkthrough
+          SHOP_HOURS_JSON: '{"0":["11:00","19:00"],"1":["11:00","19:00"],"2":["11:00","19:00"],"3":["11:00","19:00"],"4":["11:00","19:00"],"5":["12:00","17:00"]}'
+          SECRET_KEY: walkthrough-only-key
+          APP_READ_ONLY: 'false'
+          PUBLIC_FORMS_ENABLED: 'true'
+          PUBLIC_FORM_HOURLY_LIMIT: '100'
+          PUBLIC_SERVICE_CATALOG: '{"diagnostic":{"price":10,"minutes":60},"oil-service":{"price":20,"minutes":60},"pre-purchase":{"price":30,"price_type":"starting","minutes":90},"battery-charging":{"price":40,"minutes":30,"mobile":true},"brake-pads-rotors":{"tiers":{"sedan":300,"suv":350,"pickup":400},"minutes":120}}'
+          PUBLIC_AUTO_TIMES: '{"resources":["bay-2"],"step_minutes":60}'
+          PUBLIC_MOBILE_ZONES: '{"85000":{"fee":5,"travel_minutes":30}}'
+        run: |
+          PYTHONPATH=. python tests/e2e/seed.py
+          nohup python -m uvicorn app.main:app --port 8099 > server.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8099/healthz && break; sleep 1; done
+      - name: Walk through phone and desktop
+        run: python tests/e2e/walkthrough.py
+      - name: Show server errors
+        if: always()
+        run: grep -nE "Traceback|Error|error" server.log | head -40 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: walkthrough
+          path: |
+            walkthrough-output
+            server.log
