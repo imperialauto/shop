@@ -1,0 +1,21 @@
+{% set labels = {"queued": "Waiting for the shop workstation", "processing": "Workstation is working on it",
+  "retry_wait": "Retrying shortly", "draft_ready": "Draft ready for technician review", "failed": "Failed",
+  "approved": "Approved by technician", "rejected": "Rejected by technician", "cancelled": "Cancelled"} %}
+{% set active = review.status in ("queued", "processing", "retry_wait") %}
+<div id="ai-review-status-{{ review.id }}" class="text-sm"
+  {% if active %}hx-get="/ro/{{ ro_id }}/ai-review/{{ review.id }}/status" hx-trigger="every 5s" hx-swap="outerHTML"{% endif %}>
+  <p style="margin:0">
+    <strong>Review #{{ review.id }}:</strong> {{ labels.get(review.status, review.status) }}
+    {% if review.status == "processing" %}<span class="text-stone-400">(attempt {{ review.attempt_count }} of {{ review.max_attempts }})</span>{% endif %}
+  </p>
+  {% if active and node and not node.online %}
+  <p class="text-xs" style="color:#f0b45a; margin:2px 0 0">{{ node.label }}{% if node.last_seen %} — last check-in {{ node.last_seen.strftime('%b %d %I:%M %p UTC') }}{% endif %}. The request stays queued and will run when it is back.</p>
+  {% endif %}
+  {% if review.last_error and review.status in ("retry_wait", "failed") %}
+  <p class="text-xs text-stone-400" style="margin:2px 0 0">{{ review.last_error[:300] }}</p>
+  {% endif %}
+  {% if review.status in ("draft_ready", "approved", "rejected", "failed") %}
+  <a href="/ro/{{ ro_id }}/ai-review/{{ review.id }}" class="btn-secondary text-xs" style="display:inline-block; margin-top:6px">
+    {% if review.status == "draft_ready" %}Review draft &amp; sources{% else %}Open review{% endif %}</a>
+  {% endif %}
+</div>

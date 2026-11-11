@@ -77,6 +77,11 @@ jobs:
           TEST_DATABASE_URL: postgresql://test:test-only@127.0.0.1:5432/appointment_test
         run: PYTHONPATH=. python tests/public_booking_postgres.py -v
 
+      - name: Local AI Node migration and approval rules on disposable PostgreSQL
+        env:
+          TEST_DATABASE_URL: postgresql://test:test-only@127.0.0.1:5432/appointment_test
+        run: PYTHONPATH=. python tests/local_node_postgres.py
+
       - name: Imperial task migration on disposable PostgreSQL
         env:
           TEST_DATABASE_URL: postgresql://test:test-only@127.0.0.1:5432/appointment_test
