@@ -18,18 +18,26 @@ code tasks from the private Imperial SMS queue with no paid AI API usage.
 4. The workflow authenticates to the public Imperial web service's
    `/internal/imperial/dev-work/worker/claim` using a **separate DEV_WORKER_KEY**.
    It never uses the more powerful internal shop/customer messaging key.
-5. The server atomically claims **one** queued job with a 25-minute lease and
-   audit entry. Attempts cap at 3. Expired leases are marked **blocked for
-   manual verification**, not automatically duplicated.
+5. The server atomically claims **one website job only** with a 25-minute lease
+   and audit entry. Finance, integrations and Operations development jobs stay
+   saved, but are **not eligible for this narrow pilot**, and are never marked
+   running or failed merely because this worker cannot handle them. Attempts
+   cap at 3. Expired leases are marked **blocked for manual verification**,
+   not automatically duplicated.
 6. The worker uses `openai/gpt-oss-120b` via the Groq API at most **two calls
    per attempt** and at most three bounded attempts, with conservative
    prompt/response lengths. Groq rate-limit 429s
    create a recorded deferred retry, with bounded wait time.
-7. It may edit only one explicitly allowlisted small web template, stylesheet,
-   or approved document using an exact-match replacement. Before requesting
+7. It may edit only one explicitly allowlisted small public website template,
+   stylesheet or public design document using an exact-match replacement.
+   **Private assistant contract documents are not eligible.** Before requesting
    Groq inference, it rejects owner instructions containing identifiable
    phone/email/VIN data, dollar amounts, supplier costs or credential terms.
-   It also rejects active HTML/script/network references in generated edits.
+   After choosing a source file, it also checks that file's text for customer,
+   credential or private information before sending any of its content to Groq;
+   ambiguous or private source blocks the attempt. It rejects active
+   HTML/script/network references in both the original selected substring and
+   generated replacement.
    This is a conservative **fail-closed filter**, not a guarantee that every
    possible private fact can be detected. It never executes model-generated
    commands, accesses owner secrets, changes billing or deployment files, or
@@ -43,7 +51,11 @@ code tasks from the private Imperial SMS queue with no paid AI API usage.
    has passed merely because those runs were requested. Browser acceptance
    and owner review remain separate. No PR merge, deployment or customer messaging.
 9. The dashboard and owner SMS development-status command read the same
-   canonical queue. The existing Quo dispatcher has a separate owner-only
+   canonical queue. The SMS status text distinguishes *queued*, *running*,
+   *blocked* and *review needed*, and never calls a configured worker an
+   executing job until it actually claims the job. The owner dashboard includes
+   `review_needed` PRs so reviewable work doesn't disappear. The existing
+   Quo dispatcher has a separate owner-only
    notification outbox for review-needed, blocked and failed events. This
    delivery path is **OFF by default** until the owner authorizes
    `DEV_WORK_NOTICES_ENABLED=true` on both web and messaging services.
