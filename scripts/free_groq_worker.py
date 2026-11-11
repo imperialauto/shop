@@ -47,6 +47,13 @@ UNSAFE_EDIT = re.compile(
     r"javascript\s*:|on(?:load|error|click|focus|submit)\s*=|"
     r"\b(?:fetch|eval|XMLHttpRequest|WebSocket|Function)\s*\(|"
     r"\b(?:process\.env|document\.cookie|localStorage|sessionStorage)\b|"
+    # Model edits must not load resources via scheme-relative URLs, data/blob
+    # URIs, CSS imports, or document redirect metadata.
+    r"//[a-z0-9.-]+(?:/|\\b)|"
+    r"\\b(?:data|blob)\\s*:|"
+    r"@import\\b|"
+    r"\\b(?:srcdoc|http-equiv)\\s*=|"
+    r"<\\s*(?:meta|base)\\b|"
     r"\b(?:https?|ftp)\s*://|"
     r"{[%{]|[%}]})"
 )
