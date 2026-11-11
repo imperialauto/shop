@@ -120,7 +120,11 @@ def flows(page, device):
             with page.expect_navigation():
                 page.select_option("[name=status]", next_status)
             page.wait_for_load_state("networkidle")
-            assert page.input_value("[name=status]") == next_status
+            actual = page.input_value("[name=status]")
+            assert actual == next_status, (
+                f"expected {next_status}, got {actual!r}; url={page.url}; "
+                f"available={page.locator('[name=status] option').evaluate_all('(opts) => opts.map(o => o.value)')}"
+            )
 
     def invoice():
         page.click(f"form[action='/invoices/create/{context['ro']}'] button[type=submit]")
