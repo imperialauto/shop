@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 from app import system_health
 from app.auth import hash_password
 from app.database import Base, get_db
-from app.dispatch_model import DispatchItem, DispatchSync
+from app.dispatch_model import DispatchItem, DispatchOutbound, DispatchSync
 from app.main import app
 from app.models import Customer, User
 
@@ -40,7 +40,7 @@ class SystemHealthTests(unittest.TestCase):
     def test_all_good(self):
         r = self.report()
         self.assertTrue(r["ok"])
-        self.assertEqual([c["name"] for c in r["checks"]], ["Quo texts and calls", "Nightly backup", "AI reply drafts"])
+        self.assertEqual([c["name"] for c in r["checks"]], ["Quo texts and calls", "Nightly backup", "AI reply drafts", "Customer text sends"])
 
     def test_each_failure_is_named_with_what_to_do(self):
         with self.Session() as db:
@@ -55,6 +55,40 @@ class SystemHealthTests(unittest.TestCase):
         self.assertEqual([p["name"] for p in r["problems"]], ["Quo texts and calls", "Nightly backup", "AI reply drafts"])
         self.assertTrue(all(p["fix"] for p in r["problems"]))
         self.assertIn("1 without a name, 1 still to look up in Quo.", r["checks"][-1]["detail"])
+
+
+    def test_only_unsuccessful_owner_approved_customer_sends_need_review(self):
+        with self.Session() as db:
+            db.add_all([
+                DispatchOutbound(dedupe_key="auto:C1:hours:once", kind="customer", status="skipped",
+                                 updated_at=NOW - timedelta(minutes=10)),
+                DispatchOutbound(dedupe_key="alert:3:m1", kind="owner", status="failed",
+                                 updated_at=NOW - timedelta(minutes=10)),
+                DispatchOutbound(dedupe_key="reply:5:m2", kind="customer", status="failed",
+                                 updated_at=NOW - timedelta(minutes=10)),
+                DispatchOutbound(dedupe_key="dashboard:6:m3", kind="dashboard_reply", status="skipped",
+                                 updated_at=NOW - timedelta(hours=1)),
+                DispatchOutbound(dedupe_key="reply:old:m4", kind="customer", status="failed",
+                                 updated_at=NOW - timedelta(hours=80)),
+                DispatchOutbound(dedupe_key="reply:7:m5", kind="customer", status="sent",
+                                 updated_at=NOW - timedelta(minutes=5)),
+            ])
+            db.commit()
+        report = self.report()
+        self.assertFalse(report["ok"])
+        sends = [c for c in report["checks"] if c["name"] == "Customer text sends"][0]
+        self.assertFalse(sends["ok"])
+        self.assertIn("2 owner-approved", sends["detail"])
+        self.assertIn("1 failed", sends["detail"])
+        self.assertIn("1 skipped", sends["detail"])
+        self.assertIn("Do not resend automatically", sends["fix"])
+
+        with self.Session() as db:
+            db.query(DispatchOutbound).filter(
+                DispatchOutbound.dedupe_key.in_(("reply:5:m2", "dashboard:6:m3"))
+            ).update({"status": "sent"}, synchronize_session=False)
+            db.commit()
+        self.assertTrue(self.report()["ok"])
 
     def test_owner_sees_it_on_home(self):
         with self.Session() as db:
