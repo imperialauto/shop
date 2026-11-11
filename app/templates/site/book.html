@@ -62,12 +62,14 @@
 
       {% if forms_open and ready %}
       {% if zone and total is not none %}<p class="alert alert-info">Mobile service fee: ${{ '%.2f'|format(zone.fee) }}. {{ 'Starting total' if service.price_type == 'starting' else 'Total' }}: ${{ '%.2f'|format(total) }}.</p>{% elif zone %}<p class="alert alert-info">Mobile service fee: to be confirmed.</p>{% endif %}
-      <form class="form" method="post" action="/site/book" style="margin-top:18px">
+      <form class="form" id="customer-booking-form" method="post" action="/site/book" style="margin-top:18px">
         <input type="hidden" name="service" value="{{ service.slug }}">
         <input type="hidden" name="where" value="{{ where }}">
         <input type="hidden" name="zip" value="{{ zip_code }}">
-        <fieldset>
+        <fieldset id="booking-time-step">
           <legend>2. Choose a time</legend>
+          <p class="hint" style="margin-bottom:12px">Select a time to continue to your vehicle and contact details.</p>
+          <div id="booking-time-choices">
           {% if days %}
             {% for day, times in days.items() %}
             {% set chosen = values.slot_id in times|map(attribute='id')|map('string')|list %}
@@ -83,8 +85,16 @@
           {% else %}
             <p class="alert alert-info" id="no-times">No online times fit this service in the next few weeks. <a href="/site/estimate?about={{ service.slug }}">Send a request online</a> and we'll offer you a time.</p>
           {% endif %}
+          </div>
+          <div id="booking-time-summary" role="status" hidden>
+            <p style="margin-bottom:8px"><strong>Selected appointment:</strong> <span id="booking-selected-time"></span></p>
+            <button type="button" id="booking-change-time" class="btn btn-light">Change time</button>
+          </div>
         </fieldset>
         {% if days %}
+          <div id="booking-next-step" class="booking-next-step">
+            <h2 id="booking-next-heading" tabindex="-1">3. Your vehicle and contact details</h2>
+            <p class="hint">Complete these details to confirm your appointment.</p>
           {% if service.tiers %}
           <fieldset>
             <legend>Your vehicle type</legend>
@@ -116,10 +126,80 @@
           </fieldset>
           <p class="hint">Times are Arizona time. Your booking is confirmed on the next screen. Additional repairs are quoted and need your approval.</p>
           <button class="btn btn-purple" type="submit">Book this time</button>
+          </div>
         {% endif %}
       </form>
       {% endif %}
     {% endif %}
   </div>
 </section>
+
+<style>
+  .booking-next-step { display: grid; gap: 18px; }
+  #booking-time-choices[hidden],
+  #booking-time-summary[hidden],
+  #booking-next-step[hidden] { display: none !important; }
+  #booking-next-heading { margin: 14px 0 0; scroll-margin-top: 120px; }
+  #booking-next-heading:focus { outline: none; }
+  #booking-time-summary { padding: 14px 16px; background: var(--surface-2); border: 1px solid var(--gold-dark); border-radius: 10px; }
+  #booking-time-choices details.day[open] { border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+</style>
+<script>
+(function () {
+  'use strict';
+  const form = document.getElementById('customer-booking-form');
+  if (!form) return;
+  const options = document.getElementById('booking-time-choices');
+  const selection = document.getElementById('booking-time-summary');
+  const selectedText = document.getElementById('booking-selected-time');
+  const changeButton = document.getElementById('booking-change-time');
+  const next = document.getElementById('booking-next-step');
+  const nextHeading = document.getElementById('booking-next-heading');
+  if (!options || !selection || !next || !nextHeading) return;
+
+  function selectedSlot() {
+    return form.querySelector('input[name="slot_id"]:checked');
+  }
+  function showSelectedTime(advance) {
+    const slot = selectedSlot();
+    if (!slot) return;
+    const day = slot.closest('details.day');
+    const dayText = day && day.querySelector('summary h3');
+    const timeText = slot.closest('label') && slot.closest('label').querySelector('span');
+    selectedText.textContent = [dayText && dayText.textContent.trim(), timeText && timeText.textContent.trim()].filter(Boolean).join(' · ');
+    options.querySelectorAll('details.day').forEach(function (detail) { detail.open = false; });
+    options.hidden = true;
+    selection.hidden = false;
+    next.hidden = false;
+    if (advance) {
+      nextHeading.focus({preventScroll: true});
+      nextHeading.scrollIntoView({behavior: 'auto', block: 'start'});
+    }
+  }
+  form.addEventListener('change', function (event) {
+    if (event.target && event.target.matches('input[name="slot_id"]')) {
+      showSelectedTime(true);
+    }
+  });
+  changeButton.addEventListener('click', function () {
+    selection.hidden = true;
+    next.hidden = true;
+    options.hidden = false;
+    const chosen = selectedSlot();
+    const chosenDay = chosen && chosen.closest('details.day');
+    if (chosenDay) chosenDay.open = true;
+    const target = (chosenDay && chosenDay.querySelector('summary')) || options.querySelector('summary');
+    if (target) {
+      target.focus({preventScroll: true});
+      target.scrollIntoView({behavior: 'auto', block: 'start'});
+    }
+  });
+  const existing = selectedSlot();
+  if (existing) {
+    showSelectedTime(false);
+  } else {
+    next.hidden = true;
+  }
+})();
+</script>
 {% endblock %}
