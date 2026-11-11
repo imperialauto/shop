@@ -35,6 +35,13 @@ class StatusPolicyUnitTests(unittest.TestCase):
         self.assertIsNone(status_error(
             self.order("waiting_approval", ("approved", "pending")), "in_progress", "owner"))
 
+    def test_repair_requires_scope_but_diagnosis_can_begin_without_quote(self):
+        intake = self.order("intake")
+        self.assertEqual(status_error(intake, "in_progress", "owner")[0], 409)
+        self.assertEqual(status_error(intake, "waiting_parts", "tech")[0], 409)
+        self.assertIsNone(status_error(intake, "diagnosing", "tech"))
+        self.assertIsNone(status_error(self.order("diagnosing"), "complete", "owner"))
+
     def test_approval_status_requires_recorded_decisions(self):
         self.assertEqual(status_error(self.order("diagnosing"), "approval_received", "owner")[0], 409)
         self.assertEqual(status_error(
