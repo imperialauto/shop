@@ -35,11 +35,11 @@ class HomeSummaryTests(unittest.TestCase):
             vehicle = Vehicle(customer_id=customer.id, year=2016, make="Ford", model="Focus")
             db.add(vehicle)
             db.flush()
-            jobs = [RepairOrder(customer_id=customer.id, vehicle_id=vehicle.id, status=s) for s in ("intake", "in_progress", "waiting_approval", "delivered")]
+            jobs = [RepairOrder(customer_id=customer.id, vehicle_id=vehicle.id, status=s) for s in ("intake", "in_progress", "waiting_approval", "approval_received", "complete", "delivered")]
             db.add_all(jobs)
             db.flush()
             db.add(LineItem(repair_order_id=jobs[0].id, description="x", unit_price=10, approval="pending"))
-            invoice = Invoice(repair_order_id=jobs[3].id, total=500, status="sent")
+            invoice = Invoice(repair_order_id=jobs[5].id, total=500, status="sent")
             db.add(invoice)
             db.flush()
             db.add(Payment(invoice_id=invoice.id, amount=200, paid_at=datetime.utcnow()))
@@ -62,6 +62,13 @@ class HomeSummaryTests(unittest.TestCase):
         self.assertEqual(money, {"owed": 300, "owed_count": 1, "paid_week": 200})
         stages = {s["key"]: s["count"] for s in data["stages"]}
         self.assertEqual((stages["intake"], stages["in_progress"], stages["waiting_approval"]), (1, 1, 1))
+        self.assertEqual((stages["approval_received"], stages["complete"]), (1, 1))
+        labels = {s["key"]: s["label"] for s in data["stages"]}
+        self.assertEqual(labels["approval_received"], "Approval received")
+        self.assertEqual(labels["complete"], "Work complete")
+        self.assertNotIn("Ready for pickup", labels.values())
+        # All open statuses are accounted for exactly once, with no delivered job.
+        self.assertEqual(sum(stages.values()), 5)
 
     def test_money_is_owner_only_and_calendar_failure_is_shown(self):
         with self.Session() as db, patch.object(calendar_feed, "upcoming", return_value=None):
@@ -81,6 +88,10 @@ class HomeSummaryTests(unittest.TestCase):
                 page = client.get("/dashboard")
                 self.assertEqual(page.status_code, 200)
                 self.assertIn("Waiting on customer approval", page.text)
+                self.assertIn('href="/ro/?status=approval_received"', page.text)
+                self.assertIn("Approval received", page.text)
+                self.assertIn("Work complete", page.text)
+                self.assertNotIn("Ready for pickup", page.text)
                 self.assertEqual("paid this week" in page.text, money)
 
 
