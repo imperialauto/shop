@@ -187,3 +187,16 @@ test("GitHub issue read failure is explicit, not a fake task list", async () => 
     assert.doesNotMatch(failed, /3 open|complete/);
   });
 });
+
+test("owner estimate-write commands bypass generic read-only task answer", async () => {
+  await withFlags({ IMPERIAL_BRAIN_ENABLED: "true" }, async () => {
+    for (const question of [
+      "add it to the estimate",
+      "update estimate RO #17",
+      "RO #17: customer part price $155; labor 1 hr shop",
+      "prepare approval RO #17 fitment verified",
+    ]) {
+      assert.equal(await answerImperialBrain({ question, snapshot }), null, question);
+    }
+  });
+});

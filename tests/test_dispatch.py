@@ -19,7 +19,7 @@ from app.database import Base, get_db
 from app.dispatch import apply_policies, assess, parse_owner_command
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync
 from app.main import app
-from app.models import Customer, User
+from app.models import Customer, LineItem, PartsOrder, RepairOrder, User, Vehicle
 from app.routes import dispatch, internal_messaging
 
 KEY = "fixture-internal-key"
@@ -807,6 +807,253 @@ class QueueWorkflowTests(unittest.TestCase):
     def test_reasons_are_stored_as_json(self):
         self.post("m1", "How much for brakes on a 2011 Ford Focus?")
         self.assertEqual(json.loads(self.items()[0].approval_reasons), ["unverified_estimate"])
+
+
+    def _fusion_sourcing_setup(self, duplicate_ro=False):
+        with self.Session() as db:
+            vehicle = Vehicle(customer_id=1, year=2013, make="Ford", model="Fusion")
+            db.add(vehicle)
+            db.flush()
+            db.add(RepairOrder(customer_id=1, vehicle_id=vehicle.id, status="diagnosing",
+                               concern="Customer requests tank replacement"))
+            if duplicate_ro:
+                db.add(RepairOrder(customer_id=1, vehicle_id=vehicle.id, status="waiting_parts"))
+            db.commit()
+        self.post("m-fusion", "I need a fuel tank for my 2013 Ford Fusion.")
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            self.owner_text("o-fusion-cost", "add it to the estimate")
+        return {
+            "action": "part_cost", "itemId": 1, "ownerPhone": OWNER,
+            "ownerMessageId": "o-fusion-cost", "partDescription": "fuel tank",
+            "unitCost": 81.83, "eta": "Thursday",
+            "evidence": "I sourced the tank for the Ford Fusion for $81.83 my cost, pickup around Thursday.",
+        }
+
+    def _save_fusion_cost(self, body):
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            return self.client.post("/internal/dispatch/owner-action", json=body, headers=HEADERS)
+
+    def test_owner_sms_stages_private_parts_cost_not_a_customer_estimate(self):
+        body = self._fusion_sourcing_setup()
+        response = self._save_fusion_cost(body)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("private sourcing cost", response.json()["ownerReply"])
+        self.assertIn("No customer quote or message sent", response.json()["ownerReply"])
+        with self.Session() as db:
+            part = db.query(PartsOrder).one()
+            self.assertEqual(part.status, "sourcing")
+            self.assertEqual(part.cost, 81.83)
+            self.assertIn("unconfirmed", part.description)
+            self.assertEqual(db.query(LineItem).count(), 0)
+            self.assertEqual(db.query(DispatchOutbound).count(), 0)
+            review = db.query(DispatchItem).filter(DispatchItem.category == "estimate_pricing").one()
+            self.assertEqual(review.customer_id, 1)
+            self.assertIsNone(review.draft_reply)
+            self.assertIn("selling price", review.proposed_action)
+        again = self._save_fusion_cost(body)
+        self.assertIn("Already recorded", again.json()["ownerReply"])
+        with self.Session() as db:
+            self.assertEqual(db.query(PartsOrder).count(), 1)
+            self.assertEqual(db.query(DispatchItem).count(), 2)
+
+    def test_owner_sms_cannot_guess_ambiguous_ro_or_invent_source_cost(self):
+        body = self._fusion_sourcing_setup(duplicate_ro=True)
+        ambiguous = self._save_fusion_cost(body)
+        self.assertIn("exact RO number", ambiguous.json()["ownerReply"])
+        with self.Session() as db:
+            self.assertEqual(db.query(PartsOrder).count(), 0)
+        body["evidence"] = "I bought a tank for $81.83 but don't know the car."
+        missing = self._save_fusion_cost(body)
+        self.assertIn("verify", missing.json()["ownerReply"])
+        with self.Session() as db:
+            self.assertEqual(db.query(PartsOrder).count(), 0)
+
+    def test_owner_sms_part_cost_requires_verified_owner_identity_and_event(self):
+        body = self._fusion_sourcing_setup()
+        wrong_owner = self._save_fusion_cost({**body, "ownerPhone": "+16025550188"})
+        self.assertEqual(wrong_owner.status_code, 403)
+        missing_event = self._save_fusion_cost({**body, "ownerMessageId": "never-arrived"})
+        self.assertIn("Could not verify", missing_event.json()["ownerReply"])
+        with self.Session() as db:
+            self.assertEqual(db.query(PartsOrder).count(), 0)
+
+
+    def test_owner_can_stage_non_billable_quote_after_explicit_retail_price_and_labor(self):
+        source = self._fusion_sourcing_setup()
+        self.assertEqual(self._save_fusion_cost(source).status_code, 200)
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            self.owner_text("o-quote-1", "RO #1: customer part price $155; labor 1.0 hr shop")
+        payload = {
+            "action": "quote_part", "ownerPhone": OWNER, "ownerMessageId": "o-quote-1",
+            "roId": 1, "partPrice": 155, "laborHours": 1.0, "rateType": "shop",
+            "evidence": "RO #1: customer part price $155; labor 1.0 hr shop",
+        }
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            first = self.client.post("/internal/dispatch/owner-action", headers=HEADERS, json=payload)
+            second = self.client.post("/internal/dispatch/owner-action", headers=HEADERS, json=payload)
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertIn("PENDING", first.json()["ownerReply"])
+        self.assertIn("already saved", second.json()["ownerReply"])
+        with self.Session() as db:
+            lines = db.query(LineItem).order_by(LineItem.item_type).all()
+            self.assertEqual(len(lines), 2)
+            labor = next(li for li in lines if li.item_type == "labor")
+            part = next(li for li in lines if li.item_type == "part")
+            self.assertEqual((part.unit_price, labor.quantity, labor.unit_price), (155, 1.0, 150.0))
+            self.assertEqual((part.approval, labor.approval), ("pending", "pending"))
+            self.assertFalse(labor.billable)
+            self.assertFalse(part.billable)
+            self.assertEqual(db.query(DispatchOutbound).count(), 0)
+            self.assertEqual(db.query(PartsOrder).one().cost, 81.83)
+
+    def test_quote_refuses_private_cost_and_unverified_price_instructions(self):
+        self._fusion_sourcing_setup()
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            self.owner_text("o-quote-2", "RO #1 quote")
+        base = {
+            "action": "quote_part", "ownerPhone": OWNER, "ownerMessageId": "o-quote-2",
+            "roId": 1, "partPrice": 155, "laborHours": 1, "rateType": "shop",
+            "evidence": "RO #1: customer part price $155; labor 1 hr shop",
+        }
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            missing_source = self.client.post("/internal/dispatch/owner-action", headers=HEADERS, json=base)
+        self.assertIn("verified sourcing", missing_source.json()["ownerReply"])
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            leaking = self.client.post("/internal/dispatch/owner-action", headers=HEADERS,
+                json={**base, "evidence": "RO #1: my cost $81.83; customer part price $155; labor 1 hr shop"})
+        self.assertIn("private cost", leaking.json()["ownerReply"])
+        with self.Session() as db:
+            self.assertEqual(db.query(LineItem).count(), 0)
+
+
+    def test_verified_owner_sms_queues_link_only_after_live_customer_thread(self):
+        self.assertEqual(self._save_fusion_cost(self._fusion_sourcing_setup()).status_code, 200)
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            self.owner_text("o-quote-link", "RO #1: customer part price $155; labor 1 hr shop")
+            quote = self.client.post("/internal/dispatch/owner-action", headers=HEADERS,
+                json={"action": "quote_part", "ownerPhone": OWNER, "ownerMessageId": "o-quote-link",
+                      "roId": 1, "partPrice": 155, "laborHours": 1, "rateType": "shop",
+                      "evidence": "RO #1: customer part price $155; labor 1 hr shop"})
+            self.assertEqual(quote.status_code, 200)
+            self.owner_text("o-approve-link", "prepare approval RO #1 fitment verified")
+            prepare = {"action": "prepare_link", "ownerPhone": OWNER,
+                       "ownerMessageId": "o-approve-link", "roId": 1,
+                       "evidence": "prepare approval RO #1 fitment verified"}
+            first = self.client.post("/internal/dispatch/owner-action", headers=HEADERS, json=prepare)
+            self.assertEqual(first.json()["customerThreadPhone"], "+16025550100")
+            with self.Session() as db:
+                self.assertEqual(db.query(DispatchItem).filter(
+                    DispatchItem.category == "approval_link").count(), 0)
+            staged = self.client.post("/internal/dispatch/owner-action", headers=HEADERS,
+                json={**prepare, "customerMessageId": "customer-quo-message-1"})
+            self.assertEqual(staged.status_code, 200, staged.text)
+            self.assertIn("Nothing sent", staged.json()["ownerReply"])
+            again = self.client.post("/internal/dispatch/owner-action", headers=HEADERS,
+                json={**prepare, "customerMessageId": "customer-quo-message-1"})
+            self.assertIn("already has approval item", again.json()["ownerReply"])
+        with self.Session() as db:
+            item = db.query(DispatchItem).filter(DispatchItem.category == "approval_link").one()
+            self.assertEqual(item.status, "needs_owner")
+            self.assertEqual(item.last_message_id, "customer-quo-message-1")
+            ro = db.get(RepairOrder, 1)
+            # Approval texts open the private Vehicle Status page first (main since PR #127).
+            self.assertIn(f"/status/{ro.public_token}", item.draft_reply)
+            self.assertNotIn("/sign/ro/", item.draft_reply)
+            self.assertNotIn("81.83", item.draft_reply)
+            self.assertEqual(db.query(DispatchOutbound).count(), 0)
+            self.assertEqual(ro.status, "waiting_approval")
+            review = db.query(DispatchItem).filter(DispatchItem.category == "estimate_pricing").one()
+            self.assertEqual(review.status, "closed")
+
+    def test_fitment_attestation_and_complete_pricing_required_for_link(self):
+        self._fusion_sourcing_setup()
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            self.owner_text("o-approve-early", "prepare approval RO #1 fitment verified")
+            request = {"action": "prepare_link", "ownerPhone": OWNER,
+                       "ownerMessageId": "o-approve-early", "roId": 1,
+                       "evidence": "prepare approval RO #1 fitment verified",
+                       "customerMessageId": "customer-quo-message"}
+            no_price = self.client.post("/internal/dispatch/owner-action", headers=HEADERS, json=request)
+            self.assertIn("incomplete", no_price.json()["ownerReply"])
+            no_fitment = self.client.post("/internal/dispatch/owner-action", headers=HEADERS,
+                json={**request, "evidence": "prepare approval RO #1"})
+            self.assertIn("fitment", no_fitment.json()["ownerReply"])
+        with self.Session() as db:
+            self.assertEqual(db.query(DispatchItem).filter(
+                DispatchItem.category == "approval_link").count(), 0)
+
+
+    def test_changed_supplier_cost_cannot_silently_change_existing_quote(self):
+        body = self._fusion_sourcing_setup()
+        self._save_fusion_cost(body)
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            self.owner_text("o-initial-quote", "RO #1 customer part price $155 labor 1 hr shop")
+            initial = self.client.post("/internal/dispatch/owner-action", headers=HEADERS,
+                json={"action": "quote_part", "ownerPhone": OWNER, "ownerMessageId": "o-initial-quote",
+                      "roId": 1, "partPrice": 155, "laborHours": 1, "rateType": "shop",
+                      "evidence": "RO #1 customer part price $155 labor 1 hr shop"})
+            self.assertIn("PENDING", initial.json()["ownerReply"])
+            self.owner_text("o-new-cost", "Now the tank is $90.00 my cost for Ford Fusion")
+        updated = self._save_fusion_cost({
+            **body, "ownerMessageId": "o-new-cost", "unitCost": 90.00,
+            "evidence": "Now the tank is $90.00 my cost for Ford Fusion",
+        })
+        self.assertIn("estimate line already exists", updated.json()["ownerReply"])
+        with self.Session() as db:
+            self.assertEqual(db.query(PartsOrder).one().cost, 81.83)
+
+
+    def test_direct_owner_ro_cost_command_works_without_open_customer_queue_item(self):
+        with self.Session() as db:
+            v = Vehicle(customer_id=1, year=2013, make="Ford", model="Fusion")
+            db.add(v)
+            db.flush()
+            db.add(RepairOrder(customer_id=1, vehicle_id=v.id, status="diagnosing"))
+            db.commit()
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            self.owner_text("o-direct", "RO #1: add fuel tank for $81.83 my cost, pickup Thursday")
+            data = {"action": "part_cost", "ownerPhone": OWNER, "ownerMessageId": "o-direct",
+                    "roId": 1, "partDescription": "fuel tank", "unitCost": 81.83, "eta": "Thursday",
+                    "evidence": "RO #1: add fuel tank for $81.83 my cost, pickup Thursday"}
+            accepted = self.client.post("/internal/dispatch/owner-action", headers=HEADERS, json=data)
+            again = self.client.post("/internal/dispatch/owner-action", headers=HEADERS, json=data)
+        self.assertIn("Saved fuel tank to RO #1", accepted.json()["ownerReply"])
+        self.assertIn("Already recorded", again.json()["ownerReply"])
+        with self.Session() as db:
+            self.assertEqual(db.query(PartsOrder).one().cost, 81.83)
+            self.assertEqual(db.query(DispatchItem).count(), 1)
+            self.assertEqual(db.query(LineItem).count(), 0)
+            self.assertEqual(db.query(DispatchOutbound).count(), 0)
+
+
+    def test_queued_customer_approval_link_freezes_price_until_manual_reissue(self):
+        self._save_fusion_cost(self._fusion_sourcing_setup())
+        with patch.object(dispatch, "OWNER_PHONE", OWNER):
+            self.owner_text("owner-first-price", "RO #1: customer part price $155; labor 1 hr shop")
+            original = {"action": "quote_part", "ownerPhone": OWNER,
+                        "ownerMessageId": "owner-first-price", "roId": 1,
+                        "partPrice": 155, "laborHours": 1, "rateType": "shop",
+                        "evidence": "RO #1: customer part price $155; labor 1 hr shop"}
+            first = self.client.post("/internal/dispatch/owner-action", headers=HEADERS, json=original)
+            self.assertIn("PENDING", first.json()["ownerReply"])
+            self.owner_text("owner-fitment", "prepare approval RO #1 fitment verified")
+            prep = self.client.post("/internal/dispatch/owner-action", headers=HEADERS, json={
+                "action": "prepare_link", "ownerPhone": OWNER,
+                "ownerMessageId": "owner-fitment", "roId": 1,
+                "evidence": "prepare approval RO #1 fitment verified",
+                "customerMessageId": "customer-latest-quo-id",
+            })
+            self.assertIn("Nothing sent", prep.json()["ownerReply"])
+            self.owner_text("owner-reprice", "RO #1: customer part price $180; labor 1 hr shop")
+            change = self.client.post("/internal/dispatch/owner-action", headers=HEADERS,
+                json={**original, "ownerMessageId": "owner-reprice", "partPrice": 180,
+                      "evidence": "RO #1: customer part price $180; labor 1 hr shop"})
+        self.assertIn("approval link history", change.json()["ownerReply"])
+        with self.Session() as db:
+            prices = [li.unit_price for li in db.query(LineItem).filter(
+                LineItem.repair_order_id == 1).all()]
+            self.assertIn(155, prices)
+            self.assertNotIn(180, prices)
 
 
 if __name__ == "__main__":

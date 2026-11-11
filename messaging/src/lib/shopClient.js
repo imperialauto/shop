@@ -163,6 +163,19 @@ async function openOwnerTasks(limit = 15) {
   return request(`/internal/imperial/tasks/open?limit=${encodeURIComponent(limit)}`);
 }
 
+// Owner-only development instructions, saved to the Operations work queue.
+// These calls NEVER start an AI worker, spend API credits, or contact customers.
+async function submitDevelopmentWork({ messageId, projectKey, instruction, modelPreference = "auto" }) {
+  return request("/internal/imperial/dev-work/submit", {
+    method: "POST",
+    body: JSON.stringify({ messageId, projectKey, instruction, modelPreference }),
+  });
+}
+
+async function listDevelopmentWork(limit = 8) {
+  return request(`/internal/imperial/dev-work/jobs?limit=${encodeURIComponent(limit)}`);
+}
+
 async function dispatchTick() {
   return request("/internal/dispatch/tick", { method: "POST", body: "{}" });
 }
@@ -179,6 +192,6 @@ async function dispatchOutbound({ key, status }) {
 module.exports = {
   configured, getContext, getContextStrict, getSigningLink, logCommunication,
   dispatchIntake, dispatchOwnerAction, dispatchHandled, dispatchSync, dispatchTick, dispatchOutbound, dispatchDraft,
-  captureOwnerTask, openOwnerTasks,
+  captureOwnerTask, openOwnerTasks, submitDevelopmentWork, listDevelopmentWork,
 };
 

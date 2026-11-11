@@ -70,6 +70,29 @@
   {% include "_dispatch.html" %}
   </div>
 
+  {% if user.role == 'owner' and dev_work_snapshot and dev_work_snapshot.enabled %}
+  <div class="card" id="imperial-development-work" style="margin-bottom:18px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+      <strong>Imperial Development Work</strong>
+      <span style="font-size:12px; color:var(--imp-muted);">Worker not connected — capture and tracking only</span>
+    </div>
+    {% if dev_work_snapshot.error %}
+    <p style="color:var(--imp-danger);">{{ dev_work_snapshot.error }}</p>
+    {% elif dev_work_snapshot.jobs %}
+    <ul style="display:grid; gap:8px; list-style:none; padding:0;">
+      {% for job in dev_work_snapshot.jobs %}
+      <li style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; border-bottom:1px solid var(--imp-line); padding-bottom:7px;">
+        <span><strong>#{{ job.id }}</strong> {{ job.projectKey|capitalize }} <span style="color:var(--imp-muted);">· {{ job.latestSummary or 'No verified update' }}</span></span>
+        <span class="badge">{{ job.status|replace('_',' ')|title }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p style="font-size:13px; color:var(--imp-muted);">No development work has been captured in Imperial yet.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <!-- Open ROs Table -->
   <div class="card" style="padding:0; overflow:hidden;">
     <div style="padding:14px 16px 12px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--imp-line);">
