@@ -96,7 +96,7 @@ class ServiceLeadTests(unittest.TestCase):
         self.assertEqual(len(self.leads()), 1)
         self.assertNotIn(self.leads()[0].status, ("booked", "declined"))
 
-    def test_four_day_old_lead_remains_due_every_half_hour(self):
+    def test_old_lead_remains_open_but_unchanged_digest_is_not_spammed(self):
         self.post()
         with self.Session() as db:
             lead = db.query(ServiceLead).one()
@@ -105,8 +105,24 @@ class ServiceLeadTests(unittest.TestCase):
             first = due_lead_digest(db, NOW)
             later = due_lead_digest(db, NOW + timedelta(minutes=30))
             self.assertIn("1 service leads", first[1])
-            self.assertNotEqual(first[0], later[0])
+            self.assertEqual(first[0], later[0])
             self.assertEqual(lead.status, "new")
+            self.assertTrue(dispatch.reserve(db, first[0], "owner_leads"))
+            self.assertFalse(dispatch.reserve(db, later[0], "owner_leads"),
+                             "unchanged half-hour digest should not be reserved twice")
+            lead.next_action_due_at = NOW - timedelta(days=3)
+            db.commit()
+            self.assertEqual(due_lead_digest(db, NOW + timedelta(hours=1))[0], first[0],
+                             "timer movement alone is not a new customer interaction")
+            lead.last_event_id = "genuine-new-customer-message"
+            db.commit()
+            changed = due_lead_digest(db, NOW + timedelta(hours=1))
+            self.assertNotEqual(first[0], changed[0],
+                                "new customer activity must alert promptly")
+            self.assertTrue(dispatch.reserve(db, changed[0], "owner_leads"))
+            following_day = due_lead_digest(db, NOW + timedelta(days=1))
+            self.assertNotEqual(changed[0], following_day[0],
+                                "daily follow-up remains available for unresolved work")
 
     def test_tentative_booking_cannot_close_lead_but_confirmed_can(self):
         self.post()
