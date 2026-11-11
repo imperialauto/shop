@@ -169,6 +169,11 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404)
     techs = workers(db)
     subtotal = sum(li.total for li in ro.line_items if li.billable)
+    # Private sourcing context stays on the existing RO screen rather than a
+    # second disconnected estimating system.
+    sourced_parts = db.query(PartsOrder).filter(
+        PartsOrder.repair_order_id == ro.id,
+    ).order_by(PartsOrder.id.desc()).all()
     # Pull all communications for this customer (across all ROs), sorted oldest→newest
     comms = (
         db.query(Communication)
@@ -179,6 +184,7 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
     return templates.TemplateResponse("repair_orders/detail.html", {
         "request": request, "user": user, "ro": ro, "techs": techs,
         "statuses": RO_STATUSES, "subtotal": subtotal, "comms": comms,
+        "sourced_parts": sourced_parts,
         "next_step": next_action.for_job(db, ro, user.role),
         "timeline": cycle_time.for_job(db, ro) if user.role in ("owner", "admin") else None,
         "open_invoice": next((i for i in ro.invoices if i.status != "void"), None),
