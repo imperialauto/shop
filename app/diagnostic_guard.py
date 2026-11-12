@@ -54,6 +54,10 @@ HEDGE_RE = re.compile(r"\b(not supplied|not provided|unknown|not known|not state
                       r"whether|verify|confirm if|check if|determine if|cannot|can't|if (?:it is|the code is)|status)\b",
                       re.IGNORECASE)
 
+SWAP_TEST_RE = re.compile(r"\b(swap(?:ped|ping|s)?|switched|traded|moved)\b.{0,60}\b(coil|injector|plug|relay|module|sensor|fuse)s?\b"
+                          r"|\b(coil|injector|plug|relay|module|sensor)s?\b.{0,60}\b(swap(?:ped|ping|s)?|switched|moved)\b",
+                          re.IGNORECASE | re.DOTALL)
+
 LIST_KEYS = ("customer_reported_symptoms", "reported_codes", "technician_confirmed_findings",
              "suspected_causes", "recommended_tests", "proposed_repairs", "missing_information", "cautions")
 MAX_ITEMS = 12
@@ -376,6 +380,11 @@ def validate_output(raw, snapshot: dict) -> dict:
         cautions.append("At least one code was supplied without a status (active/pending/stored).")
     if not has_tech_input:
         cautions.append("No technician notes or readings were supplied; nothing is confirmed.")
+    if SWAP_TEST_RE.search(snapshot.get("technician_notes") or ""):
+        # QA on the shop model: it misread swap results in both directions even
+        # with an explicit rule, so flag it for the technician every time.
+        cautions.append("The technician notes describe a swap test. The AI often misreads which part is at fault "
+                        "after a swap; check the suspected causes against the swap result yourself.")
 
     violations = sorted(set(violations))
     return {"ok": not violations, "draft": draft if not violations else None,

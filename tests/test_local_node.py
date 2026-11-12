@@ -148,6 +148,16 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(guard.technician_notes_for_ai(marked), "New note after approval.")
         self.assertEqual(guard.technician_notes_for_ai(None), "")
 
+    def test_swap_tests_get_a_caution_for_the_technician(self):
+        for notes, flagged in (("Swapped coil 1 with coil 3; misfire followed.", True),
+                               ("Moved injector 2 to cylinder 5, misfire stayed.", True),
+                               ("Relay swap with horn relay, no change.", True),
+                               ("Checked plugs, all gapped correctly.", False), ("", False)):
+            snap = {**SNAPSHOT, "technician_notes": notes}
+            draft = good_output(technician_confirmed_findings=["Noted by tech"] if notes else [])
+            cautions = self.check(draft, snap)["cautions"]
+            self.assertEqual(any("swap test" in c for c in cautions), flagged, notes)
+
     def test_text_rendering_keeps_sections_separate(self):
         rendered = guard.draft_to_text(guard.validate_output(json.dumps(good_output()), SNAPSHOT)["draft"])
         for heading in ("Customer-reported symptoms:", "Technician-confirmed findings:",
