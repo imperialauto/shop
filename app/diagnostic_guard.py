@@ -147,6 +147,25 @@ def parse_codes(raw: str | None) -> tuple[list[dict], list[str]]:
     return codes, problems
 
 
+# Earlier approved reviews are appended to tech notes. They contain AI-written
+# suspected causes, so they must never be fed back to the AI as "technician
+# notes" (an old guess could come back as a "confirmed finding", and an old
+# "status: not supplied" overrode a newly supplied status in QA).
+APPROVED_BLOCK_START = r"--- Diagnostic review #\d+ · technician-approved[^\n]*---\n"
+APPROVED_BLOCK_WITH_END = re.compile(APPROVED_BLOCK_START + r".*?--- end of diagnostic review #\d+ ---", re.DOTALL)
+APPROVED_BLOCK_LEGACY = re.compile(APPROVED_BLOCK_START + r".*?(?:\n\s*\n|\Z)", re.DOTALL)  # blocks written before end markers
+
+
+def end_marker(review_id: int) -> str:
+    return f"--- end of diagnostic review #{review_id} ---"
+
+
+def technician_notes_for_ai(notes: str | None) -> str:
+    cleaned = APPROVED_BLOCK_WITH_END.sub("", notes or "")
+    cleaned = APPROVED_BLOCK_LEGACY.sub("", cleaned)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+
 def build_snapshot(ro, codes: list[dict], readings: str | None) -> dict:
     """What the model will see. Customer identity never leaves Railway."""
     vehicle = ro.vehicle
@@ -160,7 +179,7 @@ def build_snapshot(ro, codes: list[dict], readings: str | None) -> dict:
             "mileage": ro.mileage_in or (vehicle.mileage if vehicle else None),
         },
         "customer_reported_concern": _redact(ro.concern),
-        "technician_notes": _redact(ro.tech_notes),
+        "technician_notes": _redact(technician_notes_for_ai(ro.tech_notes)),
         "technician_readings": _redact(readings),
         "reported_codes": codes,
     }

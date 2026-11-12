@@ -15,7 +15,13 @@
   <p class="text-xs text-stone-400" style="margin:4px 0 0">
     Model: {{ review.model_name or "—" }} · Prompt {{ review.prompt_version }} · Attempts {{ review.attempt_count }}/{{ review.max_attempts }}
   </p>
+  {% if draft %}
   <p class="text-sm" style="margin:8px 0 0; color:#f0b45a">AI output is a draft. It passed automatic checks for invented codes, prices and unsupported repairs, which does <strong>not</strong> mean the diagnosis is correct. Nothing here is sent to the customer.</p>
+  {% elif review.status in ("failed", "retry_wait") %}
+  <p class="text-sm" style="margin:8px 0 0; color:#f0b45a">No AI answer has passed the automatic checks yet, so there is no draft. The reason is below and in History. Nothing here is sent to the customer.</p>
+  {% else %}
+  <p class="text-sm text-stone-400" style="margin:8px 0 0">No draft yet. Nothing here is sent to the customer.</p>
+  {% endif %}
   {% if review.last_error and review.status in ("failed", "retry_wait") %}<p class="text-sm text-stone-400" style="margin:6px 0 0">{{ review.last_error }}</p>{% endif %}
 </div>
 

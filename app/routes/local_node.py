@@ -395,7 +395,7 @@ def approve_review(request: Request, ro_id: int, review_id: int, approved_text: 
     ro = db.get(RepairOrder, ro_id)
     reviewer = user.full_name or user.username
     block = (f"--- Diagnostic review #{review.id} · technician-approved by {reviewer} · "
-             f"{now.strftime('%Y-%m-%d %H:%M UTC')} ---\n{text_value}")
+             f"{now.strftime('%Y-%m-%d %H:%M UTC')} ---\n{text_value}\n{guard.end_marker(review.id)}")
     ro.tech_notes = ((ro.tech_notes or "").rstrip() + "\n\n" + block).strip()
     original = guard.draft_to_text(json.loads(review.draft_json)) if review.draft_json else ""
     _event(db, review, f"user:{user.id}", "approved",

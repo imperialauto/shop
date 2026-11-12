@@ -137,6 +137,17 @@ class GuardTests(unittest.TestCase):
         wrapped = "<think>hmm</think>```json\n" + json.dumps(good_output()) + "\n```"
         self.assertTrue(guard.validate_output(wrapped, SNAPSHOT)["ok"])
 
+    def test_earlier_approved_reviews_are_not_fed_back_as_technician_notes(self):
+        legacy = ("Customer says it shakes.\n\n--- Diagnostic review #3 · technician-approved by Crew · 2026-11-12 00:52 UTC ---\n"
+                  "Reported trouble codes (status as supplied):\n- P0301 — status: not supplied\nSuspected causes (NOT confirmed):\n"
+                  "- Faulty ignition coil\n\nSwapped coil 1 and 3; misfire stayed on cylinder 1.")
+        self.assertEqual(guard.technician_notes_for_ai(legacy),
+                         "Customer says it shakes.\n\nSwapped coil 1 and 3; misfire stayed on cylinder 1.")
+        marked = ("--- Diagnostic review #7 · technician-approved by Crew · 2026-11-12 02:00 UTC ---\nLine one\n\n"
+                  "Tech-added paragraph inside the approval\n" + guard.end_marker(7) + "\n\nNew note after approval.")
+        self.assertEqual(guard.technician_notes_for_ai(marked), "New note after approval.")
+        self.assertEqual(guard.technician_notes_for_ai(None), "")
+
     def test_text_rendering_keeps_sections_separate(self):
         rendered = guard.draft_to_text(guard.validate_output(json.dumps(good_output()), SNAPSHOT)["draft"])
         for heading in ("Customer-reported symptoms:", "Technician-confirmed findings:",
@@ -293,6 +304,22 @@ class LocalNodeApiTests(unittest.TestCase):
         self.assertEqual(self.actions(), ["requested", "claimed", "draft_ready", "approved"])
         # Final: cannot decide twice.
         self.assertEqual(crew.post("/ro/1/ai-review/1/reject", data={}).status_code, 409)
+
+    def test_re_review_after_approval_uses_current_codes_and_notes_only(self):
+        crew = self.staff("crew")
+        self.request_review(crew)
+        self.result(self.claim(), good_output())
+        crew.post("/ro/1/ai-review/1/approve", data={"approved_text": guard.draft_to_text(json.loads(self.review().draft_json))})
+        with self.Session() as db:
+            notes = db.get(RepairOrder, 1).tech_notes
+            self.assertTrue(notes.endswith(guard.end_marker(1)))
+            db.get(RepairOrder, 1).tech_notes = notes + "\n\nSwapped coil 1 and 3; misfire stayed on cylinder 1."
+            db.commit()
+        self.request_review(crew, codes="P0301 active")
+        snapshot = json.loads(self.review(2).source_snapshot)
+        self.assertEqual(snapshot["technician_notes"], "Swapped coil 1 and 3; misfire stayed on cylinder 1.")
+        self.assertEqual(snapshot["reported_codes"], [{"code": "P0301", "status": "active"}])
+        self.assertNotIn("not supplied", json.dumps(snapshot))
 
     def test_job_page_shows_panel_and_existing_notes_kept(self):
         crew = self.staff("crew")
