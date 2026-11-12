@@ -9,11 +9,13 @@ import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dev_work_model import DevWorkEvent, DevWorkJob
+from app.imperial_task_model import ImperialTask
+from app.routes.imperial_tasks import enabled as tasks_enabled
 from app.routes.internal_messaging import require_internal_key
 
 router = APIRouter()
@@ -150,5 +152,19 @@ def dashboard_snapshot(db: Session, role: str) -> dict:
         ).limit(8).all()
     except Exception:
         return {"enabled": True, "jobs": [], "error": "Development work records are unavailable. Verify migration."}
-    return {"enabled": True, "jobs": [serialise_job(job) for job in jobs], "error": None,
-            "workerConnected": False}
+    cards = [serialise_job(job) for job in jobs]
+    if cards and tasks_enabled():
+        try:
+            with db.begin_nested():
+                tasks = db.query(ImperialTask).filter(
+                    ImperialTask.source == "dev_work",
+                    ImperialTask.external_id.in_([str(job.id) for job in jobs]),
+                ).all()
+                by_job = {task.external_id: (task.id, task.title) for task in tasks}
+        except SQLAlchemyError:
+            by_job = {}
+        for card in cards:
+            link = by_job.get(str(card["id"]))
+            if link:
+                card["taskId"], card["taskTitle"] = link
+    return {"enabled": True, "jobs": cards, "error": None, "workerConnected": False}

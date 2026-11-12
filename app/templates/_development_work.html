@@ -1,0 +1,26 @@
+{% if user.role == 'owner' and dev_work_snapshot and dev_work_snapshot.enabled %}
+<section class="card" id="imperial-development-work" aria-labelledby="development-work-title" style="margin-bottom:20px;">
+  <h2 id="development-work-title" style="font-size:16px; margin:0;">Development Work</h2>
+  <p style="font-size:13px; color:var(--imp-muted); margin:4px 0 14px;">Tracking only · Coding worker offline</p>
+  {% if dev_work_snapshot.error %}
+    <p style="color:var(--imp-danger);">{{ dev_work_snapshot.error }}</p>
+  {% elif visible_jobs %}
+    <ul style="list-style:none; padding:0; margin:0;">
+      {% for job in visible_jobs %}
+      <li style="border-top:1px solid var(--imp-line); padding:12px 0;">
+        <div style="display:flex; align-items:baseline; justify-content:space-between; gap:6px 14px; flex-wrap:wrap;">
+          <strong style="min-width:0; overflow-wrap:anywhere;">{{ job.taskTitle or job.projectKey|capitalize }}</strong>
+          <span class="badge">{{ job.status|replace('_',' ')|title }}</span>
+        </div>
+        <p style="margin:4px 0 0; font-size:12px; color:var(--imp-muted);">
+          {% if job.taskId %}<span data-task-id="{{ job.taskId }}">Task #{{ job.taskId }}</span>{% else %}Job #{{ job.id }}{% endif %}
+        </p>
+        <p style="margin:6px 0 0; font-size:14px; overflow-wrap:anywhere;">{{ job.latestSummary or 'No verified update yet.' }}</p>
+      </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p style="font-size:13px; color:var(--imp-muted);">No development work has been captured in Imperial yet.</p>
+  {% endif %}
+</section>
+{% endif %}

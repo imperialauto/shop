@@ -297,6 +297,9 @@ def dashboard(request: Request, view: str = "open", db: Session = Depends(get_db
     # Feature remains off until its additive migration is verified.
     task_snapshot = imperial_tasks.owner_dashboard_tasks(db, user.role)
     dev_work_snapshot = dev_work.dashboard_snapshot(db, user.role)
+    linked_task_ids = {job.get("taskId") for job in dev_work_snapshot["jobs"]}
+    task_snapshot["tasks"] = [task for task in task_snapshot["tasks"]
+                              if task["id"] not in linked_task_ids]
 
     return templates.TemplateResponse("dashboard.html", {
         "request": request,

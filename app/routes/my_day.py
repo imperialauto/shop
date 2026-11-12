@@ -12,6 +12,7 @@ from app.appointments import PHOENIX
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import RepairOrder
+from app.routes.dev_work import dashboard_snapshot
 from app.routes.repair_orders import RO_STATUSES, workers
 
 router = APIRouter()
@@ -49,7 +50,7 @@ def my_day(request: Request, db: Session = Depends(get_db)):
         order = db.get(RepairOrder, appointment.repair_order_id)
         if order is None:
             continue
-        visit = {"time": _local(appointment.starts_at).strftime("%-I:%M %p"),
+        visit = {"time": _local(appointment.starts_at).strftime("%I:%M %p").lstrip("0"),
                  "ro": order, "mobile": appointment.location == "mobile"}
         visit_by_ro.setdefault(order.id, visit)
         # A job already visible in Mine or Unassigned gets its appointment
@@ -61,5 +62,6 @@ def my_day(request: Request, db: Session = Depends(get_db)):
         "next_steps": next_steps, "visit_by_ro": visit_by_ro, "visits": additional_visits,
         "appointment_count": len(today),
         "can_take": user.role != "tech" and user in workers(db),
-        "today": now.strftime("%A, %B %-d"),
+        "today": f"{now:%A, %B} {now.day}",
+        "dev_work_snapshot": dashboard_snapshot(db, user.role),
     })

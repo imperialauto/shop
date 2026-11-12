@@ -4,6 +4,13 @@
 <h1 class="text-2xl font-bold text-yellow-400">My day</h1>
 <p class="text-sm text-stone-400 mb-4">{{ today }}</p>
 
+{% if user.role == 'owner' and dev_work_snapshot.enabled %}
+  {% set visible_jobs = dev_work_snapshot.jobs|selectattr('taskId', 'defined')|selectattr('taskId')|list %}
+  {% if visible_jobs %}
+    {% include "_development_work.html" %}
+  {% endif %}
+{% endif %}
+
 {% macro vehicle(ro) %}{{ ro.vehicle.label }}{% endmacro %}
 
 <h2 class="font-bold mb-2">My jobs ({{ mine|length }})</h2>
