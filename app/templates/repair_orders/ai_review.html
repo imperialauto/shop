@@ -42,8 +42,8 @@
         <ul class="text-sm">{% for i in items %}<li>{{ i }}</li>{% else %}<li class="text-stone-400">none</li>{% endfor %}</ul>
       {% endmacro %}
       {{ section("Customer-reported symptoms", draft.customer_reported_symptoms) }}
-      {{ section("Reported codes (status as supplied)", draft.reported_codes|map(attribute="code")|list) }}
-      <ul class="text-xs text-stone-400">{% for c in draft.reported_codes %}<li>{{ c.code }} — {{ c.status_as_supplied }} — {{ c.meaning }}</li>{% endfor %}</ul>
+      <p class="text-xs uppercase tracking-wide" style="margin:10px 0 2px">Reported codes (status as supplied)</p>
+      <ul class="text-sm">{% for c in draft.reported_codes %}<li>{{ c.code }} — status: {{ c.status_as_supplied }}{% if c.meaning %} <span class="text-stone-400">— {{ c.meaning }}</span>{% endif %}</li>{% else %}<li class="text-stone-400">none</li>{% endfor %}</ul>
       {{ section("Technician-confirmed findings", draft.technician_confirmed_findings, "color:#7fd18b") }}
       <p class="text-xs uppercase tracking-wide" style="margin:10px 0 2px; color:#f0b45a">Suspected causes — not confirmed</p>
       <ul class="text-sm">{% for c in draft.suspected_causes %}<li>{{ c.cause }} <span class="text-stone-400">({{ c.likelihood }}; basis: {{ c.basis }})</span></li>{% else %}<li class="text-stone-400">none</li>{% endfor %}</ul>

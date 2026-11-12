@@ -363,7 +363,8 @@ def draft_to_text(draft: dict) -> str:
     out = []
     out += _lines("Customer-reported symptoms:", draft["customer_reported_symptoms"])
     out += _lines("Reported trouble codes (status as supplied):",
-                  [f"{r['code']} — status: {r['status_as_supplied']} — {r['meaning']}" for r in draft["reported_codes"]])
+                  [f"{r['code']} — status: {r['status_as_supplied']}" + (f" — {r['meaning']}" if r["meaning"] else "")
+                   for r in draft["reported_codes"]])
     out += _lines("Technician-confirmed findings:", draft["technician_confirmed_findings"])
     out += _lines("Suspected causes (NOT confirmed):",
                   [f"{r['cause']} — basis: {r['basis']} — likelihood: {r['likelihood']}" for r in draft["suspected_causes"]])

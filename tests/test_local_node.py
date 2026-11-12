@@ -138,6 +138,9 @@ class GuardTests(unittest.TestCase):
                         "Suspected causes (NOT confirmed):", "Recommended tests:", "Proposed repairs"):
             self.assertIn(heading, rendered)
         self.assertIn("P0301 — status: not supplied", rendered)
+        blank = good_output(reported_codes=[{"code": "P0301", "status_as_supplied": "not supplied", "meaning": ""}])
+        rendered = guard.draft_to_text(guard.validate_output(json.dumps(blank), SNAPSHOT)["draft"])
+        self.assertIn("- P0301 — status: not supplied\n", rendered)  # no dangling dash when meaning is blank
 
 
 class PermissionTableTests(unittest.TestCase):
