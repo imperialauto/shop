@@ -35,16 +35,16 @@ the routes return 503, the job page shows nothing new, and `/readyz` ignores the
    UNION ALL SELECT 'trigger', tgname FROM pg_trigger WHERE tgname LIKE 'trg_diagnostic%';
    ```
    Expect **8 rows**: 4 checks, 1 index and 3 triggers. Apply it **before** step 5.
-5. ⚠ **Production worker key.** On the shop PC, generate a new key in PowerShell. Never reuse the QA key, and never paste it into chat:
-   ```powershell
-   -join ((48..57)+(65..90)+(97..122) | Get-Random -Count 48 | ForEach-Object {[char]$_}) | Set-Clipboard
-   ```
-   In Railway → `web` → Variables, set `LOCAL_NODE_WORKER_KEY` (paste), `LOCAL_NODE_MODEL=imperial-diagnostics:latest`, then `LOCAL_NODE_ENABLED=true`. `web` redeploys. Check that `/readyz` returns 200: it now audits the three tables.
-6. ⚠ **Workstation → production.** With the key still on the clipboard:
-   ```powershell
-   powershell -NoProfile -ExecutionPolicy Bypass -File "D:\Imperial\LocalNode\install-files\install.ps1" -BackendUrl "https://web-production-94989.up.railway.app"
-   ```
-   Answer **y** to "Replace it?", paste the key at the hidden prompt, then run `Set-Clipboard -Value $null`. Expect every line `[PASS]`, including `Worker running in the background (pythonw.exe)`. This moves the PC off QA, because one install serves one backend.
+5. ⚠ **Turn the feature on with a new production key, generated on the shop PC.**
+   - Never reuse the QA key, and never paste the key into chat.
+   - Railway → `web` → Variables: set `LOCAL_NODE_MODEL=imperial-diagnostics:latest` and `LOCAL_NODE_ENABLED=true`. Keep the Variables page open; don't deploy yet if Railway offers to stage.
+   - On the shop PC, run:
+     ```powershell
+     powershell -NoProfile -ExecutionPolicy Bypass -File "D:\Imperial\LocalNode\install-files\install.ps1" -BackendUrl "https://web-production-94989.up.railway.app" -NewKey
+     ```
+   - The installer generates a 48-character key from the Windows cryptographic random source and stores it DPAPI-encrypted for this Windows user. It puts the key on the clipboard **without displaying it**, then waits.
+   - In Railway → `web` → Variables, add `LOCAL_NODE_WORKER_KEY`, paste, and deploy. When the deployment is successful, press Enter in PowerShell; the installer clears the clipboard.
+6. **Checks.** In the same installer run, expect every line `[PASS]`: `Railway reachable and worker key accepted` against production, `Model answers`, `Commissioning check`, and `Worker running in the background (pythonw.exe)`. Then confirm `/readyz` returns 200; it now audits the three tables. This moves the PC off QA, because one install serves one backend, so the exposed QA key is no longer stored on the PC.
 7. **Production smoke check, with no customer records touched.**
    - `run-worker.ps1 -Mode eval`: synthetic cases only, nothing stored.
    - Open any job page as the owner and confirm it shows "Workstation online". Don't request a review on a real job until a technician is ready to use it.
@@ -69,7 +69,7 @@ the routes return 503, the job page shows nothing new, and `/readyz` ignores the
 **Production never used any of these values.**
 
 Option A: keep QA running (⚠ owner does steps 1–4 personally):
-1. Generate three new values on your own PC with the PowerShell generator above, one at a time. Don't paste them into chat.
+1. Generate the access code and preview password on your own PC, one at a time, straight to the clipboard: `$b = New-Object byte[] 36; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b).Replace('+','A').Replace('/','B') | Set-Clipboard`. For the worker key, use `install.ps1 -NewKey`. Don't paste any of them into chat.
 2. Railway → `local-node-qa` → Variables: replace `PREVIEW_ACCESS_CODE`, `PREVIEW_OWNER_PASSWORD` and `LOCAL_NODE_WORKER_KEY`. The service redeploys, the new preview password applies on restart, and the old one stops working.
 3. If the PC still points at QA, re-run `install.ps1 … -BackendUrl https://local-node-qa-preview.up.railway.app`, answer **y**, and paste the new key.
 4. QA app → Settings → users: deactivate `qa-office` and `qa-tech`.

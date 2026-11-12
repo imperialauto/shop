@@ -13,6 +13,9 @@
 
 .EXAMPLE
   powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -BackendUrl https://<your-qa-app>.up.railway.app
+.EXAMPLE
+  # New key generated on this PC; paste it into Railway once when asked:
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -BackendUrl https://<app>.up.railway.app -NewKey
 #>
 param(
     [Parameter(Mandatory = $true)][string]$BackendUrl,
@@ -21,6 +24,7 @@ param(
     [string]$ModelsDir = "D:\Imperial\Models",
     [string]$SourceDir = "",
     [switch]$RebuildModel,
+    [switch]$NewKey,
     [switch]$SkipTask
 )
 
@@ -154,12 +158,32 @@ if ($RebuildModel) {
 # --- 7. Worker key (encrypted with DPAPI for this Windows user) -----------------------------
 $keyFile = Join-Path $configDir "worker.key"
 $replace = $true
-if (Test-Path $keyFile) {
+if ($NewKey) {
+    # Generate the key here so it is never typed, shown or sent anywhere except the
+    # clipboard (for one paste into Railway). 36 random bytes -> 48 base64 characters.
+    $bytes = New-Object byte[] 36
+    $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+    $plain = [Convert]::ToBase64String($bytes).Replace("+", "A").Replace("/", "B")
+    ConvertTo-SecureString $plain -AsPlainText -Force | ConvertFrom-SecureString | Set-Content -Path $keyFile -Encoding ASCII
+    Set-Clipboard -Value $plain
+    $plain = $null
+    [Array]::Clear($bytes, 0, $bytes.Length)
+    Report "New worker key generated and stored encrypted (DPAPI, user $me)" (Test-Path $keyFile)
+    Write-Host ""
+    Write-Host "The new key is on your clipboard (it is not shown)." -ForegroundColor Yellow
+    Write-Host "In Railway, open the service for $BackendUrl -> Variables, set LOCAL_NODE_WORKER_KEY by pasting," -ForegroundColor Yellow
+    Write-Host "and wait for the deploy to finish." -ForegroundColor Yellow
+    [void](Read-Host "Press Enter when Railway shows the new deployment as successful")
+    Set-Clipboard -Value " "
+    Report "Clipboard cleared" $true
+    $replace = $false
+} elseif (Test-Path $keyFile) {
     $answer = Read-Host "A worker key is already stored. Replace it? (y/N)"
     $replace = ($answer -match '^[yY]')
 }
 if ($replace) {
-    $secure = Read-Host "Paste LOCAL_NODE_WORKER_KEY from Railway QA (input hidden)" -AsSecureString
+    $secure = Read-Host "Paste LOCAL_NODE_WORKER_KEY from Railway (input hidden)" -AsSecureString
     $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
     try { $length = ([Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)).Length }
     finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
