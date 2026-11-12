@@ -20,6 +20,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dev_work_model import DevWorkEvent, DevWorkJob, DevWorkNotice
+from app.imperial_task_model import ImperialTask, ImperialTaskAudit
+from app.routes.imperial_tasks import enabled as tasks_enabled
 from app.routes.internal_messaging import require_internal_key
 
 router = APIRouter()
@@ -76,6 +78,17 @@ def requires_owner_review(instruction: str) -> bool:
     return bool(_REQUIRES_APPROVAL.search(instruction))
 
 
+def _capture_result(db: Session, job: DevWorkJob, duplicate: bool) -> dict:
+    result = {"recorded": True, "duplicate": duplicate, **serialise_job(job),
+              "executionStarted": False if job.status in ("queued", "needs_approval") else None,
+              "workerConnected": False, "workerConfigured": worker_configured()}
+    if tasks_enabled():
+        task = db.query(ImperialTask).filter_by(source="dev_work", external_id=str(job.id)).first()
+        if task:
+            result["taskId"] = task.id
+    return result
+
+
 @router.post("/submit")
 def submit_development_work(
     payload: QueueDevWork,
@@ -97,9 +110,7 @@ def submit_development_work(
         DevWorkJob.source == source, DevWorkJob.external_id == source_event
     ).first()
     if existing:
-        return {"recorded": True, "duplicate": True, **serialise_job(existing),
-                "executionStarted": False if existing.status in ("queued", "needs_approval") else None,
-                "workerConnected": False, "workerConfigured": worker_configured()}
+        return _capture_result(db, existing, duplicate=True)
 
     # The queue accepts an intent, not approval to change production or contact
     # customers. Risky requests are saved as needing explicit owner review.
@@ -121,6 +132,16 @@ def submit_development_work(
             job_id=job.id, actor="owner_sms", action="captured",
             detail="Approval needed" if state == "needs_approval" else "Queued; not started",
         ))
+        if tasks_enabled():
+            task = ImperialTask(
+                source="dev_work", external_id=str(job.id), project_key=project,
+                title=f"{project.capitalize()} development", category="development",
+                status="blocked" if state == "needs_approval" else "open",
+            )
+            db.add(task)
+            db.flush()
+            db.add(ImperialTaskAudit(task_id=task.id, actor="owner_sms",
+                                    action="created", event_id=source_event))
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -129,11 +150,8 @@ def submit_development_work(
         ).first()
         if not existing:
             raise
-        return {"recorded": True, "duplicate": True, **serialise_job(existing),
-                "executionStarted": False, "workerConnected": False, "workerConfigured": worker_configured()}
-    db.refresh(job)
-    return {"recorded": True, "duplicate": False, **serialise_job(job),
-            "executionStarted": False, "workerConnected": False, "workerConfigured": worker_configured()}
+        return _capture_result(db, existing, duplicate=True)
+    return _capture_result(db, job, duplicate=False)
 
 
 @router.get("/jobs")
@@ -189,8 +207,11 @@ class WorkerClaim(BaseModel):
     workerId: str = Field(pattern=r"^[a-zA-Z0-9_-]{8,64}$")
 
 
-class WorkerReport(BaseModel):
-    workerId: str = Field(pattern=r"^[a-zA-Z0-9_-]{8,64}$")
+class WorkerAttempt(WorkerClaim):
+    attempt: int = Field(ge=1, le=3)
+
+
+class WorkerReport(WorkerAttempt):
     status: str = Field(min_length=3, max_length=24)
     summary: str = Field(min_length=1, max_length=1500)
     resultUrl: str | None = Field(default=None, max_length=300)
@@ -254,13 +275,57 @@ def claim_worker_job(
     job.retry_after = None
     job.updated_at = now
     job.latest_summary = "Claimed by free Groq pilot worker; no code result yet."
-    _event(db, job, "worker", "claimed", f"attempt {job.attempt_count}")
+    _event(db, job, "worker", "claimed", f"attempt {job.attempt_count}").created_at = now
     db.commit()
     return {
         "claimed": True, "id": job.id, "instruction": job.instruction,
         "projectKey": job.project_key, "modelPreference": job.model_preference,
         "attempt": job.attempt_count, "leaseUntil": job.lease_until.isoformat(),
     }
+
+
+def _utc(value: datetime) -> datetime:
+    # SQLite drops timezone metadata in synthetic tests.
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def _active_attempt(db: Session, job_id: int, payload: WorkerAttempt) -> tuple[DevWorkJob, datetime]:
+    job = db.query(DevWorkJob).filter(DevWorkJob.id == job_id).with_for_update().first()
+    if job is None:
+        raise HTTPException(status_code=404, detail="Unknown development job.")
+    now = datetime.now(timezone.utc)
+    if (
+        job.status != "running"
+        or not job.assigned_worker
+        or not secrets.compare_digest(job.assigned_worker, payload.workerId)
+        or job.attempt_count != payload.attempt
+        or not job.lease_until
+        or _utc(job.lease_until) <= now
+    ):
+        raise HTTPException(status_code=409, detail="Worker does not own an active attempt.")
+    return job, now
+
+
+@router.post("/worker/jobs/{job_id}/heartbeat")
+def heartbeat_worker_job(
+    job_id: int,
+    payload: WorkerAttempt,
+    db: Session = Depends(get_db),
+    _auth: bool = Depends(require_worker),
+):
+    job, now = _active_attempt(db, job_id, payload)
+    claim = db.query(DevWorkEvent).filter(
+        DevWorkEvent.job_id == job.id, DevWorkEvent.action == "claimed",
+    ).order_by(DevWorkEvent.id.desc()).first()
+    if not claim:
+        raise HTTPException(status_code=409, detail="Worker claim evidence is unavailable.")
+    deadline = _utc(claim.created_at) + timedelta(minutes=30)
+    if now >= deadline:
+        raise HTTPException(status_code=409, detail="Worker attempt exceeded its runtime limit.")
+    job.lease_until = min(deadline, max(_utc(job.lease_until), now + timedelta(minutes=5)))
+    job.updated_at = now
+    db.commit()
+    return {"id": job_id, "attempt": payload.attempt, "leaseUntil": _utc(job.lease_until).isoformat()}
 
 
 @router.post("/worker/jobs/{job_id}/report")
@@ -272,11 +337,7 @@ def report_worker_job(
 ):
     if payload.status not in ("review_needed", "blocked", "failed", "rate_limited"):
         raise HTTPException(status_code=422, detail="Unrecognized worker result.")
-    job = db.query(DevWorkJob).filter(DevWorkJob.id == job_id).with_for_update().first()
-    if job is None:
-        raise HTTPException(status_code=404, detail="Unknown development job.")
-    if job.status != "running" or not job.assigned_worker or not secrets.compare_digest(job.assigned_worker, payload.workerId):
-        raise HTTPException(status_code=409, detail="Worker does not own an active job.")
+    job, now = _active_attempt(db, job_id, payload)
     if payload.status == "review_needed" and not (
         payload.resultUrl and re.fullmatch(r"https://github\.com/imperialauto/shop/pull/[0-9]+", payload.resultUrl)
     ):
@@ -286,7 +347,6 @@ def report_worker_job(
     if payload.status == "rate_limited" and payload.retryAfterSeconds is None:
         raise HTTPException(status_code=422, detail="A verified retry delay is required.")
 
-    now = datetime.now(timezone.utc)
     job.status = "queued" if payload.status == "rate_limited" and job.attempt_count < 3 else (
         "blocked" if payload.status == "rate_limited" else payload.status
     )

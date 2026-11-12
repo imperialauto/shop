@@ -13,6 +13,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
 from app.dev_work_model import DevWorkEvent, DevWorkJob
+from app.imperial_task_model import ImperialTask, ImperialTaskAudit
 from app.main import app
 from app.routes import dev_work, internal_messaging
 from scripts import free_groq_worker as runner
@@ -214,15 +215,50 @@ class WorkerQueueTests(unittest.TestCase):
         })
 
     def claim(self, worker="gha-123456789"):
-        return self.c.post("/internal/imperial/dev-work/worker/claim", headers=self.worker,
-                           json={"workerId": worker})
+        response = self.c.post("/internal/imperial/dev-work/worker/claim", headers=self.worker,
+                               json={"workerId": worker})
+        if response.is_success and response.json().get("claimed"):
+            self.attempt = response.json()["attempt"]
+        return response
 
-    def report(self, work_id, status, worker="gha-123456789", **kwargs):
+    def report(self, work_id, status, worker="gha-123456789", attempt=None, **kwargs):
         return self.c.post(f"/internal/imperial/dev-work/worker/jobs/{work_id}/report",
                            headers=self.worker, json={
                                "workerId": worker, "status": status,
-                               "summary": "Synthetic test outcome", **kwargs,
+                               "summary": "Synthetic test outcome", "attempt": self.attempt if attempt is None else attempt, **kwargs,
                            })
+
+    @patch.dict(os.environ, {"IMPERIAL_TASKS_ENABLED": "true"})
+    def test_intake_creates_one_canonical_task_and_audit(self):
+        first = self.submit().json()
+        replay = self.submit(instruction="Different instruction on a replay").json()
+        self.assertTrue(replay["duplicate"])
+        self.assertEqual(replay["taskId"], first["taskId"])
+        self.assertEqual(replay["id"], first["id"])
+        with self.Session() as db:
+            task = db.query(ImperialTask).one()
+            self.assertEqual((task.source, task.external_id), ("dev_work", str(first["id"])))
+            self.assertEqual(db.query(ImperialTaskAudit).one().task_id, first["taskId"])
+
+    def test_expired_and_stale_attempts_cannot_report_or_renew(self):
+        from datetime import datetime, timedelta, timezone
+
+        self.assertEqual(self.submit().status_code, 200)
+        job = self.claim().json()
+        job_id = job["id"]
+        url = f"/internal/imperial/dev-work/worker/jobs/{job_id}/heartbeat"
+        payload = {"workerId": "gha-123456789", "attempt": job["attempt"]}
+        self.assertEqual(self.c.post(url, json=payload, headers=self.owner).status_code, 401)
+        self.assertEqual(self.c.post(url, json=payload, headers=self.worker).status_code, 200)
+        self.assertEqual(self.report(job_id, "failed", attempt=2).status_code, 409)
+        with self.Session() as db:
+            db.get(DevWorkJob, job_id).lease_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+            db.commit()
+        self.assertEqual(self.c.post(url, json=payload, headers=self.worker).status_code, 409)
+        self.assertEqual(self.report(job_id, "failed").status_code, 409)
+        self.assertFalse(self.claim().json()["claimed"])
+        with self.Session() as db:
+            self.assertEqual(db.get(DevWorkJob, job_id).status, "blocked")
 
     def test_claim_requires_independent_worker_secret_and_plan_confirmation(self):
         self.assertEqual(self.submit().status_code, 200)

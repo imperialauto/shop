@@ -274,6 +274,7 @@ def run():
         return
     job = result
     job_id = int(job["id"])
+    attempt = {"workerId": worker_id, "attempt": int(job["attempt"])}
     print(f"Claimed development job #{job_id} ({job['projectKey']})")
     status, summary, url, retry_after = "blocked", "No patch submitted.", None, None
     try:
@@ -290,6 +291,7 @@ def run():
         cmd("git", "-c", "user.name=Imperial Free Agent", "-c",
             "user.email=agent@users.noreply.github.com", "commit", "-m",
             f"Draft bounded pilot edit for Imperial job {job_id}")
+        api_json(f"/internal/imperial/dev-work/worker/jobs/{job_id}/heartbeat", attempt)
         cmd("git", "push", "-u", "origin", branch)
         # Only draft PR against main; no merges or deploys.
         pr_title = f"Draft: Imperial free AI job #{job_id}"
@@ -320,7 +322,7 @@ def run():
         summary = f"Pilot could not produce verified draft: {type(exc).__name__}: {str(exc)[:180]}"
         print(summary, file=sys.stderr)
     payload = {
-        "workerId": worker_id, "status": status,
+        **attempt, "status": status,
         "summary": summary[:600], "resultUrl": url,
         "retryAfterSeconds": retry_after,
     }
