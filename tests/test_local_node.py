@@ -457,6 +457,44 @@ class LocalNodeApiTests(unittest.TestCase):
             self.assertEqual(db.query(DiagnosticReview).count(), 0)
 
 
+class PreviewGateTests(unittest.TestCase):
+    """QA previews hide everything behind an access code; only the key-checked
+    node API may pass, so the workstation (which cannot fill in a browser form)
+    still has to present LOCAL_NODE_WORKER_KEY."""
+
+    ENV = {"PUBLIC_PREVIEW_MODE": "true", "PREVIEW_ACCESS_CODE": "made-up-code", "RAILWAY_ENVIRONMENT_NAME": "preview",
+           "RAILWAY_PROJECT_ID": "other", "LOCAL_NODE_ENABLED": "true", "LOCAL_NODE_WORKER_KEY": NODE_KEY}
+
+    def setUp(self):
+        self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        Base.metadata.create_all(self.engine)
+        Session = sessionmaker(bind=self.engine)
+
+        def override():
+            with Session() as db:
+                yield db
+        app.dependency_overrides[get_db] = override
+        self.read_only = app.state.read_only
+        app.state.read_only = False
+        self.client = TestClient(app, follow_redirects=False)
+
+    def tearDown(self):
+        app.state.read_only = self.read_only
+        app.dependency_overrides.pop(get_db, None)
+        self.engine.dispose()
+
+    def test_node_api_reaches_key_check_but_nothing_else_skips_the_gate(self):
+        with patch.dict(os.environ, self.ENV):
+            body = {"workerId": "shop-node-1"}
+            self.assertEqual(self.client.post("/internal/local-node/claim", json=body).status_code, 401)
+            self.assertEqual(self.client.post("/internal/local-node/claim", json=body, headers=NODE).status_code, 200)
+            self.assertEqual(self.client.get("/internal/local-node/eval-cases").status_code, 401)
+            for path in ("/ro/1", "/ro/1/ai-review/1", "/internal/imperial/tasks/open", "/internal/local-node",
+                         "/internal/local-nodeX/claim", "/dashboard"):
+                response = self.client.get(path)
+                self.assertEqual((response.status_code, response.headers.get("location")), (303, "/preview-access"), path)
+
+
 class FeatureOffTests(unittest.TestCase):
     """Production stays as-is until the flag and migration are approved."""
 
