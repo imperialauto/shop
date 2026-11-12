@@ -157,6 +157,8 @@ To stop the worker on purpose: `Stop-ScheduledTask -TaskName 'Imperial Local Nod
 * No customer identity is sent to the model; free-text phone/email are redacted.
 * **Note:** `imperialauto/shop` is a **public** repository. Nothing secret is committed here, but the prompt, guardrails and Modelfile are publicly readable.
 
+**Production rollout, rollback and credential replacement:** see `docs/LOCAL-AI-NODE-PRODUCTION-RUNBOOK.md`. The production Operations app is the Railway service `web`, not `shop`.
+
 ## 8. Rollback
 1. Fastest: set `LOCAL_NODE_ENABLED=false` (or remove the variable). Node endpoints return 503, the job page panel disappears, `/readyz` ignores the tables. No data loss.
 2. Workstation: `powershell -File D:\Imperial\LocalNode\uninstall.ps1 -RemoveKey`, and delete/rotate the key in Railway.

@@ -208,12 +208,24 @@ if (-not $SkipTask) {
         -Principal $principal -Description "Imperial Operations local AI worker (outbound HTTPS only)" -Force | Out-Null
     Report "Scheduled Task 'Imperial Local Node' registered (no window; starts at logon; 5-minute watchdog)" $true
     if ($checkOk) {
-        # Replace any worker started by an older install (it ran inside a console window).
+        # Replace any worker from an older install. Stop the task instance first:
+        # while an old instance still counts as running, Start-ScheduledTask is ignored
+        # (QA: the reinstall left no new worker until the watchdog fired).
+        Stop-ScheduledTask -TaskName "Imperial Local Node" -ErrorAction SilentlyContinue
         Get-CimInstance Win32_Process -Filter "Name like 'python%'" |
             Where-Object { $_.CommandLine -like "*Imperial*LocalNode*worker.py*" } |
             ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+        Start-Sleep -Seconds 2
         Start-ScheduledTask -TaskName "Imperial Local Node"
-        Write-Host "Worker started. Log: $logDir\worker.log"
+        $running = $false
+        for ($i = 0; $i -lt 10 -and -not $running; $i++) {
+            Start-Sleep -Seconds 2
+            # @(...) is required: PowerShell 5.1 gives no .Count for a single CIM object.
+            $running = @(Get-CimInstance Win32_Process -Filter "Name like 'pythonw%'" |
+                Where-Object { $_.CommandLine -like "*Imperial*LocalNode*worker.py*" }).Count -gt 0
+        }
+        Report "Worker running in the background (pythonw.exe)" $running
+        Write-Host "Log: $logDir\worker.log"
     } else {
         Write-Host "Worker NOT started because the commissioning check failed. Fix it, then: Start-ScheduledTask -TaskName 'Imperial Local Node'" -ForegroundColor Yellow
     }
