@@ -19,7 +19,7 @@ param(
     [string]$WorkerId = ("shop-" + $env:COMPUTERNAME.ToLower()),
     [string]$InstallDir = "D:\Imperial\LocalNode",
     [string]$ModelsDir = "D:\Imperial\Models",
-    [string]$SourceDir = $PSScriptRoot,
+    [string]$SourceDir = "",
     [switch]$RebuildModel,
     [switch]$SkipTask
 )
@@ -27,6 +27,9 @@ param(
 Set-StrictMode -Version 2
 $ErrorActionPreference = "Stop"
 $failures = 0
+# Windows PowerShell 5.1 leaves $PSScriptRoot empty in param() defaults, so find
+# this script's folder here instead.
+if (-not $SourceDir) { $SourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path }
 
 function Report([string]$Name, [bool]$Ok, [string]$Detail = "") {
     if ($Ok) { Write-Host "[PASS] $Name $Detail" -ForegroundColor Green }
@@ -71,7 +74,8 @@ Report "Model imperial-diagnostics:latest installed" ($installed -contains "impe
 # --- 2. Storage ----------------------------------------------------------------------------
 $modelSetting = [Environment]::GetEnvironmentVariable("OLLAMA_MODELS", "User")
 if (-not $modelSetting) { $modelSetting = [Environment]::GetEnvironmentVariable("OLLAMA_MODELS", "Machine") }
-Report "OLLAMA_MODELS points to $ModelsDir" ($modelSetting -eq $ModelsDir) ("currently '" + $modelSetting + "'")
+$modelsMatch = ($modelSetting -and ($modelSetting.TrimEnd('\') -ieq $ModelsDir.TrimEnd('\')))
+Report "OLLAMA_MODELS points to $ModelsDir" $modelsMatch ("currently '" + $modelSetting + "'")
 Report "Model folder exists" (Test-Path $ModelsDir)
 $drive = Get-PSDrive -Name ($InstallDir.Substring(0, 1)) -ErrorAction SilentlyContinue
 if ($drive) {

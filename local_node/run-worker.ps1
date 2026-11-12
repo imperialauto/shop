@@ -10,6 +10,7 @@ param([ValidateSet("check", "eval", "once")][string]$Mode = "")
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
+if (-not $root) { $root = Split-Path -Parent $MyInvocation.MyCommand.Path }
 $configFile = Join-Path $root "config\config.json"
 $keyFile = Join-Path $root "config\worker.key"
 $python = (Get-Content (Join-Path $root "config\python-path.txt") -TotalCount 1).Trim()
