@@ -11,7 +11,7 @@ from app.database import get_db, init_db
 from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user, after_login
 from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, my_day, business_settings_page, dispatch, imperial_tasks, dev_work, live, finance, owner_setup, public_site, staff
-from app.routes import account_security
+from app.routes import account_security, local_node
 from app.scheduler import start_scheduler
 
 import os
@@ -45,7 +45,10 @@ app.include_router(imperial_tasks.router, prefix="/internal/imperial/tasks", tag
 app.include_router(dev_work.router, prefix="/internal/imperial/dev-work", tags=["internal"])
 app.include_router(live.router, prefix="/live", tags=["live"])
 app.include_router(vehicles.router, prefix="/vehicles", tags=["vehicles"])
+app.include_router(local_node.staff_router, prefix="/ro", tags=["local_node"])
 app.include_router(repair_orders.router, prefix="/ro", tags=["repair_orders"])
+# Shop workstation (Imperial Local Node) — its own key, never INTERNAL_API_KEY.
+app.include_router(local_node.worker_router, prefix="/internal/local-node", tags=["internal"])
 app.include_router(invoices.router, prefix="/invoices", tags=["invoices"])
 app.include_router(finance.router, prefix="/finance", tags=["finance"])
 app.include_router(owner_setup.router, tags=["owner_setup"])
@@ -143,7 +146,10 @@ PREVIEW_FORM = ('<!doctype html><meta name="viewport" content="width=device-widt
 async def preview_gate(request: Request):
     """Only a disposable preview has a code. Every other deployment skips this."""
     code = preview_code()
-    if not code or request.url.path in ("/healthz", "/readyz"):
+    # The outbound workstation authenticates with its dedicated X-Local-Node-Key;
+    # it cannot complete the browser-only preview access-code challenge.
+    if (not code or request.url.path in ("/healthz", "/readyz")
+            or request.url.path.startswith("/internal/local-node/")):
         return None
     expected = hashlib.sha256(code.encode()).hexdigest()
     if hmac.compare_digest(request.cookies.get(PREVIEW_COOKIE, ""), expected):
