@@ -290,8 +290,16 @@ def validate_output(raw, snapshot: dict) -> dict:
         if code not in supplied:
             continue  # already reported above
         given = row["status_as_supplied"].lower().strip()
-        if given != supplied[code]:
-            violations.append(f"code_status_changed:{code}")
+        if supplied[code] == NOT_SUPPLIED:
+            ok = given == NOT_SUPPLIED
+        else:
+            # Accept true synonyms of the supplied status ("current" for active,
+            # "history" for stored); anything else, including extra words, fails.
+            ok = CODE_STATUSES.get(given, given) == supplied[code]
+        if not ok:
+            # Record what the model wrote (short, sanitised) so a failed review explains itself.
+            shown = re.sub(r"[^a-z0-9 /()-]", "", given)[:30] or "blank"
+            violations.append(f"code_status_changed:{code}:{shown}")
     for code in sorted(set(supplied) - listed):
         cautions.append(f"Code {code} was supplied but not listed by the AI.")
     for code, status in supplied.items():

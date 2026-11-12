@@ -71,7 +71,12 @@ class GuardTests(unittest.TestCase):
                                                "likelihood": "high"}])
         self.assertIn("code_status_asserted:P0301", self.check(draft)["violations"])
         draft = good_output(reported_codes=[{"code": "P0301", "status_as_supplied": "active", "meaning": "misfire"}])
-        self.assertIn("code_status_changed:P0301", self.check(draft)["violations"])
+        self.assertIn("code_status_changed:P0301:active", self.check(draft)["violations"])
+        active_snap = {**SNAPSHOT, "reported_codes": [{"code": "P0301", "status": "active"}]}
+        for synonym, ok in (("Active", True), ("current", True), ("confirmed", True), ("stored", False),
+                            ("active (misfire on cylinder 1)", False), ("", False)):
+            draft = good_output(reported_codes=[{"code": "P0301", "status_as_supplied": synonym, "meaning": "misfire"}])
+            self.assertEqual(self.check(draft, active_snap)["ok"], ok, synonym)
         hedged = good_output(missing_information=["Confirm whether P0301 is active or stored"])
         self.assertTrue(self.check(hedged)["ok"])
 
@@ -423,7 +428,7 @@ class LocalNodeApiTests(unittest.TestCase):
         unsafe = good_output(reported_codes=[{"code": "P0301", "status_as_supplied": "active", "meaning": "misfire"}],
                              proposed_repairs=[{"repair": "Replace coil 1", "justified_by_confirmed_findings": ["P0301"]}])
         body = self.result(self.claim(), unsafe).json()
-        self.assertIn("code_status_changed:P0301", body["violations"])
+        self.assertIn("code_status_changed:P0301:active", body["violations"])
         self.assertIn("repair_justified_by_code_only", body["violations"])
         self.assertIsNone(self.review().draft_json)
 

@@ -180,7 +180,7 @@ class WorkerEndToEndTests(unittest.TestCase):
         self.assertEqual(self.run_worker("--once")[0], 0)
         status, error, draft = self.status()
         self.assertEqual(status, "retry_wait")
-        self.assertIn("code_status_changed:P0301", error)
+        self.assertIn("code_status_changed:P0301:active", error)
         self.assertIsNone(draft)
 
     def test_ollama_error_is_reported_for_retry(self):
