@@ -436,6 +436,20 @@ class QueueWorkflowTests(unittest.TestCase):
         self.assertIn("Back on", self.start_again()["ownerReply"])
         self.assertEqual(len(self.alert()), 1)
 
+    def test_configured_owner_limit_spreads_held_alerts_across_checks(self):
+        self.stop()
+        self.post("limit1", "2013 Ford Fusion fuel leak", "CNlimit1")
+        self.post("limit2", "2013 Ford Fusion fuel leak", "CNlimit2")
+        self.assertEqual(self.tick()["messages"], [])
+        self.start_again()
+        with patch.object(dispatch.business_settings, "owner_alert_batch_limit", return_value=0):
+            self.assertEqual(self.alert(), [])
+        with patch.object(dispatch.business_settings, "owner_alert_batch_limit", return_value=1):
+            first = self.alert()
+            second = self.alert()
+        self.assertEqual((len(first), len(second)), (1, 1))
+        self.assertNotEqual(first[0]["key"], second[0]["key"])
+
     def test_stop_all_blocks_yes_and_edit_and_auto_replies(self):
         self.post("m1", "2013 Ford Fusion fuel leak")
         item = self.items()[0]
