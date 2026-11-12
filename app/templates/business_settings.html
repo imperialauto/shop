@@ -68,11 +68,23 @@
     <label>Buffer after shop jobs <input name="buffer" inputmode="numeric" value="{{ settings.buffer }}" class="form-input" style="width:80px"> minutes</label>
     <label>Earliest online booking <input name="lead" inputmode="numeric" value="{{ settings.lead }}" class="form-input" style="width:90px"> minutes from now</label>
   </div>
+  <section class="card" aria-labelledby="owner-notifications">
+    <h2 id="owner-notifications" class="font-bold mb-2">Owner notifications</h2>
+    <label for="owner-alert-batch-limit">Scheduled owner texts per dispatch check</label>
+    <input id="owner-alert-batch-limit" name="owner_alert_batch_limit" type="number"
+           min="0" max="{{ settings.owner_alert_max }}" step="1" required
+           value="{{ settings.owner_alert_batch_limit }}" class="form-input"
+           style="width:90px" aria-describedby="owner-alert-limit-help">
+    <p id="owner-alert-limit-help" class="text-sm text-stone-400 mt-2">
+      Set a lower limit to spread out held alerts. Set 0 to hold scheduled owner texts, including urgent alerts.
+      Direct replies and customer texting use separate controls.
+    </p>
+  </section>
   <button class="btn-primary" type="submit" style="min-height:44px">Save settings</button>
 </form>
 <div class="card max-w-3xl mt-6">
   <h2 class="font-bold mb-2">Change history</h2>
-  {% for c in history %}<div class="text-sm py-1 border-b border-stone-800">{{ c.changed_at.strftime('%b %-d, %-I:%M %p') }} UTC · {{ c.changed_by }} changed {{ c.key.replace('_', ' ') }}</div>
+  {% for c in history %}<div class="text-sm py-1 border-b border-stone-800">{{ c.changed_at.strftime('%b %d, %I:%M %p') }} UTC · {{ c.changed_by }} changed {{ c.key.replace('_', ' ') }}</div>
   {% else %}<p class="text-sm text-stone-400">No changes yet. Values come from the Railway settings until saved here.</p>{% endfor %}
 </div>
 {% endblock %}

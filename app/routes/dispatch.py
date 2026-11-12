@@ -19,7 +19,7 @@ from app.database import get_db
 from app.config import OWNER_PHONE
 from app.dispatch import AUTO_POLICIES, LOCKED_POLICIES, MAKES, POLICIES, PROMISE, apply_policies, assess, auto_reply, is_reaction, parse_owner_command, propose
 from app.appointment_model import Appointment
-from app import alert_rules, approval_links, name_finder, next_action, quo_import, website_alerts
+from app import alert_rules, business_settings, approval_links, name_finder, next_action, quo_import, website_alerts
 from app.sending_pause import is_paused, pause, resume
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync, OPEN_STATUSES
 from app.models import Communication, Customer, LineItem, PartsOrder, RepairOrder, Vehicle
@@ -492,7 +492,6 @@ DIGEST_HOURS = (13, 15, 17)
 MAX_FOLLOW_UPS = 3  # per check, so a long list never floods the owner
 DASHBOARD_REPLY = "dashboard_reply"
 QUIET = timedelta(seconds=30)  # lets a burst of customer texts become one alert
-TICK_LIMIT = 10
 DAILY_HOUR = 10
 STUCK_HOUR = 11
 DRAFT_GRACE = timedelta(seconds=90)
@@ -622,6 +621,9 @@ def due_owner_messages(db: Session, now: datetime) -> list[dict]:
     if now.weekday() != 6 and DAILY_HOUR <= now.hour < DAILY_HOUR + 3:
         due.append((f"daily:{now.date()}", "owner_daily", None, _daily_text(db, now)))
 
+    limit = business_settings.owner_alert_batch_limit()
+    if limit == 0:
+        return []
     current_rules = alert_rules.rules()
     kept = []
     for key, kind, item_id, text in due:
@@ -642,7 +644,7 @@ def due_owner_messages(db: Session, now: datetime) -> list[dict]:
         else:
             continue
         messages.append({"key": key, "text": text})
-        if len(messages) >= TICK_LIMIT:
+        if len(messages) >= limit:
             break
     return messages
 
