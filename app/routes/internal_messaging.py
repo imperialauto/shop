@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import secrets
 
@@ -204,7 +204,7 @@ def log_communication(
     right alongside line items and invoices — no separate screen to check.
 
     Body: { "phone": "+1...", "direction": "inbound"|"outbound",
-            "body": "...", "externalId": "quo message id" }
+            "body": "...", "externalId": "quo message id", "createdAt": "ISO 8601" }
     Best-effort only: if there's no matching customer yet (e.g. a brand new
     lead who texted in before ever becoming a customer record), this is a
     no-op rather than an error — the messaging module's own history is the
@@ -214,6 +214,15 @@ def log_communication(
     direction = payload.get("direction", "inbound")
     body = payload.get("body", "")
     external_id = payload.get("externalId")
+    created_at = payload.get("createdAt")
+    timestamp = None
+    if isinstance(created_at, str):
+        try:
+            parsed = datetime.fromisoformat(created_at)
+            if parsed.tzinfo is not None:
+                timestamp = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+        except ValueError:
+            pass
 
     customer = _find_customer_by_phone(db, phone)
     if not customer:
@@ -229,6 +238,8 @@ def log_communication(
     # Idempotency: Quo may retry webhook deliveries or replay historical messages.
     # Do not mirror the same external message twice for the same customer.
     if external_id:
+        # Serialize mirrors for the same customer when send and webhook race.
+        db.query(Customer.id).filter(Customer.id == customer.id).with_for_update().one()
         existing = (
             db.query(Communication)
             .filter(Communication.customer_id == customer.id, Communication.external_id == external_id)
@@ -244,6 +255,7 @@ def log_communication(
         channel="sms",
         body=body,
         external_id=external_id,
+        created_at=timestamp,
     )
     db.add(comm)
     try:

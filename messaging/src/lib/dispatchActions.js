@@ -96,11 +96,12 @@ Confirm the customer selling price and make a new draft.`;
       } else {
         status = "failed";
         notice = `#${reply.itemId} failed to send. Please reply in Quo.`;
-        await quo.sendMessage({ to: reply.phone, content: reply.text });
+        const sent = await quo.sendMessage({ to: reply.phone, content: reply.text });
         status = "sent";
         notice = `Sent #${reply.itemId} to the customer.`;
         await shopClient.logCommunication({
-          phone: reply.phone, direction: "outbound", body: reply.text, externalId: null,
+          phone: reply.phone, direction: "outbound", body: reply.text,
+          externalId: sent?.id, createdAt: sent?.createdAt,
         });
       }
     }

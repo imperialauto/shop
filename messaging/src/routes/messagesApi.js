@@ -251,8 +251,7 @@ router.post("/conversations/:id/send", asyncHandler(async (req, res) => {
   // if you run more than one line; quoClient defaults to QUO_DEFAULT_FROM_NUMBER.
   const sent = await quo.sendMessage({ to: conversation.customerPhone, content: body });
 
-  const message = await prisma.message.create({
-    data: {
+  const messageData = {
       conversationId: conversation.id,
       quoMessageId: sent?.id || null,
       direction: "OUTBOUND",
@@ -260,8 +259,14 @@ router.post("/conversations/:id/send", asyncHandler(async (req, res) => {
       quoStatus: sent?.status || "queued",
       sentByUserId: req.user?.id || null, // set by your auth middleware
       quoCreatedAt: sent?.createdAt ? new Date(sent.createdAt) : new Date(),
-    },
-  });
+  };
+  const message = sent?.id
+    ? await prisma.message.upsert({
+        where: { quoMessageId: sent.id },
+        create: messageData,
+        update: { sentByUserId: messageData.sentByUserId },
+      })
+    : await prisma.message.create({ data: messageData });
 
   if (draftId && originalDraft) {
     // SENT if the coordinator approved the draft body verbatim, EDITED if
@@ -293,6 +298,7 @@ router.post("/conversations/:id/send", asyncHandler(async (req, res) => {
       direction: "outbound",
       body,
       externalId: sent?.id || null,
+      createdAt: message.quoCreatedAt,
     })
     .catch((err) => console.error("Failed to mirror outbound SMS to shop app:", err));
 
