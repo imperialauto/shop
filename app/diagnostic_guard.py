@@ -18,7 +18,7 @@ Hard rules (draft is rejected and the task retried / failed):
 import json
 import re
 
-PROMPT_VERSION = "diag-v1-20261111"
+PROMPT_VERSION = "diag-v2-20261111"
 
 CODE_STATUSES = {
     "active": "active", "current": "active", "confirmed": "active",
@@ -102,8 +102,9 @@ Rules you must follow:
 5. suspected_causes: possibilities only, each with the basis from the INPUT and a likelihood (low, medium, high). These are not findings.
 6. recommended_tests: concrete tests that would confirm or rule out each suspected cause. Do not state numeric specifications; say "compare to manufacturer specification".
 7. proposed_repairs: a trouble code alone never justifies replacing a part. Only propose a repair when a technician-confirmed finding supports it, and list those findings in justified_by_confirmed_findings. If there are no technician-confirmed findings, proposed_repairs MUST be an empty list.
-8. missing_information: list what the technician should collect next (for example code status, freeze frame data, test results).
-9. Never say a repair is approved or authorized. Never address the customer.
+8. Swap tests: when the technician moved a part (coil, injector, plug, relay, module) and the fault FOLLOWED it, the moved part is the likely cause; name it by where it came from (for example "the original cylinder 1 coil, now in cylinder 3") and treat wiring or connectors at either position as unlikely. If the fault STAYED in the original position, the moved part is ruled out and wiring, connectors or other parts at that position become more likely.
+9. missing_information: list what the technician should collect next (for example code status, freeze frame data, test results).
+10. Never say a repair is approved or authorized. Never address the customer.
 Keep each item under 300 characters and each list to 8 items or fewer."""
 
 
@@ -406,6 +407,16 @@ EVAL_CASES = [
                      "technician_notes": "Swapped coil 1 with coil 3; misfire followed the coil to cylinder 3.",
                      "technician_readings": "",
                      "reported_codes": [{"code": "P0301", "status": "active"}]},
-        "expect": "May propose the ignition coil, citing the coil-swap finding, not the code.",
+        "expect": "Names the original cylinder 1 coil as the likely cause, citing the swap; wiring unlikely.",
+    },
+    {
+        "name": "swap_fault_stayed",
+        "snapshot": {"job_reference": "EVAL-4", "vehicle": {"year": 2016, "make": "Chevrolet", "model": "Silverado 1500",
+                                                             "engine": "5.3L V8", "mileage": 97000},
+                     "customer_reported_concern": "Rough idle and check engine light.",
+                     "technician_notes": "Swapped coil 1 with coil 3; misfire stayed on cylinder 1.",
+                     "technician_readings": "",
+                     "reported_codes": [{"code": "P0301", "status": "active"}]},
+        "expect": "Rules the coil out; points to plug, injector, wiring or mechanical checks on cylinder 1. No coil repair.",
     },
 ]
