@@ -64,11 +64,27 @@ def model_name() -> str:
     return os.getenv("LOCAL_NODE_MODEL", "imperial-diagnostics:latest").strip()[:96]
 
 
-def _event(db: Session, review: DiagnosticReview, actor: str, action: str, detail=None):
+def _event(db: Session, review, actor: str, action: str, detail=None):
+    """Append an audit event. `review` is a DiagnosticReview or its id."""
+    review_id = review if isinstance(review, int) else review.id
     if detail is not None and not isinstance(detail, str):
         detail = json.dumps(detail, sort_keys=True)
-    db.add(DiagnosticReviewEvent(review_id=review.id, actor=actor[:64], action=action[:32],
+    db.add(DiagnosticReviewEvent(review_id=review_id, actor=actor[:64], action=action[:32],
                                  detail=(detail or None) and detail[:2000]))
+
+
+def _transition(db: Session, review_id: int, expect: dict, values: dict) -> bool:
+    """Compare-and-swap one review: UPDATE … WHERE id AND every `expect` column
+    still has the value the caller saw. Returns False when anything changed in
+    between (another worker reclaimed it, staff cancelled it, …). PostgreSQL
+    re-checks the WHERE clause after taking the row lock, so exactly one of two
+    racing writers can win. Callers write audit events only after a win, in the
+    same transaction, and roll back on a loss."""
+    query = db.query(DiagnosticReview).filter(DiagnosticReview.id == review_id)
+    for column, value in expect.items():
+        field = getattr(DiagnosticReview, column)
+        query = query.filter(field.in_(value) if isinstance(value, (tuple, list, set)) else field == value)
+    return query.update(values, synchronize_session=False) == 1
 
 
 # --------------------------------------------------------------------------
@@ -133,121 +149,135 @@ def heartbeat(payload: Heartbeat, db: Session = Depends(get_db), _auth: bool = D
     return {"ok": True, "model": model_name(), "serverTime": row.last_seen_at.isoformat()}
 
 
-def _give_up_or_retry(db: Session, review: DiagnosticReview, actor: str, reason: str, retryable: bool):
-    now = utc_now()
-    review.lease_owner = review.lease_token = None
-    review.lease_until = None
-    review.last_error = reason[:1000]
-    review.updated_at = now
+def _lease_guard(worker_id: str, token: str) -> dict:
+    return {"status": "processing", "lease_owner": worker_id, "lease_token": token}
+
+
+def _retry_or_fail(review: DiagnosticReview, reason: str, retryable: bool, now) -> tuple[dict, str]:
+    """Values for the next state after a failed attempt (not yet written)."""
+    values = {"lease_owner": None, "lease_token": None, "lease_until": None,
+              "last_error": reason[:1000], "updated_at": now}
     if retryable and review.attempt_count < review.max_attempts:
-        review.status = "retry_wait"
-        review.retry_after = now + timedelta(seconds=30 * review.attempt_count)
-        _event(db, review, actor, "retry_scheduled", reason)
-    else:
-        review.status = "failed"
-        review.completed_at = now
-        _event(db, review, actor, "failed", reason)
+        values.update(status="retry_wait", retry_after=now + timedelta(seconds=30 * review.attempt_count))
+        return values, "retry_scheduled"
+    values.update(status="failed", completed_at=now)
+    return values, "failed"
 
 
 @worker_router.post("/claim")
 def claim(payload: Claim, db: Session = Depends(get_db), _auth: bool = Depends(require_node)):
-    """Hand out at most one review under a lease. Safe against two workers or a
-    restarted worker: every hand-out is a compare-and-swap on (id, status,
-    updated_at), and results must present the lease token that was issued."""
+    """Hand out at most one review under a lease. Every hand-out, and the
+    give-up on an expired final attempt, is a compare-and-swap on the state the
+    caller saw, and results must present the lease token that was issued."""
     now = utc_now()
     candidates = db.query(DiagnosticReview).filter(or_(
         DiagnosticReview.status == "queued",
         (DiagnosticReview.status == "retry_wait") & (DiagnosticReview.retry_after <= now),
         (DiagnosticReview.status == "processing") & (DiagnosticReview.lease_until < now),
     )).order_by(DiagnosticReview.created_at, DiagnosticReview.id).limit(5).all()
-    for review in candidates:
-        previous_status, previous_updated = review.status, review.updated_at
+    seen = [(r.id, r.status, r.updated_at, r.lease_token, r.lease_owner, r.attempt_count, r.max_attempts)
+            for r in candidates]
+    for review_id, previous_status, previous_updated, previous_token, previous_owner, attempts, max_attempts in seen:
+        expect = {"status": previous_status, "updated_at": previous_updated}
         if previous_status == "processing":
+            expect["lease_token"] = previous_token
             # The worker holding it went quiet (crash, reboot, network loss).
-            if review.attempt_count >= review.max_attempts:
-                _event(db, review, "system", "lease_expired_failed", f"previous worker {review.lease_owner or ''}")
-                review.status = "failed"
-                review.completed_at = now
-                review.updated_at = now
-                review.lease_owner = review.lease_token = None
-                review.lease_until = None
-                review.last_error = "Workstation stopped responding during the last allowed attempt."
-                db.commit()
+            if attempts >= max_attempts:
+                won = _transition(db, review_id, expect, {
+                    "status": "failed", "completed_at": now, "updated_at": now,
+                    "lease_owner": None, "lease_token": None, "lease_until": None,
+                    "last_error": "Workstation stopped responding during the last allowed attempt."})
+                if won:
+                    _event(db, review_id, "system", "lease_expired_failed", f"previous worker {previous_owner or ''}")
+                    db.commit()
+                else:
+                    db.rollback()  # its worker reported in, or another claimer handled it
                 continue
         token = secrets.token_hex(24)
-        changed = db.query(DiagnosticReview).filter(
-            DiagnosticReview.id == review.id,
-            DiagnosticReview.status == previous_status,
-            DiagnosticReview.updated_at == previous_updated,
-        ).update({
-            "status": "processing", "lease_owner": payload.workerId, "lease_token": token,
-            "lease_until": now + timedelta(seconds=LEASE_SECONDS), "attempt_count": DiagnosticReview.attempt_count + 1,
-            "started_at": now, "updated_at": now, "retry_after": None,
-        }, synchronize_session=False)
-        if changed != 1:
+        if not _transition(db, review_id, expect, {
+                "status": "processing", "lease_owner": payload.workerId, "lease_token": token,
+                "lease_until": now + timedelta(seconds=LEASE_SECONDS),
+                "attempt_count": DiagnosticReview.attempt_count + 1,
+                "started_at": now, "updated_at": now, "retry_after": None}):
             db.rollback()
             continue  # someone else took it first
-        db.expire(review)
-        _event(db, review, f"node:{payload.workerId}",
+        _event(db, review_id, f"node:{payload.workerId}",
                "reclaimed" if previous_status == "processing" else "claimed",
-               f"attempt {review.attempt_count} of {review.max_attempts}")
+               f"attempt {attempts + 1} of {max_attempts}")
         db.commit()
+        review = db.get(DiagnosticReview, review_id)
         snapshot = json.loads(review.source_snapshot)
         return {"task": {
-            "taskId": review.id, "leaseToken": token, "leaseSeconds": LEASE_SECONDS,
-            "attempt": review.attempt_count, "promptVersion": review.prompt_version,
+            "taskId": review_id, "leaseToken": token, "leaseSeconds": LEASE_SECONDS,
+            "attempt": attempts + 1, "promptVersion": review.prompt_version,
             "model": model_name(), "messages": guard.build_messages(snapshot),
             "format": guard.OUTPUT_SCHEMA, "options": {"temperature": 0.1, "num_ctx": 8192},
         }}
     return {"task": None}
 
 
+LOST_LEASE = "This task is no longer leased to this worker."
+
+
 def _leased(db: Session, task_id: int, worker_id: str, token: str) -> DiagnosticReview:
+    """Fast, friendly pre-check. NOT the guard: the write itself re-checks the lease."""
     review = db.get(DiagnosticReview, task_id)
     if review is None:
         raise HTTPException(status_code=404, detail="Unknown task.")
     if (review.status != "processing" or review.lease_owner != worker_id or not review.lease_token
             or not secrets.compare_digest(review.lease_token.encode(), token.encode())):
-        # A stale or duplicate worker; never overwrite the current holder's work.
-        raise HTTPException(status_code=409, detail="This task is no longer leased to this worker.")
+        raise HTTPException(status_code=409, detail=LOST_LEASE)
     return review
+
+
+def _commit_or_lost(db: Session, won: bool):
+    if not won:
+        db.rollback()  # lease was reclaimed or the review cancelled while we worked
+        raise HTTPException(status_code=409, detail=LOST_LEASE)
+    db.commit()
 
 
 @worker_router.post("/tasks/{task_id}/result")
 def report_result(task_id: int, payload: Result, db: Session = Depends(get_db), _auth: bool = Depends(require_node)):
     review = _leased(db, task_id, payload.workerId, payload.leaseToken)
     actor = f"node:{payload.workerId}"
-    snapshot = json.loads(review.source_snapshot)
-    verdict = guard.validate_output(payload.output, snapshot)
-    review.model_name = (payload.model or model_name())[:96]
-    if not verdict["ok"]:
-        _event(db, review, actor, "invalid_output", {"violations": verdict["violations"],
-                                                      "durationMs": payload.durationMs})
-        _give_up_or_retry(db, review, actor, "AI output rejected: " + ", ".join(verdict["violations"]), True)
-        db.commit()
-        return {"accepted": False, "status": review.status, "violations": verdict["violations"]}
+    verdict = guard.validate_output(payload.output, json.loads(review.source_snapshot))
+    model = (payload.model or model_name())[:96]
     now = utc_now()
-    review.status = "draft_ready"
-    review.draft_json = json.dumps(verdict["draft"], sort_keys=True)
-    review.validation_notes = json.dumps(verdict["cautions"])
-    review.lease_owner = review.lease_token = None
-    review.lease_until = None
-    review.last_error = None
-    review.completed_at = now
-    review.updated_at = now
-    _event(db, review, actor, "draft_ready", {"durationMs": payload.durationMs, "model": review.model_name})
-    db.commit()
-    return {"accepted": True, "status": review.status}
+    lease = _lease_guard(payload.workerId, payload.leaseToken)
+    if not verdict["ok"]:
+        reason = "AI output rejected: " + ", ".join(verdict["violations"])
+        values, action = _retry_or_fail(review, reason, True, now)
+        won = _transition(db, task_id, lease, {**values, "model_name": model})
+        if won:
+            _event(db, task_id, actor, "invalid_output", {"violations": verdict["violations"],
+                                                          "durationMs": payload.durationMs})
+            _event(db, task_id, actor, action, reason)
+        _commit_or_lost(db, won)
+        return {"accepted": False, "status": values["status"], "violations": verdict["violations"]}
+    won = _transition(db, task_id, lease, {
+        "status": "draft_ready", "draft_json": json.dumps(verdict["draft"], sort_keys=True),
+        "validation_notes": json.dumps(verdict["cautions"]), "model_name": model,
+        "lease_owner": None, "lease_token": None, "lease_until": None, "last_error": None,
+        "completed_at": now, "updated_at": now})
+    if won:
+        _event(db, task_id, actor, "draft_ready", {"durationMs": payload.durationMs, "model": model})
+    _commit_or_lost(db, won)
+    return {"accepted": True, "status": "draft_ready"}
 
 
 @worker_router.post("/tasks/{task_id}/error")
 def report_error(task_id: int, payload: Failure, db: Session = Depends(get_db), _auth: bool = Depends(require_node)):
     review = _leased(db, task_id, payload.workerId, payload.leaseToken)
     actor = f"node:{payload.workerId}"
-    _event(db, review, actor, "worker_error", payload.error)
-    _give_up_or_retry(db, review, actor, "Workstation error: " + payload.error, payload.retryable)
-    db.commit()
-    return {"status": review.status}
+    reason = "Workstation error: " + payload.error
+    values, action = _retry_or_fail(review, reason, payload.retryable, utc_now())
+    won = _transition(db, task_id, _lease_guard(payload.workerId, payload.leaseToken), values)
+    if won:
+        _event(db, task_id, actor, "worker_error", payload.error)
+        _event(db, task_id, actor, action, reason)
+    _commit_or_lost(db, won)
+    return {"status": values["status"]}
 
 
 @worker_router.get("/eval-cases")
@@ -422,15 +452,16 @@ def retry_review(request: Request, ro_id: int, review_id: int, db: Session = Dep
     review = _review_for(db, ro_id, review_id)
     if review.status != "failed":
         raise HTTPException(status_code=409, detail="Only a failed review can be sent again.")
-    if db.query(DiagnosticReview).filter(DiagnosticReview.repair_order_id == ro_id,
-                                         DiagnosticReview.status.in_(ACTIVE_STATUSES)).first():
-        raise HTTPException(status_code=409, detail="Another review for this job is already in progress.")
-    review.status = "queued"
-    review.attempt_count = 0
-    review.retry_after = None
-    review.completed_at = None
-    review.updated_at = utc_now()
-    _event(db, review, f"user:{user.id}", "requeued")
+    try:
+        won = _transition(db, review_id, {"status": "failed", "updated_at": review.updated_at}, {
+            "status": "queued", "attempt_count": 0, "retry_after": None, "completed_at": None,
+            "updated_at": utc_now()})
+    except IntegrityError:
+        won = False  # the partial unique index: another review for this job is in progress
+    if not won:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="This review changed, or another review for this job is in progress.")
+    _event(db, review_id, f"user:{user.id}", "requeued")
     db.commit()
     return RedirectResponse(f"/ro/{ro_id}#ai-review", status_code=303)
 
@@ -439,12 +470,16 @@ def retry_review(request: Request, ro_id: int, review_id: int, db: Session = Dep
 def cancel_review(request: Request, ro_id: int, review_id: int, db: Session = Depends(get_db)):
     user = _staff(request, db)
     review = _review_for(db, ro_id, review_id)
-    if review.status not in ("queued", "retry_wait", "failed", "processing"):
+    cancellable = ("queued", "retry_wait", "failed", "processing")
+    if review.status not in cancellable:
         raise HTTPException(status_code=409, detail="This review can no longer be cancelled.")
-    review.status = "cancelled"
-    review.lease_owner = review.lease_token = None
-    review.lease_until = None
-    review.updated_at = utc_now()
-    _event(db, review, f"user:{user.id}", "cancelled")
+    # Conditional on the state shown to the user: a draft that arrives in the
+    # meantime is not silently cancelled, and a worker result after this wins nothing.
+    if not _transition(db, review_id, {"status": review.status, "updated_at": review.updated_at}, {
+            "status": "cancelled", "lease_owner": None, "lease_token": None, "lease_until": None,
+            "updated_at": utc_now()}):
+        db.rollback()
+        raise HTTPException(status_code=409, detail="This review changed while you were looking at it. Reload and try again.")
+    _event(db, review_id, f"user:{user.id}", "cancelled")
     db.commit()
     return RedirectResponse(f"/ro/{ro_id}#ai-review", status_code=303)
