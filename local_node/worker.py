@@ -29,7 +29,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 log = logging.getLogger("imperial-local-node")
 
 DEFAULTS = {
@@ -76,10 +76,48 @@ def load_config(path):
     return config
 
 
-def worker_key():
-    key = os.environ.get("LOCAL_NODE_WORKER_KEY", "")
+def _dpapi_unprotect(blob: bytes) -> bytes:
+    """Decrypt a Windows DPAPI blob for the current Windows user (CryptUnprotectData)."""
+    if os.name != "nt":
+        raise ConfigError("An encrypted key file can only be read on Windows")
+    import ctypes
+    from ctypes import wintypes
+
+    class DATA_BLOB(ctypes.Structure):
+        _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+    crypt32, kernel32 = ctypes.windll.crypt32, ctypes.windll.kernel32
+    crypt32.CryptUnprotectData.argtypes = [ctypes.POINTER(DATA_BLOB), ctypes.c_void_p, ctypes.c_void_p,
+                                           ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(DATA_BLOB)]
+    crypt32.CryptUnprotectData.restype = wintypes.BOOL
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
+    buffer = ctypes.create_string_buffer(blob, len(blob))
+    source = DATA_BLOB(len(blob), ctypes.cast(buffer, ctypes.POINTER(ctypes.c_char)))
+    result = DATA_BLOB()
+    if not crypt32.CryptUnprotectData(ctypes.byref(source), None, None, None, None, 0, ctypes.byref(result)):
+        raise ConfigError("Could not decrypt the worker key file for this Windows user (re-run install.ps1)")
+    try:
+        return ctypes.string_at(result.pbData, result.cbData)
+    finally:
+        kernel32.LocalFree(ctypes.cast(result.pbData, ctypes.c_void_p))
+
+
+def read_key_file(path: str) -> str:
+    """Read the key saved by install.ps1 with ConvertFrom-SecureString (hex DPAPI blob of UTF-16LE text)."""
+    with open(path, encoding="ascii") as handle:
+        text = handle.read().strip()
+    try:
+        blob = bytes.fromhex(text)
+    except ValueError:
+        raise ConfigError("The worker key file is not in the expected format (re-run install.ps1)") from None
+    return _dpapi_unprotect(blob).decode("utf-16-le")
+
+
+def worker_key(key_file=None):
+    key = read_key_file(key_file) if key_file else os.environ.get("LOCAL_NODE_WORKER_KEY", "")
     if len(key) < 32:
-        raise ConfigError("LOCAL_NODE_WORKER_KEY is missing or too short (start the worker with run-worker.ps1)")
+        raise ConfigError("Worker key is missing or too short (pass --key-file, or set LOCAL_NODE_WORKER_KEY)")
     return key
 
 
@@ -310,6 +348,17 @@ class SingleInstance:
             raise ConfigError("Another Imperial Local Node worker is already running on this computer.") from None
 
 
+def _record_startup_error(config_path, message):
+    """pythonw has no console: leave startup failures somewhere a person will find them."""
+    try:
+        logs = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(config_path))), "logs")
+        os.makedirs(logs, exist_ok=True)
+        with open(os.path.join(logs, "worker-startup-errors.log"), "a", encoding="utf-8") as handle:
+            handle.write(time.strftime("%Y-%m-%d %H:%M:%S ") + message + "\n")
+    except OSError:
+        pass
+
+
 def setup_logging(log_dir, to_console):
     log.setLevel(logging.INFO)
     log.propagate = False
@@ -332,6 +381,7 @@ def setup_logging(log_dir, to_console):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Imperial Local Node worker")
     parser.add_argument("--config", required=True)
+    parser.add_argument("--key-file", help="DPAPI-encrypted key written by install.ps1 (Windows)")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true")
     mode.add_argument("--eval", action="store_true")
@@ -339,9 +389,11 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         config = load_config(args.config)
-        key = worker_key()
+        key = worker_key(args.key_file)
     except (ConfigError, OSError, ValueError) as exc:
-        print(f"Configuration error: {exc}", file=sys.stderr)
+        message = f"Configuration error: {exc}"
+        print(message, file=sys.stderr)
+        _record_startup_error(args.config, message)
         return 2
     setup_logging(config["logDir"], to_console=args.check or args.eval or args.once)
     backend, ollama = Backend(config, key), Ollama(config)
@@ -355,7 +407,7 @@ def main(argv=None):
     except ConfigError as exc:
         log.error(str(exc))
         return 3
-    log.info("Imperial Local Node %s starting as %s -> %s", VERSION, config["workerId"], config["backendUrl"])
+    log.info("Imperial Local Node %s starting as %s -> %s (pid %s)", VERSION, config["workerId"], config["backendUrl"], os.getpid())
     try:
         return run_forever(config, backend, ollama, once=args.once)
     except KeyboardInterrupt:

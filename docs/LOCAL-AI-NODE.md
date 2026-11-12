@@ -145,7 +145,9 @@ Start-ScheduledTask "Imperial Local Node"  # queued request should then complete
 ```
 
 Python 3.9+ is needed; if the installer says it is missing: `winget install -e --id Python.Python.3.12 --scope user`, open a new PowerShell window, rerun step 3.
-The task starts at **logon** of this Windows user. For unattended operation after a power cut, the PC should sign in automatically or stay signed in.
+The task runs `pythonw.exe` directly, with **no window**. The worker decrypts its own DPAPI key. The task starts at **logon** of this Windows user, and a **5-minute watchdog** trigger restarts the worker if it has exited for any reason. For unattended operation after a power cut, the PC should sign in automatically or stay signed in.
+
+To stop the worker on purpose: `Stop-ScheduledTask -TaskName 'Imperial Local Node'`. To start it: `Start-ScheduledTask -TaskName 'Imperial Local Node'`. The watchdog restarts it within 5 minutes unless you also run `Disable-ScheduledTask -TaskName 'Imperial Local Node'`.
 
 ## 7. Security considerations
 * Outbound HTTPS only; the worker opens no port and refuses non-loopback Ollama URLs and non-HTTPS backends. Installer fails if Ollama listens on anything but 127.0.0.1/::1 or `OLLAMA_HOST` is exposed.
@@ -168,7 +170,7 @@ The task starts at **logon** of this Windows user. For unattended operation afte
 * Earlier approved reviews in the tech notes are deliberately not sent to the AI (they contain AI-written suspected causes). The AI sees only the technician's own notes.
 * Text heuristics (status words, readings, labor hours) can have false positives (a correct draft gets retried) and can't catch every subtle fabrication. Technician review remains the real control.
 * Single workstation, one task at a time; lease is 15 min with a 10 min model timeout.
-* Worker runs at user logon, not as a Windows service.
+* Worker runs at user logon, not as a Windows service. QA found that the first design (a hidden PowerShell console) could be closed like an ordinary terminal window (exit `0xC000013A`), and Task Scheduler does not restart a task that exits. Fixed with the window-less `pythonw.exe` action plus the 5-minute watchdog.
 * Approved findings go to tech notes as text; they don't create line items or estimates (by design for this phase).
 * Online/offline is shown on the job page only (no separate alert, by design). A future step could add it to the existing System Health page.
 * Pre-existing, unrelated: `app/routes/dispatch.py` treats naive timestamps as UTC, so `test_dispatch`'s 30 s/90 s hold-back tests fail when the machine's local zone isn't UTC. Harmless on Railway/CI (UTC) but fragile. Not changed here.

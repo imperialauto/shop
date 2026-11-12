@@ -160,6 +160,36 @@ class WorkerEndToEndTests(unittest.TestCase):
         with patch.dict(os.environ, {"LOCAL_NODE_WORKER_KEY": NODE_KEY}):
             self.assertEqual(worker.worker_key(), NODE_KEY)
 
+    def test_key_file_is_decrypted_by_the_worker(self):
+        key_file = os.path.join(self.tmp.name, "worker.key")
+        Path(key_file).write_text("0a0b0c0d\r\n", encoding="ascii")  # hex DPAPI blob as PowerShell writes it
+        with patch.object(worker, "_dpapi_unprotect", return_value=NODE_KEY.encode("utf-16-le")) as unprotect:
+            self.assertEqual(worker.worker_key(key_file), NODE_KEY)
+        unprotect.assert_called_once_with(bytes.fromhex("0a0b0c0d"))
+        Path(key_file).write_text("not hex", encoding="ascii")
+        with self.assertRaises(worker.ConfigError):
+            worker.worker_key(key_file)
+        if os.name != "nt":
+            with self.assertRaises(worker.ConfigError):
+                worker._dpapi_unprotect(b"\x01\x02")
+
+    def test_background_start_with_key_file_processes_a_review(self):
+        key_file = os.path.join(self.tmp.name, "worker.key")
+        Path(key_file).write_text("00", encoding="ascii")
+        out = io.StringIO()
+        with patch.object(worker, "_dpapi_unprotect", return_value=NODE_KEY.encode("utf-16-le")), redirect_stdout(out):
+            self.assertEqual(worker.main(["--config", self.config, "--key-file", key_file, "--once"]), 0)
+        self.assertEqual(self.status()[0], "draft_ready")
+
+    def test_startup_errors_are_written_to_a_file_for_pythonw(self):
+        bad = os.path.join(self.tmp.name, "cfg", "config.json")
+        os.makedirs(os.path.dirname(bad), exist_ok=True)
+        Path(bad).write_text(json.dumps({"backendUrl": "http://example.com"}), encoding="utf-8")
+        with patch.object(worker, "worker_key", return_value=NODE_KEY), redirect_stdout(io.StringIO()):
+            self.assertEqual(worker.main(["--config", bad, "--once"]), 2)
+        log = Path(self.tmp.name, "logs", "worker-startup-errors.log").read_text(encoding="utf-8")
+        self.assertIn("backendUrl must be https", log)
+
     def test_once_processes_queued_review_into_draft(self):
         code, _ = self.run_worker("--once")
         self.assertEqual(code, 0)

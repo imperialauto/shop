@@ -191,16 +191,27 @@ Report "Commissioning check" $checkOk
 
 # --- 10. Scheduled task --------------------------------------------------------------------
 if (-not $SkipTask) {
-    $action = New-ScheduledTaskAction -Execute "powershell.exe" `
-        -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$InstallDir\run-worker.ps1`""
-    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $me
+    # pythonw.exe has no console window, so there is nothing to close by accident,
+    # and stopping the task stops the worker itself (QA: a closed console killed it).
+    $pythonw = Join-Path (Split-Path -Parent $python) "pythonw.exe"
+    if (-not (Test-Path $pythonw)) { throw "pythonw.exe not found next to $python" }
+    $action = New-ScheduledTaskAction -Execute $pythonw -WorkingDirectory $InstallDir `
+        -Argument "`"$workerDir\worker.py`" --config `"$configDir\config.json`" --key-file `"$keyFile`""
+    # At logon, plus a watchdog every 5 minutes: if the worker has exited for any
+    # reason it starts again; while it is running the extra start is ignored.
+    $watchdog = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5)
+    $trigger = @((New-ScheduledTaskTrigger -AtLogOn -User $me), $watchdog)
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
         -RestartCount 99 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
     $principal = New-ScheduledTaskPrincipal -UserId $me -LogonType Interactive -RunLevel Limited
     Register-ScheduledTask -TaskName "Imperial Local Node" -Action $action -Trigger $trigger -Settings $settings `
         -Principal $principal -Description "Imperial Operations local AI worker (outbound HTTPS only)" -Force | Out-Null
-    Report "Scheduled Task 'Imperial Local Node' registered (starts at logon, restarts on failure)" $true
+    Report "Scheduled Task 'Imperial Local Node' registered (no window; starts at logon; 5-minute watchdog)" $true
     if ($checkOk) {
+        # Replace any worker started by an older install (it ran inside a console window).
+        Get-CimInstance Win32_Process -Filter "Name like 'python%'" |
+            Where-Object { $_.CommandLine -like "*Imperial*LocalNode*worker.py*" } |
+            ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
         Start-ScheduledTask -TaskName "Imperial Local Node"
         Write-Host "Worker started. Log: $logDir\worker.log"
     } else {

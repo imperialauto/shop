@@ -15,21 +15,9 @@ $configFile = Join-Path $root "config\config.json"
 $keyFile = Join-Path $root "config\worker.key"
 $python = (Get-Content (Join-Path $root "config\python-path.txt") -TotalCount 1).Trim()
 
-$secure = Get-Content $keyFile -TotalCount 1 | ConvertTo-SecureString
-$bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
-try {
-    # Only this process and the worker it starts can see the key.
-    $env:LOCAL_NODE_WORKER_KEY = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
-} finally {
-    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
-}
-
-$workerArgs = @((Join-Path $root "worker\worker.py"), "--config", $configFile)
+# The worker decrypts its own key (DPAPI, this Windows user) - the same path the
+# Scheduled Task uses, so -Mode check also proves the background start will work.
+$workerArgs = @((Join-Path $root "worker\worker.py"), "--config", $configFile, "--key-file", $keyFile)
 if ($Mode) { $workerArgs += "--$Mode" }
-try {
-    & $python @workerArgs
-    $code = $LASTEXITCODE
-} finally {
-    Remove-Item Env:\LOCAL_NODE_WORKER_KEY -ErrorAction SilentlyContinue
-}
-exit $code
+& $python @workerArgs
+exit $LASTEXITCODE
