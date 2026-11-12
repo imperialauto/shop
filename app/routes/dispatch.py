@@ -20,7 +20,7 @@ from app.config import OWNER_PHONE
 from app.dispatch import AUTO_POLICIES, LOCKED_POLICIES, MAKES, POLICIES, PROMISE, apply_policies, assess, auto_reply, is_reaction, parse_owner_command, propose
 from app.appointment_model import Appointment
 from app import alert_rules, business_settings, approval_links, name_finder, next_action, quo_import, website_alerts
-from app.sending_pause import is_paused, pause, resume
+from app.sending_pause import is_paused, last_resume_cycle, pause, resume
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync, OPEN_STATUSES
 from app.models import Communication, Customer, LineItem, PartsOrder, RepairOrder, Vehicle
 from app.routes.internal_messaging import _find_customer_by_phone, _normalize_phone, require_internal_key
@@ -625,13 +625,34 @@ def due_owner_messages(db: Session, now: datetime) -> list[dict]:
     if limit == 0:
         return []
     current_rules = alert_rules.rules()
+    cycle = last_resume_cycle(db) if business_settings.raw("owner_alert_resume_mode") == "summary" else None
+    held = []
     kept = []
     for key, kind, item_id, text in due:
         item = db.get(DispatchItem, item_id) if item_id else None
         urgent = bool(item and item.urgency != "normal")
         booking = bool(item and website_alerts.is_website(item) and item.draft_reply == "")
         if alert_rules.allowed(kind, urgent, booking, now, current_rules):
-            kept.append((key, kind, item_id, text))  # held ones are not reserved, so they go out later
+            if cycle and kind == "owner_alert" and item and _utc(item.updated_at) <= _utc(cycle[1]):
+                held.append((key, urgent))
+            else:
+                kept.append((key, kind, item_id, text))
+    if held:
+        keys = [key for key, _ in held]
+        already_sent = {
+            key for (key,) in db.query(DispatchOutbound.dedupe_key).filter(
+                DispatchOutbound.dedupe_key.in_(keys), DispatchOutbound.status != "failed",
+            )
+        }
+        pending = [urgent for key, urgent in held if key not in already_sent]
+        if pending:
+            key = f"owner-resume:{cycle[0]}"
+            if reserve(db, key, "owner_resume_summary"):
+                urgent = sum(pending)
+                return [{"key": key, "text": (
+                    f"Texting resumed. {len(pending)} held item alerts ({urgent} urgent). "
+                    "Open Needs attention in Imperial Operations to review."
+                )}]
     messages = []
     for key, kind, item_id, text in kept:
         row = db.query(DispatchOutbound).filter(DispatchOutbound.dedupe_key == key).first()

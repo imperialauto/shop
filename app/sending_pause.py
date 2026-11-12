@@ -1,6 +1,9 @@
 """The owner's STOP ALL switch. The newest audit row decides, so history is kept."""
+from datetime import datetime
+
 from sqlalchemy.orm import Session
 
+from app import business_settings
 from app.database import SessionLocal
 from app.dispatch_model import DispatchAudit, DispatchOutbound
 
@@ -15,6 +18,16 @@ def is_paused(db: Session) -> bool:
     return bool(row) and row[0] == PAUSED
 
 
+def last_resume_cycle(db: Session) -> tuple[int, datetime] | None:
+    stopped = db.query(DispatchAudit.id).filter_by(action=PAUSED).order_by(DispatchAudit.id.desc()).first()
+    if stopped is None:
+        return None
+    resumed = db.query(DispatchAudit.created_at, DispatchAudit.detail).filter(
+        DispatchAudit.action == RESUMED, DispatchAudit.id > stopped.id,
+    ).order_by(DispatchAudit.id).first()
+    return (stopped.id, resumed.created_at) if resumed and resumed.detail == "owner_summary" else None
+
+
 def pause(db: Session, actor: str) -> int:
     """Stops sending. Replies waiting to go out are cancelled, never sent later. Returns how many."""
     waiting = db.query(DispatchOutbound).filter(DispatchOutbound.kind == DASHBOARD_REPLY, DispatchOutbound.status == "queued").all()
@@ -26,7 +39,8 @@ def pause(db: Session, actor: str) -> int:
 
 
 def resume(db: Session, actor: str) -> None:
-    db.add(DispatchAudit(item_id=None, actor=actor, action=RESUMED))
+    detail = "owner_summary" if business_settings.raw("owner_alert_resume_mode") == "summary" else None
+    db.add(DispatchAudit(item_id=None, actor=actor, action=RESUMED, detail=detail))
     db.commit()
 
 

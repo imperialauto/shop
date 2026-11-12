@@ -450,6 +450,24 @@ class QueueWorkflowTests(unittest.TestCase):
         self.assertEqual((len(first), len(second)), (1, 1))
         self.assertNotEqual(first[0]["key"], second[0]["key"])
 
+    def test_resume_summary_is_reserved_once_and_new_alert_is_individual(self):
+        import os
+
+        self.stop()
+        self.post("held1", "2013 Ford Fusion fuel leak", "CNheld1")
+        self.post("held2", "2013 Ford Fusion fuel leak", "CNheld2")
+        with patch.dict(os.environ, {"OWNER_ALERT_RESUME_MODE": "summary"}):
+            self.start_again()
+            self.start_again("go2")
+            first = self.alert()
+            self.assertEqual(len(first), 1)
+            self.assertIn("2 held item alerts (2 urgent)", first[0]["text"])
+            self.assertEqual(self.alert(), [])
+            self.post("new1", "2013 Ford Fusion fuel leak", "CNnew1")
+            new = self.alert()
+            self.assertEqual(len(new), 1)
+            self.assertTrue(new[0]["key"].startswith("alert:"))
+
     def test_stop_all_blocks_yes_and_edit_and_auto_replies(self):
         self.post("m1", "2013 Ford Fusion fuel leak")
         item = self.items()[0]

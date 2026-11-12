@@ -21,6 +21,7 @@ KEYS = {
     "mobile_zones": "PUBLIC_MOBILE_ZONES",
     "booking_lead_minutes": "PUBLIC_BOOKING_LEAD_MINUTES",
     "booking_closed_days": "PUBLIC_BOOKING_CLOSED_DAYS",
+    "owner_alert_resume_mode": "OWNER_ALERT_RESUME_MODE",
     "owner_alert_batch_limit": "OWNER_ALERT_BATCH_LIMIT",
     "alert_rules": "ALERT_RULES_JSON",
     "labor_rates": "LABOR_RATES_JSON",

@@ -55,6 +55,7 @@ def current() -> dict:
         "zones": "\n".join(f"{z}, {v.get('fee', '')}, {v.get('travel_minutes', '')}" for z, v in sorted(zones.items()) if isinstance(v, dict)),
         "rates": [{"key": k, "label": label, "value": pricing.rates()[k]} for k, label in pricing.RATE_LABELS.items()],
         "owner_alert_batch_limit": store.owner_alert_batch_limit(),
+        "owner_alert_resume_mode": store.raw("owner_alert_resume_mode"),
         "owner_alert_max": store.OWNER_ALERT_MAX,
         "buffer": store.raw("shop_buffer_minutes") or "60",
         "lead": store.raw("booking_lead_minutes") or "120",
@@ -120,6 +121,11 @@ def parse(form) -> dict:
     labor = {key: _number(form.get(f"rate_{key}", "").strip().lstrip("$"), label, 0, 1000, whole=False)
              for key, label in pricing.RATE_LABELS.items()}
     alerts = {}
+    if "owner_alert_resume_mode" in form:
+        mode = form.get("owner_alert_resume_mode")
+        if mode not in ("paced", "summary"):
+            raise Invalid("Choose paced delivery or a catch-up summary.")
+        alerts["owner_alert_resume_mode"] = mode
     if "owner_alert_batch_limit" in form:
         alerts["owner_alert_batch_limit"] = str(_number(
             form.get("owner_alert_batch_limit", ""), "Owner alert batch size", 0, store.OWNER_ALERT_MAX,

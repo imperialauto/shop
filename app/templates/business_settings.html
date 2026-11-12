@@ -70,6 +70,17 @@
   </div>
   <section class="card" aria-labelledby="owner-notifications">
     <h2 id="owner-notifications" class="font-bold mb-2">Owner notifications</h2>
+    <div class="mb-4">
+      <label for="owner-alert-resume-mode">Held alerts after resuming</label>
+      <select id="owner-alert-resume-mode" name="owner_alert_resume_mode" class="form-input"
+              aria-describedby="owner-alert-resume-help">
+        <option value="paced">Send individual alerts at the batch limit</option>
+        <option value="summary" {% if settings.owner_alert_resume_mode == 'summary' %}selected{% endif %}>Send one catch-up summary</option>
+      </select>
+      <p id="owner-alert-resume-help" class="text-sm text-stone-400 mt-2">
+        The summary covers held item alerts. Open Needs attention for details. New alerts and scheduled reminders follow their normal rules.
+      </p>
+    </div>
     <label for="owner-alert-batch-limit">Scheduled owner texts per dispatch check</label>
     <input id="owner-alert-batch-limit" name="owner_alert_batch_limit" type="number"
            min="0" max="{{ settings.owner_alert_max }}" step="1" required
