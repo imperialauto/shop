@@ -8,6 +8,7 @@ from app.models import RepairOrder, Customer, Vehicle, User, LineItem, Communica
 from app.auth import get_current_user
 from app.config import GOOGLE_REVIEW_LINK
 from app import approval_links, customer_file, cycle_time, next_action, ro_status_policy, website_alerts
+from app.routes import local_node
 import os, secrets
 
 router = APIRouter()
@@ -188,6 +189,7 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         "next_step": next_action.for_job(db, ro, user.role),
         "timeline": cycle_time.for_job(db, ro) if user.role in ("owner", "admin") else None,
         "open_invoice": next((i for i in ro.invoices if i.status != "void"), None),
+        "ai_review": local_node.job_panel(db, ro),
     })
 
 
