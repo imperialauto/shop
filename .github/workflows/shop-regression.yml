@@ -2,7 +2,10 @@ name: Shop appointment and regression checks
 on:
   workflow_dispatch:
   pull_request:
-    branches: [main, codex/imperial-dev-coordinator-foundation-20261110]
+    branches:
+      - main
+      - codex/imperial-dev-coordinator-foundation-20261110
+      - codex/imperial-groq-free-worker-20261110
   push:
     branches: [feature/appointment-foundation-20261031, claude/settings-center, claude/signin-redirect, claude/alert-center, claude/staff-home, claude/price-rates, claude/line-approvals, claude/home-summary]
 permissions:
