@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from app.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from groq import AsyncGroq
+from app.groq_models import text_model, vision_model
 import json, base64, html, os, secrets, io
 from xml.sax.saxutils import escape as xml_escape
 from datetime import date
@@ -117,7 +118,12 @@ async def generate_from_input(
 
     client = AsyncGroq(api_key=GROQ_API_KEY)
     # Use vision model for images, text model for pasted text
-    model = "meta-llama/llama-4-scout-17b-16e-instruct" if (screenshot and screenshot.filename) else "llama-3.3-70b-versatile"
+    if screenshot and screenshot.filename:
+        model = vision_model()
+        if model is None:
+            return HTMLResponse('<p class="text-red-400 text-sm">Reading screenshots is turned off. Paste the conversation text instead.</p>')
+    else:
+        model = text_model()
     try:
         response = await client.chat.completions.create(
             model=model,
