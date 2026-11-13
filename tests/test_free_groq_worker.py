@@ -1,6 +1,7 @@
 """Mock-only integration tests: no Groq calls, Github writes or customer SMS."""
 import os
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -289,6 +290,24 @@ class WorkerQueueTests(unittest.TestCase):
             self.assertEqual(db.query(DevWorkEvent).count(), 3)
             self.assertEqual(db.query(DevWorkJob).first().result_url,
                              "https://github.com/imperialauto/shop/pull/900")
+
+    def test_expired_lease_rejects_report_before_claim_sweep(self):
+        self.submit()
+        job_id = self.claim().json()["id"]
+        with self.Session() as db:
+            job = db.get(DevWorkJob, job_id)
+            job.lease_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+            db.commit()
+        report = self.report(job_id, "review_needed",
+                             resultUrl="https://github.com/imperialauto/shop/pull/900")
+        self.assertEqual(report.status_code, 409)
+        self.assertFalse(self.claim().json()["claimed"])
+        with self.Session() as db:
+            job = db.get(DevWorkJob, job_id)
+            self.assertEqual(job.status, "blocked")
+            self.assertIsNone(job.result_url)
+            self.assertEqual(db.query(DevWorkEvent).filter_by(
+                job_id=job_id, action="lease_expired").count(), 1)
 
     def test_owner_notification_outbox_is_at_most_once_and_owner_key_only(self):
         from app.dev_work_model import DevWorkNotice

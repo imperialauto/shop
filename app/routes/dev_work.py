@@ -228,7 +228,7 @@ def claim_worker_job(
     # Never automatically reclaim a running lease: a delayed runner could still
     # push. Mark it blocked for manual investigation instead of double spending.
     expired = db.query(DevWorkJob).filter(
-        DevWorkJob.status == "running", DevWorkJob.lease_until < now
+        DevWorkJob.status == "running", DevWorkJob.lease_until <= now
     ).with_for_update(skip_locked=True).limit(20).all()
     for orphan in expired:
         orphan.status = "blocked"
@@ -277,6 +277,13 @@ def report_worker_job(
         raise HTTPException(status_code=404, detail="Unknown development job.")
     if job.status != "running" or not job.assigned_worker or not secrets.compare_digest(job.assigned_worker, payload.workerId):
         raise HTTPException(status_code=409, detail="Worker does not own an active job.")
+    now = datetime.now(timezone.utc)
+    lease_until = job.lease_until
+    if lease_until is not None and lease_until.tzinfo is None:
+        # SQLite returns naive datetimes for timezone-aware columns.
+        lease_until = lease_until.replace(tzinfo=timezone.utc)
+    if lease_until is None or lease_until <= now:
+        raise HTTPException(status_code=409, detail="Worker lease is no longer active.")
     if payload.status == "review_needed" and not (
         payload.resultUrl and re.fullmatch(r"https://github\.com/imperialauto/shop/pull/[0-9]+", payload.resultUrl)
     ):
@@ -286,7 +293,6 @@ def report_worker_job(
     if payload.status == "rate_limited" and payload.retryAfterSeconds is None:
         raise HTTPException(status_code=422, detail="A verified retry delay is required.")
 
-    now = datetime.now(timezone.utc)
     job.status = "queued" if payload.status == "rate_limited" and job.attempt_count < 3 else (
         "blocked" if payload.status == "rate_limited" else payload.status
     )
