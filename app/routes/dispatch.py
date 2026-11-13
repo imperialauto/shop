@@ -1034,6 +1034,10 @@ def owner_action(request_: OwnerAction, db: Session = Depends(get_db), _auth: bo
         return {"ownerReply": "I couldn't match that to an open customer. Text OPEN for the list."}
     if website_alerts.is_website(item):
         return {"ownerReply": f"Website request #{item.id} must be contacted manually."}
+    if item.thread_message_id == "none":
+        return {"ownerReply": (
+            f"#{item.id} has no customer text to verify. Call back or review the conversation in Quo."
+        )}
     item.draft_reply = text
     item.status = "needs_owner"
     audit(db, item.id, "owner_sms", "owner_proposed")

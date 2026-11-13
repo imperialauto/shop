@@ -778,6 +778,15 @@ class QueueWorkflowTests(unittest.TestCase):
         self.assertNotIn("customerReply", reply)
         self.assertEqual(self.items()[0].draft_reply, "We can see you at 1.")
 
+    def test_call_only_proposal_does_not_offer_yes_to_send(self):
+        data = {**message("call1", "Missed call"), "kind": "call",
+                "callOutcome": "missed", "threadMessageId": "none", "recovery": True}
+        self.client.post(INTAKE, headers=HEADERS, json=data)
+        result = self.owner_action(action="propose", itemId=1, text="What vehicle do you have?")
+        self.assertIn("no customer text to verify", result["ownerReply"])
+        self.assertNotIn("Reply YES", result["ownerReply"])
+        self.assertIsNone(self.items()[0].draft_reply)
+
     def test_plain_english_done_and_later(self):
         self.post("m1", "How much for brakes on a 2011 Ford Focus?")
         self.assertIn("remind you", self.owner_action(action="later", itemId=1, hours=3)["ownerReply"])
