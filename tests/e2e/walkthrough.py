@@ -380,8 +380,7 @@ def flows(page, device):
         visitor.fill("[name=phone]", "6025550100")
         visitor.click("form[action='/site/status'] button[type=submit]")
         assert "could not match" in visitor.inner_text("body")
-        visitor.fill("#lost-phone", "6025550123")
-        visitor.fill("#lost-last", "Visitor")
+        visitor.fill("#lost-phone", "6025550123")  # phone only since PR 130; same reply either way
         visitor.click("form[action='/site/status/lost'] button[type=submit]")
         assert "If that matches a booking or request" in visitor.inner_text("body")
         measure(visitor, "site-lost-reference", device, 200, [])
