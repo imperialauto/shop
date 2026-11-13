@@ -172,6 +172,20 @@ class PublicPages(unittest.TestCase):
         app.state.read_only = False
         return patch.dict(os.environ, {"PUBLIC_FORMS_ENABLED": "true"})
 
+    def test_contact_preference_is_explicit_and_not_marketing_consent(self):
+        # Public form must neither preselect SMS nor imply marketing permission.
+        with self.open_forms():
+            page = self.client.get("/site/estimate").text
+            self.assertIn("Selecting text does not opt you in to promotional messages.", page)
+            contact_inputs = [tag for tag in page.split("<input") if 'name="contact_method"' in tag]
+            self.assertEqual(len(contact_inputs), 3)
+            self.assertTrue(all("required" in tag.split(">")[0] for tag in contact_inputs))
+            self.assertTrue(all("checked" not in tag.split(">")[0] for tag in contact_inputs))
+            missing = self.client.post("/site/estimate", data=self.estimate(contact_method=""))
+            self.assertEqual(missing.status_code, 422)
+            self.assertIn("Choose how we should reach you", missing.text)
+        self.assertEqual(self.counts(), (0, 0, 0, 0, 0))
+
     def test_estimate_request_creates_intake_records_and_sends_nothing(self):
         # The test client runs in process, so any socket connection would be an outside call.
         with self.open_forms(), patch.object(socket.socket, "connect", no_network):
