@@ -51,9 +51,11 @@ DEFAULT_PRIVACY = """Imperial Auto Care LLC ("we") collects the information you 
 
 We use it only to answer your request, schedule and perform the work, send estimates, approvals, invoices and status updates you ask for, keep repair and tax records, and protect the shop against fraud.
 
-We share it only with the service providers that run our systems (website hosting, our business phone and texting provider, payment processors and our accounting software), with parts suppliers when needed for your repair, and when the law requires it. We do not sell your information or share it for others' advertising.
+We share it only with the service providers that run our systems (website hosting, our business phone, texting and call-answering provider, AI tools that help our staff draft replies and estimates, payment processors and our accounting software), with parts suppliers when needed for your repair, and when the law requires it. These providers may only use it to provide their service to us. We do not sell your information or share it for others' advertising.
 
-Text messages: we text you about your own vehicle and requests. Message and data rates may apply. Reply STOP to stop texts at any time. We do not send marketing texts unless you separately agree.
+Calls. Calls to our shop line may be answered by an automated assistant and may be recorded and transcribed so we can follow up accurately.
+
+Text messages. We text you about your own vehicle and requests. Message and data rates may apply. Reply STOP to stop texts at any time. We do not send marketing texts unless you separately agree.
 
 We keep records for as long as needed for your vehicle's service history, warranty and tax purposes. You can ask to see, correct or delete your information by calling (480) 914-4144 or emailing jaelan@imperialautocarellc.com. Some records must be kept by law.
 
