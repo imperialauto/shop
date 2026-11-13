@@ -1,0 +1,23 @@
+name: Development worktree smoke
+on:
+  pull_request:
+    paths:
+      - 'scripts/dev_work_smoke.py'
+      - '.github/workflows/dev-work-smoke.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python scripts/dev_work_smoke.py
