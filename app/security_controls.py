@@ -30,6 +30,7 @@ class Control:
     risky_off: bool = False     # turning it off weakens protection: needs a confirm tick
     recommended: object = None  # shown when it differs from the default
     env: str = ""               # a Railway variable that sets the value until the owner saves one
+    needs_review: bool = False  # legal wording the owner approves before switching it on (never blocks launch)
 
 
 @dataclass(frozen=True)
@@ -126,17 +127,23 @@ CONTROLS: tuple[Control, ...] = (
             "number", 0, 0, 3650, "days", recommended=90),
     Control("privacy_notice_published", "Customer pages and privacy", "Show the privacy notice on the website",
             "Adds a Privacy link in the footer and next to every form. Review the wording below first.",
-            "bool", False, recommended=True),
+            "bool", False, recommended=True, needs_review=True),
     Control("privacy_notice_text", "Customer pages and privacy", "Privacy notice wording",
             "What customers see on /site/privacy. Edit any time.", "text", DEFAULT_PRIVACY),
     Control("terms_published", "Customer pages and privacy", "Show service terms on the website",
-            "Adds a Terms link in the footer and on booking and estimate pages.", "bool", False, recommended=True),
+            "Adds a Terms link in the footer and on booking and estimate pages.", "bool", False, recommended=True,
+            needs_review=True),
+    Control("terms_on_approval_page", "Customer pages and privacy", "Show terms where customers sign",
+            "Puts the storage, deposit and pickup terms above the signature box on estimate approvals, with a link to the full terms. "
+            "This is what makes the storage fee collectable. Uses the terms wording below.",
+            "bool", False, recommended=True, needs_review=True),
     Control("terms_text", "Customer pages and privacy", "Service terms wording",
             "What customers see on /site/terms. Edit any time.", "text", DEFAULT_TERMS),
     # Website content
     Control("hidden_services", "Website content", "Services hidden from the website",
             "One per line, using the service's short name. Hidden services disappear from menus, pages and the sitemap.",
             "list", ("nvzn-customs", "rentals")),
+    Control("review_done", "Review", "Review items marked done", "Set by the review checklist.", "list", ()),
 )
 
 FIXED: tuple[FixedProtection, ...] = (
@@ -159,6 +166,44 @@ FIXED: tuple[FixedProtection, ...] = (
 )
 
 BY_KEY = {c.key: c for c in CONTROLS}
+
+
+@dataclass(frozen=True)
+class ReviewItem:
+    """Legal wording or a setting outside this app that waits for the owner. Never blocks launch."""
+    key: str
+    title: str
+    what: str
+    control: str = ""  # the switch that turns it on here, if any
+
+
+REVIEW_ITEMS: tuple[ReviewItem, ...] = (
+    ReviewItem("privacy", "Privacy notice", "Read the wording below, edit anything, then switch it on.", "privacy_notice_published"),
+    ReviewItem("terms", "Service terms on the website", "Read the terms wording below, then switch it on.", "terms_published"),
+    ReviewItem("terms_sign", "Terms on the approval and signature page", "Shows storage, deposit and pickup terms where customers sign.", "terms_on_approval_page"),
+    ReviewItem("call_notice", "Call recording notice in the Sona greeting",
+               "Add \"This call may be recorded and answered by an automated assistant\" to the Sona greeting in Quo, then tick done."),
+    ReviewItem("warranty", "Warranty wording on invoices", "Get the exact warranty and disclaimer wording from your lawyer, then tick done."),
+    ReviewItem("text_optin", "Marketing text opt-in", "Only needed before sending promotions. Service texts are already fine. Tick done once approved."),
+)
+
+
+def review_status() -> list[dict]:
+    """Each review item with whether it's done: its switch is on, or the owner ticked it done."""
+    current = values()
+    done_manual = set(current.get("review_done") or ())
+    rows = []
+    for item in REVIEW_ITEMS:
+        done = bool(current.get(item.control)) if item.control else item.key in done_manual
+        rows.append({"item": item, "done": done})
+    return rows
+
+
+def waiting_for_review() -> int:
+    try:
+        return sum(1 for row in review_status() if not row["done"])
+    except Exception:
+        return 0
 
 
 def _saved() -> dict:
@@ -231,6 +276,8 @@ def parse(form) -> dict:
                 raise Invalid(f"{c.title} is too long (20,000 characters max).")
             if not new:
                 new = c.default
+        elif c.key == "review_done":
+            new = tuple(item.key for item in REVIEW_ITEMS if not item.control and form.get(f"done_{item.key}") == "on")
         else:
             new = _coerce(c, form.get(c.key, ""))
         if new != c.default:

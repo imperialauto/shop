@@ -31,7 +31,8 @@ def _page(request: Request, db: Session, user, status: int = 200, **extra):
         db.rollback()
         history, extra = [], {"not_ready": True, **extra}
     return templates.TemplateResponse("security_center.html", {
-        "request": request, "user": user, "groups": controls.page_rows(), "history": history, **extra,
+        "request": request, "user": user, "groups": controls.page_rows(), "history": history,
+        "review": controls.review_status(), "controls_by_key": controls.BY_KEY, **extra,
     }, status_code=status, headers={"Cache-Control": "no-store"})
 
 

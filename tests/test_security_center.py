@@ -80,6 +80,8 @@ class SecurityCenterTests(_Setup):
         page = self.sign_in().get("/settings/security-privacy")
         self.assertEqual(page.status_code, 200)
         for c in controls.CONTROLS:
+            if c.group not in controls.GROUPS:
+                continue  # internal (review checklist state)
             self.assertIn(c.title.replace("'", "&#39;"), page.text)
         for f in controls.FIXED:
             self.assertIn(f.title.replace("'", "&#39;"), page.text)
@@ -256,3 +258,52 @@ class PaymentAndLinkTests(_Setup):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LegalReviewTests(_Setup):
+    def make_pending_job(self):
+        from app.models import LineItem
+        with self.Session() as db:
+            customer = Customer(first_name="Test", last_name="Only", phone="6025550101")
+            vehicle = Vehicle(customer=customer, year=2016, make="Ford", model="Focus")
+            ro = RepairOrder(customer=customer, vehicle=vehicle, status="waiting_approval", public_token="r" * 43)
+            db.add_all([customer, vehicle, ro, LineItem(repair_order=ro, description="Clutch", item_type="labor",
+                                                        quantity=1, unit_price=100, approval="pending")])
+            db.commit()
+            return ro.id, ro.line_items[0].id
+
+    def test_review_items_listed_on_settings_and_home_without_blocking(self):
+        self.assertEqual(controls.waiting_for_review(), len(controls.REVIEW_ITEMS))
+        client = self.sign_in()
+        page = client.get("/settings/security-privacy").text
+        self.assertIn("Waiting for your review", page)
+        for item in controls.REVIEW_ITEMS:
+            self.assertIn(item.title, page)
+        self.assertIn("legal items waiting for your review", client.get("/dashboard").text)
+        self.assertNotIn("legal item", self.sign_in("office").get("/dashboard").text)
+        # The public site works while everything is still waiting
+        self.assertEqual(TestClient(app).get("/site/").status_code, 200)
+
+    def test_manual_items_tick_done_and_switches_count_as_done(self):
+        client = self.sign_in()
+        self.save(client, done_call_notice="on", privacy_notice_published="on")
+        rows = {r["item"].key: r["done"] for r in controls.review_status()}
+        self.assertTrue(rows["call_notice"])
+        self.assertTrue(rows["privacy"])
+        self.assertFalse(rows["warranty"])
+        self.assertEqual(controls.waiting_for_review(), len(controls.REVIEW_ITEMS) - 2)
+
+    def test_terms_at_signature_off_by_default_then_required_and_recorded(self):
+        ro_id, line_id = self.make_pending_job()
+        client = TestClient(app)
+        self.assertNotIn("terms_ok", client.get("/sign/ro/" + "r" * 43).text)
+        self.save(self.sign_in(), terms_on_approval_page="on")
+        page = TestClient(app).get("/sign/ro/" + "r" * 43).text
+        self.assertIn("Storage of $25 per day", page)
+        form = {f"line_{line_id}": "approved", "signature_data": "data:image/png;base64,AAAA", "approved_by": "Test Only"}
+        refused = TestClient(app).post("/sign/ro/" + "r" * 43, data=form)
+        self.assertEqual(refused.status_code, 422)
+        ok = TestClient(app).post("/sign/ro/" + "r" * 43, data={**form, "terms_ok": "on"})
+        self.assertEqual(ok.status_code, 200)
+        with self.Session() as db:
+            self.assertIn("agreed to the shop terms (version", db.get(RepairOrder, ro_id).tech_notes)
