@@ -16,10 +16,10 @@ PAGES = [("dashboard", "/dashboard"), ("dashboard-urgent", "/dashboard?view=urge
          ("customer-detail", "/customers/1"), ("vehicle-new", "/vehicles/new?customer_id=1"), ("vehicle-detail", "/vehicles/1"),
          ("calendar", "/appointments/calendar"), ("settings", "/settings"), ("business-settings", "/settings/business"), ("alert-center", "/alerts"), ("my-day", "/my-day"), ("live-control", "/live/control"),
          ("site-home", "/site/"), ("site-services", "/site/services"), ("site-diesel", "/site/services/diesel"),
-         ("site-nvzn", "/site/services/nvzn-customs"), ("site-contact", "/site/contact"), ("site-book", "/site/book"),
+         ("site-heavy-duty", "/site/services/heavy-duty"), ("site-contact", "/site/contact"), ("site-book", "/site/book"),
          ("site-book-times", "/site/book?service=diagnostic"), ("site-estimate", "/site/estimate"),
          ("site-mobile", "/site/book?service=battery-charging&where=mobile&zip=85000"), ("site-pricing", "/site/pricing"),
-         ("site-rentals", "/site/rentals"), ("site-faq", "/site/faq"), ("site-status", "/site/status")]
+         ("site-roadside-service", "/site/services/mobile-roadside"), ("security-privacy", "/settings/security-privacy"), ("site-faq", "/site/faq"), ("site-status", "/site/status")]
 
 
 def measure(page, label, device, status, errors):
@@ -337,6 +337,7 @@ def flows(page, device):
         visitor.fill("[name=model]", "Focus")
         visitor.fill("[name=first_name]", "Web" + device)
         visitor.fill("[name=last_name]", "Visitor")
+        visitor.check("input[name=contact_method][value=text]")
         visitor.fill("[name=phone]", "6025550123")
         visitor.fill("[name=notes]", "Made-up walkthrough booking")
         visitor.click("form[action='/site/book'] button[type=submit]")
@@ -402,6 +403,7 @@ def flows(page, device):
         visitor.fill("[name=model]", "Focus")
         visitor.fill("[name=first_name]", "Mobile" + device)
         visitor.fill("[name=last_name]", "Visitor")
+        visitor.check("input[name=contact_method][value=text]")
         visitor.fill("[name=phone]", "6025550125")
         visitor.click("button:has-text('Book this time')")
         visitor.wait_for_url("**/site/book/received")
@@ -433,6 +435,7 @@ def flows(page, device):
         visitor.fill("[name=vin]", "1FTFW1ET5DFC10312")
         visitor.fill("[name=first_name]", "Est" + device)
         visitor.fill("[name=last_name]", "Visitor")
+        visitor.check("input[name=contact_method][value=text]")
         visitor.fill("[name=phone]", "6025550124")
         visitor.click("form[action='/site/estimate'] button[type=submit]")
         visitor.wait_for_url("**/site/estimate/received")
@@ -455,6 +458,7 @@ def flows(page, device):
         visitor.fill("[name=model]", "1500")
         visitor.fill("[name=first_name]", "Brake" + device)
         visitor.fill("[name=last_name]", "Visitor")
+        visitor.check("input[name=contact_method][value=text]")
         visitor.fill("[name=phone]", "6025550131" if device == "phone" else "6025550132")
         measure(visitor, "site-brake-package", device, 200, [])
         visitor.click("button:has-text('Book this time')")
@@ -483,6 +487,7 @@ def flows(page, device):
         visitor.fill("[name=model]", "Focus")
         visitor.fill("[name=first_name]", "Road" + device)
         visitor.fill("[name=last_name]", "Visitor")
+        visitor.check("input[name=contact_method][value=text]")
         visitor.fill("[name=phone]", "6025550141" if device == "phone" else "6025550142")
         measure(visitor, "site-roadside", device, 200, [])
         visitor.click("form[action='/site/roadside'] button[type=submit]")
