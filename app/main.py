@@ -138,8 +138,8 @@ def read_only_exempt(request: Request) -> bool:
 
 PREVIEW_COOKIE = "imperial_preview"
 PREVIEW_FORM = ('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Private preview</title>'
-                '<body style="background:#2D0245;color:#fff;font-family:-apple-system,sans-serif;text-align:center;padding:64px 20px"><h1 style="font-size:22px">Private preview</h1>{error}'
-                '<form method="post" action="/preview-access"><input name="code" type="password" aria-label="Access code" autocomplete="off" style="font-size:16px;padding:12px;width:260px;max-width:100%">'
+                '<body style="background:#2D0245;color:#fff;font-family:-apple-system,sans-serif;text-align:center;padding:64px 20px"><h1 style="font-size:22px">{title}</h1><p>{help}</p>{error}'
+                '<form method="post" action="/preview-access"><input type="hidden" name="next" value="{target}"><input name="code" type="password" aria-label="Access code" autocomplete="off" style="font-size:16px;padding:12px;width:260px;max-width:100%">'
                 '<br><button type="submit" style="margin-top:14px;min-height:48px;padding:0 28px;font-size:16px;font-weight:700;background:#EAD272;border:0;border-radius:10px">Continue</button></form>')
 
 
@@ -155,15 +155,26 @@ async def preview_gate(request: Request):
     if hmac.compare_digest(request.cookies.get(PREVIEW_COOKIE, ""), expected):
         return None
     if request.url.path != "/preview-access":
-        return RedirectResponse("/preview-access", status_code=303)
+        gate = "/preview-access?next=/login" if request.url.path == "/login" else "/preview-access"
+        return RedirectResponse(gate, status_code=303)
+
+    form = await request.form() if request.method == "POST" else request.query_params
+    staff = form.get("next") == "/login"
+    target = "/login" if staff else "/site/"
+    page = {
+        "title": "Preview staff access" if staff else "Private website preview",
+        "help": ("Enter the website preview code first. Then sign in with your preview staff account."
+                 if staff else "Enter the website preview code to try the customer site."),
+        "target": target,
+    }
     if request.method == "POST":
-        entered = str((await request.form()).get("code", ""))
+        entered = str(form.get("code", ""))
         if hmac.compare_digest(entered.encode(), code.encode()):
-            response = RedirectResponse("/site/", status_code=303)
+            response = RedirectResponse(target, status_code=303)
             response.set_cookie(PREVIEW_COOKIE, expected, max_age=7 * 86400, httponly=True, secure=True, samesite="lax")
             return response
-        return HTMLResponse(PREVIEW_FORM.format(error="<p>That code did not match.</p>"), status_code=403, headers={"X-Robots-Tag": "noindex, nofollow"})
-    return HTMLResponse(PREVIEW_FORM.format(error=""), headers={"X-Robots-Tag": "noindex, nofollow"})
+        return HTMLResponse(PREVIEW_FORM.format(**page, error="<p>That code did not match.</p>"), status_code=403, headers={"X-Robots-Tag": "noindex, nofollow"})
+    return HTMLResponse(PREVIEW_FORM.format(**page, error=""), headers={"X-Robots-Tag": "noindex, nofollow"})
 
 
 @app.middleware("http")
