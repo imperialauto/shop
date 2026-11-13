@@ -24,8 +24,12 @@ templates = Jinja2Templates(
 def _sign_page(request, ro, error=None, status=200):
     pending = [li for li in ro.line_items if li.approval == "pending"]
     subtotal = sum(li.total for li in ro.line_items if li.approval in ("approved", "pending"))
+    from app import security_controls
+    terms = None
+    if security_controls.value("terms_on_approval_page"):
+        terms = [p.strip() for p in security_controls.value("terms_text").split("\n\n") if p.strip()]
     return templates.TemplateResponse("sign_ro.html", {
-        "request": request, "ro": ro, "subtotal": subtotal, "pending": pending, "error": error,
+        "request": request, "ro": ro, "subtotal": subtotal, "pending": pending, "error": error, "terms": terms,
     }, status_code=status, headers=PRIVATE_PAGE)
 
 
@@ -57,6 +61,14 @@ async def sign_ro_submit(request: Request, token: str, db: Session = Depends(get
         return _sign_page(request, ro, "Choose Approve or Decline for each item.", 422)
     if not signature_data or signature_data in ("data:,", ""):
         return _sign_page(request, ro, "Please draw your signature before submitting.", 422)
+    from app import security_controls
+    terms_note = ""
+    if security_controls.value("terms_on_approval_page"):
+        if form.get("terms_ok") != "on":
+            return _sign_page(request, ro, "Please tick the box to agree to the shop terms.", 422)
+        import hashlib
+        version = hashlib.sha256(security_controls.value("terms_text").encode()).hexdigest()[:10]
+        terms_note = f"Customer agreed to the shop terms (version {version}) when signing on {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC."
 
     now = datetime.now(timezone.utc)
     for li in pending:
@@ -64,6 +76,8 @@ async def sign_ro_submit(request: Request, token: str, db: Session = Depends(get
     ro.signature_data = signature_data
     ro.approved_by = (approved_by or "Customer")[:128]
     ro.signed_at = datetime.utcnow()
+    if terms_note:  # durable proof of which terms were agreed (storage, deposits, pickup)
+        ro.tech_notes = ((ro.tech_notes or "").rstrip() + "\n" + terms_note).strip()
     if pending:
         if ro.status == "waiting_approval":
             ro.status = "approval_received"

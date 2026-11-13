@@ -136,9 +136,18 @@
         <button type="button" class="btn-clear" onclick="clearSig()">Clear</button>
       </div>
 
+      {% if terms %}
+      <div class="auth-notice" style="margin-bottom:10px;">
+        <strong>Shop terms you agree to by signing</strong>
+        <details style="margin-top:6px;"><summary style="cursor:pointer;">Read the terms (storage, deposits, pickup, warranty)</summary>
+          {% for p in terms %}<p style="margin:8px 0 0;">{{ p }}</p>{% endfor %}
+        </details>
+      </div>
+      {% endif %}
       <p class="auth-notice">By signing, I authorize Imperial Auto Care to perform the repairs I approved above and agree to pay the estimated amount upon completion. Final invoice may vary based on actual parts and labor required.</p>
     </div>
 
+    {% if terms %}<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin:0 0 10px;"><input type="checkbox" name="terms_ok" required style="min-width:20px;min-height:20px;"> I have read and agree to the shop terms above.</label>{% endif %}
     <button type="submit" class="submit-btn" onclick="return prepareSubmit()">✓ Authorize Work</button>
   </form>
 

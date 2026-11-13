@@ -9,6 +9,19 @@
 {% if saved == '1' %}<div class="bg-green-900 border border-green-700 text-green-200 text-sm rounded px-3 py-2 mb-4" role="status">Saved.</div>{% elif saved == '0' %}<div class="text-sm text-stone-400 mb-4" role="status">Nothing changed.</div>{% endif %}
 
 <form method="post" action="/settings/security-privacy" class="max-w-3xl space-y-6">
+  <section class="card" id="review" aria-labelledby="review-h" style="border-color:#5A4C24">
+    <h2 id="review-h" class="font-bold" style="margin-bottom:4px">Waiting for your review</h2>
+    <p class="text-sm text-stone-400" style="margin:0 0 8px">Legal wording and settings to approve when you're ready. None of these block the website or launch; each stays off until you turn it on.</p>
+    <ul style="list-style:none;padding:0;margin:0;display:grid;gap:8px">
+      {% for row in review %}{% set it = row.item %}
+      <li style="display:flex;gap:10px;align-items:flex-start">
+        <span class="badge {{ 'badge-complete' if row.done else 'badge-waiting_approval' }}" style="min-width:76px;justify-content:center">{{ 'Done' if row.done else 'To review' }}</span>
+        <span><strong>{{ it.title }}</strong><span class="text-sm text-stone-400" style="display:block">{{ it.what }}{% if it.control %} Switch: "{{ controls_by_key[it.control].title }}" below.{% endif %}</span>
+        {% if not it.control %}<label class="text-sm" style="display:block;margin-top:4px"><input type="checkbox" name="done_{{ it.key }}" {% if row.done %}checked{% endif %}> Done</label>{% endif %}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
   {% for g in groups %}
   <section class="card" aria-labelledby="g{{ loop.index }}">
     <h2 id="g{{ loop.index }}" class="font-bold mb-3">{{ g.group }}</h2>

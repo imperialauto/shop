@@ -32,6 +32,12 @@
   </details>
   {% endif %}
 
+  {% if legal_review %}
+  <a href="/settings/security-privacy#review" class="card-sm" style="display:block; margin-bottom:12px; text-decoration:none; font-size:13px; color:var(--imp-muted);">
+    <strong style="color:var(--imp-gold);">{{ legal_review }} legal item{{ 's' if legal_review != 1 else '' }} waiting for your review</strong> · privacy notice, terms, call notice. Nothing is blocked; review when you're ready →
+  </a>
+  {% endif %}
+
   {% if home and home.ready %}
   <div class="stat-row">
     <a href="#queue" class="card-sm" style="display:block; text-decoration:none; {% if home.urgent %}border-color:rgba(248,113,113,0.5);{% endif %}">
