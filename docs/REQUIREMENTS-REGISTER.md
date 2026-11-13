@@ -60,6 +60,8 @@ The AI assistant is named **Imperial**.
 | R37 | Workflow | Continuous workflow optimization across every Imperial screen (owner rule, Nov 9) | in progress | First pass: new customer to job. Next to trace: Quo conversation to estimate or appointment, owner approval from a text, technician job update, customer approval |
 | R38 | Operations | Imperial as an intelligent operations manager: next-best action, durable states, exception-only alerts, recovery, failure reporting, measured savings (owner rule, Nov 9) | in progress | Built on: owner queue with statuses, owners and audit (dispatch), STOP ALL, backup failure alerts, recovery sweep, outage notices on the Customer file. First: one next step per job worked out from its records |
 
+| R39 | Owner dashboard UX | Apply the Nov 9 owner-uploaded Admin Dashboard V2 video as **layout inspiration only**: compact KPI cards, clear next action, finance visibility, role-aware controls and responsive mobile lists. Preserve Imperial purple/gray/gold, avoid extra Home/Jobs/Alerts duplicate screens, avoid decorative graphs without real data, respect reduced motion and existing permissions | partial | Current dashboard already has compact KPIs, single queue and jobs; mobile RO cells lacked labels. Draft PR #125 adds six mobile labels and keyboard-accessible job links. Finance/management panels must use live data and existing navigation, not copied sample UI or code. Owner's additional TikTok short URL was not accessible for verification |
+
 ## Decisions
 | Date | Decision | Status |
 |---|---|---|
@@ -87,6 +89,8 @@ The AI assistant is named **Imperial**.
 ## Completion log
 | Date | Change | Evidence | Deployed |
 |---|---|---|---|
+| 2026-11-09 | Approved self-service website code-only release PR #119 merged at `fdce0b63193b270cf183937e742f987b31ea5972` (booking, complex requests, roadside, Rentals action); two Railway production services deployed successfully. Public forms remain disabled and Squarespace domain unchanged | GitHub PR #119; Railway web/shop SUCCESS, app startup/healthz 200, no `PUBLIC_FORMS_ENABLED` or `PUBLIC_SITE_INDEXABLE` variable | Yes (code only; public intake off) |
+| 2026-11-09 | Owner-uploaded Admin Dashboard V2 clip reviewed. Use compact KPI/action layout and consistent nav without copying aesthetic or source, maintain brand and avoid duplicate queue surfaces. Mobile RO labels and accessible link prepared | Owner-supplied 9.66-sec MP4; draft PR #125 | No (reference captured; UI draft in QA) |
 | 2026-11-05 | Walkthrough on made-up data, PostgreSQL, phone and desktop | `.github/workflows/app-walkthrough.yml` | No |
 | 2026-11-05 | Invoice creation, tax, dashboard replies, phone layouts | Branch `claude/launch-audit` | No |
 | 2026-11-05 | Owner account claimed, setup code removed, two-step login on | Railway logs `mfa_enabled user=1`, setup variable gone | Yes |
