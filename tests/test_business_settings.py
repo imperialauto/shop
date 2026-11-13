@@ -81,6 +81,19 @@ class BusinessSettingsTests(unittest.TestCase):
         bad = owner.post("/settings/business", data=form(**{"minutes_brake-pads-rotors": "120", "tier_brake-pads-rotors_suv": "lots"}))
         self.assertEqual(bad.status_code, 422)
 
+    def test_owner_alert_limit_is_editable_and_audited(self):
+        owner = self.sign_in()
+        self.assertIn('name="owner_alert_batch_limit"', owner.get("/settings/business").text)
+        self.assertEqual(owner.post("/settings/business", data=form(owner_alert_batch_limit="1")).status_code, 303)
+        with patch.dict(os.environ, {"OWNER_ALERT_BATCH_LIMIT": "8"}):
+            self.assertEqual(store.owner_alert_batch_limit(), 1)
+        self.assertEqual(owner.post("/settings/business", data=form(owner_alert_batch_limit="11")).status_code, 422)
+        self.assertEqual(store.owner_alert_batch_limit(), 1)
+        self.assertEqual(owner.get("/settings/business").status_code, 200)
+        with self.Session() as db:
+            change = db.query(store.BusinessSettingChange).filter_by(key="owner_alert_batch_limit").one()
+            self.assertEqual((change.changed_by, change.new_value), ("owner", "1"))
+
     def test_owner_saves_and_the_app_uses_the_values(self):
         owner = self.sign_in()
         self.assertEqual(owner.get("/settings/business").status_code, 200)
