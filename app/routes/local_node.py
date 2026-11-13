@@ -293,7 +293,10 @@ def validate_only(payload: ValidateOnly, _auth: bool = Depends(require_node)):
     case = next((c for c in guard.EVAL_CASES if c["name"] == payload.case), None)
     if case is None:
         raise HTTPException(status_code=404, detail="Unknown evaluation case.")
-    verdict = guard.validate_output(payload.output, case["snapshot"])
+    # Synthetic cases only: also grades swap-test reasoning against the case's
+    # known answer. Real job results (report_result) keep the hard rules alone
+    # and still need a technician's approval.
+    verdict = guard.validate_eval_case(payload.output, case)
     return {"case": case["name"], "ok": verdict["ok"], "violations": verdict["violations"],
             "cautions": verdict["cautions"], "expect": case["expect"]}
 

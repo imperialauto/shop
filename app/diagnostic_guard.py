@@ -391,6 +391,152 @@ def validate_output(raw, snapshot: dict) -> dict:
             "violations": violations, "cautions": cautions}
 
 
+# --------------------------------------------------------------------------
+# Swap-test grading for SYNTHETIC commissioning cases only.
+#
+# Workstation QA (docs/qa-evidence/local-node-qa-2026-11-11.md) showed the
+# shop model passing every guardrail while reading coil swaps backwards. The
+# hard rules above cannot see that, so each synthetic swap case declares the
+# known answer and `validate_eval_case` grades the draft's reasoning against it.
+# This is never applied to real jobs: there the swap caution stays, and a
+# technician still edits and approves every draft.
+# --------------------------------------------------------------------------
+
+LIKELIHOOD_RANK = {"low": 1, "medium": 2, "high": 3}
+_CYL = r"(?:cylinder|cyl\.?|#)\s*#?\s*(\d{1,2})\b"
+# A coil is named by where it is NOW ("now in cylinder 3") ...
+_COIL_NOW_RES = (
+    re.compile(r"\b(?:now|currently|presently)\s+(?:(?:installed|located|fitted|mounted|sitting|placed)\s+)?"
+               r"(?:in|on|at)\s+(?:the\s+)?" + _CYL),
+    re.compile(r"\b(?:moved|relocated|swapped|installed|placed|transferred)\s+(?:in)?to\s+(?:the\s+)?" + _CYL),
+)
+# ... or by where it CAME FROM ("originally in cylinder 1", "coil from cylinder 1").
+_COIL_FROM_RES = (
+    re.compile(r"\boriginal(?:ly)?\s+(?:the\s+)?" + _CYL),
+    re.compile(r"\boriginal(?:ly)?\s+(?:[a-z]+\s+){0,3}?(?:in|on|at|from|for|of|to)\s+(?:the\s+)?" + _CYL),
+    re.compile(_CYL + r"(?:'s)?\s+original\b"),
+    re.compile(r"\b(?:came|taken|removed|moved|pulled|swapped)\s+(?:out\s+)?(?:of|from)\s+(?:the\s+)?" + _CYL),
+    re.compile(r"\bcoil\s+(?:[a-z]+\s+){0,2}?from\s+(?:the\s+)?" + _CYL),
+    re.compile(r"\b(?:(?:that|which)\s+was|started|began)\s+(?:(?:originally|first)\s+)?(?:in|on|at)\s+(?:the\s+)?" + _CYL),
+)
+# "coil 1" / "coil #3" follows the technician's naming in the notes (by origin).
+_COIL_LABEL_RE = re.compile(r"\bcoil\s*(?:#|no\.?|number)?\s*(\d{1,2})\b")
+# "cylinder 3 coil", "coil in cylinder 3": a position with no before/after —
+# after a swap that names two different coils, so it is treated as ambiguous.
+_REPLACE_RE = re.compile(r"\b(replac\w*|renew\w*|install\w*\s+(?:a\s+)?new|new\s+(?:ignition\s+)?coil|swap\s+in\s+a\s+new)\b")
+_NEGATION_RE = re.compile(r"\b(not|no|don't|do not|avoid|unnecessary|unlikely|ruled out|rule out|without|instead of|"
+                          r"before|rather than|exonerat\w*|cleared)\b")
+_CYLINDER_CHECK_RE = re.compile(r"\b(spark\s*plug|plug|injector|wiring|wire|harness|connector|pigtail|circuit|driver|"
+                                r"compression|leak[\s-]?down|valve|cam|lifter|rocker|vacuum|intake|mechanical|boot)s?\b")
+
+
+def coil_origins(text: str, moved_from: int, moved_to: int) -> set[int]:
+    """Which coil(s) a phrase names, by the cylinder it was ORIGINALLY in.
+
+    Empty set = names a coil only by position, which is ambiguous after a swap.
+    """
+    working = (text or "").lower()
+    origins = set()
+
+    def take(pattern, to_origin):
+        nonlocal working
+        for match in list(pattern.finditer(working)):
+            origins.add(to_origin(int(match.group(1))))
+        working = pattern.sub(lambda m: " " * len(m.group(0)), working)
+
+    other = {moved_from: moved_to, moved_to: moved_from}
+    for pattern in _COIL_NOW_RES:      # current position first, so "original coil now in cyl 3" reads as cyl 3 NOW
+        take(pattern, lambda n: other.get(n, n))
+    for pattern in _COIL_FROM_RES:
+        take(pattern, lambda n: n)
+    take(_COIL_LABEL_RE, lambda n: n)
+    return origins
+
+
+def _recommends_replacing_coil(text: str) -> bool:
+    for sentence in _sentences(text):
+        low = sentence.lower()
+        if "coil" in low and _REPLACE_RE.search(low) and not _NEGATION_RE.search(low):
+            return True
+    return False
+
+
+def grade_swap_reasoning(draft: dict, swap: dict) -> list[str]:
+    """Violations for a synthetic swap case whose correct reading is known.
+
+    swap = {"part": "coil", "moved_from": 1, "moved_to": 3, "result": "followed" | "stayed"}
+    """
+    src, dst = swap["moved_from"], swap["moved_to"]
+    causes = draft.get("suspected_causes") or []
+    ranked = [(LIKELIHOOD_RANK.get(c.get("likelihood", ""), 0), i, c) for i, c in enumerate(causes)]
+    best = max((r for r, _, _ in ranked), default=0)
+    leaders = [c for r, _, c in ranked if r == best and best]
+    leader = leaders[0] if len(leaders) == 1 else None
+    coil_causes = [(r, c) for r, _, c in ranked if "coil" in c["cause"].lower()]
+    repairs = [r["repair"] for r in draft.get("proposed_repairs") or [] if "coil" in r["repair"].lower()]
+    violations = []
+
+    if swap["result"] == "followed":
+        if leader is None or "coil" not in leader["cause"].lower():
+            named = any(coil_origins(c["cause"], src, dst) == {src} for _, c in coil_causes)
+            violations.append("swap_moved_coil_not_top_ranked" if named else "swap_moved_coil_not_identified")
+        else:
+            origin = coil_origins(leader["cause"], src, dst)
+            if origin == {dst}:
+                violations.append("swap_wrong_coil_blamed")
+            elif origin != {src}:
+                violations.append("swap_coil_position_ambiguous")
+            elif best < LIKELIHOOD_RANK["medium"]:
+                violations.append("swap_moved_coil_not_identified")
+        for rank, cause in coil_causes:
+            if cause is leader or rank < LIKELIHOOD_RANK["medium"]:
+                continue
+            origin = coil_origins(cause["cause"], src, dst)
+            if origin == {dst}:
+                violations.append("swap_wrong_coil_blamed")
+            elif origin != {src}:
+                violations.append("swap_coil_position_ambiguous")
+        for repair in repairs:
+            if not _recommends_replacing_coil(repair):
+                continue
+            origin = coil_origins(repair, src, dst)
+            if origin == {dst}:
+                violations.append("swap_repair_wrong_coil")
+            elif origin != {src}:
+                violations.append("swap_repair_coil_ambiguous")
+
+    elif swap["result"] == "stayed":
+        if (leader is not None and "coil" in leader["cause"].lower()) or \
+                any(rank >= LIKELIHOOD_RANK["medium"] for rank, _ in coil_causes):
+            violations.append("swap_ruled_out_coil_ranked")
+        tests = [t["test"] + ". " + t["purpose"] for t in draft.get("recommended_tests") or []]
+        advice = tests + list(draft.get("cautions") or []) + list(draft.get("missing_information") or [])
+        if repairs or any(_recommends_replacing_coil(t) for t in advice):
+            violations.append("swap_ruled_out_coil_replaced")
+        here = re.compile(r"(?:cylinder|cyl\.?|#)\s*#?\s*" + str(src) + r"\b", re.IGNORECASE)
+        if not any(here.search(t) and _CYLINDER_CHECK_RE.search(t.lower()) for t in tests):
+            violations.append("swap_missing_cylinder_checks")
+    else:
+        raise ValueError(f"unknown swap result {swap['result']!r}")
+    return sorted(set(violations))
+
+
+def validate_eval_case(raw, case: dict) -> dict:
+    """Grade a synthetic commissioning answer: the hard rules PLUS the case's
+    known diagnostic answer where it has one. Used only by /validate."""
+    verdict = validate_output(raw, case["snapshot"])
+    swap = case.get("swap")
+    if not swap or "not_json" in verdict["violations"] or "not_an_object" in verdict["violations"]:
+        return verdict
+    data = raw if isinstance(raw, dict) else json.loads(_clean_json_text(str(raw)))
+    draft, _ = _normalise(data)
+    extra = grade_swap_reasoning(draft, swap)
+    if not extra:
+        return verdict
+    violations = sorted(set(verdict["violations"]) | set(extra))
+    return {"ok": False, "draft": None, "violations": violations, "cautions": verdict["cautions"]}
+
+
 def _lines(title: str, items: list[str], empty: str = "none recorded") -> list[str]:
     return [title] + ([f"- {item}" for item in items] if items else [f"- {empty}"])
 
@@ -443,7 +589,9 @@ EVAL_CASES = [
                      "technician_notes": "Swapped coil 1 with coil 3; misfire followed the coil to cylinder 3.",
                      "technician_readings": "",
                      "reported_codes": [{"code": "P0301", "status": "active"}]},
-        "expect": "Names the original cylinder 1 coil as the likely cause, citing the swap; wiring unlikely.",
+        "swap": {"part": "coil", "moved_from": 1, "moved_to": 3, "result": "followed"},
+        "expect": "Top-ranked cause is the coil ORIGINALLY in cylinder 1 (now in cylinder 3), named so it cannot be "
+                  "confused with the original cylinder 3 coil; wiring unlikely.",
     },
     {
         "name": "swap_fault_stayed",
@@ -453,6 +601,8 @@ EVAL_CASES = [
                      "technician_notes": "Swapped coil 1 with coil 3; misfire stayed on cylinder 1.",
                      "technician_readings": "",
                      "reported_codes": [{"code": "P0301", "status": "active"}]},
-        "expect": "Rules the coil out; points to plug, injector, wiring or mechanical checks on cylinder 1. No coil repair.",
+        "swap": {"part": "coil", "moved_from": 1, "moved_to": 3, "result": "stayed"},
+        "expect": "Rules the coil out (no coil ranked medium/high or first, no coil replacement); recommends plug, "
+                  "injector, wiring or mechanical checks on cylinder 1.",
     },
 ]

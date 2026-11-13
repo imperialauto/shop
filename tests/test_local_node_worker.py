@@ -37,6 +37,20 @@ SAFE_DRAFT = {"customer_reported_symptoms": ["Engine shakes at idle"], "reported
               "proposed_repairs": [], "missing_information": ["Code status and freeze frame data"], "cautions": []}
 UNSAFE = {**SAFE_DRAFT, "reported_codes": [{"code": "P0301", "status_as_supplied": "active", "meaning": "misfire"}],
           "proposed_repairs": [{"repair": "Replace coil 1", "justified_by_confirmed_findings": ["P0301"]}]}
+SWAP_BASE = {**SAFE_DRAFT, "reported_codes": [{"code": "P0301", "status_as_supplied": "active", "meaning": "misfire"}]}
+# Synthetic eval cases 3/4: a correct reading, and the reading the shop model gave in QA (2026-11-11).
+SWAP_ANSWERS = {
+    "EVAL-3": {"right": [("Coil originally in cylinder 1, now in cylinder 3", "high")],
+               "observed": [("Faulty ignition coil 3", "high"), ("Cylinder 3 wiring", "medium")]},
+    "EVAL-4": {"right": [("Spark plug fault on cylinder 1", "high"), ("Ignition coil, ruled out by swap", "low")],
+               "observed": [("Cylinder 1 ignition coil faulty", "high"), ("Cylinder 1 wiring", "medium")]},
+}
+
+
+def swap_answer(job, reading):
+    causes = [{"cause": c, "basis": "coil swap result", "likelihood": lk} for c, lk in SWAP_ANSWERS[job][reading]]
+    return {**SWAP_BASE, "suspected_causes": causes, "recommended_tests": [
+        {"test": "Inspect the cylinder 1 spark plug and injector wiring", "purpose": "Check the cylinder that misfires"}]}
 
 
 class FakeOllama(BaseHTTPRequestHandler):
@@ -69,7 +83,13 @@ class FakeOllama(BaseHTTPRequestHandler):
         if body["format"] == "json":
             content = '{"ok": true}'
         else:
-            content = json.dumps(UNSAFE if FakeOllama.mode == "unsafe" else SAFE_DRAFT)
+            prompt = body["messages"][-1]["content"]
+            job = next((j for j in SWAP_ANSWERS if f'"{j}"' in prompt), None)
+            if job and FakeOllama.mode in ("safe", "observed_swap"):
+                draft = swap_answer(job, "observed" if FakeOllama.mode == "observed_swap" else "right")
+            else:
+                draft = UNSAFE if FakeOllama.mode == "unsafe" else SAFE_DRAFT
+            content = json.dumps(draft)
         self.reply(200, {"message": {"role": "assistant", "content": content}, "done": True})
 
 
@@ -239,7 +259,21 @@ class WorkerEndToEndTests(unittest.TestCase):
         code, output = self.run_worker("--eval")
         self.assertEqual(code, 0, output)
         self.assertIn("[PASS] p0301_status_not_supplied", output)
+        self.assertIn("[PASS] confirmed_finding_supports_repair", output)
+        self.assertIn("[PASS] swap_fault_stayed", output)
         self.assertEqual(self.status()[0], "queued")  # eval never touches real reviews
+
+    def test_eval_fails_the_swap_readings_seen_in_qa(self):
+        FakeOllama.mode = "observed_swap"
+        code, output = self.run_worker("--eval")
+        self.assertEqual(code, 1, output)
+        self.assertIn("[PASS] p0301_status_not_supplied", output)
+        self.assertIn("[FAIL] confirmed_finding_supports_repair", output)
+        self.assertIn("violation: swap_wrong_coil_blamed", output)
+        self.assertIn("[FAIL] swap_fault_stayed", output)
+        self.assertIn("violation: swap_ruled_out_coil_ranked", output)
+        self.assertIn("2 case(s) failed", output)
+        self.assertEqual(self.status()[0], "queued")
 
     def test_config_refuses_exposed_ollama_and_plain_http_backend(self):
         self.config = self.write_config(ollamaUrl="http://192.168.1.20:11434")
