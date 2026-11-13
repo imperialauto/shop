@@ -23,6 +23,14 @@ Date: 2026-11-13. Scope: read-only GitHub/Railway verification and one synthetic
 4. **SEO / content:** new site has title, description and AutoRepair structured data, but on current main the site remains deliberately `noindex`. SEO, real device experience, maps, actual search appearance, photographs, pricing and owner branding acceptance remain unverified.
 5. **Autonomous execution:** #149, #163, #166 and #167 show ongoing work, but no evidence from these read-only checks that an autonomous coding worker is enabled in production. Do not equate a merged/green PR with feature activation.
 
+## Additional source and PR findings
+
+- **High priority: unauthenticated vehicle selector / HTML injection, already tracked in PR #105.** On current main the `/ro/{id}/vehicles` handler does not call `require_user` before reading a customer's vehicles, and it interpolates vehicle label/plate text into HTML without escaping. PR #105 adds both protections and a regression test. Its old branch had green app/messaging checks on Nov 9 but has not been revalidated against the latest main; keep this as a release-blocking security item until current-base QA and a separate approved merge. Do **not** duplicate this patch.
+- **Public launch policy:** main still contains `oil-service`; PR #154 is open and mergeable, but the latest GitHub Actions runs for that branch were still queued at the audit check. It must be verified on current main before policy can be considered enforced.
+- **SEO/content work:** the source includes AutoRepair JSON-LD and basic metadata, but `/site/` is deliberately noindex pre-cutover; no canonical tag or sitemap route was found in the reviewed source. `app/static` contains only CSS and `.gitkeep`, and the homepage template does not include customer-service photography. These are **prelaunch opportunities**, not live Squarespace defects.
+- **Historical requirement-status ambiguity:** the requirements register has entries marked `proposed` or `pending` despite corresponding models/tests in main. Do not silently upgrade statuses; reconcile merged commit, runtime flag, QA and production evidence one requirement at a time.
+- **Autonomous development is not active in production based on config:** production `web` has no `LOCAL_NODE_ENABLED` or `DEV_COORDINATOR_CAPTURE_ENABLED` variable names; the former defaults off in source and the latter's execution stack is in draft PRs. Dedicated local QA is **not** proof of autonomous coding readiness.
+
 ## Next checkpoints (no authority to deploy)
 
 1. Compare GitHub `main` commit with each **actual** QA deployment and run the current production-commit candidate in isolated synthetic QA. Do not infer results from the older pinned preview.
