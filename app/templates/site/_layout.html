@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ business.name }} — Auto and Diesel Repair in Glendale, AZ{% endblock %}</title>
   <meta name="description" content="{% block description %}Auto, diesel, European and Sprinter repair at our Glendale, AZ shop. Fleet service, roadside help and NVZN Customs tint, wraps and detailing.{% endblock %}">
-  {% if not indexable %}<meta name="robots" content="noindex, nofollow">{% endif %}
+  {% if seo_noindex %}<meta name="robots" content="noindex, nofollow">{% endif %}
+  {% if canonical_url %}<link rel="canonical" href="{{ canonical_url }}">{% endif %}
   <meta name="theme-color" content="#2D0245">
   <link rel="stylesheet" href="/static/site.css">
   <script type="application/ld+json">
