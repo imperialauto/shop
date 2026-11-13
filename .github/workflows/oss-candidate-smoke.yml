@@ -1,0 +1,40 @@
+name: OSS candidate smoke (synthetic only)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/oss-candidate-smoke.yml'
+      - 'experiments/oss-candidates/**'
+
+permissions:
+  contents: read
+
+jobs:
+  langgraph-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned LangGraph in disposable runner
+        run: python -m pip install --no-input --disable-pip-version-check 'langgraph==1.2.21'
+      - name: Validate synthetic state graph
+        run: python experiments/oss-candidates/smoke_langgraph.py
+
+  accessibility-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned browser test packages without lifecycle scripts
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund axe-core@4.14.0 playwright@1.65.0
+      - name: Install headless Chromium on disposable runner
+        run: npx playwright install --with-deps chromium
+      - name: Verify accessibility detection on synthetic pages
+        run: node experiments/oss-candidates/smoke_axe.cjs
