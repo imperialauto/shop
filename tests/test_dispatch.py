@@ -15,6 +15,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app import website_alerts
+from app.appointment_model import Appointment
 from app.database import Base, get_db
 from app.dispatch import apply_policies, assess, parse_owner_command
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync
@@ -144,6 +146,32 @@ class QueueWorkflowTests(unittest.TestCase):
 
     def post_auto(self, *args):
         return self.client.post(INTAKE, json={**message(*args), "autoRepliesOn": True}, headers=HEADERS)
+
+    def test_website_cards_and_scheduled_filter_use_the_specific_job(self):
+        with self.Session() as db:
+            vehicle = Vehicle(customer_id=1, year=2017, make="Ford", model="F-150")
+            db.add(vehicle)
+            db.flush()
+            booking = RepairOrder(customer_id=1, vehicle_id=vehicle.id, status="intake")
+            roadside = RepairOrder(customer_id=1, vehicle_id=vehicle.id, status="intake")
+            db.add_all([booking, roadside])
+            db.flush()
+            starts_at = datetime.now(timezone.utc) + timedelta(days=1)
+            db.add(Appointment(repair_order_id=booking.id, resource_id="bay-1", starts_at=starts_at,
+                               ends_at=starts_at + timedelta(hours=1), status="confirmed"))
+            booking_item = website_alerts.queue(db, booking, "booking", "Test diagnostic")
+            roadside_item = website_alerts.queue(db, roadside, "request", "Test tow request", "towing")
+            db.commit()
+
+            scheduled, scheduled_jobs = dispatch._scheduled_appointments(db)
+            booking_card = dispatch._card(db, booking_item, scheduled, scheduled_jobs)
+            roadside_card = dispatch._card(db, roadside_item, scheduled, scheduled_jobs)
+            self.assertEqual(booking_card["open_ro"].id, booking.id)
+            self.assertIsNotNone(booking_card["next_appointment"])
+            self.assertEqual(roadside_card["open_ro"].id, roadside.id)
+            self.assertIsNone(roadside_card["next_appointment"])
+            self.assertEqual([item.id for item in dispatch._select(db, "scheduled", scheduled, scheduled_jobs)],
+                             [booking_item.id])
 
     def test_intake_works_in_read_only_and_requires_the_key(self):
         app.state.read_only = True
@@ -777,6 +805,15 @@ class QueueWorkflowTests(unittest.TestCase):
         self.assertIn("Reply YES 1 to send", reply["ownerReply"])
         self.assertNotIn("customerReply", reply)
         self.assertEqual(self.items()[0].draft_reply, "We can see you at 1.")
+
+    def test_call_only_proposal_does_not_offer_yes_to_send(self):
+        data = {**message("call1", "Missed call"), "kind": "call",
+                "callOutcome": "missed", "threadMessageId": "none", "recovery": True}
+        self.client.post(INTAKE, headers=HEADERS, json=data)
+        result = self.owner_action(action="propose", itemId=1, text="What vehicle do you have?")
+        self.assertIn("no customer text to verify", result["ownerReply"])
+        self.assertNotIn("Reply YES", result["ownerReply"])
+        self.assertIsNone(self.items()[0].draft_reply)
 
     def test_plain_english_done_and_later(self):
         self.post("m1", "How much for brakes on a 2011 Ford Focus?")

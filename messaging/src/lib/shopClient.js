@@ -81,12 +81,12 @@ async function getSigningLink(repairOrderId) {
  * order detail page without a separate screen. Never throws — a failure
  * here should never block message storage or the webhook ack.
  */
-async function logCommunication({ phone, direction, body, externalId }) {
+async function logCommunication({ phone, direction, body, externalId, createdAt }) {
   if (!configured()) return { logged: false, reason: "not_configured" };
   try {
     return await request("/internal/messaging/communications", {
       method: "POST",
-      body: JSON.stringify({ phone, direction, body, externalId }),
+      body: JSON.stringify({ phone, direction, body, externalId, createdAt }),
     });
   } catch (err) {
     console.error("shopClient.logCommunication failed:", err);

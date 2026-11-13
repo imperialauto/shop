@@ -114,21 +114,21 @@
       <tbody>
         {% for ro in open_ros %}
         <tr class="cursor-pointer" onclick="window.location='/ro/{{ ro.id }}'" style="cursor:pointer;">
-          <td style="padding-left:16px; color: var(--imp-heading); font-weight:600; font-family:monospace;">#{{ ro.id }}</td>
-          <td>
+          <td data-label="RO" style="padding-left:16px; color: var(--imp-heading); font-weight:600; font-family:monospace;"><a href="/ro/{{ ro.id }}" aria-label="Open repair order {{ ro.id }}" style="color:inherit; text-decoration:underline; text-underline-offset:3px;">#{{ ro.id }}</a></td>
+          <td data-label="Customer">
             {% if ro.customer.customer_type == 'fleet' %}
             <span class="badge badge-fleet" style="margin-right:6px;">FLEET</span>{{ ro.customer.fleet_name }}
             {% else %}
             <span style="color:var(--imp-ink);">{{ ro.customer.first_name }} {{ ro.customer.last_name }}</span>
             {% endif %}
           </td>
-          <td>{{ ro.vehicle.label }}</td>
+          <td data-label="Vehicle">{{ ro.vehicle.label }}</td>
           {% set step = next_steps.get(ro.id) %}
-          <td style="max-width:260px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--imp-muted);">{% if step %}{{ step.who }}: {{ step.title }}{% else %}—{% endif %}</td>
-          <td>
+          <td data-label="Next step" style="max-width:260px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--imp-muted);">{% if step %}{{ step.who }}: {{ step.title }}{% else %}—{% endif %}</td>
+          <td data-label="Status">
             <span class="badge badge-{{ ro.status }}">{{ ro.status.replace('_',' ').title() }}</span>
           </td>
-          <td style="padding-right:16px; font-size:12px; color:var(--imp-muted);">{{ ro.created_at.strftime('%m/%d/%y') }}</td>
+          <td data-label="Date" style="padding-right:16px; font-size:12px; color:var(--imp-muted);">{{ ro.created_at.strftime('%m/%d/%y') }}</td>
         </tr>
         {% endfor %}
       </tbody>

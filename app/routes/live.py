@@ -9,7 +9,7 @@ import secrets
 from datetime import datetime, time, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from app.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 from app.appointment_model import Appointment, BookingSlot

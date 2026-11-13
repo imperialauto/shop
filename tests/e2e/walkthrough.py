@@ -16,10 +16,10 @@ PAGES = [("dashboard", "/dashboard"), ("dashboard-urgent", "/dashboard?view=urge
          ("customer-detail", "/customers/1"), ("vehicle-new", "/vehicles/new?customer_id=1"), ("vehicle-detail", "/vehicles/1"),
          ("calendar", "/appointments/calendar"), ("settings", "/settings"), ("business-settings", "/settings/business"), ("alert-center", "/alerts"), ("my-day", "/my-day"), ("live-control", "/live/control"),
          ("site-home", "/site/"), ("site-services", "/site/services"), ("site-diesel", "/site/services/diesel"),
-         ("site-nvzn", "/site/services/nvzn-customs"), ("site-contact", "/site/contact"), ("site-book", "/site/book"),
+         ("site-heavy-duty", "/site/services/heavy-duty"), ("site-contact", "/site/contact"), ("site-book", "/site/book"),
          ("site-book-times", "/site/book?service=diagnostic"), ("site-estimate", "/site/estimate"),
          ("site-mobile", "/site/book?service=battery-charging&where=mobile&zip=85000"), ("site-pricing", "/site/pricing"),
-         ("site-rentals", "/site/rentals"), ("site-faq", "/site/faq"), ("site-status", "/site/status")]
+         ("site-roadside-service", "/site/services/mobile-roadside"), ("security-privacy", "/settings/security-privacy"), ("site-faq", "/site/faq"), ("site-status", "/site/status")]
 
 
 def measure(page, label, device, status, errors):
@@ -295,12 +295,12 @@ def flows(page, device):
         page.fill("[name=starts_at]", f"{day}T11:00")
         page.fill("[name=ends_at]", f"{day}T12:00")
         page.click("#appointment-form button[type=submit]")
-        page.wait_for_function("document.getElementById('booking-message').textContent.includes('saved')")
+        page.locator("#booking-message", has_text="saved").wait_for()
         page.locator("#calendar-rows tr", has_text=f"#{context['ro']}").first.wait_for(timeout=8000)
         page.fill("[name=starts_at]", f"{day}T12:30")
         page.fill("[name=ends_at]", f"{day}T13:30")
         page.click("#appointment-form button[type=submit]")
-        page.wait_for_function("document.getElementById('booking-message').textContent.includes('already')")
+        page.locator("#booking-message", has_text="already").wait_for()
         page.screenshot(path=str(OUT / f"{device}-booked.png"), full_page=True)
 
     def site_booking():
@@ -308,6 +308,21 @@ def flows(page, device):
         visitor.goto(BASE + "/site/")
         visitor.click(".hero a[href='/site/book']")
         visitor.click("a[href='/site/book?service=diagnostic']")
+        more = visitor.locator("#booking-show-later-dates")
+        assert more.is_visible(), "long booking list should start compact"
+        assert visitor.locator("#booking-time-choices details.day[hidden]").count() >= 1, "later dates not collapsed"
+        more.click()
+        assert visitor.locator("#booking-time-choices details.day[hidden]").count() == 0, "later dates not revealed"
+        assert more.is_hidden(), "later-dates action should disappear after expanding"
+        # Progressive hiding must not prevent booking without JavaScript.
+        no_js_context = visitor.context.browser.new_context(**{**page_options, "java_script_enabled": False})
+        try:
+            no_js = no_js_context.new_page()
+            no_js.goto(BASE + "/site/book?service=diagnostic")
+            assert no_js.locator("#booking-time-choices details.day[hidden]").count() == 0, "no-JS dates hidden"
+            assert no_js.locator("details.day").count() > 5, "no-JS availability incomplete"
+        finally:
+            no_js_context.close()
         visitor.locator("label.choice", has=visitor.locator("input[name=slot_id]")).first.click()
         assert visitor.locator("#booking-time-choices").is_hidden(), "times stayed expanded"
         assert visitor.locator("#booking-time-summary").is_visible(), "no selected-time summary"
@@ -322,6 +337,7 @@ def flows(page, device):
         visitor.fill("[name=model]", "Focus")
         visitor.fill("[name=first_name]", "Web" + device)
         visitor.fill("[name=last_name]", "Visitor")
+        visitor.check("input[name=contact_method][value=text]")
         visitor.fill("[name=phone]", "6025550123")
         visitor.fill("[name=notes]", "Made-up walkthrough booking")
         visitor.click("form[action='/site/book'] button[type=submit]")
@@ -364,8 +380,7 @@ def flows(page, device):
         visitor.fill("[name=phone]", "6025550100")
         visitor.click("form[action='/site/status'] button[type=submit]")
         assert "could not match" in visitor.inner_text("body")
-        visitor.fill("#lost-phone", "6025550123")
-        visitor.fill("#lost-last", "Visitor")
+        visitor.fill("#lost-phone", "6025550123")  # phone only since PR 130; same reply either way
         visitor.click("form[action='/site/status/lost'] button[type=submit]")
         assert "If that matches a booking or request" in visitor.inner_text("body")
         measure(visitor, "site-lost-reference", device, 200, [])
@@ -387,6 +402,7 @@ def flows(page, device):
         visitor.fill("[name=model]", "Focus")
         visitor.fill("[name=first_name]", "Mobile" + device)
         visitor.fill("[name=last_name]", "Visitor")
+        visitor.check("input[name=contact_method][value=text]")
         visitor.fill("[name=phone]", "6025550125")
         visitor.click("button:has-text('Book this time')")
         visitor.wait_for_url("**/site/book/received")
@@ -418,6 +434,7 @@ def flows(page, device):
         visitor.fill("[name=vin]", "1FTFW1ET5DFC10312")
         visitor.fill("[name=first_name]", "Est" + device)
         visitor.fill("[name=last_name]", "Visitor")
+        visitor.check("input[name=contact_method][value=text]")
         visitor.fill("[name=phone]", "6025550124")
         visitor.click("form[action='/site/estimate'] button[type=submit]")
         visitor.wait_for_url("**/site/estimate/received")
@@ -440,6 +457,7 @@ def flows(page, device):
         visitor.fill("[name=model]", "1500")
         visitor.fill("[name=first_name]", "Brake" + device)
         visitor.fill("[name=last_name]", "Visitor")
+        visitor.check("input[name=contact_method][value=text]")
         visitor.fill("[name=phone]", "6025550131" if device == "phone" else "6025550132")
         measure(visitor, "site-brake-package", device, 200, [])
         visitor.click("button:has-text('Book this time')")
@@ -468,6 +486,7 @@ def flows(page, device):
         visitor.fill("[name=model]", "Focus")
         visitor.fill("[name=first_name]", "Road" + device)
         visitor.fill("[name=last_name]", "Visitor")
+        visitor.check("input[name=contact_method][value=text]")
         visitor.fill("[name=phone]", "6025550141" if device == "phone" else "6025550142")
         measure(visitor, "site-roadside", device, 200, [])
         visitor.click("form[action='/site/roadside'] button[type=submit]")

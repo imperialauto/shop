@@ -19,7 +19,7 @@ from app.models import Communication, Customer, RepairOrder, Vehicle
 from app.routes import public_site as public_routes
 
 PAGES = ["/site", "/site/", "/site/services", "/site/contact", "/site/book", "/site/book?service=diagnostic",
-         "/site/estimate", "/site/estimate?service=diesel", "/site/pricing", "/site/rentals", "/site/faq", "/site/status"] + [f"/site/services/{line.slug}" for line in public_site.SERVICE_LINES]
+         "/site/estimate", "/site/estimate?service=diesel", "/site/pricing", "/site/faq", "/site/status"] + [f"/site/services/{line.slug}" for line in public_site.SERVICE_LINES if line.slug not in ("nvzn-customs", "rentals")]
 
 
 def no_network(*args, **kwargs):
@@ -42,8 +42,8 @@ class InputRules(unittest.TestCase):
         self.assertEqual(public_site.phone_digits("1-602-555-0142"), "6025550142")
 
     def test_approved_services_come_from_setting(self):
-        with patch.dict(os.environ, {"PUBLIC_BOOKING_SERVICES": "oil-service, nope"}):
-            self.assertEqual([s.slug for s in public_site.approved_bookable_services()], ["oil-service"])
+        with patch.dict(os.environ, {"PUBLIC_BOOKING_SERVICES": "ac-check, oil-service, nope"}):
+            self.assertEqual([s.slug for s in public_site.approved_bookable_services()], ["ac-check"])
             self.assertIsNone(public_site.bookable_service("diagnostic"))
         with patch.dict(os.environ, {"PUBLIC_BOOKING_SERVICES": ""}):
             self.assertEqual(public_site.approved_bookable_services(), [])
@@ -121,9 +121,37 @@ class PublicPages(unittest.TestCase):
         self.assertEqual(self.client.get("/site/services/not-a-service").status_code, 404)
         self.assertEqual(self.client.get("/static/site.css").status_code, 200)
 
+    def test_seo_pages_sitemap_and_private_forms_are_gated(self):
+        with patch.dict(os.environ, {"PUBLIC_SITE_INDEXABLE": ""}):
+            self.assertEqual(self.client.get("/sitemap.xml").status_code, 404)
+            self.assertNotIn("Sitemap:", self.client.get("/robots.txt").text)
+            self.assertIn("noindex", self.client.get("/site/services").headers["x-robots-tag"])
+
+        with patch.dict(os.environ, {"PUBLIC_SITE_INDEXABLE": "true"}):
+            robots = self.client.get("/robots.txt")
+            self.assertEqual(robots.status_code, 200)
+            self.assertIn("Sitemap: https://imperialautophx.com/sitemap.xml", robots.text)
+
+            sitemap = self.client.get("/sitemap.xml")
+            self.assertEqual(sitemap.status_code, 200)
+            self.assertIn("<loc>https://imperialautophx.com/site/services/diesel</loc>", sitemap.text)
+            self.assertNotIn("/site/status", sitemap.text)
+            self.assertNotIn("/site/book", sitemap.text)
+
+            public = self.client.get("/site/services/diesel")
+            self.assertNotIn("x-robots-tag", public.headers)
+            self.assertIn('<link rel="canonical" href="https://imperialautophx.com/site/services/diesel">', public.text)
+            self.assertNotIn('name="robots" content="noindex', public.text)
+
+            for path in ("/site/book", "/site/estimate", "/site/roadside", "/site/status"):
+                form = self.client.get(path)
+                self.assertEqual(form.headers.get("x-robots-tag"), "noindex, nofollow", path)
+                self.assertIn('name="robots" content="noindex', form.text, path)
+                self.assertNotIn('rel="canonical"', form.text, path)
+
     def test_every_service_leads_to_an_online_action(self):
         import re
-        for line in public_site.SERVICE_LINES:
+        for line in public_site.visible_lines():
             page = self.client.get(f"/site/services/{line.slug}").text
             hero = page.split('class="hero"')[1].split("</section>")[0]
             buttons = re.findall(r'<a class="btn[^"]*" href="([^"]+)"', hero)
@@ -139,8 +167,44 @@ class PublicPages(unittest.TestCase):
         self.assertNotIn("x-robots-tag", response.headers)
         self.assertNotIn('name="robots"', response.text)
 
+    def test_homepage_actions_match_form_availability(self):
+        # A configured price must not advertise instant booking while forms are
+        # disabled, even if the booking catalog contains the service.
+        from app import business_settings
+        app.state.read_only = False
+        catalog = json.dumps({"diagnostic": {"price": 75, "minutes": 60}})
+        with patch.object(business_settings, "_load", return_value={}), patch.dict(
+            os.environ, {"PUBLIC_SERVICE_CATALOG": catalog, "PUBLIC_FORMS_ENABLED": ""}
+        ):
+            closed = self.client.get("/site/")
+            self.assertEqual(closed.status_code, 200)
+            self.assertIn("Call to schedule", closed.text)
+            self.assertIn('href="tel:+14809144144"', closed.text)
+            self.assertNotIn("Book a service</a>", closed.text)
+            self.assertNotIn("Standard services you can book now", closed.text)
+            self.assertNotIn("Pick a time", closed.text)
+            self.assertNotIn('class="btn btn-gold" href="/site/estimate"', closed.text)
+
+        with patch.object(business_settings, "_load", return_value={}), patch.dict(
+            os.environ, {"PUBLIC_SERVICE_CATALOG": catalog, "PUBLIC_FORMS_ENABLED": "true"}
+        ):
+            open_home = self.client.get("/site/")
+            self.assertEqual(open_home.status_code, 200)
+            self.assertIn("Book a service", open_home.text)
+            self.assertIn("Standard services you can book now", open_home.text)
+            self.assertIn("Pick a time", open_home.text)
+            self.assertIn('href="/site/book?service=diagnostic"', open_home.text)
+
+        app.state.read_only = True
+        with patch.object(business_settings, "_load", return_value={}), patch.dict(
+            os.environ, {"PUBLIC_SERVICE_CATALOG": catalog, "PUBLIC_FORMS_ENABLED": "true"}
+        ):
+            read_only_home = self.client.get("/site/")
+            self.assertIn("Call to schedule", read_only_home.text)
+            self.assertNotIn("Standard services you can book now", read_only_home.text)
+
     def test_staff_pages_still_require_sign_in(self):
-        self.assertEqual(self.client.get("/", follow_redirects=False).headers["location"], "/login")
+        self.assertEqual(self.client.get("/", follow_redirects=False).headers["location"], "/site/")  # visitors land on the website
         self.assertEqual(self.client.get("/appointments/").status_code, 401)
 
     def test_forms_closed_while_read_only(self):
@@ -171,6 +235,20 @@ class PublicPages(unittest.TestCase):
     def open_forms(self):
         app.state.read_only = False
         return patch.dict(os.environ, {"PUBLIC_FORMS_ENABLED": "true"})
+
+    def test_contact_preference_is_explicit_and_not_marketing_consent(self):
+        # Public form must neither preselect SMS nor imply marketing permission.
+        with self.open_forms():
+            page = self.client.get("/site/estimate").text
+            self.assertIn("Selecting text does not opt you in to promotional messages.", page)
+            contact_inputs = [tag for tag in page.split("<input") if 'name="contact_method"' in tag]
+            self.assertEqual(len(contact_inputs), 3)
+            self.assertTrue(all("required" in tag.split(">")[0] for tag in contact_inputs))
+            self.assertTrue(all("checked" not in tag.split(">")[0] for tag in contact_inputs))
+            missing = self.client.post("/site/estimate", data=self.estimate(contact_method=""))
+            self.assertEqual(missing.status_code, 422)
+            self.assertIn("Choose how we should reach you", missing.text)
+        self.assertEqual(self.counts(), (0, 0, 0, 0, 0))
 
     def test_estimate_request_creates_intake_records_and_sends_nothing(self):
         # The test client runs in process, so any socket connection would be an outside call.
@@ -307,19 +385,19 @@ class PublicPages(unittest.TestCase):
         self.assertEqual(self.counts()[2], 1)
 
     def lost(self, **data):
-        return self.client.post("/site/status/lost", data={"phone": "(602) 555-0142", "last_name": "Sampleton", **data})
+        return self.client.post("/site/status/lost", data={"phone": "(602) 555-0142", **data})
 
     def test_lost_reference_queues_help_without_revealing_or_booking(self):
         from app.dispatch_model import DispatchItem
         with self.open_forms(), patch.object(socket.socket, "connect", no_network):
             self.client.post("/site/estimate", data=self.estimate())
             before = self.counts()
-            hit, miss, wrong_name = self.lost(), self.lost(phone="(602) 555-0199"), self.lost(last_name="Nobody")
+            hit, miss, malformed = self.lost(), self.lost(phone="(602) 555-0199"), self.lost(phone="123")
             again = self.lost()
-        for page in (hit, miss, wrong_name, again):
+        for page in (hit, miss, malformed, again):
             self.assertEqual(page.status_code, 200)
             self.assertIn("If that matches a booking or request", page.text)
-            self.assertNotIn("WEB-", page.text.split("Lost your reference")[1])  # nothing about the record is shown
+            self.assertNotIn("WEB-", page.text.split("Lost your status link")[1])  # nothing about the record is shown
         self.assertEqual(self.counts(), before)  # no booking, customer or message created
         with self.Session() as db:
             items = db.query(DispatchItem).filter(DispatchItem.category == "reference_help").all()
@@ -327,6 +405,16 @@ class PublicPages(unittest.TestCase):
             self.assertTrue(items[0].quo_conversation_id.startswith("WEB"))  # website no-text guards apply
             self.assertIn("WEB-1", items[0].summary)
             self.assertIsNone(items[0].draft_reply)
+
+    def test_phone_only_recovery_does_not_guess_between_customers(self):
+        from app.dispatch_model import DispatchItem
+        with self.open_forms():
+            self.client.post("/site/estimate", data=self.estimate())
+            self.client.post("/site/estimate", data=self.estimate(last_name="Other Customer", description="Second test request."))
+            self.assertEqual(self.lost().status_code, 200)
+        with self.Session() as db:
+            self.assertEqual(db.query(Customer).count(), 2)
+            self.assertEqual(db.query(DispatchItem).filter_by(category="reference_help").count(), 0)
 
     def test_lost_reference_closed_with_forms(self):
         app.state.read_only = False

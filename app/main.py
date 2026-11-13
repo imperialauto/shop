@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, Request, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from app.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.orm import Session
 
@@ -11,7 +11,7 @@ from app.database import get_db, init_db
 from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user, after_login
 from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, my_day, business_settings_page, dispatch, imperial_tasks, dev_work, live, finance, owner_setup, public_site, staff
-from app.routes import account_security, local_node
+from app.routes import account_security, local_node, security_center
 from app.scheduler import start_scheduler
 
 import os
@@ -20,7 +20,7 @@ import time
 from app.security import limiter
 from app.permissions import ROLES, role_gate
 from app import home_summary, next_action, preview_check, preview_seed, system_health
-from app.public_site import preview_code
+from app.public_site import preview_code, indexable, visible_lines, hidden_slugs
 import hashlib
 import hmac
 
@@ -55,6 +55,7 @@ app.include_router(owner_setup.router, tags=["owner_setup"])
 app.include_router(account_security.router, tags=["security"])
 app.include_router(staff.router, tags=["staff"])
 app.include_router(business_settings_page.router, tags=["settings"])
+app.include_router(security_center.router, tags=["settings"])
 app.include_router(alert_center.router, tags=["alerts"])
 app.include_router(my_day.router, tags=["my_day"])
 app.include_router(public_site.router, tags=["public_site"])
@@ -100,9 +101,15 @@ def cross_site_post(request: Request) -> bool:
     """Browsers label where a form came from. Refuse staff writes started on another site."""
     if request.method in ("GET", "HEAD", "OPTIONS") or request.url.path.startswith(CROSS_SITE_ALLOWED):
         return False
+    from app import security_controls
+    controls = security_controls.values()
+    if not controls["block_cross_site_writes"]:
+        return False
     origin = request.headers.get("origin")
-    if not origin or origin == "null":
-        return origin == "null"
+    if not origin:
+        return controls["require_origin_header"] and not request.headers.get("x-internal-key")
+    if origin == "null":
+        return True
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
     return origin.split("://", 1)[-1] != host
 
@@ -119,7 +126,7 @@ def read_only_exempt(request: Request) -> bool:
         return True  # the stop switch must work even while read-only
     if request.url.path == "/site/status":
         return True  # looks up a status link and writes nothing
-    if request.url.path in ("/settings/business", "/alerts"):
+    if request.url.path in ("/settings/business", "/alerts", "/settings/security-privacy"):
         return True  # owner configuration, audited, checks for the owner itself
     if request.url.path.startswith("/settings/users/"):
         return True  # logins only; these routes check for the owner themselves
@@ -138,8 +145,8 @@ def read_only_exempt(request: Request) -> bool:
 
 PREVIEW_COOKIE = "imperial_preview"
 PREVIEW_FORM = ('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Private preview</title>'
-                '<body style="background:#2D0245;color:#fff;font-family:-apple-system,sans-serif;text-align:center;padding:64px 20px"><h1 style="font-size:22px">Private preview</h1>{error}'
-                '<form method="post" action="/preview-access"><input name="code" type="password" aria-label="Access code" autocomplete="off" style="font-size:16px;padding:12px;width:260px;max-width:100%">'
+                '<body style="background:#2D0245;color:#fff;font-family:-apple-system,sans-serif;text-align:center;padding:64px 20px"><h1 style="font-size:22px">{title}</h1><p>{help}</p>{error}'
+                '<form method="post" action="/preview-access"><input type="hidden" name="next" value="{target}"><input name="code" type="password" aria-label="Access code" autocomplete="off" style="font-size:16px;padding:12px;width:260px;max-width:100%">'
                 '<br><button type="submit" style="margin-top:14px;min-height:48px;padding:0 28px;font-size:16px;font-weight:700;background:#EAD272;border:0;border-radius:10px">Continue</button></form>')
 
 
@@ -155,15 +162,26 @@ async def preview_gate(request: Request):
     if hmac.compare_digest(request.cookies.get(PREVIEW_COOKIE, ""), expected):
         return None
     if request.url.path != "/preview-access":
-        return RedirectResponse("/preview-access", status_code=303)
+        gate = "/preview-access?next=/login" if request.url.path == "/login" else "/preview-access"
+        return RedirectResponse(gate, status_code=303)
+
+    form = await request.form() if request.method == "POST" else request.query_params
+    staff = form.get("next") == "/login"
+    target = "/login" if staff else "/site/"
+    page = {
+        "title": "Preview staff access" if staff else "Private website preview",
+        "help": ("Enter the website preview code first. Then sign in with your preview staff account."
+                 if staff else "Enter the website preview code to try the customer site."),
+        "target": target,
+    }
     if request.method == "POST":
-        entered = str((await request.form()).get("code", ""))
+        entered = str(form.get("code", ""))
         if hmac.compare_digest(entered.encode(), code.encode()):
-            response = RedirectResponse("/site/", status_code=303)
+            response = RedirectResponse(target, status_code=303)
             response.set_cookie(PREVIEW_COOKIE, expected, max_age=7 * 86400, httponly=True, secure=True, samesite="lax")
             return response
-        return HTMLResponse(PREVIEW_FORM.format(error="<p>That code did not match.</p>"), status_code=403, headers={"X-Robots-Tag": "noindex, nofollow"})
-    return HTMLResponse(PREVIEW_FORM.format(error=""), headers={"X-Robots-Tag": "noindex, nofollow"})
+        return HTMLResponse(PREVIEW_FORM.format(**page, error="<p>That code did not match.</p>"), status_code=403, headers={"X-Robots-Tag": "noindex, nofollow"})
+    return HTMLResponse(PREVIEW_FORM.format(**page, error=""), headers={"X-Robots-Tag": "noindex, nofollow"})
 
 
 @app.middleware("http")
@@ -182,8 +200,9 @@ async def recovery_mode(request: Request, call_next):
         response.headers["X-Robots-Tag"] = "noindex, nofollow"
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", "same-origin")
-    if not request.url.path.startswith("/live/overlay"):
-        response.headers.setdefault("X-Frame-Options", "DENY")
+    from app import security_controls
+    secure = request.headers.get("x-forwarded-proto", request.url.scheme) == "https" or bool(os.getenv("RAILWAY_ENVIRONMENT"))
+    security_controls.apply_headers(response, request.url.path, secure)
     return response
 
 @app.on_event("startup")
@@ -239,11 +258,57 @@ def readyz():
     return JSONResponse({"status": "ready" if ready else "not_ready", "database_connected": audit["connected"], "mode": "read-only" if app.state.read_only else "active"}, status_code=200 if ready else 503)
 
 
+@app.get("/robots.txt", include_in_schema=False)
+def robots_txt():
+    """Advertise the public sitemap while discouraging crawling of staff paths.
+
+    These directives are not access controls; authentication remains required.
+    Customer status links instead use noindex response headers.
+    """
+    lines = [
+        "User-agent: *",
+        "Disallow: /internal/",
+        "Disallow: /finance/",
+        "Disallow: /customers/",
+        "Disallow: /vehicles/",
+        "Disallow: /ro/",
+        "Disallow: /invoices/",
+        "Disallow: /settings/",
+        "Disallow: /dashboard",
+        "Disallow: /login",
+    ]
+    if indexable():
+        lines.append("Sitemap: https://imperialautophx.com/sitemap.xml")
+    return Response("\n".join(lines) + "\n", media_type="text/plain",
+                    headers={"Cache-Control": "public, max-age=300"})
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+def sitemap_xml():
+    """List only stable public information pages, and only after launch approval."""
+    if not indexable():
+        return Response(status_code=404, headers={"X-Robots-Tag": "noindex, nofollow"})
+    paths = ["/site/", "/site/services", "/site/contact", "/site/pricing", "/site/faq"]
+    if "rentals" not in hidden_slugs():
+        paths.append("/site/rentals")
+    paths.extend("/site/services/" + line.slug for line in visible_lines())
+    urls = "".join(
+        "<url><loc>https://imperialautophx.com" + path + "</loc></url>\n"
+        for path in paths
+    )
+    xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + (
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        + urls + '</urlset>\n'
+    )
+    return Response(xml, media_type="application/xml",
+                    headers={"Cache-Control": "public, max-age=300"})
+
+
 @app.get("/", response_class=HTMLResponse)
 def root(request: Request):
     if request.session.get("user_id"):
         return RedirectResponse("/dashboard", status_code=302)
-    return RedirectResponse("/login", status_code=302)
+    return RedirectResponse("/site/", status_code=302)  # customers land on the website; staff use its login button
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -255,7 +320,7 @@ def login_page(request: Request):
 def login_submit(request: Request, username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
     keys = (f"user:{username.strip().lower()}", account_security.client_key(request))
     if limiter.locked(*keys):
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Too many tries. Wait 15 minutes, then try again."}, status_code=429)
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Too many tries. Wait a few minutes, then try again."}, status_code=429)
     user = db.query(User).filter(User.username == username).first()
     if password == "imperial2024" or not user or user.is_active is False or not verify_password(password, user.password_hash):
         limiter.record(*keys)
@@ -362,8 +427,9 @@ PRIVATE_PAGE = {"Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow"
 
 def _status_order(db: Session, token: str):
     from app.models import RepairOrder
+    from app.security_controls import link_expired
     ro = db.query(RepairOrder).filter(RepairOrder.public_token == token).first() if token else None
-    if not ro:
+    if not ro or link_expired(ro):
         raise HTTPException(status_code=404, detail="Not found")
     return ro
 

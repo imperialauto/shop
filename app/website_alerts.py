@@ -69,8 +69,8 @@ def queue_reference_help(db: Session, customer, orders: list) -> DispatchItem:
     key = f"WEBREF{customer.id}"
     fields = dict(customer_phone=customer.phone or "", customer_id=customer.id, vehicle_id=orders[0].vehicle_id,
                   category="reference_help", urgency="normal",
-                  summary=f"Asked for their booking reference on the website. Their open jobs: {refs}. Call or text them the reference.",
-                  proposed_action=f"Give {refs} to the customer", draft_reply=None,
+                  summary=f"Asked for a private vehicle status link. Their open jobs: {refs}.",
+                  proposed_action=f"Verify the request, then share the correct private Vehicle Status link for {refs}.", draft_reply=None,
                   last_message_id=f"web:ref:{customer.id}:{datetime.now().timestamp():.0f}",
                   updated_at=datetime.now().astimezone())
     item = db.query(DispatchItem).filter(DispatchItem.quo_conversation_id == key,

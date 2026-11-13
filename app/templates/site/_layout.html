@@ -4,8 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ business.name }} — Auto and Diesel Repair in Glendale, AZ{% endblock %}</title>
-  <meta name="description" content="{% block description %}Auto, diesel, European and Sprinter repair at our Glendale, AZ shop. Fleet service, roadside help and NVZN Customs tint, wraps and detailing.{% endblock %}">
-  {% if not indexable %}<meta name="robots" content="noindex, nofollow">{% endif %}
+  <meta name="description" content="{% block description %}Auto and diesel repair in Glendale, AZ: heavy-duty trucks, fleet service, towing, 18-wheeler jump starts and mobile no-start help.{% endblock %}">
+  {% if seo_noindex %}<meta name="robots" content="noindex, nofollow">{% endif %}
+  {% if canonical_url %}<link rel="canonical" href="{{ canonical_url }}">{% endif %}
   <meta name="theme-color" content="#2D0245">
   <link rel="stylesheet" href="/static/site.css">
   <script type="application/ld+json">
@@ -28,11 +29,12 @@
       <a href="/site/estimate" {% if active == 'estimate' %}aria-current="page"{% endif %}>Get an estimate</a>
       <a href="/site/roadside" {% if active == 'roadside' %}aria-current="page"{% endif %}>Roadside &amp; towing</a>
       <a href="/site/pricing" {% if active == 'pricing' %}aria-current="page"{% endif %}>Pricing</a>
-      <a href="/site/rentals" {% if active == 'rentals' %}aria-current="page"{% endif %}>Rentals</a>
-      <a href="/site/faq" {% if active == 'faq' %}aria-current="page"{% endif %}>FAQ</a>
+      {% if 'rentals' not in hidden_services %}<a href="/site/rentals" {% if active == 'rentals' %}aria-current="page"{% endif %}>Rentals</a>
+      {% endif %}      <a href="/site/faq" {% if active == 'faq' %}aria-current="page"{% endif %}>FAQ</a>
       <a href="/site/status" {% if active == 'status' %}aria-current="page"{% endif %}>Repair status</a>
       <a href="/site/contact" {% if active == 'contact' %}aria-current="page"{% endif %}>Contact</a>
       <a class="call" href="tel:{{ business.phone_tel }}">Call {{ business.phone_display }}</a>
+      {% if site_controls.login_button %}<a class="staff-login" href="/login" rel="nofollow">Staff login</a>{% endif %}
     </nav>
   </div>
 </header>
@@ -57,7 +59,8 @@
         <ul>{% for line in service_lines %}<li><a href="/site/services/{{ line.slug }}">{{ line.name }}</a></li>{% endfor %}</ul>
       </div>
     </div>
-    <div class="legal">© {{ year }} {{ business.legal_name }}. NVZN Customs is a division of {{ business.legal_name }}.</div>
+    <div class="legal">© {{ year }} {{ business.legal_name }}.{% if 'nvzn-customs' not in hidden_services %} NVZN Customs is a division of {{ business.legal_name }}.{% endif %}
+      {% if site_controls.privacy %} · <a href="/site/privacy">Privacy</a>{% endif %}{% if site_controls.terms %} · <a href="/site/terms">Terms</a>{% endif %}{% if site_controls.login_button %} · <a href="/login" rel="nofollow">Staff login</a>{% endif %}</div>
   </div>
 </footer>
 </body>

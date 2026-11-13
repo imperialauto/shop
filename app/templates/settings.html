@@ -13,7 +13,11 @@
   {% if user.role == 'owner' %}
   <a href="/settings/business" class="card max-w-md" style="display:block; text-decoration:none;">
     <strong>Business settings</strong>
-    <div class="text-sm text-stone-400">Hours, online booking, prices and mobile fees</div>
+    <div class="text-sm text-stone-400">Hours, online booking, prices, mobile fees and payment methods</div>
+  </a>
+  <a href="/settings/security-privacy" class="card max-w-md" style="display:block; text-decoration:none;">
+    <strong>Security &amp; Privacy</strong>
+    <div class="text-sm text-stone-400">Every protection in one list: sign-in limits, form limits, browser protections, customer links, privacy notice, terms and what the website shows</div>
   </a>
   {% endif %}
   <a href="/settings/security" class="card max-w-md" style="display:block; text-decoration:none;">

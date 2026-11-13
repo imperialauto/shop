@@ -9,6 +9,7 @@ from app.auth import get_current_user
 from app.config import GROQ_API_KEY
 from app.pricing import rates
 from groq import Groq
+from app.groq_models import text_model
 
 router = APIRouter()
 
@@ -36,7 +37,7 @@ def call_claude(prompt: str) -> str:
         return "AI assist not configured. Set GROQ_API_KEY in your environment."
     client = Groq(api_key=GROQ_API_KEY)
     response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model=text_model(),
         max_tokens=1024,
         messages=[{"role": "user", "content": prompt}]
     )

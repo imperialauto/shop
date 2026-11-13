@@ -100,8 +100,18 @@ class LoginLimiter:
     def __init__(self):
         self.failures: dict[str, list[float]] = {}
 
-    def _recent(self, key: str, now: float) -> list[float]:
-        kept = [t for t in self.failures.get(key, []) if now - t < LOCK_SECONDS]
+    @staticmethod
+    def limits() -> tuple[int, int]:
+        """(max failures, lock seconds) from the Security & Privacy Center, else the defaults."""
+        try:
+            from app import security_controls
+            return security_controls.value("login_max_failures"), security_controls.value("login_lock_minutes") * 60
+        except Exception:
+            return MAX_FAILURES, LOCK_SECONDS
+
+    def _recent(self, key: str, now: float, lock_seconds: int | None = None) -> list[float]:
+        lock_seconds = LOCK_SECONDS if lock_seconds is None else lock_seconds
+        kept = [t for t in self.failures.get(key, []) if now - t < lock_seconds]
         if kept:
             self.failures[key] = kept
         else:
@@ -110,7 +120,8 @@ class LoginLimiter:
 
     def locked(self, *keys: str, now: float | None = None) -> bool:
         moment = time.time() if now is None else now
-        return any(len(self._recent(key, moment)) >= MAX_FAILURES for key in keys)
+        most, lock = self.limits()
+        return any(len(self._recent(key, moment, lock)) >= most for key in keys)
 
     def record(self, *keys: str, now: float | None = None) -> None:
         moment = time.time() if now is None else now

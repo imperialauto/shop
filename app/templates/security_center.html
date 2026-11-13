@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Security &amp; Privacy — Imperial Auto Care{% endblock %}
+{% block content %}
+<div class="mb-6"><a href="/settings" class="text-sm text-stone-400">← Settings</a>
+  <h1 class="text-2xl font-bold text-yellow-400">Security &amp; Privacy</h1>
+  <p class="text-sm text-stone-400">Every protection on the website and in Imperial Operations. Change, turn off or turn back on any time. Changes take effect within 15 seconds and are saved with your name.</p></div>
+{% if error %}<div class="bg-red-900 border border-red-700 text-red-200 text-sm rounded px-3 py-2 mb-4" role="alert">{{ error }} Nothing was saved.</div>{% endif %}
+{% if not_ready %}<div class="bg-yellow-900 border border-yellow-700 text-yellow-100 text-sm rounded px-3 py-2 mb-4">Settings storage isn't set up yet. Current values show, but saving won't work until it is.</div>{% endif %}
+{% if saved == '1' %}<div class="bg-green-900 border border-green-700 text-green-200 text-sm rounded px-3 py-2 mb-4" role="status">Saved.</div>{% elif saved == '0' %}<div class="text-sm text-stone-400 mb-4" role="status">Nothing changed.</div>{% endif %}
+
+<form method="post" action="/settings/security-privacy" class="max-w-3xl space-y-6">
+  {% for g in groups %}
+  <section class="card" aria-labelledby="g{{ loop.index }}">
+    <h2 id="g{{ loop.index }}" class="font-bold mb-3">{{ g.group }}</h2>
+    {% for row in g.controls %}{% set c = row.c %}
+    <div class="py-3 border-b border-stone-800" style="padding:12px 0;border-bottom:1px solid var(--imp-line)">
+      {% if c.kind == 'bool' %}
+      <label class="flex items-start gap-3">
+        <input type="checkbox" name="{{ c.key }}" {% if row.value %}checked{% endif %} style="margin-top:4px;min-width:20px;min-height:20px">
+        <span><strong>{{ c.title }}</strong>{% if row.changed %} <span class="badge badge-fleet">changed</span>{% elif row.from_railway %} <span class="badge badge-intake">set in Railway</span>{% endif %}
+          <span style="display:block;margin-top:2px" class="text-sm text-stone-400">{{ c.help }}</span>
+          {% if c.recommended is not none and row.value != c.recommended %}<span class="text-sm" style="display:block;color:#EAD272">Recommended: {{ 'on' if c.recommended else 'off' }}.</span>{% endif %}</span>
+      </label>
+      {% if c.risky_off and row.value %}
+      <label style="display:block;margin-top:2px" class="text-sm text-stone-400 mt-2" style="margin-left:32px"><input type="checkbox" name="confirm_{{ c.key }}"> I understand turning this off lowers protection</label>
+      {% endif %}
+      {% elif c.kind == 'number' %}
+      <label style="display:block"><strong>{{ c.title }}</strong>{% if row.changed %} <span class="badge badge-fleet">changed</span>{% elif row.from_railway %} <span class="badge badge-intake">set in Railway</span>{% endif %}
+        <span style="display:block;margin-top:2px" class="text-sm text-stone-400 mb-2">{{ c.help }} Allowed: {{ c.low }} to {{ c.high }}. Default {{ c.default }}.</span>
+        <input name="{{ c.key }}" inputmode="numeric" value="{{ row.value }}" class="form-input" style="width:110px" required> {{ c.unit }}</label>
+      {% if c.recommended is not none and row.value != c.recommended %}<span class="text-sm" style="display:block;color:#EAD272">Recommended: {{ c.recommended }} {{ c.unit }}.</span>{% endif %}
+      {% elif c.kind == 'text' %}
+      <label style="display:block"><strong>{{ c.title }}</strong>{% if row.changed %} <span class="badge badge-fleet">edited</span>{% endif %}
+        <span style="display:block;margin-top:2px" class="text-sm text-stone-400 mb-2">{{ c.help }} Clear the box to go back to the original wording.</span>
+        <textarea name="{{ c.key }}" rows="10" class="form-input" style="width:100%;font-size:14px">{{ row.display }}</textarea></label>
+      {% else %}
+      <label style="display:block"><strong>{{ c.title }}</strong>{% if row.changed %} <span class="badge badge-fleet">changed</span>{% elif row.from_railway %} <span class="badge badge-intake">set in Railway</span>{% endif %}
+        <span style="display:block;margin-top:2px" class="text-sm text-stone-400 mb-2">{{ c.help }}</span>
+        <textarea name="{{ c.key }}" rows="3" class="form-input" style="width:100%">{{ row.display }}</textarea></label>
+      {% if c.key == 'hidden_services' %}<span style="display:block;margin-top:2px" class="text-sm text-stone-400">Short names: auto-repair, diesel, heavy-duty, european-sprinter, dps6-transmission, fleet, mobile-roadside, towing, rentals, nvzn-customs.</span>{% endif %}
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% if g.fixed %}
+    <h3 class="text-xs text-stone-400 uppercase tracking-wide mt-4 mb-2">Always on</h3>
+    <ul class="text-sm" style="list-style:none;padding:0;display:grid;gap:8px">
+      {% for f in g.fixed %}<li><strong>{{ f.title }}</strong><span class="text-stone-400" style="display:block">{{ f.why_fixed }}</span></li>{% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+  {% endfor %}
+  <div class="flex flex-wrap gap-3">
+    <button type="submit" class="btn-primary">Save</button>
+  </div>
+</form>
+
+<form method="post" action="/settings/security-privacy" class="max-w-3xl mt-4" onsubmit="return confirm('Put every security and privacy setting back to the recommended defaults?')">
+  <input type="hidden" name="reset" value="all">
+  <button type="submit" class="btn-secondary">Reset everything to defaults</button>
+</form>
+
+{% if history %}
+<div class="card max-w-3xl mt-6">
+  <h2 class="font-bold mb-2">Change history</h2>
+  <ul class="text-sm space-y-1">{% for h in history %}<li>{{ h.changed_at.strftime('%m/%d/%y %I:%M %p') }} UTC by {{ h.changed_by }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+{% endblock %}

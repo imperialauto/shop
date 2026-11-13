@@ -25,6 +25,8 @@ KEYS = {
     "alert_rules": "ALERT_RULES_JSON",
     "labor_rates": "LABOR_RATES_JSON",
     "booking_auto_times": "PUBLIC_AUTO_TIMES",
+    "security_controls": "SECURITY_CONTROLS_JSON",
+    "payment_methods": "PAYMENT_METHODS",
 }
 CACHE_SECONDS = 15
 _cache: dict = {"at": 0.0, "values": None}

@@ -1034,6 +1034,10 @@ def owner_action(request_: OwnerAction, db: Session = Depends(get_db), _auth: bo
         return {"ownerReply": "I couldn't match that to an open customer. Text OPEN for the list."}
     if website_alerts.is_website(item):
         return {"ownerReply": f"Website request #{item.id} must be contacted manually."}
+    if item.thread_message_id == "none":
+        return {"ownerReply": (
+            f"#{item.id} has no customer text to verify. Call back or review the conversation in Quo."
+        )}
     item.draft_reply = text
     item.status = "needs_owner"
     audit(db, item.id, "owner_sms", "owner_proposed")
@@ -1211,24 +1215,41 @@ def _utc(value):
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
-def _scheduled_customers(db: Session) -> dict[int, datetime]:
-    rows = db.query(RepairOrder.customer_id, Appointment.starts_at).join(
+def _scheduled_appointments(db: Session):
+    rows = db.query(RepairOrder.customer_id, RepairOrder.id, Appointment.starts_at).join(
         Appointment, Appointment.repair_order_id == RepairOrder.id,
     ).filter(
         Appointment.status.in_(("tentative", "confirmed")),
         Appointment.starts_at > datetime.now(timezone.utc),
     ).order_by(Appointment.starts_at.desc()).all()
-    return dict(rows)  # earliest upcoming wins: rows run latest first
+    # Rows run latest first, so the earliest upcoming appointment wins.
+    return (
+        {customer_id: starts_at for customer_id, _, starts_at in rows},
+        {(customer_id, order_id): starts_at for customer_id, order_id, starts_at in rows},
+    )
 
 
-def _select(db: Session, view: str, scheduled: dict[int, datetime]) -> list[DispatchItem]:
+def _website_order_id(item: DispatchItem) -> int | None:
+    match = re.fullmatch(r"WEB([0-9]+)(?:-decision)?", item.quo_conversation_id or "")
+    return int(match[1]) if match else None
+
+
+def _appointment_for(item: DispatchItem, scheduled, scheduled_jobs):
+    if website_alerts.is_website(item):
+        return scheduled_jobs.get((item.customer_id, _website_order_id(item)))
+    return scheduled.get(item.customer_id)
+
+
+def _select(db: Session, view: str, scheduled: dict[int, datetime], scheduled_jobs: dict[tuple[int, int], datetime]) -> list[DispatchItem]:
     query = db.query(DispatchItem)
     if view == "completed":
         return query.filter(DispatchItem.status.in_(("declined", "closed"))).order_by(DispatchItem.updated_at.desc()).limit(25).all()
     if view == "customer":
         return query.filter(DispatchItem.status == "approved").order_by(DispatchItem.updated_at.desc()).limit(25).all()
     if view == "scheduled":
-        return query.filter(DispatchItem.customer_id.in_(list(scheduled)), DispatchItem.status.in_(OPEN_STATUSES + ("approved",))).limit(25).all()
+        candidates = query.filter(DispatchItem.customer_id.in_(list(scheduled)),
+                                  DispatchItem.status.in_(OPEN_STATUSES + ("approved",))).all()
+        return [item for item in candidates if _appointment_for(item, scheduled, scheduled_jobs)][:25]
     items = query.filter(DispatchItem.status.in_(OPEN_STATUSES)).all()
     if view == "urgent":
         items = [i for i in items if i.urgency != "normal"]
@@ -1238,15 +1259,21 @@ def _select(db: Session, view: str, scheduled: dict[int, datetime]) -> list[Disp
     return items[:25]
 
 
-def _card(db: Session, item: DispatchItem, scheduled: dict[int, datetime]) -> dict:
+def _card(db: Session, item: DispatchItem, scheduled: dict[int, datetime], scheduled_jobs: dict[tuple[int, int], datetime]) -> dict:
     customer = db.get(Customer, item.customer_id) if item.customer_id else None
     history, open_ro, estimate = [], None, None
     if customer:
         history = db.query(Communication).filter(Communication.customer_id == customer.id).order_by(
             Communication.created_at.desc()).limit(3).all()
-        open_ro = db.query(RepairOrder).filter(
-            RepairOrder.customer_id == customer.id, RepairOrder.status != "delivered",
-        ).order_by(RepairOrder.created_at.desc()).first()
+        if website_alerts.is_website(item):
+            order_id = _website_order_id(item)
+            order = db.get(RepairOrder, order_id) if order_id else None
+            if order and order.customer_id == customer.id:
+                open_ro = order
+        else:
+            open_ro = db.query(RepairOrder).filter(
+                RepairOrder.customer_id == customer.id, RepairOrder.status != "delivered",
+            ).order_by(RepairOrder.created_at.desc()).first()
         if open_ro and open_ro.line_items:
             estimate = sum(line.quantity * line.unit_price for line in open_ro.line_items)
     return {
@@ -1256,7 +1283,7 @@ def _card(db: Session, item: DispatchItem, scheduled: dict[int, datetime]) -> di
         "history": history,
         "open_ro": open_ro,
         "estimate": estimate,
-        "next_appointment": scheduled.get(item.customer_id),
+        "next_appointment": _appointment_for(item, scheduled, scheduled_jobs),
         "start_job": _start_job_url(customer, item),
     }
 
@@ -1293,9 +1320,9 @@ def dashboard_context(db: Session, view: str = "open") -> dict:
     view = view if view in VIEWS else "open"
     try:
         modes = policy_modes(db)
-        scheduled = _scheduled_customers(db)
-        items = _select(db, view, scheduled)
-        cards = [_card(db, item, scheduled) for item in items]
+        scheduled, scheduled_jobs = _scheduled_appointments(db)
+        items = _select(db, view, scheduled, scheduled_jobs)
+        cards = [_card(db, item, scheduled, scheduled_jobs) for item in items]
         health = _sync_health(db)
         paused = is_paused(db)
     except SQLAlchemyError:

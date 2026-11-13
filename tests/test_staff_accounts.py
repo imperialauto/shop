@@ -236,6 +236,30 @@ class StaffLoginTests(unittest.TestCase):
         self.assertNotIn("Unknown Unknown", page)
         self.assertNotIn("Take it", page)  # techs don't assign themselves
 
+    def test_vehicle_selector_requires_sign_in_and_escapes_vehicle_text(self):
+        from app.models import RepairOrder, Vehicle
+        job = self.make_job()
+        with self.Session() as db:
+            ro = db.get(RepairOrder, job)
+            customer_id = ro.customer_id
+            vehicle = db.get(Vehicle, ro.vehicle_id)
+            vehicle.make = "Example <script>alert(1)</script>"
+            vehicle.license_plate = "<img src=x onerror=alert(1)>"
+            db.commit()
+
+        url = f"/ro/{job}/vehicles?customer_id={customer_id}"
+        signed_out = TestClient(app, follow_redirects=False).get(url)
+        self.assertEqual(signed_out.status_code, 302)
+        self.assertEqual(signed_out.headers["location"], "/login")
+
+        owner, _ = self.sign_in()
+        page = owner.get(url)
+        self.assertEqual(page.status_code, 200)
+        self.assertNotIn("<script>", page.text)
+        self.assertNotIn("<img", page.text)
+        self.assertIn("&lt;script&gt;", page.text)
+        self.assertIn("&lt;img", page.text)
+
     def test_status_must_be_real_and_tech_cannot_deliver(self):
         job = self.make_job(tech_id=2)
         crew, _ = self.sign_in("crew")

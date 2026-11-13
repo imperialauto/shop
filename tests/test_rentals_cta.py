@@ -1,5 +1,6 @@
 """Rental-page QA: the first action must start an online request, not dead-end."""
 import unittest
+from unittest.mock import patch
 
 import fixture_environment  # noqa: F401 -- disposable fixture settings only
 from fastapi.testclient import TestClient
@@ -7,6 +8,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 
+@patch("app.routes.public_site.hidden_slugs", lambda: set())  # rentals are hidden by default; these test the page when shown
 class RentalsActionTests(unittest.TestCase):
     def test_rentals_page_has_online_request_primary_action(self):
         with TestClient(app) as client:

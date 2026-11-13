@@ -7,6 +7,7 @@ from app.calendar_utils import create_appointment
 from app.sending_pause import sending_allowed
 import hmac, hashlib, base64, json, httpx, os, secrets, datetime
 from groq import AsyncGroq
+from app.groq_models import text_model, vision_model
 
 router = APIRouter()
 
@@ -157,7 +158,7 @@ async def intake_turn(conversation: list, new_message: str) -> tuple[str, dict |
     messages = [{"role": "system", "content": INTAKE_SYSTEM}] + conversation + [{"role": "user", "content": new_message}]
 
     response = await client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model=text_model(),
         max_tokens=300,
         messages=messages,
     )
@@ -312,7 +313,7 @@ async def parse_appointment_date(user_input: str) -> datetime.datetime | None:
     today = datetime.date.today()
 
     response = await client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model=text_model(),
         max_tokens=80,
         messages=[
             {
@@ -354,10 +355,13 @@ def fmt_appt(dt: datetime.datetime) -> str:
 
 async def describe_image(url: str) -> str:
     """Download image and ask a vision model to describe it for auto intake context."""
+    model = vision_model()
+    if model is None:
+        return ""  # no current screenshot model configured (issue #150)
     try:
         client = AsyncGroq(api_key=GROQ_API_KEY)
         resp = await client.chat.completions.create(
-            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            model=model,
             messages=[
                 {
                     "role": "user",
