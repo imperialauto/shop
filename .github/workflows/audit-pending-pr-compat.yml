@@ -1,0 +1,81 @@
+name: Audit pending PR compatibility (synthetic only)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/audit-pending-pr-compat.yml'
+      - 'docs/qa-evidence/2026-11-13-pending-pr-compat.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pending-pr:
+    name: "Check PR ${{ matrix.pr }} on current main"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pr: "105"
+            branch: "security/vehicle-selector-auth-escape-20261109"
+          - pr: "154"
+            branch: "codex/public-oil-service-policy"
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test-only
+          POSTGRES_DB: compatibility_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout audit PR + current main with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Merge one exact existing PR branch into disposable CI checkout
+        shell: bash
+        env:
+          CANDIDATE_BRANCH: ${{ matrix.branch }}
+          CANDIDATE_PR: ${{ matrix.pr }}
+        run: |
+          set -euo pipefail
+          git status --short
+          git fetch --no-tags origin "refs/heads/${CANDIDATE_BRANCH}"
+          git config user.name "Imperial audit CI"
+          git config user.email "audit-ci@users.noreply.github.com"
+          echo "Candidate PR #${CANDIDATE_PR}, ref ${CANDIDATE_BRANCH}"
+          git merge --no-commit --no-ff FETCH_HEAD
+          git diff --check HEAD
+          echo "Compatible merge into current audit base succeeded. No push or deployment."
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install existing Imperial app dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Compile application and tests
+        run: python -m compileall -q app tests
+
+      - name: Full synthetic app unit regression
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+
+      - name: Disposable PostgreSQL booking regression
+        env:
+          TEST_DATABASE_URL: postgresql://test:test-only@127.0.0.1:5432/compatibility_test
+        run: PYTHONPATH=. python tests/public_booking_postgres.py -v
