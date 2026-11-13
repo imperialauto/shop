@@ -31,6 +31,15 @@ Date: 2026-11-13. Scope: read-only GitHub/Railway verification and one synthetic
 - **Historical requirement-status ambiguity:** the requirements register has entries marked `proposed` or `pending` despite corresponding models/tests in main. Do not silently upgrade statuses; reconcile merged commit, runtime flag, QA and production evidence one requirement at a time.
 - **Autonomous development is not active in production based on config:** production `web` has no `LOCAL_NODE_ENABLED` or `DEV_COORDINATOR_CAPTURE_ENABLED` variable names; the former defaults off in source and the latter's execution stack is in draft PRs. Dedicated local QA is **not** proof of autonomous coding readiness.
 
+## Additional visual/browser artifact analysis
+
+The Nov 12 main-branch synthetic walkthrough artifact (`walkthrough-output/report.json`, artifact ID `13990389888`) contains actual Chromium screenshots of phone and desktop flows. Its results are **simulated UI screenshots**, not live Railway or owner-device acceptance.
+
+- The report recorded the **new customer** page title as `New Customer — Imperial Auto Care <script> ...`. Source review confirmed a duplicate VIN lookup listener incorrectly embedded inside the template's `{% block title %}`. This PR removes the invalid title-block script, preserving the working listener at the end of the form, and adds a title/single-listener regression.
+- On synthetic 390px-wide phone, several booking and intake pages are long: site home ~6,349 CSS px; booking times ~3,580; mobile booking ~3,952; brake package ~4,044. Treat these as navigation/friction hypotheses, not automatic failures; step progression and viewport need owner-device verification.
+- The artifact metrics record large `smallTargets` / `zoomingInputs` counts for booking times, but source uses visually-hidden 1px radio inputs inside larger selectable labels. Do **not** present those counts as confirmed inaccessible controls. Audit the measurement instrumentation separately and confirm effective label hit targets with browser interaction.
+- The captured phone dashboard was ~4,322 CSS px tall, supporting an additional task-density/mobile navigation review. No clear overflow was reported. The walkthrough checks were green despite these advisory metrics.
+
 ## Next checkpoints (no authority to deploy)
 
 1. Compare GitHub `main` commit with each **actual** QA deployment and run the current production-commit candidate in isolated synthetic QA. Do not infer results from the older pinned preview.
