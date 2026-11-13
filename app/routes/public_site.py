@@ -249,7 +249,9 @@ def person_fields(form) -> dict:
     last = clean_text(form.get("last_name"), NAME_LIMIT)
     if not first or not last:
         raise FormError("Enter your first and last name.")
-    contact = form.get("contact_method", "text")
+    # A contact preference must come from the customer, never from a default.
+    # This is not a marketing opt-in; promotional consent is a separate workflow.
+    contact = form.get("contact_method")
     if contact not in CONTACT_OPTIONS:
         raise FormError("Choose how we should reach you.")
     email = normalize_email(form.get("email"))
