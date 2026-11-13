@@ -8,6 +8,7 @@ Adding a control: add it to CONTROLS, then read it with `value("key")` where it 
 Nothing else is needed for it to appear on the settings page with its change history.
 """
 import json
+import os
 from dataclasses import dataclass
 
 from app import business_settings as store
@@ -28,6 +29,7 @@ class Control:
     unit: str = ""
     risky_off: bool = False     # turning it off weakens protection: needs a confirm tick
     recommended: object = None  # shown when it differs from the default
+    env: str = ""               # a Railway variable that sets the value until the owner saves one
 
 
 @dataclass(frozen=True)
@@ -93,7 +95,7 @@ CONTROLS: tuple[Control, ...] = (
     # Website forms
     Control("form_hourly_limit", "Website forms", "Website form sends per visitor per hour",
             "Bookings, estimate and roadside requests from one internet address. Stops spam and flooding.",
-            "number", 5, 1, 50, "per hour"),
+            "number", 5, 1, 100, "per hour", env="PUBLIC_FORM_HOURLY_LIMIT"),
     Control("status_hourly_limit", "Website forms", "Status lookups per visitor per hour",
             "Stops someone guessing references or phone numbers to find other customers' jobs.",
             "number", 20, 5, 100, "per hour"),
@@ -185,16 +187,22 @@ def _coerce(control: Control, raw):
     return control.default
 
 
+def _resolve(control: Control, saved: dict):
+    if control.key in saved:
+        return _coerce(control, saved[control.key])
+    if control.env and os.environ.get(control.env, "").strip():
+        return _coerce(control, os.environ[control.env].strip())
+    return control.default
+
+
 def value(key: str):
-    """The owner's saved value, or the default. Never raises."""
-    control = BY_KEY[key]
-    saved = _saved()
-    return _coerce(control, saved[key]) if key in saved else control.default
+    """The owner's saved value, else its Railway variable, else the default. Never raises."""
+    return _resolve(BY_KEY[key], _saved())
 
 
 def values() -> dict:
     saved = _saved()
-    return {c.key: (_coerce(c, saved[c.key]) if c.key in saved else c.default) for c in CONTROLS}
+    return {c.key: _resolve(c, saved) for c in CONTROLS}
 
 
 class Invalid(ValueError):
