@@ -95,7 +95,9 @@ async function handleMessageEvent(event) {
   if (!msg?.id) return;
 
   const direction = msg.direction === "incoming" ? "INBOUND" : "OUTBOUND";
-  const customerPhone = direction === "INBOUND" ? msg.from : msg.to;
+  const recipient = Array.isArray(msg.to) ? (msg.to.length === 1 ? msg.to[0] : null) : msg.to;
+  const customerPhone = direction === "INBOUND" ? msg.from : recipient;
+  if (!customerPhone) return;
 
   const customer = await prisma.customer.findFirst({ where: { phone: customerPhone } });
 
@@ -135,6 +137,15 @@ async function handleMessageEvent(event) {
   // there isn't already a PENDING draft waiting for review.
   const isNewInbound = direction === "INBOUND" && event.type === "message.received";
   if (direction === "OUTBOUND") {
+    if (customerPhone && stored.body) {
+      await shopClient.logCommunication({
+        phone: customerPhone,
+        direction: "outbound",
+        body: stored.body,
+        externalId: msg.id,
+        createdAt: stored.quoCreatedAt,
+      });
+    }
     // A text to the customer from Quo answers the open item right away.
     await shopClient.dispatchHandled({ conversationId: msg.conversationId, at: msg.createdAt });
   }
