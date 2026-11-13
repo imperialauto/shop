@@ -99,17 +99,35 @@ def client_key(request: Request) -> str:
 
 def page_headers(form_page: bool = False) -> dict:
     headers = {}
-    if not indexable():
+    # Public information may be indexed only after cutover; live forms and
+    # lookup pages are always kept out of search results.
+    if not indexable() or form_page:
         headers["X-Robots-Tag"] = "noindex, nofollow"
     if form_page:
         headers["Cache-Control"] = "no-store"
     return headers
 
 
+def canonical_url(path: str) -> str | None:
+    """Only canonicalize published information pages, never customer workflows."""
+    public_paths = {"/site/", "/site/services", "/site/contact", "/site/pricing",
+                    "/site/rentals", "/site/faq"}
+    if path == "/site":
+        path = "/site/"
+    if path not in public_paths:
+        prefix = "/site/services/"
+        if not path.startswith(prefix) or path[len(prefix):] not in SERVICE_LINE_BY_SLUG:
+            return None
+    return "https://imperialautophx.com" + path
+
+
 def render(request: Request, name: str, status_code: int = 200, form_page: bool = False, **context):
+    can_index = indexable() and not form_page
     base = {
         "request": request, "business": BUSINESS, "service_lines": SERVICE_LINES, "line_actions": line_actions,
-        "indexable": indexable(), "forms_open": forms_enabled(request.app.state.read_only),
+        "indexable": indexable(), "seo_noindex": not can_index,
+        "canonical_url": canonical_url(request.url.path) if can_index else None,
+        "forms_open": forms_enabled(request.app.state.read_only),
         "year": datetime.now(PHOENIX).year,
     }
     return templates.TemplateResponse(name, {**base, **context}, status_code=status_code,
