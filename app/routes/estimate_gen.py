@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, HTTPException, Depends, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
-from fastapi.templating import Jinja2Templates
+from app.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from groq import AsyncGroq
 import json, base64, html, os, secrets, io

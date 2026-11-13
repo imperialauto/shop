@@ -1,7 +1,7 @@
 from html import escape
 from fastapi import APIRouter, Request, Depends, Form, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from app.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.database import get_db
