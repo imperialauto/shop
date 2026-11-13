@@ -178,7 +178,7 @@
 </div>
 
 <!-- Line Items -->
-<div class="card mb-4">
+<div class="card mb-4" id="line-items">
   <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Line Items</h3>
   {% if ro.line_items %}
   <table class="mb-4">
@@ -201,6 +201,9 @@
         <td class="text-right text-stone-400">${{ "%.2f"|format(li.unit_price) }}</td>
         <td class="text-right font-semibold">${{ "%.2f"|format(li.total) }}</td>
         <td>
+          {% if user.role in ("owner", "admin", "office") and li.approval is none and not ro.invoices %}
+          <a href="/ro/{{ ro.id }}/edit-line-item/{{ li.id }}" class="btn-secondary text-xs" style="display:inline-flex;align-items:center;min-height:44px" aria-label="Edit {{ li.description }}">Edit</a>
+          {% endif %}
           <form method="post" action="/ro/{{ ro.id }}/delete-line-item/{{ li.id }}" class="inline">
             <button type="submit" class="text-red-500 hover:text-red-400 text-xs" onclick="return confirm('Delete this line item?')">×</button>
           </form>

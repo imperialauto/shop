@@ -162,5 +162,86 @@ class LineApprovalTests(unittest.TestCase):
         self.assertEqual(set(self.lines().values()), {None})
 
 
+    def editor_form(self, line_id):
+        import re
+        page = self.owner.get(f"/ro/{self.job}/edit-line-item/{line_id}")
+        self.assertEqual(page.status_code, 200)
+        revision = re.search(r'name="revision" value="([a-f0-9]+)"', page.text).group(1)
+        return dict(description="Headlight inspection", item_type="labor",
+                    quantity="0.5", unit_price="150", revision=revision)
+
+    def test_edit_draft_line_preserves_identity_and_recalculates(self):
+        line_id = self.ids()["Front brakes"]
+        page = self.owner.get(f"/ro/{self.job}")
+        self.assertIn(f'/ro/{self.job}/edit-line-item/{line_id}', page.text)
+        data = self.editor_form(line_id)
+        response = self.owner.post(f"/ro/{self.job}/edit-line-item/{line_id}", data=data)
+        self.assertEqual(response.status_code, 303)
+        with self.Session() as db:
+            li = db.get(LineItem, line_id)
+            self.assertEqual((li.description, li.quantity, li.unit_price, li.total),
+                             ("Headlight inspection", 0.5, 150, 75))
+            self.assertIsNone(li.approval)
+            self.assertEqual(db.query(LineItem).count(), 3)
+        self.assertIn("$524.00", self.owner.get(f"/ro/{self.job}").text)
+        self.assertEqual(self.owner.post(f"/ro/{self.job}/edit-line-item/{line_id}", data=data).status_code, 409)
+
+    def test_edit_draft_on_previously_signed_job_preserves_signed_items(self):
+        line_id = self.ids()["Front brakes"]
+        approved_id = self.ids()["Rear brakes"]
+        with self.Session() as db:
+            db.get(LineItem, approved_id).approval = "approved"
+            db.get(RepairOrder, self.job).signature_data = SIGNATURE
+            db.commit()
+        response = self.owner.post(f"/ro/{self.job}/edit-line-item/{line_id}", data=self.editor_form(line_id))
+        self.assertEqual(response.status_code, 303)
+        with self.Session() as db:
+            self.assertEqual(db.get(LineItem, approved_id).approval, "approved")
+            self.assertEqual(db.get(RepairOrder, self.job).signature_data, SIGNATURE)
+
+    def test_edit_rejects_invalid_values_and_wrong_job(self):
+        line_id = self.ids()["Front brakes"]
+        data = self.editor_form(line_id)
+        for changes in (dict(description=" "), dict(item_type="unknown"),
+                        dict(quantity="0"), dict(quantity="-1"), dict(quantity="nan"),
+                        dict(unit_price="-1"), dict(unit_price="inf"),
+                        dict(quantity="1e308", unit_price="1e308")):
+            with self.subTest(changes=changes):
+                response = self.owner.post(f"/ro/{self.job}/edit-line-item/{line_id}",
+                                           data={**data, **changes})
+                self.assertEqual(response.status_code, 422)
+        self.assertEqual(self.owner.post(f"/ro/{self.job + 100}/edit-line-item/{line_id}", data=data).status_code, 404)
+        with self.Session() as db:
+            self.assertEqual(db.get(LineItem, line_id).description, "Front brakes")
+
+    def test_edit_rechecks_approval_and_invoice_after_page_open(self):
+        line_id = self.ids()["Front brakes"]
+        data = self.editor_form(line_id)
+        for approval in ("pending", "approved", "declined"):
+            with self.Session() as db:
+                db.get(LineItem, line_id).approval = approval
+                db.commit()
+            self.assertEqual(self.owner.get(f"/ro/{self.job}/edit-line-item/{line_id}").status_code, 409)
+            self.assertEqual(self.owner.post(f"/ro/{self.job}/edit-line-item/{line_id}", data=data).status_code, 409)
+        with self.Session() as db:
+            db.get(LineItem, line_id).approval = None
+            db.add(Invoice(repair_order_id=self.job, subtotal=798, total=798, status="draft"))
+            db.commit()
+        self.assertEqual(self.owner.post(f"/ro/{self.job}/edit-line-item/{line_id}", data=data).status_code, 409)
+
+    def test_edit_requires_office_access_and_respects_read_only(self):
+        line_id = self.ids()["Front brakes"]
+        data = self.editor_form(line_id)
+        url = f"/ro/{self.job}/edit-line-item/{line_id}"
+        self.assertEqual(self.customer.get(url).status_code, 302)
+        self.assertEqual(self.customer.post(url, data=data).status_code, 302)
+        crew = TestClient(app, follow_redirects=False)
+        crew.post("/login", data={"username": "crew", "password": PASSWORD})
+        self.assertEqual(crew.get(url).status_code, 403)
+        self.assertEqual(crew.post(url, data=data).status_code, 403)
+        app.state.read_only = True
+        self.assertGreaterEqual(self.owner.post(url, data=data).status_code, 400)
+
+
 if __name__ == "__main__":
     unittest.main()

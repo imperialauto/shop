@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Edit line item — RO #{{ ro_id }}{% endblock %}
+{% block content %}
+<div style="max-width:640px;margin:0 auto">
+  <a href="/ro/{{ ro_id }}#line-items" class="btn-secondary" style="display:inline-flex;align-items:center;min-height:44px">Back to RO #{{ ro_id }}</a>
+  <h1 class="text-xl font-bold my-4">Edit line item</h1>
+  <form method="post" class="card" action="/ro/{{ ro_id }}/edit-line-item/{{ li.id }}">
+    <input type="hidden" name="revision" value="{{ revision }}">
+    <label for="edit-description" class="form-label">Description</label>
+    <textarea id="edit-description" name="description" required rows="4" class="form-input mb-4">{{ li.description }}</textarea>
+    <label for="edit-type" class="form-label">Type</label>
+    <select id="edit-type" name="item_type" class="form-select mb-4" style="min-height:44px">
+      {% for kind, label in [('labor', 'Labor'), ('part', 'Part'), ('sublet', 'Sublet'), ('misc', 'Misc')] %}
+      <option value="{{ kind }}" {% if li.item_type == kind %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <label for="edit-quantity" class="form-label">Quantity / hours</label>
+    <input id="edit-quantity" type="number" name="quantity" value="{{ li.quantity }}" min="0.001" step="any" required inputmode="decimal" class="form-input mb-4" style="min-height:44px">
+    <label for="edit-price" class="form-label">Unit price ($)</label>
+    <input id="edit-price" type="number" name="unit_price" value="{{ li.unit_price }}" min="0" step="0.01" required inputmode="decimal" class="form-input mb-4" style="min-height:44px">
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <button type="submit" class="btn-primary" style="min-height:44px">Save changes</button>
+      <a href="/ro/{{ ro_id }}#line-items" class="btn-secondary" style="display:inline-flex;align-items:center;min-height:44px">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
