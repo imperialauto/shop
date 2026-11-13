@@ -82,6 +82,9 @@
               </div>
             </details>
             {% endfor %}
+            {% if days|length > 5 %}
+            <button type="button" id="booking-show-later-dates" class="btn btn-light" hidden>Show later dates</button>
+            {% endif %}
           {% else %}
             <p class="alert alert-info" id="no-times">No online times fit this service in the next few weeks. <a href="/site/estimate?about={{ service.slug }}">Send a request online</a> and we'll offer you a time.</p>
           {% endif %}
@@ -157,6 +160,32 @@
   const nextHeading = document.getElementById('booking-next-heading');
   if (!options || !selection || !next || !nextHeading) return;
 
+  // With JavaScript, initially show only the first five available days.
+  // With JavaScript disabled, all days remain available by default.
+  const laterDatesButton = document.getElementById('booking-show-later-dates');
+  const laterDays = Array.from(options.querySelectorAll('details.day')).slice(5);
+  function revealLaterDates() {
+    laterDays.forEach(function (day) { day.hidden = false; });
+    if (laterDatesButton) laterDatesButton.hidden = true;
+  }
+  if (laterDatesButton && laterDays.length) {
+    const restored = form.querySelector('input[name="slot_id"]:checked');
+    const selectedLater = restored && laterDays.includes(restored.closest('details.day'));
+    if (!selectedLater) {
+      laterDays.forEach(function (day) { day.hidden = true; });
+      laterDatesButton.hidden = false;
+    }
+    laterDatesButton.addEventListener('click', function () {
+      revealLaterDates();
+      const firstNew = laterDays[0].querySelector('summary');
+      if (firstNew) {
+        firstNew.setAttribute('tabindex', '-1');
+        firstNew.focus({preventScroll: true});
+        firstNew.scrollIntoView({behavior: 'auto', block: 'start'});
+      }
+    });
+  }
+
   function selectedSlot() {
     return form.querySelector('input[name="slot_id"]:checked');
   }
@@ -190,6 +219,7 @@
     options.hidden = false;
     const chosen = selectedSlot();
     const chosenDay = chosen && chosen.closest('details.day');
+    if (chosenDay && chosenDay.hidden) revealLaterDates();
     if (chosenDay) chosenDay.open = true;
     const target = (chosenDay && chosenDay.querySelector('summary')) || options.querySelector('summary');
     if (target) {
