@@ -21,6 +21,7 @@ KEYS = {
     "mobile_zones": "PUBLIC_MOBILE_ZONES",
     "booking_lead_minutes": "PUBLIC_BOOKING_LEAD_MINUTES",
     "booking_closed_days": "PUBLIC_BOOKING_CLOSED_DAYS",
+    "owner_alert_batch_limit": "OWNER_ALERT_BATCH_LIMIT",
     "alert_rules": "ALERT_RULES_JSON",
     "labor_rates": "LABOR_RATES_JSON",
     "booking_auto_times": "PUBLIC_AUTO_TIMES",
@@ -69,6 +70,18 @@ def raw(key: str) -> str | None:
     """The saved text for a setting, else its Railway variable, else None."""
     saved = _load().get(key)
     return saved if saved is not None else os.environ.get(KEYS[key])
+
+
+OWNER_ALERT_DEFAULT = 10
+OWNER_ALERT_MAX = 10
+
+
+def owner_alert_batch_limit() -> int:
+    try:
+        value = int(raw("owner_alert_batch_limit") or "")
+    except ValueError:
+        return OWNER_ALERT_DEFAULT
+    return value if 0 <= value <= OWNER_ALERT_MAX else OWNER_ALERT_DEFAULT
 
 
 def save(db: Session, key: str, value, actor: str) -> bool:

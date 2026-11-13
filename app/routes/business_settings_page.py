@@ -54,6 +54,8 @@ def current() -> dict:
                       "mobile": (services.get(s.slug) or {}).get("mobile") is True} for s in BOOKABLE_SERVICES],
         "zones": "\n".join(f"{z}, {v.get('fee', '')}, {v.get('travel_minutes', '')}" for z, v in sorted(zones.items()) if isinstance(v, dict)),
         "rates": [{"key": k, "label": label, "value": pricing.rates()[k]} for k, label in pricing.RATE_LABELS.items()],
+        "owner_alert_batch_limit": store.owner_alert_batch_limit(),
+        "owner_alert_max": store.OWNER_ALERT_MAX,
         "buffer": store.raw("shop_buffer_minutes") or "60",
         "lead": store.raw("booking_lead_minutes") or "120",
     }
@@ -117,7 +119,12 @@ def parse(form) -> dict:
                            "travel_minutes": _number(parts[2], f"ZIP {parts[0]} travel", 0, 240)}
     labor = {key: _number(form.get(f"rate_{key}", "").strip().lstrip("$"), label, 0, 1000, whole=False)
              for key, label in pricing.RATE_LABELS.items()}
-    return {"labor_rates": labor, "shop_hours": hours, "booking_closed_days": ",".join(closed), "booking_services": services, "mobile_zones": zones,
+    alerts = {}
+    if "owner_alert_batch_limit" in form:
+        alerts["owner_alert_batch_limit"] = str(_number(
+            form.get("owner_alert_batch_limit", ""), "Owner alert batch size", 0, store.OWNER_ALERT_MAX,
+        ))
+    return {**alerts, "labor_rates": labor, "shop_hours": hours, "booking_closed_days": ",".join(closed), "booking_services": services, "mobile_zones": zones,
             "shop_buffer_minutes": str(_number(form.get("buffer", "").strip(), "Buffer after shop jobs", 0, 240)),
             "booking_lead_minutes": str(_number(form.get("lead", "").strip(), "Earliest online booking", 0, 10080))}
 
