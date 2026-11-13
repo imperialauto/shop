@@ -102,6 +102,13 @@ class FastIntakeTests(unittest.TestCase):
         for value in ('value="Lee"', 'value="2016"', 'value="Ford"', 'value="Focus ST"', "Brakes grinding on my Focus</textarea>"):
             self.assertIn(value, prefilled)
 
+    def test_new_customer_title_is_plain_text_and_vin_script_exists_once(self):
+        page = self.client.get("/customers/new").text
+        self.assertIn("<title>New Customer — Imperial Auto Care</title>", page)
+        self.assertNotIn("<title>New Customer — Imperial Auto Care<script>", page)
+        self.assertEqual(page.count("document.getElementById('quick-vin').addEventListener"), 1)
+        self.assertIn('id="quick-vin"', page)
+
     def test_form_prefills_from_a_link(self):
         page = self.client.get("/customers/new?phone=6235550188&first=Dana").text
         self.assertIn('value="6235550188"', page)

@@ -1,23 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{% if customer %}Edit{% else %}New{% endif %} Customer — Imperial Auto Care{% if not customer %}
-<script>
-  // Same free government VIN lookup the vehicle form uses. Fills only empty boxes.
-  document.getElementById('quick-vin').addEventListener('input', function () {
-    var raw = this.value.trim().toUpperCase();
-    if (raw.length !== 17) return;
-    fetch('https://vpic.nhtsa.dot.gov/api/vehicles/decodevinvalues/' + raw + '?format=json')
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        var v = (d.Results || [])[0] || {};
-        [['quick-year', v.ModelYear], ['quick-make', v.Make], ['quick-model', v.Model]].forEach(function (pair) {
-          var box = document.getElementById(pair[0]);
-          if (box && !box.value && pair[1]) box.value = pair[1];
-        });
-      }).catch(function () {});
-  });
-</script>
-{% endif %}
-{% endblock %}
+{% block title %}{% if customer %}Edit{% else %}New{% endif %} Customer — Imperial Auto Care{% endblock %}
 {% block content %}
 
 <div class="flex items-center gap-3 mb-6">

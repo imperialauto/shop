@@ -139,6 +139,42 @@ class PublicPages(unittest.TestCase):
         self.assertNotIn("x-robots-tag", response.headers)
         self.assertNotIn('name="robots"', response.text)
 
+    def test_homepage_actions_match_form_availability(self):
+        # A configured price must not advertise instant booking while forms are
+        # disabled, even if the booking catalog contains the service.
+        from app import business_settings
+        app.state.read_only = False
+        catalog = json.dumps({"diagnostic": {"price": 75, "minutes": 60}})
+        with patch.object(business_settings, "_load", return_value={}), patch.dict(
+            os.environ, {"PUBLIC_SERVICE_CATALOG": catalog, "PUBLIC_FORMS_ENABLED": ""}
+        ):
+            closed = self.client.get("/site/")
+            self.assertEqual(closed.status_code, 200)
+            self.assertIn("Call to schedule", closed.text)
+            self.assertIn('href="tel:+14809144144"', closed.text)
+            self.assertNotIn("Book a service</a>", closed.text)
+            self.assertNotIn("Standard services you can book now", closed.text)
+            self.assertNotIn("Pick a time", closed.text)
+            self.assertNotIn('class="btn btn-gold" href="/site/estimate"', closed.text)
+
+        with patch.object(business_settings, "_load", return_value={}), patch.dict(
+            os.environ, {"PUBLIC_SERVICE_CATALOG": catalog, "PUBLIC_FORMS_ENABLED": "true"}
+        ):
+            open_home = self.client.get("/site/")
+            self.assertEqual(open_home.status_code, 200)
+            self.assertIn("Book a service", open_home.text)
+            self.assertIn("Standard services you can book now", open_home.text)
+            self.assertIn("Pick a time", open_home.text)
+            self.assertIn('href="/site/book?service=diagnostic"', open_home.text)
+
+        app.state.read_only = True
+        with patch.object(business_settings, "_load", return_value={}), patch.dict(
+            os.environ, {"PUBLIC_SERVICE_CATALOG": catalog, "PUBLIC_FORMS_ENABLED": "true"}
+        ):
+            read_only_home = self.client.get("/site/")
+            self.assertIn("Call to schedule", read_only_home.text)
+            self.assertNotIn("Standard services you can book now", read_only_home.text)
+
     def test_staff_pages_still_require_sign_in(self):
         self.assertEqual(self.client.get("/", follow_redirects=False).headers["location"], "/login")
         self.assertEqual(self.client.get("/appointments/").status_code, 401)
