@@ -308,6 +308,21 @@ def flows(page, device):
         visitor.goto(BASE + "/site/")
         visitor.click(".hero a[href='/site/book']")
         visitor.click("a[href='/site/book?service=diagnostic']")
+        more = visitor.locator("#booking-show-later-dates")
+        assert more.is_visible(), "long booking list should start compact"
+        assert visitor.locator("#booking-time-choices details.day[hidden]").count() >= 1, "later dates not collapsed"
+        more.click()
+        assert visitor.locator("#booking-time-choices details.day[hidden]").count() == 0, "later dates not revealed"
+        assert more.is_hidden(), "later-dates action should disappear after expanding"
+        # Progressive hiding must not prevent booking without JavaScript.
+        no_js_context = visitor.context.browser.new_context(**{**page_options, "java_script_enabled": False})
+        try:
+            no_js = no_js_context.new_page()
+            no_js.goto(BASE + "/site/book?service=diagnostic")
+            assert no_js.locator("#booking-time-choices details.day[hidden]").count() == 0, "no-JS dates hidden"
+            assert no_js.locator("details.day").count() > 5, "no-JS availability incomplete"
+        finally:
+            no_js_context.close()
         visitor.locator("label.choice", has=visitor.locator("input[name=slot_id]")).first.click()
         assert visitor.locator("#booking-time-choices").is_hidden(), "times stayed expanded"
         assert visitor.locator("#booking-time-summary").is_visible(), "no selected-time summary"
