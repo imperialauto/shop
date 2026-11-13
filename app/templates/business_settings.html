@@ -80,6 +80,16 @@
       Direct replies and customer texting use separate controls.
     </p>
   </section>
+  <section class="card" aria-labelledby="payment-methods">
+    <h2 id="payment-methods" class="font-bold mb-1">Payment methods</h2>
+    <p class="text-sm text-stone-400 mb-3">What staff can pick when marking a job paid at pickup.</p>
+    <input type="hidden" name="payment_methods_shown" value="1">
+    <div class="flex flex-wrap gap-4">
+    {% for m in settings.payment_methods %}
+      <label><input type="checkbox" name="pay_{{ m.key }}" {% if m.on %}checked{% endif %}> {{ m.label }}</label>
+    {% endfor %}
+    </div>
+  </section>
   <button class="btn-primary" type="submit" style="min-height:44px">Save settings</button>
 </form>
 <div class="card max-w-3xl mt-6">

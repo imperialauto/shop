@@ -14,7 +14,22 @@ router = APIRouter()
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "..", "templates"))
 
 
-PAYMENT_METHODS = ("cash", "zelle", "card", "check", "ach", "paypal")
+# Every method the counter can record. The owner picks which show (Business settings → Payment methods).
+METHOD_LABELS = {
+    "zelle": "Zelle", "cash": "Cash", "apple_cash": "Apple Cash", "card": "Card (in person)",
+    "quickbooks": "QuickBooks Payments", "stripe": "Stripe", "check": "Check", "ach": "Bank transfer (ACH)",
+    "paypal": "PayPal", "venmo": "Venmo", "cashapp": "Cash App", "snap_finance": "Snap Finance", "other": "Other (write it in Reference)",
+}
+DEFAULT_METHODS = ("zelle", "cash", "apple_cash", "card", "quickbooks", "stripe", "check", "snap_finance", "other")
+PAYMENT_METHODS = DEFAULT_METHODS  # kept for older imports
+
+
+def enabled_methods() -> tuple[str, ...]:
+    """The owner's chosen methods, in order. Falls back to the defaults on any problem."""
+    from app import business_settings
+    raw = business_settings.raw("payment_methods") or ""
+    chosen = tuple(m for m in (x.strip().lower() for x in raw.split(",")) if m in METHOD_LABELS)
+    return chosen or DEFAULT_METHODS
 DUPLICATE_WINDOW = timedelta(minutes=2)
 
 
@@ -22,7 +37,7 @@ def payment_error(invoice, amount, method, reference, now):
     """Why this payment cannot be recorded, or None when it is fine."""
     if invoice.status == "void":
         return "This invoice is void."
-    if method not in PAYMENT_METHODS:
+    if method not in enabled_methods():
         return "Choose a valid payment method."
     if not math.isfinite(amount) or amount <= 0:
         return "Enter an amount above zero."
@@ -110,6 +125,7 @@ def view_invoice(request: Request, invoice_id: int, db: Session = Depends(get_db
     return templates.TemplateResponse("invoices/detail.html", {
         "request": request, "user": user, "invoice": invoice,
         "total_paid": total_paid, "balance": balance,
+        "methods": [(m, METHOD_LABELS[m]) for m in enabled_methods()], "method_labels": METHOD_LABELS,
         "payment_error": request.query_params.get("error"),
     })
 
@@ -120,8 +136,9 @@ def add_payment(
     invoice_id: int,
     db: Session = Depends(get_db),
     amount: float = Form(...),
-    method: str = Form("cash"),
+    method: str = Form("zelle"),
     reference: str = Form(""),
+    picked_up: str = Form(""),
 ):
     user = require_user(request, db)
     if not user:
@@ -141,6 +158,10 @@ def add_payment(
 
     if total_paid >= round(invoice.total, 2):
         invoice.status = "paid"
+        # Paid in full at the counter: one tap also closes the job, but only once the work is complete.
+        ro = invoice.repair_order
+        if picked_up == "on" and ro is not None and ro.status == "complete":
+            ro.status = "delivered"
     else:
         invoice.status = "sent"
     db.commit()

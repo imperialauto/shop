@@ -9,7 +9,7 @@ from app.models import LineItem, RepairOrder
 from app.public_site import approved_bookable_services
 
 DIAGNOSE_FIRST = {"auto-repair", "diesel", "european-sprinter", "dps6-transmission", "fleet"}
-CUSTOM_QUOTE = {"towing", "mobile-roadside", "rentals", "nvzn-customs"}
+CUSTOM_QUOTE = {"towing", "mobile-roadside", "heavy-duty", "rentals", "nvzn-customs"}
 
 
 def rate_kind(line_slug: str, where: str) -> str:

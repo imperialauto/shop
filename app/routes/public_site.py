@@ -34,7 +34,7 @@ from app.appointment_model import Appointment, BookingSlot
 from app.appointments import PHOENIX, AppointmentValidationError, AppointmentWindow, validate_slot
 from app.database import get_db
 from app.models import Customer, RepairOrder, Vehicle
-from app.public_site import (BUSINESS, ROADSIDE_LINES, SERVICE_LINE_BY_SLUG, SERVICE_LINES, VEHICLE_CLASSES, line_actions, FormError, SubmissionLimiter, auto_times, requestable_services,
+from app.public_site import (visible_lines, hidden_slugs, BUSINESS, ROADSIDE_LINES, SERVICE_LINE_BY_SLUG, SERVICE_LINES, VEHICLE_CLASSES, line_actions, FormError, SubmissionLimiter, auto_times, requestable_services,
                              approved_bookable_services, bookable_service, bookable_services, booking_closed_days, clean_text, format_phone,
                              forms_enabled, indexable, mobile_zone, normalize_email, normalize_mileage, normalize_phone,
                              normalize_vin, normalize_year, phone_digits, NAME_LIMIT, TEXT_LIMIT)
@@ -44,7 +44,7 @@ from app.routes.live import open_slots, phoenix_label, utc
 log = logging.getLogger("uvicorn.error")
 router = APIRouter(prefix="/site")
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
-limiter = SubmissionLimiter()
+limiter = SubmissionLimiter(control="form_hourly_limit")
 
 BOOKING_DAYS = 21
 WHERE_OPTIONS = OrderedDict([("shop", "At the shop"), ("onsite", "At my location"), ("roadside", "Roadside / broken down")])
@@ -58,9 +58,10 @@ FAQ = (
     ("Do you come to me?", "Selected services can be done at your location, depending on your address. A mobile fee and travel time apply where shown."),
     ("Will I get an estimate before repairs?", "Yes. Complex repairs start with an estimate, and work starts after you approve it."),
     ("How do I check on my vehicle?", "Use the repair status page with your reference number and phone number."),
-    ("Do you do tint, wraps and detailing?", "Yes, through NVZN Customs, our appearance division."),
+    ("Do you work on semis and 18-wheelers?", "Yes. We repair heavy-duty diesel trucks and do roadside jump starts and no-start calls for semis, box trucks and fleet units."),
+    ("Do you tow?", "Yes. Send a towing request with the location and we will confirm it with you before anyone is dispatched."),
 )
-STATUS_LIMIT = SubmissionLimiter(limit=20)
+STATUS_LIMIT = SubmissionLimiter(limit=20, control="status_hourly_limit")
 RECENT_MINUTES = 30  # the same form sent again in this window returns the first reference
 
 
@@ -114,17 +115,30 @@ def canonical_url(path: str) -> str | None:
                     "/site/rentals", "/site/faq"}
     if path == "/site":
         path = "/site/"
+    if path == "/site/rentals" and "rentals" in hidden_slugs():
+        return None
     if path not in public_paths:
         prefix = "/site/services/"
-        if not path.startswith(prefix) or path[len(prefix):] not in SERVICE_LINE_BY_SLUG:
+        if not path.startswith(prefix) or path[len(prefix):] not in {l.slug for l in visible_lines()}:
             return None
     return "https://imperialautophx.com" + path
+
+
+def _site_controls() -> dict:
+    try:
+        from app import security_controls
+        v = security_controls.values()
+    except Exception:
+        return {"login_button": True, "privacy": False, "terms": False}
+    return {"login_button": v["website_login_button"], "privacy": v["privacy_notice_published"],
+            "terms": v["terms_published"]}
 
 
 def render(request: Request, name: str, status_code: int = 200, form_page: bool = False, **context):
     can_index = indexable() and not form_page
     base = {
-        "request": request, "business": BUSINESS, "service_lines": SERVICE_LINES, "line_actions": line_actions,
+        "request": request, "business": BUSINESS, "service_lines": visible_lines(), "line_actions": line_actions,
+        "hidden_services": hidden_slugs(), "site_controls": _site_controls(),
         "indexable": indexable(), "seo_noindex": not can_index,
         "canonical_url": canonical_url(request.url.path) if can_index else None,
         "forms_open": forms_enabled(request.app.state.read_only),
@@ -149,7 +163,7 @@ def services(request: Request):
 @router.get("/services/{slug}", response_class=HTMLResponse)
 def service_detail(request: Request, slug: str):
     line = SERVICE_LINE_BY_SLUG.get(slug)
-    if line is None:
+    if line is None or slug in hidden_slugs():
         raise HTTPException(404, "Not found")
     return render(request, "site/service.html", active="services", line=line, actions=line_actions(slug),
                   roadside=slug in ROADSIDE_LINES)
@@ -167,8 +181,28 @@ def pricing(request: Request):
 
 @router.get("/rentals", response_class=HTMLResponse)
 def rentals(request: Request):
+    if "rentals" in hidden_slugs():
+        raise HTTPException(404, "Not found")
     return render(request, "site/service.html", active="rentals", line=SERVICE_LINE_BY_SLUG["rentals"],
                   actions=line_actions("rentals"), roadside=False)
+
+
+def _legal_page(request: Request, key: str, published: str, title: str):
+    from app import security_controls
+    if not security_controls.value(published):
+        raise HTTPException(404, "Not found")
+    paragraphs = [p.strip() for p in security_controls.value(key).split("\n\n") if p.strip()]
+    return render(request, "site/legal.html", active="", title=title, paragraphs=paragraphs)
+
+
+@router.get("/privacy", response_class=HTMLResponse)
+def privacy(request: Request):
+    return _legal_page(request, "privacy_notice_text", "privacy_notice_published", "Privacy notice")
+
+
+@router.get("/terms", response_class=HTMLResponse)
+def terms(request: Request):
+    return _legal_page(request, "terms_text", "terms_published", "Service terms")
 
 
 @router.get("/faq", response_class=HTMLResponse)
@@ -653,6 +687,8 @@ async def estimate_submit(request: Request, db: Session = Depends(get_db)):
         person = person_fields(form)
         details = vehicle_fields(form, require_make=not normalize_vin(form.get("vin")))
         line = SERVICE_LINE_BY_SLUG.get(values.get("service_line", ""))
+        if line is not None and line.slug in hidden_slugs():
+            line = None
         where = values.get("where", "shop")
         if where not in WHERE_OPTIONS:
             raise FormError("Choose where the vehicle is.")

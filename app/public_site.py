@@ -73,19 +73,29 @@ SERVICE_LINES: tuple[ServiceLine, ...] = (
         note="A diagnostic comes first on every DPS6 job.",
     ),
     ServiceLine(
-        "fleet", "Fleet service",
-        "Maintenance and repairs for work trucks, vans and rental fleets.",
-        "Keep vehicles earning. We work with fleet and rental owners on scheduled service, inspections and repairs.",
-        ("Fleet maintenance and inspections", "Rental and car-share fleet vehicles", "Work trucks and vans",
-         "One account for every vehicle"),
+        "heavy-duty", "Heavy-duty diesel trucks",
+        "Semis, 18-wheelers, box trucks and medium-duty diesel work trucks.",
+        "We repair heavy-duty and medium-duty diesel trucks, at the shop or where the truck broke down.",
+        ("18-wheelers and Class 8 semis", "Box trucks and medium-duty work trucks",
+         "No-start, charging and starting systems", "Fuel, cooling and air system repairs",
+         "Electrical and module diagnostics"),
+        note="Large trucks are often repaired on site. Tell us where the truck is when you send a request.",
     ),
     ServiceLine(
-        "mobile-roadside", "Mobile and roadside",
-        "Selected on-site repairs and Class 8 roadside calls when a vehicle cannot come to the shop.",
-        "Most work is done at the shop. When a vehicle cannot get here, ask us about an on-site visit or a bring-in.",
-        ("Class 8 semi roadside: starters, alternators, belts, water pumps and air systems",
-         "Selected on-site repairs", "Shop transport for vehicles coming in for major repairs"),
-        note="Mobile and roadside work is quoted by request. Send a roadside request online; call for emergencies.",
+        "fleet", "Fleet service",
+        "Maintenance and repairs for company trucks, vans and fleet vehicles of every size.",
+        "Keep vehicles earning. We work with fleet owners on scheduled service, inspections, repairs and roadside calls.",
+        ("Fleet maintenance and inspections", "Pickups, vans, box trucks and semis", "Rental and car-share fleet vehicles",
+         "Roadside and no-start calls for fleet units", "One account for every vehicle"),
+    ),
+    ServiceLine(
+        "mobile-roadside", "Mobile no-start and roadside",
+        "18-wheeler jump starts, no-start calls and on-site repairs when a vehicle can't come to us.",
+        "Stuck with a truck or car that won't start? We come to you for jump starts, no-start diagnosis and on-site repairs.",
+        ("18-wheeler and semi jump starts", "No-start diagnosis at your location",
+         "Batteries, starters, alternators and belts", "Air system and charging problems",
+         "Cars, pickups, work trucks and Class 8 semis"),
+        note="Roadside work is quoted when we confirm the call. Send a roadside request online, or call for emergencies.",
     ),
     ServiceLine(
         "towing", "Towing and roadside dispatch",
@@ -118,6 +128,20 @@ SERVICE_LINE_BY_SLUG = {line.slug: line for line in SERVICE_LINES}
 ROADSIDE_LINES = {"towing", "mobile-roadside"}
 
 
+def hidden_slugs() -> set[str]:
+    """Services the owner hid in the Security & Privacy Center (NVZN and rentals by default)."""
+    try:
+        from app import security_controls
+        return set(security_controls.value("hidden_services"))
+    except Exception:
+        return {"nvzn-customs", "rentals"}
+
+
+def visible_lines() -> tuple[ServiceLine, ...]:
+    hidden = hidden_slugs()
+    return tuple(line for line in SERVICE_LINES if line.slug not in hidden)
+
+
 def line_actions(slug: str) -> list[tuple[str, str]]:
     """[(label, href)], main action first."""
     estimate = ("Request an estimate", f"/site/estimate?service={slug}")
@@ -125,6 +149,8 @@ def line_actions(slug: str) -> list[tuple[str, str]]:
         return [("Request roadside help", "/site/roadside"), estimate]
     if slug == "auto-repair":
         return [("Book a diagnostic", "/site/book?service=diagnostic"), estimate]
+    if slug == "heavy-duty":
+        return [("Request roadside help", "/site/roadside"), estimate]
     if slug in ("diesel", "european-sprinter", "dps6-transmission", "fleet"):
         return [estimate, ("Book a diagnostic", "/site/book?service=diagnostic")]
     return [("Request online", f"/site/estimate?service={slug}")]
@@ -371,9 +397,20 @@ class SubmissionLimiter:
     window_seconds: int = 3600
     seen: dict[str, list[float]] = field(default_factory=dict)
 
+    control: str = ""  # Security & Privacy Center setting that overrides the limit
+
+    def current_limit(self) -> int:
+        if self.control:
+            try:
+                from app import security_controls
+                return security_controls.value(self.control)
+            except Exception:
+                pass
+        return self.limit
+
     def allow(self, key: str, now: float) -> bool:
         recent = [t for t in self.seen.get(key, []) if now - t < self.window_seconds]
-        if len(recent) >= self.limit:
+        if len(recent) >= self.current_limit():
             self.seen[key] = recent
             return False
         recent.append(now)

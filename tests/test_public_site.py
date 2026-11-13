@@ -19,7 +19,7 @@ from app.models import Communication, Customer, RepairOrder, Vehicle
 from app.routes import public_site as public_routes
 
 PAGES = ["/site", "/site/", "/site/services", "/site/contact", "/site/book", "/site/book?service=diagnostic",
-         "/site/estimate", "/site/estimate?service=diesel", "/site/pricing", "/site/rentals", "/site/faq", "/site/status"] + [f"/site/services/{line.slug}" for line in public_site.SERVICE_LINES]
+         "/site/estimate", "/site/estimate?service=diesel", "/site/pricing", "/site/faq", "/site/status"] + [f"/site/services/{line.slug}" for line in public_site.SERVICE_LINES if line.slug not in ("nvzn-customs", "rentals")]
 
 
 def no_network(*args, **kwargs):
@@ -151,7 +151,7 @@ class PublicPages(unittest.TestCase):
 
     def test_every_service_leads_to_an_online_action(self):
         import re
-        for line in public_site.SERVICE_LINES:
+        for line in public_site.visible_lines():
             page = self.client.get(f"/site/services/{line.slug}").text
             hero = page.split('class="hero"')[1].split("</section>")[0]
             buttons = re.findall(r'<a class="btn[^"]*" href="([^"]+)"', hero)
@@ -204,7 +204,7 @@ class PublicPages(unittest.TestCase):
             self.assertNotIn("Standard services you can book now", read_only_home.text)
 
     def test_staff_pages_still_require_sign_in(self):
-        self.assertEqual(self.client.get("/", follow_redirects=False).headers["location"], "/login")
+        self.assertEqual(self.client.get("/", follow_redirects=False).headers["location"], "/site/")  # visitors land on the website
         self.assertEqual(self.client.get("/appointments/").status_code, 401)
 
     def test_forms_closed_while_read_only(self):

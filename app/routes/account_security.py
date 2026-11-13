@@ -53,7 +53,7 @@ def verify_submit(request: Request, code: str = Form(...), db: Session = Depends
     keys = (f"mfa:{user.id}", client_key(request))
     wrong = {"request": request, "error": "That code didn't work. Check your authenticator and try again."}
     if limiter.locked(*keys):
-        wrong["error"] = "Too many tries. Wait 15 minutes, then try again."
+        wrong["error"] = "Too many tries. Wait a few minutes, then try again."
         return templates.TemplateResponse("login_verify.html", wrong, status_code=429)
     mfa = confirmed_mfa(db, user.id)
     secret = decrypt_secret(mfa.secret_encrypted) if mfa else None

@@ -33,6 +33,7 @@
       {% set require_make = false %}
       {% include "site/_person_vehicle.html" %}
       <p class="hint">Make and model are needed unless you enter a VIN. We confirm the price with you before anything is dispatched.</p>
+      {% include "site/_legal_note.html" %}
       <button class="btn btn-purple" type="submit">Send roadside request</button>
     </form>
     {% endif %}

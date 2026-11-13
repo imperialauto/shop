@@ -128,7 +128,8 @@
             <textarea id="notes" name="notes" maxlength="2000">{{ values.notes or '' }}</textarea>
           </fieldset>
           <p class="hint">Times are Arizona time. Your booking is confirmed on the next screen. Additional repairs are quoted and need your approval.</p>
-          <button class="btn btn-purple" type="submit">Book this time</button>
+          {% include "site/_legal_note.html" %}
+      <button class="btn btn-purple" type="submit">Book this time</button>
           </div>
         {% endif %}
       </form>

@@ -45,6 +45,8 @@ p { margin: 0 0 1em; }
 .nav a:hover, .nav a[aria-current="page"] { color: var(--gold); background: rgba(255,255,255,.06); }
 .nav .call { background: var(--gold); color: var(--purple-deep); font-weight: 700; margin-left: 6px; }
 .nav .call:hover { background: #f3df8a; color: var(--purple-deep); }
+.nav .staff-login { border: 1px solid rgba(234,210,114,.55); margin-left: 6px; font-size: .9rem; }
+.legal a { color: inherit; }
 .menu-toggle { display: none; }
 @media (max-width: 820px) {
   .menu-toggle { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; background: transparent; border: 1px solid rgba(255,255,255,.3); color: #fff; border-radius: 8px; font-size: 1rem; padding: 0 12px; cursor: pointer; }

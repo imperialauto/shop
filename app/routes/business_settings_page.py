@@ -13,6 +13,7 @@ from app.auth import get_current_user
 from app.database import get_db
 from app import pricing
 from app.public_site import BOOKABLE_SERVICES, VEHICLE_CLASSES
+from app.routes.invoices import METHOD_LABELS, enabled_methods
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -58,6 +59,7 @@ def current() -> dict:
         "owner_alert_max": store.OWNER_ALERT_MAX,
         "buffer": store.raw("shop_buffer_minutes") or "60",
         "lead": store.raw("booking_lead_minutes") or "120",
+        "payment_methods": [{"key": k, "label": label, "on": k in enabled_methods()} for k, label in METHOD_LABELS.items()],
     }
 
 
@@ -124,6 +126,11 @@ def parse(form) -> dict:
         alerts["owner_alert_batch_limit"] = str(_number(
             form.get("owner_alert_batch_limit", ""), "Owner alert batch size", 0, store.OWNER_ALERT_MAX,
         ))
+    if any(k.startswith("pay_") for k in form.keys()) or form.get("payment_methods_shown") == "1":
+        methods = [k for k in METHOD_LABELS if form.get(f"pay_{k}") == "on"]
+        if not methods:
+            raise Invalid("Payment methods: keep at least one turned on.")
+        alerts["payment_methods"] = ",".join(methods)
     return {**alerts, "labor_rates": labor, "shop_hours": hours, "booking_closed_days": ",".join(closed), "booking_services": services, "mobile_zones": zones,
             "shop_buffer_minutes": str(_number(form.get("buffer", "").strip(), "Buffer after shop jobs", 0, 240)),
             "booking_lead_minutes": str(_number(form.get("lead", "").strip(), "Earliest online booking", 0, 10080))}

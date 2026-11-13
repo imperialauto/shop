@@ -1,0 +1,10 @@
+{% extends "site/_layout.html" %}
+{% block title %}{{ title }} — {{ business.name }}{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="wrap" style="max-width:760px">
+    <h1>{{ title }}</h1>
+    {% for p in paragraphs %}<p>{{ p }}</p>{% endfor %}
+  </div>
+</section>
+{% endblock %}

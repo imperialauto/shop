@@ -34,6 +34,9 @@ def get_current_user(request: Request, db: Session) -> User:
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    if session_too_old(request):
+        request.session.clear()
+        raise HTTPException(status_code=401, detail="Signed out after the time set in Security & Privacy.")
     if user.role == "owner":
         provided = request.session.get("owner_session_tag", "")
         if not provided or not hmac.compare_digest(provided, _owner_session_tag(user)):
@@ -49,7 +52,25 @@ def require_admin(user: User):
         raise HTTPException(status_code=403, detail="Admin access required")
 
 
+def session_too_old(request: Request, now: float | None = None) -> bool:
+    """Older sessions without a sign-in time start counting from now."""
+    import time
+    from app import security_controls
+    moment = time.time() if now is None else now
+    started = request.session.get("login_at")
+    if not isinstance(started, (int, float)):
+        request.session["login_at"] = moment
+        return False
+    try:
+        hours = security_controls.value("session_hours")
+    except Exception:
+        hours = 168
+    return moment - started > hours * 3600
+
+
 def login_user(request: Request, user: User):
+    import time
+    request.session["login_at"] = time.time()
     request.session["user_id"] = user.id
     request.session["username"] = user.username
     if user.role == "owner":

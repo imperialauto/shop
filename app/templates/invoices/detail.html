@@ -71,7 +71,7 @@
   <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Payments</h3>
   {% for p in invoice.payments %}
   <div class="flex justify-between py-1 border-b border-plum-700 text-sm">
-    <span>{{ p.paid_at.strftime('%m/%d/%y') }} — {{ p.method.title() }}{% if p.reference %} ({{ p.reference }}){% endif %}</span>
+    <span>{{ p.paid_at.strftime('%m/%d/%y') }} — {{ method_labels.get(p.method, p.method|title) }}{% if p.reference %} ({{ p.reference }}){% endif %}</span>
     <span class="text-green-400 font-semibold">${{ "%.2f"|format(p.amount) }}</span>
   </div>
   {% endfor %}
@@ -83,26 +83,24 @@
 {% if balance > 0 %}
 <div class="card">
   <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Add Payment</h3>
-  <form method="post" action="/invoices/{{ invoice.id }}/add-payment" class="flex gap-3 items-end">
+  <form method="post" action="/invoices/{{ invoice.id }}/add-payment" class="flex flex-wrap gap-3 items-end">
     <div>
       <label class="form-label">Amount</label>
       <input type="number" name="amount" step="0.01" value="{{ "%.2f"|format(balance) }}" class="form-input w-32" required />
     </div>
     <div>
       <label class="form-label">Method</label>
-      <select name="method" class="form-select w-32">
-        <option value="zelle">Zelle</option>
-        <option value="cash">Cash</option>
-        <option value="card">Card</option>
-        <option value="check">Check</option>
-        <option value="ach">ACH</option>
-        <option value="paypal">PayPal</option>
+      <select name="method" class="form-select">
+        {% for value, label in methods %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
       </select>
     </div>
     <div class="flex-1">
       <label class="form-label">Reference</label>
-      <input type="text" name="reference" class="form-input" placeholder="Check #, last 4 digits…" />
+      <input type="text" name="reference" class="form-input" placeholder="Zelle/Apple Cash name, check #, last 4…" />
     </div>
+    {% if invoice.repair_order and invoice.repair_order.status == 'complete' %}
+    <label class="flex items-center gap-2" style="min-height:44px"><input type="checkbox" name="picked_up" checked> Customer is picking up now (closes the job when paid in full)</label>
+    {% endif %}
     <button type="submit" class="btn-primary">Record Payment</button>
   </form>
 </div>

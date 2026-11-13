@@ -5,7 +5,7 @@
   <div class="wrap" style="max-width:820px">
     <div class="eyebrow">Estimate request</div>
     <h1>Tell us about the job</h1>
-    <p>For diagnostics, diesel and European work, transmissions, fleet vehicles, on-site, towing or roadside help, rentals, and NVZN Customs. A VIN helps us look up the right parts.</p>
+    <p>For diagnostics, diesel and heavy-duty trucks, European work, transmissions, fleet vehicles, on-site work, towing or roadside help. A VIN helps us look up the right parts.</p>
 
     {% if error %}<p class="alert alert-error" role="alert">{{ error }}</p>{% endif %}
 
@@ -40,6 +40,7 @@
       {% set require_make = false %}
       {% include "site/_person_vehicle.html" %}
       <p class="hint">Make and model are required unless you enter a VIN. Complex repairs need an estimate and your approval. Nothing is booked until we contact you.</p>
+      {% include "site/_legal_note.html" %}
       <button class="btn btn-purple" type="submit">Send estimate request</button>
     </form>
     {% endif %}

@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from app import approval_links, website_alerts
 import os
 import secrets
+from app.security_controls import link_expired
 
 router = APIRouter()
 # Customer pages reached by a private link: never cached or indexed.
@@ -31,7 +32,7 @@ def _sign_page(request, ro, error=None, status=200):
 @router.get("/ro/{token}", response_class=HTMLResponse)
 def sign_ro_page(request: Request, token: str, db: Session = Depends(get_db)):
     ro = db.query(RepairOrder).filter(RepairOrder.public_token == token).first()
-    if not ro:
+    if not ro or link_expired(ro):
         raise HTTPException(status_code=404, detail="Not found")
     return _sign_page(request, ro)
 
@@ -39,7 +40,7 @@ def sign_ro_page(request: Request, token: str, db: Session = Depends(get_db)):
 @router.post("/ro/{token}", response_class=HTMLResponse)
 async def sign_ro_submit(request: Request, token: str, db: Session = Depends(get_db)):
     ro = db.query(RepairOrder).filter(RepairOrder.public_token == token).first()
-    if not ro:
+    if not ro or link_expired(ro):
         raise HTTPException(status_code=404, detail="Not found")
 
     form = await request.form()
@@ -87,6 +88,7 @@ def sign_invoice_page(request: Request, invoice_id: int, token: str = "", db: Se
         or len(token) < 16
         or not invoice.repair_order.public_token
         or not secrets.compare_digest(invoice.repair_order.public_token, token)
+        or link_expired(invoice.repair_order)
     ):
         raise HTTPException(status_code=404, detail="Not found")
     return templates.TemplateResponse("sign_invoice.html", {
@@ -103,6 +105,7 @@ async def sign_invoice_submit(request: Request, invoice_id: int, token: str = ""
         or len(token) < 16
         or not invoice.repair_order.public_token
         or not secrets.compare_digest(invoice.repair_order.public_token, token)
+        or link_expired(invoice.repair_order)
     ):
         raise HTTPException(status_code=404, detail="Not found")
 
