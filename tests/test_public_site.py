@@ -121,6 +121,34 @@ class PublicPages(unittest.TestCase):
         self.assertEqual(self.client.get("/site/services/not-a-service").status_code, 404)
         self.assertEqual(self.client.get("/static/site.css").status_code, 200)
 
+    def test_seo_pages_sitemap_and_private_forms_are_gated(self):
+        with patch.dict(os.environ, {"PUBLIC_SITE_INDEXABLE": ""}):
+            self.assertEqual(self.client.get("/sitemap.xml").status_code, 404)
+            self.assertNotIn("Sitemap:", self.client.get("/robots.txt").text)
+            self.assertIn("noindex", self.client.get("/site/services").headers["x-robots-tag"])
+
+        with patch.dict(os.environ, {"PUBLIC_SITE_INDEXABLE": "true"}):
+            robots = self.client.get("/robots.txt")
+            self.assertEqual(robots.status_code, 200)
+            self.assertIn("Sitemap: https://imperialautophx.com/sitemap.xml", robots.text)
+
+            sitemap = self.client.get("/sitemap.xml")
+            self.assertEqual(sitemap.status_code, 200)
+            self.assertIn("<loc>https://imperialautophx.com/site/services/diesel</loc>", sitemap.text)
+            self.assertNotIn("/site/status", sitemap.text)
+            self.assertNotIn("/site/book", sitemap.text)
+
+            public = self.client.get("/site/services/diesel")
+            self.assertNotIn("x-robots-tag", public.headers)
+            self.assertIn('<link rel="canonical" href="https://imperialautophx.com/site/services/diesel">', public.text)
+            self.assertNotIn('name="robots" content="noindex', public.text)
+
+            for path in ("/site/book", "/site/estimate", "/site/roadside", "/site/status"):
+                form = self.client.get(path)
+                self.assertEqual(form.headers.get("x-robots-tag"), "noindex, nofollow", path)
+                self.assertIn('name="robots" content="noindex', form.text, path)
+                self.assertNotIn('rel="canonical"', form.text, path)
+
     def test_every_service_leads_to_an_online_action(self):
         import re
         for line in public_site.SERVICE_LINES:

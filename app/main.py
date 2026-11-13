@@ -20,7 +20,7 @@ import time
 from app.security import limiter
 from app.permissions import ROLES, role_gate
 from app import home_summary, next_action, preview_check, preview_seed, system_health
-from app.public_site import preview_code
+from app.public_site import preview_code, indexable, SERVICE_LINES
 import hashlib
 import hmac
 
@@ -237,6 +237,51 @@ def readyz():
     audit = database_audit(include_counts=False)
     ready = audit["connected"] and not audit.get("error_type") and not audit.get("missing_tables") and not audit.get("missing_columns")
     return JSONResponse({"status": "ready" if ready else "not_ready", "database_connected": audit["connected"], "mode": "read-only" if app.state.read_only else "active"}, status_code=200 if ready else 503)
+
+
+@app.get("/robots.txt", include_in_schema=False)
+def robots_txt():
+    """Advertise the public sitemap while discouraging crawling of staff paths.
+
+    These directives are not access controls; authentication remains required.
+    Customer status links instead use noindex response headers.
+    """
+    lines = [
+        "User-agent: *",
+        "Disallow: /internal/",
+        "Disallow: /finance/",
+        "Disallow: /customers/",
+        "Disallow: /vehicles/",
+        "Disallow: /ro/",
+        "Disallow: /invoices/",
+        "Disallow: /settings/",
+        "Disallow: /dashboard",
+        "Disallow: /login",
+    ]
+    if indexable():
+        lines.append("Sitemap: https://imperialautophx.com/sitemap.xml")
+    return Response("\n".join(lines) + "\n", media_type="text/plain",
+                    headers={"Cache-Control": "public, max-age=300"})
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+def sitemap_xml():
+    """List only stable public information pages, and only after launch approval."""
+    if not indexable():
+        return Response(status_code=404, headers={"X-Robots-Tag": "noindex, nofollow"})
+    paths = ["/site/", "/site/services", "/site/contact", "/site/pricing",
+             "/site/rentals", "/site/faq"]
+    paths.extend("/site/services/" + line.slug for line in SERVICE_LINES)
+    urls = "".join(
+        "<url><loc>https://imperialautophx.com" + path + "</loc></url>\n"
+        for path in paths
+    )
+    xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + (
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        + urls + '</urlset>\n'
+    )
+    return Response(xml, media_type="application/xml",
+                    headers={"Cache-Control": "public, max-age=300"})
 
 
 @app.get("/", response_class=HTMLResponse)
