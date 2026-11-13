@@ -247,9 +247,11 @@ def page_rows() -> list[dict]:
     current = values()
     rows = []
     for group in GROUPS:
+        saved = _saved()
         controls = [{"c": c, "value": current[c.key],
                      "display": "\n".join(current[c.key]) if c.kind == "list" else current[c.key],
-                     "changed": current[c.key] != c.default}
+                     "changed": c.key in saved and current[c.key] != c.default,
+                     "from_railway": c.key not in saved and current[c.key] != c.default}
                     for c in CONTROLS if c.group == group]
         fixed = [f for f in FIXED if f.group == group]
         rows.append({"group": group, "controls": controls, "fixed": fixed})
