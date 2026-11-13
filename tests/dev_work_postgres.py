@@ -4,11 +4,20 @@ Runs ONLY against TEST_DATABASE_URL supplied by CI. Never reads DATABASE_URL
 or Railway secrets, and refuses known production database names/hosts.
 """
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
+
 import psycopg2
+from psycopg2.extensions import parse_dsn
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
 url = os.environ.get("TEST_DATABASE_URL", "")
-if not url or "appointment_test" not in url or "127.0.0.1" not in url:
+dsn = parse_dsn(url)
+if "hostaddr" in dsn or "service" in dsn or any(dsn.get(key) != value for key, value in {
+    "dbname": "appointment_test", "host": "127.0.0.1", "user": "test",
+}.items()):
     raise SystemExit("Refusing migration test without disposable localhost appointment_test")
 
 root = Path(__file__).resolve().parents[1]
@@ -64,6 +73,49 @@ with conn:
             assert cur.fetchone()[0] == "pending"
             cur.execute("SELECT COUNT(*) FROM dev_work_notices")
             assert cur.fetchone()[0] == 1
+
+            # Commit the fixture so separate coordinator sessions can see it.
+            conn.commit()
+            engine = create_engine(url)
+            try:
+                with patch.dict(os.environ, {
+                    "DATABASE_URL": "sqlite://",
+                    "SECRET_KEY": "synthetic-coordinator-key",
+                    "DEV_WORK_NOTICES_ENABLED": "false",
+                }):
+                    from app.routes.dev_work import (
+                        WorkerClaim, WorkerReport, claim_worker_job, report_worker_job,
+                    )
+                    from app.dev_work_model import DevWorkJob
+                    from fastapi import HTTPException
+
+                    worker_id = "synthetic-worker"
+                    with Session(engine) as db:
+                        claim = claim_worker_job(WorkerClaim(workerId=worker_id), db, True)
+                        assert claim["id"] == job_id and claim["attempt"] == 1
+                        report = WorkerReport(workerId=worker_id, status="rate_limited",
+                                              summary="Synthetic backoff", retryAfterSeconds=300)
+                        assert report_worker_job(job_id, report, db, True)["status"] == "queued"
+                    with Session(engine) as db:
+                        assert not claim_worker_job(WorkerClaim(workerId=worker_id), db, True)["claimed"]
+                        db.get(DevWorkJob, job_id).retry_after = datetime.now(timezone.utc) - timedelta(seconds=1)
+                        db.commit()
+                        assert claim_worker_job(WorkerClaim(workerId=worker_id), db, True)["attempt"] == 2
+                        db.get(DevWorkJob, job_id).lease_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+                        db.commit()
+                    with Session(engine) as db:
+                        try:
+                            report_worker_job(job_id, report, db, True)
+                        except HTTPException as exc:
+                            assert exc.status_code == 409
+                            db.rollback()
+                        else:
+                            raise AssertionError("Expired worker report was accepted")
+                        assert not claim_worker_job(WorkerClaim(workerId=worker_id), db, True)["claimed"]
+                    with Session(engine) as db:
+                        assert db.get(DevWorkJob, job_id).status == "blocked"
+            finally:
+                engine.dispose()
 
             cur.execute(down_worker)
             cur.execute(down_foundation)
