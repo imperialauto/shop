@@ -338,6 +338,74 @@ def add_line_item(
     return RedirectResponse(f"/ro/{ro_id}", status_code=302)
 
 
+
+def line_item_revision(li):
+    """Bind an editor to the values it displayed, including approval state."""
+    import hashlib
+    import json
+    values = [li.id, li.description, li.item_type, li.quantity, li.unit_price, li.approval]
+    return hashlib.sha256(json.dumps(values).encode()).hexdigest()
+
+
+def editable_line_item(db, ro_id, li_id):
+    li = db.query(LineItem).filter(
+        LineItem.id == li_id, LineItem.repair_order_id == ro_id
+    ).with_for_update().first()
+    if li is None:
+        raise HTTPException(404, "Line item not found.")
+    if li.approval is not None:
+        raise HTTPException(409, "This item has entered customer approval. Add a revised item for approval.")
+    if li.repair_order.invoices:
+        raise HTTPException(409, "An invoice already exists for this job. Review the invoice before changing charges.")
+    return li
+
+
+@router.get("/{ro_id}/edit-line-item/{li_id}", response_class=HTMLResponse)
+def edit_line_item_page(request: Request, ro_id: int, li_id: int, db: Session = Depends(get_db)):
+    user = require_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    if user.role not in ("owner", "admin", "office"):
+        raise HTTPException(403, "Office access required.")
+    li = editable_line_item(db, ro_id, li_id)
+    return templates.TemplateResponse("repair_orders/edit_line_item.html", {
+        "request": request, "user": user, "li": li,
+        "ro_id": ro_id, "revision": line_item_revision(li),
+    })
+
+
+@router.post("/{ro_id}/edit-line-item/{li_id}")
+def edit_line_item(
+    request: Request, ro_id: int, li_id: int, db: Session = Depends(get_db),
+    description: str = Form(...), item_type: str = Form(...),
+    quantity: float = Form(...), unit_price: float = Form(...),
+    revision: str = Form(...),
+):
+    import math
+
+    user = require_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    if user.role not in ("owner", "admin", "office"):
+        raise HTTPException(403, "Office access required.")
+    description = description.strip()
+    if not description or item_type not in ("labor", "part", "sublet", "misc"):
+        raise HTTPException(422, "Enter a description and a valid item type.")
+    if not math.isfinite(quantity) or not math.isfinite(unit_price) or quantity <= 0 or unit_price < 0:
+        raise HTTPException(422, "Quantity must be positive and unit price must be zero or greater.")
+    if not math.isfinite(quantity * unit_price):
+        raise HTTPException(422, "The line total is too large.")
+    li = editable_line_item(db, ro_id, li_id)
+    if not secrets.compare_digest(revision, line_item_revision(li)):
+        raise HTTPException(409, "This item changed after you opened it. Reload the editor before saving.")
+    li.description = description
+    li.item_type = item_type
+    li.quantity = quantity
+    li.unit_price = unit_price
+    db.commit()
+    return RedirectResponse(f"/ro/{ro_id}#line-items", status_code=303)
+
+
 @router.post("/{ro_id}/delete-line-item/{li_id}")
 def delete_line_item(request: Request, ro_id: int, li_id: int, db: Session = Depends(get_db)):
     user = require_user(request, db)

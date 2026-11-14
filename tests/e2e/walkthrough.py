@@ -104,6 +104,25 @@ def flows(page, device):
         page.wait_for_load_state("networkidle")
         assert "Diagnostic" in page.content()
 
+
+    def edit_line_item():
+        page.get_by_role("link", name="Edit Diagnostic", exact=True).click()
+        page.wait_for_url(re.compile(r"/ro/\d+/edit-line-item/\d+$"))
+        assert page.input_value("#edit-description") == "Diagnostic"
+        measure(page, "edit-line-item", device, 200, [])
+        page.fill("#edit-description", "Diagnostic inspection")
+        page.fill("#edit-quantity", "0.5")
+        page.fill("#edit-price", "300")
+        page.get_by_role("button", name="Save changes", exact=True).click()
+        page.wait_for_url(re.compile(r"/ro/\d+#line-items$"))
+        assert "Diagnostic inspection" in page.inner_text("body")
+        assert "$150.00" in page.inner_text("body")
+        page.get_by_role("link", name="Edit Diagnostic inspection", exact=True).click()
+        assert page.input_value("#edit-quantity") == "0.5"
+        assert page.input_value("#edit-price") == "300.0"
+        page.get_by_role("link", name="Cancel", exact=True).click()
+        page.wait_for_url(re.compile(r"/ro/\d+#line-items$"))
+
     def part_item():
         page.fill("#li-description", "Oil filter")
         page.select_option("[name=item_type]", "part")
@@ -497,7 +516,7 @@ def flows(page, device):
 
     for name, action in [("wrong password", wrong_password), ("login", login), ("public site booking", site_booking), ("public mobile booking", site_mobile_booking), ("public time conflict", site_taken_time), ("public site estimate", site_estimate),
                          ("public brake package", site_brake_package), ("public unpriced request", site_request_unpriced), ("public roadside", site_roadside), ("new customer", customer), ("new vehicle", vehicle), ("new repair order", repair_order),
-                         ("add line item", line_item), ("add part", part_item), ("customer status link", public_status),
+                         ("add line item", line_item), ("edit line item", edit_line_item), ("add part", part_item), ("customer status link", public_status),
                          ("customer signature", signature), ("change status", status), ("create invoice", invoice),
                          ("no duplicate invoice", duplicate_invoice), ("record payment", payment),
                          ("book appointment", booking), ("search customers", search),
