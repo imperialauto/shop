@@ -8,6 +8,9 @@
     <div style="font-size:12px; color:var(--imp-muted); margin-top:3px;">{{ now.strftime('%A, %B %d') if now else '' }}</div>
   </div>
   <div style="display:flex; gap:8px; flex-wrap:wrap; margin-left:auto;">
+  {% if imperial_task_snapshot.enabled %}
+  <a href="/dashboard/tasks" class="btn-secondary">Master Tasks</a>
+  {% endif %}
   <a href="/appointments/calendar" class="btn-secondary">Calendar</a>
   <a href="/live/control" class="btn-secondary">LIVE Control</a>
   <a href="/ro/new" class="btn-primary">
@@ -149,3 +152,4 @@
 
 </div>
 {% endblock %}
+

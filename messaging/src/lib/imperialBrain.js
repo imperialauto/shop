@@ -1,3 +1,4 @@
+const { answerOwnerTaskCommand, taskReceipt } = require("./ownerTaskCommands");
 // Imperial's first read-only question router. Existing owner SMS is the
 // entrypoint; source reads are explicit and auditable in tests. This is not a
 // general autonomous-action agent and never performs a state-changing tool call.
@@ -172,7 +173,7 @@ function shopTaskSummary(snapshot = {}) {
 async function answerImperialBrain({
   question, snapshot, history = [], projectAnswer = answerProjectQuestion,
   developmentAnswer = answerDevelopmentTasks, capabilityAnswer = answerCapabilityQuestion,
-  messageId = null, taskWriter = null, taskLister = null,
+  messageId = null, taskWriter = null, taskLister = null, taskChanger = null, taskReader = null,
   developmentWriter = null, developmentLister = null,
 } = {}) {
   if (process.env.IMPERIAL_BRAIN_ENABLED !== "true") return null;
@@ -184,6 +185,10 @@ async function answerImperialBrain({
       || /\b(?:RO|job)\s*#?\s*\d+\b.{0,60}\b(?:part price|customer price|labor|fitment)\b/i.test(q))
     return null;
   // Keep the production SMS quote/estimate safety guard above this router.
+  const ownerTaskReply = await answerOwnerTaskCommand({
+    question: q, messageId, history, taskWriter, taskChanger, taskReader,
+  });
+  if (ownerTaskReply) return ownerTaskReply;
   const developmentResponse = await respondDevelopmentWork({
     question: q, messageId,
     submitDevelopmentWork: developmentWriter,
@@ -205,7 +210,7 @@ async function answerImperialBrain({
     try {
       const result = await taskWriter({ messageId, title, projectKey: inferredProjectKey(title) });
       if (!result?.recorded || !Number.isSafeInteger(result.id) || result.id < 1) throw Error("Unverified write");
-      return `Saved to Imperial tasks as #${result.id}: ${result.title || title}. ${result.duplicate ? "(Already captured; no duplicate.)" : "Pending until verified complete."}`.slice(0, 900);
+      return taskReceipt({ ...result, title: result.title || title });
     } catch (_) {
       return "I couldn't verify that the task was saved. I have NOT marked it created. Check the task connection before trying again.";
     }
@@ -225,3 +230,4 @@ module.exports = {
   shopTasksIntent, taskWriteIntent,
   shopTaskSummary, taskCaptureTitle, inferredProjectKey, internalTaskSummary, answerImperialBrain,
 };
+
