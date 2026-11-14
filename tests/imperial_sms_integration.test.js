@@ -32,12 +32,12 @@ const shopClient = require("../messaging/src/lib/shopClient");
 
   // Owner SMS creates a persistent task through real internal HTTP.
   await makeResult("Add verify website booking flow to my to-do list", "synthetic-owner-msg-1");
-  assert.match(delivered.at(-1), /Saved to Imperial tasks as #\d+/);
+  assert.match(delivered.at(-1), /Imperial task #\d+ · open/);
   const id = Number(delivered.at(-1).match(/#(\d+)/)[1]);
 
   // Replayed Quo webhook is idempotent (no second task).
   await makeResult("Add verify website booking flow to my to-do list", "synthetic-owner-msg-1");
-  assert.match(delivered.at(-1), /Already captured; no duplicate/);
+  assert.match(delivered.at(-1), /already saved/);
 
   // Owner SMS asks the same source of truth for the list.
   await makeResult("What's on my to-do list?", "synthetic-owner-msg-2");
@@ -66,6 +66,28 @@ const shopClient = require("../messaging/src/lib/shopClient");
   const html = await dashboard.text();
   assert.match(html, /Saved to-do tasks/);
   assert.match(html, /verify website booking flow/);
+
+  await makeResult("Remind me tomorrow at 11 AM to check the synthetic Fusion tank", "synthetic-reminder");
+  assert.match(delivered.at(-1), /11:00 AM Phoenix time/);
+  const reminderId = Number(delivered.at(-1).match(/#(\d+)/)[1]);
+  await makeResult(`Move task #${reminderId} to tomorrow at 2 PM`, "synthetic-reschedule");
+  assert.match(delivered.at(-1), /2:00 PM Phoenix time/);
+
+  const tracker = await fetch(base + "/dashboard/tasks", { headers: { Cookie: cookie } });
+  assert.equal(tracker.status, 200);
+  assert.match(await tracker.text(), /check the synthetic Fusion tank/);
+  const complete = await fetch(base + "/dashboard/tasks/" + reminderId, {
+    method: "POST", redirect: "manual",
+    headers: {
+      Cookie: cookie, Origin: base, "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({ operation: "complete" }),
+  });
+  assert.equal(complete.status, 303);
+  await makeResult(`Status of task #${reminderId}`, "synthetic-task-status");
+  assert.match(delivered.at(-1), new RegExp("#" + reminderId + " · done"));
+  await makeResult(`Reopen task #${reminderId}`, "synthetic-reopen");
+  assert.match(delivered.at(-1), new RegExp("#" + reminderId + " · open"));
 
   // The task route must reject unauthorized calls even on this fake server.
   const unauthorized = await fetch(base + "/internal/imperial/tasks/open");

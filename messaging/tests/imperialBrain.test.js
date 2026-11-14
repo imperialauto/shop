@@ -81,14 +81,14 @@ test("plain-English internal task save requires verified record ID and is idempo
       assert.equal(messageId, "owner-message-1");
       assert.equal(title, "verify website booking confirmation");
       assert.equal(projectKey, "website");
-      return { recorded: true, duplicate: writes > 1, id: 44, title };
+      return { recorded: true, duplicate: writes > 1, id: 44, title, status: "open" };
     };
     const call = () => answerImperialBrain({
       question: "Add verify website booking confirmation to my to-do list",
       snapshot, messageId: "owner-message-1", taskWriter: writer,
     });
-    assert.match(await call(), /Saved to Imperial tasks as #44/);
-    assert.match(await call(), /Already captured; no duplicate/);
+    assert.match(await call(), /Imperial task #44 · open/);
+    assert.match(await call(), /already saved/);
     assert.equal(writes, 2);
   });
 });
@@ -198,5 +198,45 @@ test("owner estimate-write commands bypass generic read-only task answer", async
     ]) {
       assert.equal(await answerImperialBrain({ question, snapshot }), null, question);
     }
+  });
+});
+
+
+test("phone reminder and follow-up operate on the same Imperial task", async () => {
+  const { answerOwnerTaskCommand, parsePhoenixDue } = require("../src/lib/ownerTaskCommands");
+  const now = new Date("2026-11-15T03:00:00Z");
+  assert.equal(parsePhoenixDue("tomorrow at 11 AM", now), "2026-11-15T18:00:00.000Z");
+  assert.equal(parsePhoenixDue("2026-02-30 at 11 AM", now), null);
+  await withFlags({ IMPERIAL_TASKS_ENABLED: "true" }, async () => {
+    let task;
+    const call = (question, history = [], messageId = "quo-1") => answerOwnerTaskCommand({
+      question, history, messageId, now,
+      taskWriter: async ({ title, dueAt }) => {
+        task = { id: 42, title, dueAt, status: "open", recorded: true };
+        return task;
+      },
+      taskChanger: async (id, change) => {
+        assert.equal(id, "42");
+        assert.equal(change.messageId, "quo-2");
+        assert.equal(change.operation, "reschedule");
+        task.dueAt = change.dueAt;
+        return task;
+      },
+      taskReader: async id => {
+        assert.equal(id, "42");
+        return task;
+      },
+    });
+    const receipt = await call("Remind me tomorrow at 11 AM to check on the Fusion tank");
+    assert.match(receipt, /Imperial task #42 · open/);
+    assert.match(receipt, /11:00 AM Phoenix time/);
+    const history = [{ role: "assistant", content: receipt }];
+    assert.match(await call("Move that to tomorrow at 2 PM", history, "quo-2"), /2:00 PM/);
+    task.status = "done_verified";
+    assert.match(await call("Status of task #42"), /#42 · done/);
+    assert.equal(await call("DONE 42"), null);
+    assert.match(await call("Mark that done", [
+      ...history, { role: "assistant", content: "Unrelated reply" },
+    ]), /Which Imperial task/);
   });
 });

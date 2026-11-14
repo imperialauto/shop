@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Master Tasks — Imperial Auto Care{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Master Tasks</h1>
+  <a href="/dashboard" class="btn-secondary">Dashboard</a>
+</div>
+<div class="page-body" style="max-width:760px;display:grid;gap:14px">
+  {% if read_only %}<p>Saving is paused while Imperial is in read-only mode.</p>{% endif %}
+  {% if not read_only %}
+  <form method="post" action="/dashboard/tasks" class="card-sm" style="display:grid;gap:10px">
+    <label for="task-title">New task</label>
+    <input id="task-title" name="title" required minlength="4" maxlength="200">
+    <label for="task-due">Due date and time (Phoenix, optional)</label>
+    <input id="task-due" type="datetime-local" name="due">
+    <button class="btn-primary">Add task</button>
+  </form>
+  {% endif %}
+  <nav aria-label="Filter tasks" style="display:flex;gap:8px">
+    <a href="/dashboard/tasks" class="{{ 'btn-primary' if not done else 'btn-secondary' }}">Open</a>
+    <a href="/dashboard/tasks?done=true" class="{{ 'btn-primary' if done else 'btn-secondary' }}">Done</a>
+  </nav>
+  {% for task in tasks %}
+  <article class="card-sm" style="display:grid;gap:10px;min-width:0;overflow-wrap:anywhere">
+    <div><strong>{{ task.title }}</strong><div>Task #{{ task.id }}{% if task.due_label %} · {{ task.due_label }}{% endif %}</div></div>
+    {% if not read_only %}
+    <form method="post" action="/dashboard/tasks/{{ task.id }}">
+      <button class="btn-secondary" name="operation" value="{{ 'reopen' if done else 'complete' }}">{{ 'Reopen' if done else 'Mark done' }}</button>
+    </form>
+    {% if not done %}
+    <details>
+      <summary>Change due date</summary>
+      <form method="post" action="/dashboard/tasks/{{ task.id }}" style="display:grid;gap:8px;margin-top:8px">
+        <label for="due-{{ task.id }}">Due date and time (Phoenix)</label>
+        <input id="due-{{ task.id }}" name="due" type="datetime-local" required value="{{ task.local_due }}">
+        <button class="btn-secondary" name="operation" value="reschedule">Save due date</button>
+      </form>
+    </details>
+    {% endif %}
+    {% endif %}
+  </article>
+  {% else %}
+  <p>{{ 'No completed tasks.' if done else 'No open tasks.' }}</p>
+  {% endfor %}
+</div>
+{% endblock %}

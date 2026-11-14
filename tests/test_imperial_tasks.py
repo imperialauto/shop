@@ -107,6 +107,31 @@ class TaskCaptureTests(unittest.TestCase):
             with patch.dict(os.environ, {"IMPERIAL_TASKS_ENABLED": "false"}):
                 self.assertFalse(owner_dashboard_tasks(db, "owner")["enabled"])
 
+    def test_task_reschedule_and_completion_share_record_and_ignore_replays(self):
+        app.state.read_only = False
+        created = self.capture(dueAt="2026-11-15T11:00:00-07:00")
+        self.assertEqual(created.status_code, 200)
+        path = f"/internal/imperial/tasks/{created.json()['id']}"
+        self.assertEqual(created.json()["dueAt"], "2026-11-15T18:00:00+00:00")
+        reschedule = {"messageId": "move-1", "operation": "reschedule",
+                      "dueAt": "2026-11-15T14:00:00-07:00"}
+        self.assertEqual(self.client.post(path + "/change", headers=self.auth, json=reschedule).status_code, 200)
+        self.assertEqual(self.client.post(path + "/change", headers=self.auth, json={
+            "messageId": "move-2", "operation": "reschedule", "dueAt": "2026-11-16T11:00:00-07:00",
+        }).status_code, 200)
+        replay = self.client.post(path + "/change", headers=self.auth, json=reschedule)
+        self.assertEqual(replay.json()["dueAt"], "2026-11-16T18:00:00+00:00")
+        completed = self.client.post(path + "/change", headers=self.auth, json={
+            "messageId": "done-1", "operation": "complete",
+        })
+        self.assertEqual(completed.json()["status"], "done_verified")
+        self.assertEqual(self.client.get(path, headers=self.auth).json()["status"], "done_verified")
+        self.assertEqual(self.client.get(path).status_code, 401)
+        self.assertEqual(self.client.get("/internal/imperial/tasks/open", headers=self.auth).json()["tasks"], [])
+        with self.Session() as db:
+            self.assertEqual(db.query(ImperialTask).count(), 1)
+            self.assertEqual(db.query(ImperialTaskAudit).count(), 4)
+
     def test_invalid_task_does_not_create_row(self):
         app.state.read_only = False
         self.assertEqual(self.capture(title="  ").status_code, 422)
@@ -118,3 +143,4 @@ class TaskCaptureTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

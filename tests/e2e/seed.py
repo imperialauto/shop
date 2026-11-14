@@ -10,6 +10,7 @@ from app.security import UserMfa  # noqa: F401
 from app.models import Customer, Invoice, LineItem, Payment, RepairOrder, User, Vehicle
 
 import app.business_settings  # noqa: F401  registers the settings tables
+from app.imperial_task_model import ImperialTask, ImperialTaskAudit
 Base.metadata.create_all(engine)
 db = SessionLocal()
 db.add(User(id=1, username="walkthrough", full_name="Test Owner", password_hash=hash_password("walkthrough-only-pass"), role="owner"))

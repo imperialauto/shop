@@ -132,11 +132,19 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
       messageId,
       taskWriter: shopClient.captureOwnerTask,
       taskLister: shopClient.openOwnerTasks,
+      taskChanger: shopClient.changeOwnerTask,
+      taskReader: shopClient.readOwnerTask,
       developmentWriter: shopClient.submitDevelopmentWork,
       developmentLister: shopClient.listDevelopmentWork,
     });
     const projectReply = brainReply || await answerProjectQuestion({ question: result.ownerQuestion, history });
-    const action = projectReply ? null : await interpretOwner({ question: result.ownerQuestion, snapshot: result.snapshot, history });
+    const snapshot = projectReply ? result.snapshot : {
+      ...result.snapshot,
+      customerDetail: await customerDetail({
+        question: result.ownerQuestion, snapshot: result.snapshot, quo, callContext,
+      }),
+    };
+    const action = projectReply ? null : await interpretOwner({ question: result.ownerQuestion, snapshot, history });
     let ownerActionReply = null;
     if (!projectReply && action) {
       const request = { ...action, ownerPhone: phone, ownerMessageId: messageId };
@@ -164,10 +172,7 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
     }
     const content = projectReply || ownerActionReply || await answerOwner({
       question: result.ownerQuestion,
-      snapshot: {
-        ...result.snapshot,
-        customerDetail: await customerDetail({ question: result.ownerQuestion, snapshot: result.snapshot, quo, callContext }),
-      },
+      snapshot,
       history,
     });
     await quo.sendMessage({ to: phone, content }).catch((err) => console.error("Owner answer failed:", err.message));
@@ -187,3 +192,4 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
 }
 
 module.exports = { handleIntakeResult, deliverOwnerMessages };
+
