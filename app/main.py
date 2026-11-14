@@ -19,7 +19,7 @@ import time
 
 from app.security import limiter
 from app.permissions import ROLES, role_gate
-from app import home_summary, next_action, preview_check, preview_seed, system_health
+from app import home_summary, legacy_redirects, next_action, preview_check, preview_seed, system_health
 from app.public_site import preview_code, indexable, visible_lines, hidden_slugs
 import hashlib
 import hmac
@@ -59,6 +59,7 @@ app.include_router(security_center.router, tags=["settings"])
 app.include_router(alert_center.router, tags=["alerts"])
 app.include_router(my_day.router, tags=["my_day"])
 app.include_router(public_site.router, tags=["public_site"])
+app.include_router(legacy_redirects.router, tags=["public_site"])
 app.include_router(ai_assist.router, prefix="/ai", tags=["ai"])
 app.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
 app.include_router(estimate_gen.router, prefix="/estimates", tags=["estimates"])
