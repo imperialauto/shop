@@ -11,7 +11,7 @@ LEGACY_PATHS = {
     "/home": "/site/",
     "/towing": "/site/services/towing",
     "/contact": "/site/contact",
-    "/ourwork": "/site/services",  # no gallery on the new site yet
+    "/ourwork": "/site/our-work",
     "/ford-dps6-clutch-replacement-phoenix": "/site/services/dps6-transmission",
     "/store": "/site/services",
     "/store/p/mobile-auto-heavy-duty-diesel-roadside": "/site/services/mobile-roadside",

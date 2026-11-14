@@ -112,7 +112,7 @@ def page_headers(form_page: bool = False) -> dict:
 def canonical_url(path: str) -> str | None:
     """Only canonicalize published information pages, never customer workflows."""
     public_paths = {"/site/", "/site/services", "/site/contact", "/site/pricing",
-                    "/site/rentals", "/site/faq"}
+                    "/site/rentals", "/site/faq", "/site/our-work"}
     if path == "/site":
         path = "/site/"
     if path == "/site/rentals" and "rentals" in hidden_slugs():
@@ -203,6 +203,12 @@ def privacy(request: Request):
 @router.get("/terms", response_class=HTMLResponse)
 def terms(request: Request):
     return _legal_page(request, "terms_text", "terms_published", "Service terms")
+
+
+@router.get("/our-work", response_class=HTMLResponse)
+def our_work(request: Request):
+    from app.gallery import PHOTOS
+    return render(request, "site/our_work.html", active="our-work", photos=PHOTOS)
 
 
 @router.get("/faq", response_class=HTMLResponse)
