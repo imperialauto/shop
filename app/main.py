@@ -294,7 +294,7 @@ def sitemap_xml():
     """List only stable public information pages, and only after launch approval."""
     if not indexable():
         return Response(status_code=404, headers={"X-Robots-Tag": "noindex, nofollow"})
-    paths = ["/site/", "/site/services", "/site/contact", "/site/pricing", "/site/faq"]
+    paths = ["/site/", "/site/services", "/site/our-work", "/site/contact", "/site/pricing", "/site/faq"]
     if "rentals" not in hidden_slugs():
         paths.append("/site/rentals")
     paths.extend("/site/services/" + line.slug for line in visible_lines())

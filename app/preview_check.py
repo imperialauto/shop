@@ -14,7 +14,7 @@ import httpx
 from app.public_site import preview_code, preview_mode
 
 PAGES = ("/site/", "/site/services", "/site/services/towing", "/site/services/nvzn-customs", "/site/pricing",
-         "/site/rentals", "/site/faq", "/site/status", "/site/contact", "/site/estimate")
+         "/site/rentals", "/site/faq", "/site/our-work", "/site/status", "/site/contact", "/site/estimate")
 
 
 def log(ok: bool, name: str, detail: str = ""):

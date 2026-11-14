@@ -1,0 +1,22 @@
+{% extends "site/_layout.html" %}
+{% block title %}Our work — {{ business.name }}{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="wrap">
+    <div class="eyebrow">Our work</div>
+    <h1>From the shop floor</h1>
+    <p style="max-width:680px">Real jobs from our Glendale shop: diesel trucks, DPS6 transmissions, A/C, suspension, electrical and everyday repairs. Tap any photo to see it full size.</p>
+    <div class="gallery">
+      {% for photo in photos %}
+      <figure class="gallery-item">
+        <a href="/static/gallery/{{ photo.file }}">
+          <img src="/static/gallery/thumb-{{ photo.file }}" width="{{ photo.thumb_width }}" height="{{ photo.thumb_height }}" alt="{{ photo.caption }}" loading="{{ 'eager' if loop.index <= 4 else 'lazy' }}" decoding="async">
+        </a>
+        <figcaption>{{ photo.caption }}</figcaption>
+      </figure>
+      {% endfor %}
+    </div>
+    <p style="margin-top:28px"><a class="btn btn-purple" href="/site/book">Book online</a> <a class="btn btn-light" href="/site/estimate">Get an estimate</a></p>
+  </div>
+</section>
+{% endblock %}
