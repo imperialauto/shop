@@ -65,6 +65,48 @@ def flows(page, device):
         page.click("button[type=submit]")
         page.wait_for_url("**/dashboard")
 
+    def master_tasks():
+        title = "Synthetic SMS task for " + device + " " + ("long title " * 12).strip()
+        captured = page.request.post(
+            BASE + "/internal/imperial/tasks/capture",
+            headers={"X-Internal-Key": "walkthrough-task-fixture-key"},
+            data={"messageId": f"walkthrough-{device}", "title": title,
+                  "dueAt": "2027-01-08T11:00:00-07:00"},
+        )
+        assert captured.ok, captured.text()
+        task_id = captured.json()["id"]
+        page.goto(BASE + "/dashboard")
+        page.get_by_role("link", name="Master Tasks", exact=True).click()
+        page.wait_for_url("**/dashboard/tasks")
+        task = page.locator("article").filter(has_text=title)
+        assert task.count() == 1
+        assert "11:00 AM" in task.inner_text()
+        task.get_by_text("Change due date", exact=True).click()
+        task.get_by_label("Due date and time (Phoenix)").fill("2027-01-08T14:00")
+        task.get_by_role("button", name="Save due date").click()
+        assert "02:00 PM" in task.inner_text()
+        measure(page, "master-tasks", device, 200, [])
+        task.get_by_role("button", name="Mark done").click()
+        assert task.count() == 0
+        page.get_by_role("link", name="Done", exact=True).click()
+        page.wait_for_url("**/dashboard/tasks?done=true")
+        assert task.is_visible()
+        task.get_by_role("button", name="Reopen").click()
+        page.wait_for_url("**/dashboard/tasks")
+        assert task.is_visible()
+
+        created_title = "Dashboard task for " + device
+        page.get_by_label("New task", exact=True).fill(created_title)
+        page.get_by_role("button", name="Add task").click()
+        assert page.locator("article").filter(has_text=created_title).is_visible()
+        stored = page.request.get(
+            BASE + f"/internal/imperial/tasks/{task_id}",
+            headers={"X-Internal-Key": "walkthrough-task-fixture-key"},
+        )
+        assert stored.ok, stored.text()
+        assert stored.json()["status"] == "open"
+        assert stored.json()["dueAt"] == "2027-01-08T21:00:00+00:00"
+
     def customer():
         page.goto(BASE + "/customers/new")
         page.fill("[name=first_name]", "Flow" + device)
@@ -514,7 +556,7 @@ def flows(page, device):
         measure(visitor, "site-roadside-received", device, 200, [])
         visitor.context.close()
 
-    for name, action in [("wrong password", wrong_password), ("login", login), ("public site booking", site_booking), ("public mobile booking", site_mobile_booking), ("public time conflict", site_taken_time), ("public site estimate", site_estimate),
+    for name, action in [("wrong password", wrong_password), ("login", login), ("Master Tasks create, reschedule, complete and reopen", master_tasks), ("public site booking", site_booking), ("public mobile booking", site_mobile_booking), ("public time conflict", site_taken_time), ("public site estimate", site_estimate),
                          ("public brake package", site_brake_package), ("public unpriced request", site_request_unpriced), ("public roadside", site_roadside), ("new customer", customer), ("new vehicle", vehicle), ("new repair order", repair_order),
                          ("add line item", line_item), ("edit line item", edit_line_item), ("add part", part_item), ("customer status link", public_status),
                          ("customer signature", signature), ("change status", status), ("create invoice", invoice),

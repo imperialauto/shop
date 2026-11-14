@@ -349,6 +349,71 @@ def logout(request: Request):
     return RedirectResponse("/login", status_code=302)
 
 
+def require_tracker_owner(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if user.role != "owner":
+        raise HTTPException(403, "The Master Task Tracker is owner-only.")
+    imperial_tasks.require_tasks_enabled()
+    return user
+
+
+def tracker_due(value: str):
+    from datetime import datetime
+    from app.appointments import PHOENIX
+
+    if not value:
+        return None
+    try:
+        due = datetime.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(422, "Enter a valid Phoenix date and time.") from None
+    return due.replace(tzinfo=PHOENIX)
+
+
+@app.get("/dashboard/tasks", response_class=HTMLResponse)
+def master_tasks(request: Request, done: bool = False, db: Session = Depends(get_db),
+                 user: User = Depends(require_tracker_owner)):
+    from app.appointments import PHOENIX
+    from datetime import timezone
+
+    query = db.query(imperial_tasks.ImperialTask)
+    model = imperial_tasks.ImperialTask
+    query = query.filter(model.status == "done_verified" if done else model.status.in_(("open", "in_progress", "blocked")))
+    tasks = []
+    for row in query.order_by(model.due_at.asc().nulls_last(), model.id.desc()).all():
+        due = row.due_at
+        if due:
+            due = (due if due.tzinfo else due.replace(tzinfo=timezone.utc)).astimezone(PHOENIX)
+        tasks.append({**imperial_tasks.task_record(row),
+                      "local_due": due.strftime("%Y-%m-%dT%H:%M") if due else "",
+                      "due_label": due.strftime("%b %d, %I:%M %p") if due else ""})
+    return templates.TemplateResponse("master_tasks.html", {
+        "request": request, "user": user, "tasks": tasks, "done": done,
+        "read_only": app.state.read_only,
+    })
+
+
+@app.post("/dashboard/tasks")
+def save_master_task(title: str = Form(...), due: str = Form(""),
+                     db: Session = Depends(get_db), user: User = Depends(require_tracker_owner)):
+    imperial_tasks.create_dashboard_task(db, user.id, title, tracker_due(due))
+    return RedirectResponse("/dashboard/tasks", status_code=303)
+
+
+@app.post("/dashboard/tasks/{task_id}")
+def update_master_task(task_id: int, operation: str = Form(...), due: str = Form(""),
+                       db: Session = Depends(get_db), user: User = Depends(require_tracker_owner)):
+    from uuid import uuid4
+
+    if operation not in ("complete", "reopen", "reschedule"):
+        raise HTTPException(422, "Unknown task action.")
+    change = imperial_tasks.OwnerTaskChange(
+        messageId=uuid4().hex, operation=operation, dueAt=tracker_due(due),
+    )
+    imperial_tasks.change_task(db, task_id, change, f"owner:{user.id}")
+    return RedirectResponse("/dashboard/tasks", status_code=303)
+
+
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard(request: Request, view: str = "open", db: Session = Depends(get_db)):
     try:
@@ -486,4 +551,5 @@ def public_status_calendar(request: Request, token: str, db: Session = Depends(g
         f"URL:{link}", "END:VEVENT", "END:VCALENDAR", ""])
     return Response(body, media_type="text/calendar",
                     headers={**PRIVATE_PAGE, "Content-Disposition": f'attachment; filename="imperial-WEB-{ro.id}.ics"'})
+
 

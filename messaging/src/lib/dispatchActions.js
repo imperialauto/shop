@@ -132,6 +132,8 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
       messageId,
       taskWriter: shopClient.captureOwnerTask,
       taskLister: shopClient.openOwnerTasks,
+      taskChanger: shopClient.changeOwnerTask,
+      taskReader: shopClient.readOwnerTask,
       developmentWriter: shopClient.submitDevelopmentWork,
       developmentLister: shopClient.listDevelopmentWork,
     });
@@ -187,3 +189,4 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
 }
 
 module.exports = { handleIntakeResult, deliverOwnerMessages };
+
