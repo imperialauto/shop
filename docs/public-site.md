@@ -42,6 +42,6 @@ Online booking also needs `SHOP_HOURS_JSON` and PostgreSQL. Without them the pag
 ## Cutover steps (owner approval required, not done)
 1. Acceptance: walkthrough passes, PostgreSQL booking tests pass, owner tests the preview.
 2. Decide whether `/` shows the public home page for signed-out visitors.
-3. Add redirects from the Squarespace URLs to the new pages.
+3. Add redirects from the Squarespace URLs to the new pages. Done in code (Nov 14, `app/legacy_redirects.py`): all 7 pages in the Squarespace sitemap 301 to their new pages. Both `imperialautophx.com` and `www.imperialautophx.com` must point at the app so old `www` links resolve.
 4. Set `PUBLIC_SITE_INDEXABLE=true`, add `robots.txt` and a sitemap, then point the domain.
 5. Update Google Business Profile and Search Console.
