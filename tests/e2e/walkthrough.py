@@ -97,7 +97,7 @@ def flows(page, device):
 
         created_title = "Dashboard task for " + device
         page.get_by_label("New task", exact=True).fill(created_title)
-        page.get_by_label("RO number").fill("1")
+        page.get_by_role("form", name="Add a shop task").get_by_label("RO number", exact=True).fill("1")
         page.get_by_role("button", name="Add", exact=True).click()
         assert page.locator("article").filter(has_text=created_title).is_visible()
         stored = page.request.get(
