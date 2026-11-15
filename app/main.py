@@ -372,20 +372,22 @@ def tracker_due(value: str):
 
 @app.get("/dashboard/tasks", response_class=HTMLResponse)
 def master_tasks(request: Request, tab: str = "now", done: bool = False, task: int = 0, scope: str = "jobs",
+                 sort: str = "priority",
                  db: Session = Depends(get_db),
                  user: User = Depends(require_tracker_owner)):
     from app import task_board
 
     tab = "done" if done else (tab if tab in task_board.TABS else "now")
     scope = "review" if scope == "review" else "jobs"
-    data = task_board.board(db, linked=scope == "jobs")
+    sort = sort if sort in task_board.SORTS else "priority"
+    data = task_board.board(db, linked=scope == "jobs", sort=sort)
     if task:  # a link to one task opens whichever tab holds it
         from app.imperial_task_model import BACKLOG_CATEGORY, PERSONAL_CATEGORY, ImperialTask
         saved = db.get(ImperialTask, task)
         if saved and saved.category in (PERSONAL_CATEGORY, BACKLOG_CATEGORY):
             return RedirectResponse(f"/my-day#todo-{task}", status_code=303)
         for candidate in (scope, "jobs" if scope == "review" else "review"):
-            view = data if candidate == scope else task_board.board(db, linked=candidate == "jobs")
+            view = data if candidate == scope else task_board.board(db, linked=candidate == "jobs", sort=sort)
             key = next((name for name, cards in view["cards"].items()
                         if any(str(task) in card["ids"].split(",") for card in cards)), None)
             if key:
@@ -394,7 +396,8 @@ def master_tasks(request: Request, tab: str = "now", done: bool = False, task: i
     return templates.TemplateResponse("master_tasks.html", {
         "request": request, "user": user, "tab": tab, "cards": data["cards"][tab], "tabs": data["tabs"],
         "done_this_week": data["done_this_week"], "read_only": app.state.read_only,
-        "sending_paused": dispatch.is_paused(db), "scope": scope,
+        "sending_paused": dispatch.is_paused(db), "scope": scope, "sort": sort,
+        "sorts": task_board.SORTS, "followup_days": data["followup_days"],
     })
 
 
@@ -417,7 +420,7 @@ def save_personal_todo(title: str = Form(...), due: str = Form(""), note: str = 
 
 @app.post("/dashboard/tasks/group")
 def update_task_group(ids: str = Form(...), operation: str = Form(...), due: str = Form(""), tab: str = Form("now"),
-                      scope: str = Form("jobs"), repair_order_id: int | None = Form(None, ge=1),
+                      scope: str = Form("jobs"), sort: str = Form("priority"), repair_order_id: int | None = Form(None, ge=1),
                       db: Session = Depends(get_db), user: User = Depends(require_tracker_owner)):
     """One tap acts on every task in a card (all of one customer's stacked Quo updates)."""
     from uuid import uuid4
@@ -444,9 +447,10 @@ def update_task_group(ids: str = Form(...), operation: str = Form(...), due: str
             imperial_tasks.change_task(db, task_id, change, f"owner:{user.id}")
     tab = tab if tab in task_board.TABS else "now"
     scope = "review" if scope == "review" else "jobs"
+    sort = sort if sort in task_board.SORTS else "priority"
     if operation == "personal":
         return RedirectResponse("/my-day#my-to-do", status_code=303)
-    return RedirectResponse(f"/dashboard/tasks?tab={tab}&scope={scope}", status_code=303)
+    return RedirectResponse(f"/dashboard/tasks?tab={tab}&scope={scope}&sort={sort}", status_code=303)
 
 
 @app.post("/dashboard/tasks/{task_id}")
