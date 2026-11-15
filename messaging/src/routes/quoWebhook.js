@@ -147,7 +147,7 @@ async function handleMessageEvent(event) {
       });
     }
     // A text to the customer from Quo answers the open item right away.
-    await shopClient.dispatchHandled({ conversationId: msg.conversationId, at: msg.createdAt });
+    await shopClient.dispatchHandled({ conversationId: msg.conversationId, at: msg.createdAt, phone: customerPhone });
   }
   if (!isNewInbound) return;
 

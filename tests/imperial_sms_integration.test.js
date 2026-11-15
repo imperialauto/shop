@@ -64,7 +64,7 @@ const shopClient = require("../messaging/src/lib/shopClient");
   });
   assert.equal(dashboard.status, 200);
   const html = await dashboard.text();
-  assert.match(html, /Saved to-do tasks/);
+  assert.match(html, />To-do</);
   assert.match(html, /verify website booking flow/);
 
   await makeResult("Remind me tomorrow at 11 AM to check the synthetic Fusion tank", "synthetic-reminder");

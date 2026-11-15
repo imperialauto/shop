@@ -120,7 +120,10 @@ def flows(page, device):
         page.goto(f"{BASE}/vehicles/new?customer_id={context['customer']}")
         page.select_option("[name=customer_id]", str(context["customer"]))
         page.select_option("[name=year]", "2018")
-        page.fill("[name=make]", "Honda")
+        # Signed-in vehicle forms use the year -> make -> model dropdowns;
+        # "Other (type it)" works without the NHTSA model list (offline CI).
+        page.select_option("select[aria-label=Make]", "Honda")
+        page.select_option("select[aria-label=Model]", "__other__")
         page.fill("[name=model]", "Accord")
         page.click("form button[type=submit]")
         page.wait_for_load_state("networkidle")

@@ -371,12 +371,18 @@ def tracker_due(value: str):
 
 
 @app.get("/dashboard/tasks", response_class=HTMLResponse)
-def master_tasks(request: Request, tab: str = "now", done: bool = False, db: Session = Depends(get_db),
+def master_tasks(request: Request, tab: str = "now", done: bool = False, task: int = 0, db: Session = Depends(get_db),
                  user: User = Depends(require_tracker_owner)):
     from app import task_board
 
     tab = "done" if done else (tab if tab in task_board.TABS else "now")
     data = task_board.board(db)
+    if task:  # a link to one task opens whichever tab holds it
+        wanted = str(task)
+        for key, cards in data["cards"].items():
+            if any(wanted in card["ids"].split(",") for card in cards):
+                tab = key
+                break
     return templates.TemplateResponse("master_tasks.html", {
         "request": request, "user": user, "tab": tab, "cards": data["cards"][tab], "tabs": data["tabs"],
         "done_this_week": data["done_this_week"], "read_only": app.state.read_only,
@@ -421,7 +427,7 @@ def update_task_group(ids: str = Form(...), operation: str = Form(...), due: str
 
 
 @app.post("/dashboard/tasks/{task_id}")
-def update_master_task(task_id: int, operation: str = Form(...), due: str = Form(""),
+def update_master_task(task_id: int, operation: str = Form(...), due: str = Form(""), next: str = Form(""),
                        db: Session = Depends(get_db), user: User = Depends(require_tracker_owner)):
     from uuid import uuid4
 
@@ -431,7 +437,39 @@ def update_master_task(task_id: int, operation: str = Form(...), due: str = Form
         messageId=uuid4().hex, operation=operation, dueAt=tracker_due(due),
     )
     imperial_tasks.change_task(db, task_id, change, f"owner:{user.id}")
-    return RedirectResponse("/dashboard/tasks", status_code=303)
+    return RedirectResponse("/dashboard" if next == "/dashboard" else "/dashboard/tasks", status_code=303)
+
+
+@app.post("/problems")
+def report_problem(request: Request, page: str = Form(""), comment: str = Form(...), db: Session = Depends(get_db)):
+    """Any signed-in user can report a problem; it lands on the owner's Fix list."""
+    user = get_current_user(request, db)
+    imperial_tasks.require_tasks_enabled()
+    imperial_tasks.create_problem_report(db, user, page, comment)
+    back = page if page.startswith("/") and not page.startswith("//") else "/dashboard"
+    sep = "&" if "?" in back else "?"
+    return RedirectResponse(f"{back}{sep}reported=1", status_code=303)
+
+
+@app.get("/problems", response_class=HTMLResponse)
+def problem_list(request: Request, fixed: bool = False, db: Session = Depends(get_db),
+                 user: User = Depends(require_tracker_owner)):
+    return templates.TemplateResponse("problems.html", {
+        "request": request, "user": user, "fixed": fixed,
+        "problems": imperial_tasks.problem_reports(db, include_fixed=fixed),
+    })
+
+
+@app.post("/problems/{task_id}")
+def update_problem(task_id: int, operation: str = Form(...), db: Session = Depends(get_db),
+                   user: User = Depends(require_tracker_owner)):
+    from uuid import uuid4
+
+    if operation not in ("complete", "reopen"):
+        raise HTTPException(422, "Unknown action.")
+    imperial_tasks.change_task(db, task_id, imperial_tasks.OwnerTaskChange(messageId=uuid4().hex, operation=operation),
+                               f"owner:{user.id}")
+    return RedirectResponse("/problems", status_code=303)
 
 
 @app.get("/dashboard", response_class=HTMLResponse)

@@ -12,7 +12,7 @@ from datetime import datetime, time, timedelta, timezone
 from app import quo_task_sync
 from app.appointments import PHOENIX
 from app.dispatch_model import DispatchItem, OPEN_STATUSES
-from app.imperial_task_model import ImperialTask
+from app.imperial_task_model import PROBLEM_CATEGORY, ImperialTask
 from app.models import Customer
 
 OPEN = ("open", "in_progress", "blocked")
@@ -101,7 +101,8 @@ def board(db, now: datetime | None = None) -> dict:
     now = (now or datetime.now(PHOENIX)).astimezone(PHOENIX)
     end_of_today = datetime.combine(now.date(), time(23, 59, 59), tzinfo=PHOENIX)
     week_ago = now - timedelta(days=7)
-    rows = db.query(ImperialTask).filter(ImperialTask.status.in_(OPEN + ("done_verified",))).order_by(
+    rows = db.query(ImperialTask).filter(ImperialTask.status.in_(OPEN + ("done_verified",)),
+                                         ImperialTask.category != PROBLEM_CATEGORY).order_by(
         ImperialTask.id.desc()).all()
     groups: "OrderedDict[str, dict]" = OrderedDict()
     cache = {}
@@ -165,7 +166,7 @@ def open_for_customer(db, conversation_ids, phone) -> list[dict]:
     wanted = set(conversation_ids or [])
     tail = _digits(phone)
     out = []
-    for task in db.query(ImperialTask).filter(ImperialTask.status.in_(OPEN)).order_by(ImperialTask.id.desc()).all():
+    for task in db.query(ImperialTask).filter(ImperialTask.status.in_(OPEN), ImperialTask.category != PROBLEM_CATEGORY).order_by(ImperialTask.id.desc()).all():
         info = quo_task_sync.details(task) if task.source == quo_task_sync.SOURCE else {}
         if (info.get("conversationId") in wanted) or (tail and _digits(info.get("phone")) == tail):
             tag = quo_task_sync.label(task.title)

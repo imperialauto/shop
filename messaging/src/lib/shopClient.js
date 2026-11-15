@@ -111,10 +111,10 @@ async function dispatchIntake({ conversationId, messageId, phone, body, recovery
   }
 }
 
-async function dispatchHandled({ conversationId, at }) {
+async function dispatchHandled({ conversationId, at, phone }) {
   if (!configured()) return { closed: false };
   try {
-    return await request("/internal/dispatch/handled", { method: "POST", body: JSON.stringify({ conversationId, at }) });
+    return await request("/internal/dispatch/handled", { method: "POST", body: JSON.stringify({ conversationId, at, ...(phone ? { phone } : {}) }) });
   } catch (err) {
     console.error("shopClient.dispatchHandled failed:", err.message);
     return { closed: false };
