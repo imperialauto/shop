@@ -5,10 +5,6 @@
   .mt { max-width: 760px; display: grid; gap: 14px; }
   .mt-jot { display: flex; gap: 8px; background: var(--imp-surface); border: 1px solid var(--imp-line); border-radius: var(--imp-radius-card); padding: 8px; }
   .mt-jot input[type=text] { flex: 1; min-width: 0; background: transparent; border: 0; color: var(--imp-ink); font-size: 15px; padding: 8px; outline: none; }
-  .mt-jot details { position: relative; }
-  .mt-jot summary { list-style: none; cursor: pointer; color: var(--imp-muted); padding: 10px 6px; font-size: 13px; white-space: nowrap; }
-  .mt-jot summary::-webkit-details-marker { display: none; }
-  .mt-jot .when { position: absolute; right: 0; top: 44px; z-index: 5; background: var(--imp-surface-2); border: 1px solid var(--imp-line); border-radius: var(--imp-radius); padding: 10px; display: grid; gap: 6px; width: 240px; }
   .mt-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; background: var(--imp-header); border-radius: 999px; padding: 4px; position: sticky; top: 0; z-index: 4; }
   .mt-tabs a { text-align: center; text-decoration: none; color: var(--imp-muted); font-size: 13.5px; font-weight: 600; padding: 9px 4px; border-radius: 999px; min-height: 40px; display: flex; align-items: center; justify-content: center; gap: 6px; }
   .mt-tabs a[aria-current] { background: var(--imp-gold); color: var(--imp-on-gold); }
@@ -46,27 +42,34 @@
 </style>
 <div class="page-header">
   <h1 class="page-title">Master Tasks</h1>
-  <a href="/dashboard" class="btn-secondary">Dashboard</a>
+  <a href="/my-day#my-to-do" class="btn-secondary">My To-do</a>
 </div>
 <div class="page-body mt">
   {% if read_only %}<p>Saving is paused while Imperial is in read-only mode.</p>{% endif %}
   {% if not read_only %}
-  <form method="post" action="/dashboard/tasks" class="mt-jot" aria-label="Add a task">
-    <input type="text" name="title" required minlength="4" maxlength="200" placeholder="Jot a task or reminder…" aria-label="New task">
-    <details>
-      <summary>⏰ When</summary>
-      <div class="when">
-        <label for="task-due" style="font-size:12px;color:var(--imp-muted)">Remind me (Phoenix time)</label>
-        <input id="task-due" type="datetime-local" name="due" class="form-input">
-      </div>
-    </details>
-    <button class="btn-primary" style="min-height:40px">Add</button>
+  <form method="post" action="/dashboard/tasks" class="card" aria-label="Add a shop task">
+    <div class="mt-jot">
+      <input type="text" name="title" required minlength="4" maxlength="200" placeholder="What needs doing on the job?" aria-label="New task">
+      <button class="btn-primary" style="min-height:44px">Add</button>
+    </div>
+    <div class="flex flex-wrap gap-2 mt-2">
+      <label>RO number <input name="repair_order_id" type="number" min="1" inputmode="numeric" class="form-input" style="width:90px"></label>
+      <details>
+        <summary>Time and details</summary>
+        <label>Remind me (Phoenix time)<input id="task-due" type="datetime-local" name="due" class="form-input"></label>
+        <label>Who, where, why or how<textarea name="note" rows="2" maxlength="1000" class="form-input"></textarea></label>
+      </details>
+    </div>
   </form>
   {% endif %}
 
+  <nav class="mt-actions" aria-label="Task scope">
+    <a href="/dashboard/tasks"{% if scope == 'jobs' %} aria-current="page" class="done"{% endif %}>Shop Tasks</a>
+    <a href="/dashboard/tasks?scope=review"{% if scope == 'review' %} aria-current="page" class="done"{% endif %}>Unsorted</a>
+  </nav>
   <nav class="mt-tabs" aria-label="Task lists">
     {% for t in tabs %}
-    <a href="/dashboard/tasks?tab={{ t.key }}"{% if t.key == tab %} aria-current="page"{% endif %}>{{ t.label }} <span class="n">{{ t.count }}</span></a>
+    <a href="/dashboard/tasks?tab={{ t.key }}&amp;scope={{ scope }}"{% if t.key == tab %} aria-current="page"{% endif %}>{{ t.label }} <span class="n">{{ t.count }}</span></a>
     {% endfor %}
   </nav>
 
@@ -86,6 +89,7 @@
     <div class="mt-who">{{ card.name or card.phone }}{% if card.vehicle %} <small>· {{ card.vehicle }}</small>{% endif %}</div>
     {% endif %}
     <div class="mt-what">{{ card.headline }}</div>
+    {% if card.note %}<p class="text-sm text-stone-400">{{ card.note }}</p>{% endif %}
     {% if card.older %}
     <details class="mt-older">
       <summary>{{ card.older|length }} earlier update{{ '' if card.older|length == 1 else 's' }}</summary>
@@ -96,7 +100,7 @@
     {% if tab != 'done' and item and not read_only %}
     <form method="post" action="/dispatch/{{ item.id }}/decide" class="mt-reply">
       <input type="hidden" name="expected_message_id" value="{{ item.last_message_id }}">
-      <input type="hidden" name="next" value="/dashboard/tasks?tab={{ tab }}">
+      <input type="hidden" name="next" value="/dashboard/tasks?tab={{ tab }}&amp;scope={{ scope }}">
       <textarea name="reply_text" maxlength="1500" placeholder="Write a reply…" aria-label="Reply to {{ card.name or card.phone }}">{{ item.draft_reply or '' }}</textarea>
       <span class="hint">{% if item.draft_reply %}Imperial's draft. Edit it, then send.{% else %}No draft yet. Write your own.{% endif %}{% if sending_paused %} Texting is stopped, so sending won't work until you resume it.{% endif %} Nothing goes out until you press Send.</span>
       <div class="mt-actions"><button class="send" name="decision" value="approve">Send</button></div>
@@ -106,25 +110,41 @@
     {% if not read_only %}
     <div class="mt-actions">
       {% if tab == 'done' %}
-      <form method="post" action="/dashboard/tasks/group"><input type="hidden" name="ids" value="{{ card.ids }}"><input type="hidden" name="tab" value="{{ tab }}"><button name="operation" value="reopen">Reopen</button></form>
+      <form method="post" action="/dashboard/tasks/group"><input type="hidden" name="ids" value="{{ card.ids }}"><input type="hidden" name="tab" value="{{ tab }}"><input type="hidden" name="scope" value="{{ scope }}"><button name="operation" value="reopen">Reopen</button></form>
       {% else %}
-      <form method="post" action="/dashboard/tasks/group"><input type="hidden" name="ids" value="{{ card.ids }}"><input type="hidden" name="tab" value="{{ tab }}"><button class="done" name="operation" value="complete">✓ Done</button></form>
-      {% if tab != 'waiting' %}<form method="post" action="/dashboard/tasks/group"><input type="hidden" name="ids" value="{{ card.ids }}"><input type="hidden" name="tab" value="{{ tab }}"><button name="operation" value="wait">Waiting on them</button></form>{% else %}<form method="post" action="/dashboard/tasks/group"><input type="hidden" name="ids" value="{{ card.ids }}"><input type="hidden" name="tab" value="{{ tab }}"><button name="operation" value="now">Back to Now</button></form>{% endif %}
-      <form method="post" action="/dashboard/tasks/group"><input type="hidden" name="ids" value="{{ card.ids }}"><input type="hidden" name="tab" value="{{ tab }}"><button name="operation" value="tomorrow">Tomorrow</button></form>
+      <form method="post" action="/dashboard/tasks/group">
+        <input type="hidden" name="ids" value="{{ card.ids }}"><input type="hidden" name="tab" value="{{ tab }}"><input type="hidden" name="scope" value="{{ scope }}">
+        <button class="done" name="operation" value="complete">✓ Done</button>
+        {% if tab != 'waiting' %}<button name="operation" value="wait">Waiting on them</button>{% else %}<button name="operation" value="now">Back to Now</button>{% endif %}
+        <button name="operation" value="tomorrow">Tomorrow</button>
+        <button name="operation" value="personal">Move to My To-do</button>
+        <button name="operation" value="defer">Backburner</button>
+      </form>
       {% endif %}
       {% if card.phone %}<a href="tel:{{ card.phone }}">Call</a>{% endif %}
       {% if card.customer_id %}<a href="/customers/{{ card.customer_id }}#file">File</a>{% endif %}
+      {% if card.repair_order_id %}<a href="/ro/{{ card.repair_order_id }}">RO {{ card.repair_order_id }}</a>{% endif %}
       {% if tab != 'done' %}
       <details class="mt-more">
         <summary>Pick a time</summary>
         <form method="post" action="/dashboard/tasks/group" class="sheet">
-          <input type="hidden" name="ids" value="{{ card.ids }}"><input type="hidden" name="tab" value="{{ tab }}">
+          <input type="hidden" name="ids" value="{{ card.ids }}"><input type="hidden" name="tab" value="{{ tab }}"><input type="hidden" name="scope" value="{{ scope }}">
           <label style="font-size:12px;color:var(--imp-muted)">Remind me (Phoenix time)
             <input type="datetime-local" name="due" required value="{{ card.local_due }}" class="form-input" style="display:block;margin-top:4px">
           </label>
           <button name="operation" value="reschedule" class="btn-secondary">Save</button>
         </form>
       </details>
+      {% if scope == 'review' %}
+      <details class="mt-more">
+        <summary>Link to RO</summary>
+        <form method="post" action="/dashboard/tasks/group" class="sheet">
+          <input type="hidden" name="ids" value="{{ card.ids }}"><input type="hidden" name="tab" value="{{ tab }}"><input type="hidden" name="scope" value="{{ scope }}">
+          <label>Open RO number <input type="number" name="repair_order_id" min="1" required class="form-input"></label>
+          <button name="operation" value="shop">Move to Shop Tasks</button>
+        </form>
+      </details>
+      {% endif %}
       {% endif %}
     </div>
     {% endif %}

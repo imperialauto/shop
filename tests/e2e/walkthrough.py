@@ -78,7 +78,7 @@ def flows(page, device):
         page.goto(BASE + "/dashboard")
         page.get_by_role("link", name="Master Tasks", exact=True).click()
         page.wait_for_url("**/dashboard/tasks")
-        page.goto(BASE + "/dashboard/tasks?tab=later")  # due in 2027, so it waits under Later
+        page.goto(BASE + "/dashboard/tasks?tab=later&scope=review")  # SMS capture stays in Unsorted
         task = page.locator("article").filter(has_text=title)
         assert task.count() == 1
         assert "11:00 AM" in task.inner_text()
@@ -89,14 +89,15 @@ def flows(page, device):
         measure(page, "master-tasks", device, 200, [])
         task.get_by_role("button", name="✓ Done").click()
         assert task.count() == 0
-        page.goto(BASE + "/dashboard/tasks?tab=done")
+        page.goto(BASE + "/dashboard/tasks?tab=done&scope=review")
         assert task.is_visible()
         task.get_by_role("button", name="Reopen").click()
-        page.goto(BASE + "/dashboard/tasks?tab=later")
+        page.goto(BASE + "/dashboard/tasks?tab=later&scope=review")
         assert task.is_visible()
 
         created_title = "Dashboard task for " + device
         page.get_by_label("New task", exact=True).fill(created_title)
+        page.get_by_label("RO number").fill("1")
         page.get_by_role("button", name="Add", exact=True).click()
         assert page.locator("article").filter(has_text=created_title).is_visible()
         stored = page.request.get(
@@ -106,6 +107,19 @@ def flows(page, device):
         assert stored.ok, stored.text()
         assert stored.json()["status"] == "open"
         assert stored.json()["dueAt"] == "2027-01-08T21:00:00+00:00"
+
+        page.get_by_role("link", name="My To-do", exact=True).click()
+        assert not page.get_by_text(created_title, exact=True).count()
+        todo_title = f"Call the fixture vendor on {device}"
+        page.get_by_label("New to-do").fill(todo_title)
+        page.get_by_role("form", name="Add a personal to-do").get_by_role("button", name="Add", exact=True).click()
+        todo = page.locator("article").filter(has_text=todo_title)
+        assert todo.is_visible()
+        todo.get_by_role("button", name="Backburner").click()
+        assert not todo.is_visible()
+        page.get_by_text("Backburner (", exact=False).click()
+        todo.get_by_role("button", name="Do now").click()
+        assert todo.is_visible()
 
     def customer():
         page.goto(BASE + "/customers/new")

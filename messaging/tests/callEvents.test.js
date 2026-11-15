@@ -122,7 +122,7 @@ test("a call you took closes the item as soon as it ends", async () => {
     runPass: async () => {}, deliver: async () => {}, schedule: () => {},
   });
   await events.handle({ id: "EV9", type: "call.completed", data: { object: { id: "AC9" } } });
-  assert.deepEqual(handled, [{ conversationId: "CNfixture", at: "2026-11-03T22:30:00Z" }]);
+  assert.deepEqual(handled, [{ conversationId: "CNfixture", at: "2026-11-03T22:30:00Z", phone: "+16025550100", byCall: true }]);
 });
 
 test("an AI call or an unanswered call does not count as you answering", async () => {

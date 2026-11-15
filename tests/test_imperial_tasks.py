@@ -1,6 +1,7 @@
 """Feature-gated Imperial owner task tests; synthetic SQLite, no outbound calls."""
 import os
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 import fixture_environment  # noqa
 
@@ -10,7 +11,9 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
-from app.imperial_task_model import ImperialTask, ImperialTaskAudit
+from app.imperial_task_model import BACKLOG_CATEGORY, PERSONAL_CATEGORY, ImperialTask, ImperialTaskAudit
+from app.appointments import PHOENIX
+from app import task_board
 from app.main import app
 from app.routes import internal_messaging
 from app.routes.imperial_tasks import owner_dashboard_tasks
@@ -106,6 +109,52 @@ class TaskCaptureTests(unittest.TestCase):
             self.assertFalse(owner_dashboard_tasks(db, "tech")["enabled"])
             with patch.dict(os.environ, {"IMPERIAL_TASKS_ENABLED": "false"}):
                 self.assertFalse(owner_dashboard_tasks(db, "owner")["enabled"])
+
+    def test_personal_agenda_keeps_a_short_window_and_preserves_unsorted_tasks(self):
+        now = datetime(2026, 11, 15, 13, tzinfo=PHOENIX)
+        with self.Session() as db:
+            for key, category, due in (
+                ("personal-now", PERSONAL_CATEGORY, now + timedelta(hours=2)),
+                ("personal-later", PERSONAL_CATEGORY, now + timedelta(hours=4)),
+                ("personal-overdue", PERSONAL_CATEGORY, now - timedelta(days=1)),
+                ("paint-shop", BACKLOG_CATEGORY, None),
+                ("sms-review", "internal", None),
+            ):
+                db.add(ImperialTask(source="dashboard", external_id=key, title=key, category=category,
+                                    due_at=due.astimezone(timezone.utc) if due else None))
+            db.commit()
+            plan = task_board.personal_plan(db, 1, now)
+            self.assertEqual({key: [item["title"] for item in items] for key, items in plan.items()}, {
+                "next": ["personal-now"], "overdue": ["personal-overdue"],
+                "later": ["personal-later"], "backlog": ["paint-shop"],
+            })
+            self.assertEqual([item["headline"] for item in task_board.board(db, now, linked=False)["cards"]["now"]],
+                             ["sms-review"])
+
+    def test_repeated_missed_calls_create_one_todo_that_requires_a_call_or_manual_completion(self):
+        app.state.read_only = False
+        now = datetime.now(PHOENIX)
+        common = {"phone": "+16025550190", "kind": "call", "callOutcome": "missed",
+                  "body": "Missed call, no voicemail."}
+        for n in range(8):
+            response = self.client.post("/internal/dispatch/intake", headers=self.auth, json={
+                **common, "conversationId": f"CN{n % 2}", "messageId": f"call-{n}",
+                "callAt": (now - timedelta(minutes=12 - n)).isoformat(),
+            })
+            self.assertEqual(response.status_code, 200, response.text)
+        with self.Session() as db:
+            task = db.query(ImperialTask).one()
+            self.assertEqual(task.category, PERSONAL_CATEGORY)
+            self.assertEqual(task.due_at, (now - timedelta(minutes=12)).astimezone(timezone.utc).replace(tzinfo=None))
+        common_report = {"conversationId": "CN1", "phone": common["phone"],
+                         "at": (now + timedelta(minutes=1)).isoformat()}
+        self.assertEqual(self.client.post("/internal/dispatch/handled", headers=self.auth, json=common_report).status_code, 200)
+        with self.Session() as db:
+            self.assertEqual(db.query(ImperialTask).one().status, "open")
+        self.assertEqual(self.client.post("/internal/dispatch/handled", headers=self.auth,
+                                          json={**common_report, "byCall": True}).status_code, 200)
+        with self.Session() as db:
+            self.assertEqual(db.query(ImperialTask).one().status, "done_verified")
 
     def test_task_reschedule_and_completion_share_record_and_ignore_replays(self):
         app.state.read_only = False

@@ -12,11 +12,13 @@ from datetime import datetime, time, timedelta, timezone
 from app import quo_task_sync
 from app.appointments import PHOENIX
 from app.dispatch_model import DispatchItem, OPEN_STATUSES
-from app.imperial_task_model import PROBLEM_CATEGORY, ImperialTask
-from app.models import Customer
+from app.imperial_task_model import BACKLOG_CATEGORY, PERSONAL_CATEGORY, PROBLEM_CATEGORY, ImperialTask
+from app.models import Customer, RepairOrder
 
 OPEN = ("open", "in_progress", "blocked")
 TABS = OrderedDict([("now", "Now"), ("waiting", "Waiting"), ("later", "Later"), ("done", "Done")])
+PERSONAL_WINDOW = timedelta(hours=3)
+CALLBACK_SOURCE = "dispatch_callback"
 
 
 def _aware(value):
@@ -97,12 +99,43 @@ def _bucket(task, end_of_today):
     return "later" if due and due > end_of_today else "now"
 
 
-def board(db, now: datetime | None = None) -> dict:
+def personal_plan(db, user_id, now):
+    """A short owner agenda backed by the existing task records."""
+    rows = db.query(ImperialTask).filter(
+        ImperialTask.status.in_(OPEN),
+        ImperialTask.category.in_((PERSONAL_CATEGORY, BACKLOG_CATEGORY)),
+        (ImperialTask.assigned_user_id == user_id) | ImperialTask.assigned_user_id.is_(None),
+    ).all()
+    plan = {"next": [], "overdue": [], "later": [], "backlog": []}
+    for task in rows:
+        due = _aware(task.due_at)
+        if task.category == BACKLOG_CATEGORY or task.status == "blocked":
+            group = "backlog"
+        elif due and due.date() < now.date():
+            group = "overdue"
+        elif due and due > now + PERSONAL_WINDOW:
+            group = "later"
+        else:
+            group = "next"
+        info = quo_task_sync.details(task) if task.source in (CALLBACK_SOURCE, quo_task_sync.SOURCE) else {}
+        plan[group].append({
+            "id": task.id, "title": task.title, "due": due,
+            "note": info.get("note") if info else task.details,
+            "phone": info.get("phone") or quo_task_sync.phone_in(task.title),
+            "customer_id": info.get("customerId"),
+            "priority": task.priority,
+        })
+    for items in plan.values():
+        items.sort(key=lambda item: (item["priority"] not in ("safety", "urgent"), item["due"] or now, item["id"]))
+    return plan
+
+
+def board(db, now: datetime | None = None, *, linked: bool | None = None) -> dict:
     now = (now or datetime.now(PHOENIX)).astimezone(PHOENIX)
     end_of_today = datetime.combine(now.date(), time(23, 59, 59), tzinfo=PHOENIX)
     week_ago = now - timedelta(days=7)
     rows = db.query(ImperialTask).filter(ImperialTask.status.in_(OPEN + ("done_verified",)),
-                                         ImperialTask.category != PROBLEM_CATEGORY).order_by(
+                                         ImperialTask.category.notin_((PROBLEM_CATEGORY, PERSONAL_CATEGORY, BACKLOG_CATEGORY))).order_by(
         ImperialTask.id.desc()).all()
     groups: "OrderedDict[str, dict]" = OrderedDict()
     cache = {}
@@ -113,14 +146,22 @@ def board(db, now: datetime | None = None) -> dict:
         info = quo_task_sync.details(task) if task.source == quo_task_sync.SOURCE else {}
         conversation = info.get("conversationId")
         who = _digits(info.get("phone")) or conversation
-        key = f"{bucket}:{who}" if who else f"{bucket}:task{task.id}"
+        job_id = int(task.project_key[3:]) if task.project_key and task.project_key.startswith("ro-") and task.project_key[3:].isdigit() else None
+        order = db.get(RepairOrder, job_id) if job_id else None
+        if order and order.status == "delivered" and bucket != "done":
+            order = None
+        if linked is not None and linked != bool(order):
+            continue
+        key = f"{bucket}:{who}" if who and not order else f"{bucket}:task{task.id}"
         tag = quo_task_sync.label(task.title)
         entry = {"id": task.id, "title": tag["text"], "kind": tag["kind"], "update": tag["update"],
                  "created": _aware(task.created_at), "due": _aware(task.due_at)}
         if key not in groups:
             ctx = _context(db, conversation, info.get("phone"), cache) if who else {}
             groups[key] = {"key": key, "bucket": bucket, "tasks": [], "source": task.source,
-                           "urgent": task.priority in ("urgent", "safety") or tag["urgent"], **ctx}
+                           "urgent": task.priority in ("urgent", "safety") or tag["urgent"],
+                           "repair_order_id": order.id if order else None,
+                           "note": task.details if task.source == "dashboard" else None, **ctx}
         group = groups[key]
         group["tasks"].append(entry)
         group["urgent"] = group["urgent"] or task.priority in ("urgent", "safety") or tag["urgent"]
@@ -166,7 +207,8 @@ def open_for_customer(db, conversation_ids, phone) -> list[dict]:
     wanted = set(conversation_ids or [])
     tail = _digits(phone)
     out = []
-    for task in db.query(ImperialTask).filter(ImperialTask.status.in_(OPEN), ImperialTask.category != PROBLEM_CATEGORY).order_by(ImperialTask.id.desc()).all():
+    for task in db.query(ImperialTask).filter(ImperialTask.status.in_(OPEN), ImperialTask.category.notin_(
+            (PROBLEM_CATEGORY, PERSONAL_CATEGORY, BACKLOG_CATEGORY))).order_by(ImperialTask.id.desc()).all():
         info = quo_task_sync.details(task) if task.source == quo_task_sync.SOURCE else {}
         if (info.get("conversationId") in wanted) or (tail and _digits(info.get("phone")) == tail):
             tag = quo_task_sync.label(task.title)
