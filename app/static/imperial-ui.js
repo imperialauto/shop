@@ -87,7 +87,8 @@
         else { input.style.display = "none"; input.value = select.value; }
         if (input === make) onYearOrMake(); else maybeCollapse();
       });
-      input.addEventListener("change", maybeCollapse);
+      // Typed values never fold the section: folding on blur would move the
+      // Save button out from under the user's tap.
       return select;
     }
     var makeSelect = dropdownFor(make, "Make");
