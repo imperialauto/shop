@@ -28,7 +28,7 @@ MESSAGES = {
     "missed_visit": "Hi, this is Imperial Auto Care checking in about your visit. If you still need service, reply here and we can find another time that works.",
 }
 OPT_OUT = re.compile(r"^\s*(?:stop(?:\s+all)?|stopall|unsubscribe|cancel|end|quit|opt\s*out|remove me)\s*[.!]?\s*$|\b(?:do not|don't|please stop)\s+(?:text|contact|messag)|\b(?:no thanks|not interested|already (?:fixed|repaired|handled|taken care of)|went (?:with|to) another)\b", re.I)
-POSSIBLE_DROP_BY = re.compile(r"\b(?:i(?:'ll| will| can)|we(?:'ll| will| can)|going to|plan to|planning to)\s+(?:stop|drop|come|swing)\s+(?:by|in|it off|the car off)\b", re.I)
+POSSIBLE_DROP_BY = re.compile(r"\b(?:i(?:['’]ll| will| can)|we(?:['’]ll| will| can)|going to|plan to|planning to)\s+(?:stop|drop|come|swing)\s+(?:by|in|it off|the car off)\b", re.I)
 
 
 def utc(value):

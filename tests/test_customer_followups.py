@@ -72,6 +72,12 @@ class CustomerFollowupTests(TestCase):
         self.sms("opt-out", 25, "inbound", "STOP")
         self.assertIsNone(self.candidate())
 
+    def test_unconfirmed_drop_by_gets_a_neutral_check_in_after_day_three(self):
+        self.sms("drop-by", 48, "inbound", "I’ll drop by tomorrow")
+        self.assertIsNone(self.candidate())
+        self.now += timedelta(days=1)
+        self.assertEqual(self.candidate()["reason"], "reactivate")
+
     def test_estimate_requires_outbound_evidence_offsite_and_48_hours(self):
         order = self.order("waiting_approval")
         self.db.add(LineItem(repair_order_id=order.id, item_type="labor", description="Fixture",

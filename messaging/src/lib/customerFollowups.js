@@ -33,6 +33,7 @@ async function sendCustomerFollowup({ reminder, quo, shopClient }) {
     if (await currentThread(quo, reminder) && (await shopClient.checkCustomerFollowup(reminder))?.ok) {
       status = "failed";  // Never retry an ambiguous provider result.
       const sent = await quo.sendMessage({ to: reminder.phone, content: reminder.text });
+      if (!sent?.id) throw Error("Quo did not return a message ID");
       status = "sent";
       await shopClient.logCommunication({ phone: reminder.phone, direction: "outbound", body: reminder.text,
         externalId: sent?.id, createdAt: sent?.createdAt });
