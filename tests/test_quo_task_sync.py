@@ -72,6 +72,11 @@ class QuoTaskSyncTests(unittest.TestCase):
         with self.Session() as db:
             self.assertEqual(db.query(ImperialTask).one().status, "done_verified")
 
+    def test_completed_at_alone_means_done(self):
+        self.post([quo("TK1", "[CALL BACK] x", status="", completedAt="2026-11-11T17:14:40.645Z")])
+        with self.Session() as db:
+            self.assertEqual(db.query(ImperialTask).one().status, "done_verified")
+
     def test_done_here_is_sent_to_quo_until_acknowledged(self):
         self.post([quo("TK1", "[NEW LEAD] y")])
         with self.Session() as db:
