@@ -85,7 +85,8 @@ def sync(db, tasks: list[dict]) -> dict:
         if not task_id or task_id in seen or len(title) < 2:
             continue
         seen.add(task_id)
-        quo_done = str(raw.get("status") or "").lower() in ("completed", "done", "complete")
+        quo_done = bool(raw.get("completedAt")) or str(raw.get("status") or "").lower() in (
+            "completed", "done", "complete", "closed", "resolved")
         info = {"conversationId": raw.get("conversationId"), "phoneNumberId": raw.get("phoneNumberId"),
                 "activityId": raw.get("activityId"), "assignedTo": raw.get("assignedTo"),
                 "quoStatus": "completed" if quo_done else "open",
@@ -97,7 +98,8 @@ def sync(db, tasks: list[dict]) -> dict:
         if task is None:
             task = ImperialTask(source=SOURCE, external_id=task_id, title=title, category="customer",
                                 priority="urgent" if label(title)["urgent"] else "normal",
-                                status="done_verified" if quo_done else "open", due_at=due,
+                                status="done_verified" if quo_done else ("blocked" if label(title)["kind"] == "Waiting" else "open"),
+                                due_at=due,
                                 details=json.dumps(info), created_at=_parse_time(raw.get("createdAt")) or now,
                                 updated_at=now)
             db.add(task)

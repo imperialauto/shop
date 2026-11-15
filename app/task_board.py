@@ -37,18 +37,24 @@ def _customer_name(customer):
 
 
 def _context(db, conversation_id, phone, cache):
-    """Customer, vehicle and the newest open queue item for a conversation or phone."""
-    key = conversation_id or phone
+    """Customer, vehicle and the newest open queue item for a phone or conversation.
+
+    The phone written in the task title wins: some Quo tasks hang off the owner's own
+    thread with Imperial, so their conversation is not the customer's.
+    """
+    key = _digits(phone) or conversation_id
     if key in cache:
         return cache[key]
     item = None
     query = db.query(DispatchItem)
-    if conversation_id:
-        item = query.filter(DispatchItem.quo_conversation_id == conversation_id).order_by(DispatchItem.updated_at.desc()).first()
-    if item is None and phone:
+    if phone:
         tail = _digits(phone)
-        item = next((row for row in query.order_by(DispatchItem.updated_at.desc()).limit(400)
+        item = next((row for row in query.order_by(DispatchItem.updated_at.desc()).limit(600)
                      if _digits(row.customer_phone) == tail), None)
+    if item is None and conversation_id and not phone:
+        item = query.filter(DispatchItem.quo_conversation_id == conversation_id).order_by(DispatchItem.updated_at.desc()).first()
+        if item is not None and _is_owner(item.customer_phone):
+            item = None
     phone = (item.customer_phone if item else None) or phone
     customer = db.get(Customer, item.customer_id) if item and item.customer_id else None
     if customer is None and phone:
@@ -64,11 +70,22 @@ def _context(db, conversation_id, phone, cache):
     cache[key] = {
         "phone": phone,
         "customer_id": customer.id if customer else None,
-        "name": _customer_name(customer) or (item.contact_name if item else None),
+        "name": _customer_name(customer) or _clean_label(item.contact_name if item else None),
         "vehicle": item.vehicle_text if item else None,
         "item": open_item,
     }
     return cache[key]
+
+
+def _is_owner(phone):
+    from app.config import OWNER_PHONE
+    return bool(phone) and _digits(phone) == _digits(OWNER_PHONE)
+
+
+def _clean_label(name):
+    """Quo contact labels: "Amaya -" -> "Amaya"; the owner's own label is not a customer."""
+    name = (name or "").strip().rstrip("-").strip()
+    return None if not name or "jaelan" in name.lower() else name
 
 
 def _bucket(task, end_of_today):
@@ -94,12 +111,13 @@ def board(db, now: datetime | None = None) -> dict:
             continue
         info = quo_task_sync.details(task) if task.source == quo_task_sync.SOURCE else {}
         conversation = info.get("conversationId")
-        key = f"{bucket}:{conversation}" if conversation else f"{bucket}:task{task.id}"
+        who = _digits(info.get("phone")) or conversation
+        key = f"{bucket}:{who}" if who else f"{bucket}:task{task.id}"
         tag = quo_task_sync.label(task.title)
         entry = {"id": task.id, "title": tag["text"], "kind": tag["kind"], "update": tag["update"],
                  "created": _aware(task.created_at), "due": _aware(task.due_at)}
         if key not in groups:
-            ctx = _context(db, conversation, info.get("phone"), cache) if (conversation or info.get("phone")) else {}
+            ctx = _context(db, conversation, info.get("phone"), cache) if who else {}
             groups[key] = {"key": key, "bucket": bucket, "tasks": [], "source": task.source,
                            "urgent": task.priority in ("urgent", "safety") or tag["urgent"], **ctx}
         group = groups[key]

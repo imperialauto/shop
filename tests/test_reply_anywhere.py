@@ -128,6 +128,24 @@ class BoardTests(unittest.TestCase):
         self.assertIsNotNone(card["item"])
         self.assertEqual(data["cards"]["later"][0]["headline"], "Call Snap Finance")
 
+    def test_title_phone_beats_the_owners_own_thread(self):
+        now = datetime(2026, 11, 14, 17, 0, tzinfo=PHOENIX)
+        owner_thread = json.dumps({"conversationId": "CNowner", "phone": None})
+        with self.Session() as db:
+            db.add(DispatchItem(quo_conversation_id="CNowner", customer_phone="+19843250805", contact_name="Jaelan Cell",
+                                status="routine", last_message_id="o"))
+            db.add(DispatchItem(quo_conversation_id="CNa", customer_phone="+12028703635", contact_name="Amaya -",
+                                status="routine", last_message_id="a"))
+            db.add(ImperialTask(source="quo", external_id="TK1", title="[NEW LEAD] Altima pads (Amaya, +12028703635)",
+                                details=json.dumps({"conversationId": "CNowner", "phone": "+12028703635"})))
+            db.add(ImperialTask(source="quo", external_id="TK2", title="[P1 CALL REVIEW] U-Haul Bobby windshield",
+                                details=owner_thread))
+            db.commit()
+            with patch("app.config.OWNER_PHONE", "+19843250805"):
+                cards = task_board.board(db, now)["cards"]["now"]
+        names = sorted(str(c["name"]) for c in cards)
+        self.assertEqual(names, ["Amaya", "None"])
+
 
 if __name__ == "__main__":
     unittest.main()
