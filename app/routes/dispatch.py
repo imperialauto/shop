@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from app import calendar_feed, pricing
@@ -21,6 +22,7 @@ from app.dispatch import AUTO_POLICIES, LOCKED_POLICIES, MAKES, POLICIES, PROMIS
 from app.appointment_model import Appointment
 from app import alert_rules, business_settings, approval_links, name_finder, next_action, quo_import, website_alerts
 from app.sending_pause import is_paused, pause, resume
+from app import quick_replies
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync, OPEN_STATUSES
 from app.models import Communication, Customer, LineItem, PartsOrder, RepairOrder, Vehicle
 from app.routes.internal_messaging import _find_customer_by_phone, _normalize_phone, require_internal_key
@@ -1060,24 +1062,33 @@ def outbound_result(result: OutboundResult, db: Session = Depends(get_db), _auth
 class HandledInput(BaseModel):
     conversationId: str = Field(min_length=1, max_length=64)
     at: datetime
+    phone: str | None = Field(default=None, max_length=32)
 
 
 @internal_router.post("/handled")
 def handled(report: HandledInput, db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
-    """Closes an open item once someone has answered the customer in Quo."""
-    item = db.query(DispatchItem).filter(
-        DispatchItem.quo_conversation_id == report.conversationId,
-        DispatchItem.status.in_(FOLLOW_UP_STATUSES),
-    ).first()
-    if item is None or _is_owner(item.customer_phone) or _utc(report.at) <= _utc(item.updated_at):
-        return {"closed": False}
-    if item.status == "approved" and _utc(report.at) <= _utc(item.decided_at) + timedelta(minutes=2):
-        return {"closed": False}  # that text is the approved reply itself
-    item.status = "closed"
-    item.decided_at = item.updated_at = datetime.now().astimezone()
-    audit(db, item.id, "system", "replied_in_quo")
+    """Closes every open item for a customer once someone has answered them in Quo.
+
+    Matches the Quo conversation and, when the sender passes it, the customer's
+    phone, so an item that started as a call (or a website request) clears when
+    the owner texts that customer back from Quo or the dashboard.
+    """
+    match = DispatchItem.quo_conversation_id == report.conversationId
+    if report.phone:
+        match = or_(match, DispatchItem.customer_phone == report.phone)
+    items = db.query(DispatchItem).filter(match, DispatchItem.status.in_(FOLLOW_UP_STATUSES)).all()
+    closed = []
+    for item in items:
+        if _is_owner(item.customer_phone) or _utc(report.at) <= _utc(item.updated_at):
+            continue
+        if item.status == "approved" and _utc(report.at) <= _utc(item.decided_at) + timedelta(minutes=2):
+            continue  # that text is the approved reply itself
+        item.status = "closed"
+        item.decided_at = item.updated_at = datetime.now().astimezone()
+        audit(db, item.id, "system", "replied_in_quo")
+        closed.append(item.id)
     db.commit()
-    return {"closed": True}
+    return {"closed": bool(closed), "items": closed}
 
 
 @internal_router.post("/sync")
@@ -1338,7 +1349,7 @@ def _card(db: Session, item: DispatchItem, scheduled: dict[int, datetime], sched
     history, open_ro, estimate = [], None, None
     if customer:
         history = db.query(Communication).filter(Communication.customer_id == customer.id).order_by(
-            Communication.created_at.desc()).limit(3).all()
+            Communication.created_at.desc()).limit(15).all()
         if website_alerts.is_website(item):
             order_id = _website_order_id(item)
             order = db.get(RepairOrder, order_id) if order_id else None
@@ -1354,12 +1365,25 @@ def _card(db: Session, item: DispatchItem, scheduled: dict[int, datetime], sched
         "item": item,
         "customer_name": (f"{customer.first_name or ''} {customer.last_name or ''}".strip() if customer else None) or item.contact_name,
         "reasons": [POLICIES.get(r, r) for r in json.loads(item.approval_reasons)],
-        "history": history,
+        "history": history[:3],
+        # The shop sent the last message and the customer hasn't answered since:
+        # it waits on them, not on the owner.
+        "last_from_us": _last_from_us(item, history),
+        "quick_replies": quick_replies.suggestions(item, customer, history),
         "open_ro": open_ro,
         "estimate": estimate,
         "next_appointment": _appointment_for(item, scheduled, scheduled_jobs),
         "start_job": _start_job_url(customer, item),
     }
+
+
+def _last_from_us(item: DispatchItem, history) -> bool:
+    if not history:
+        return False
+    latest = history[0]
+    if (latest.direction or "").lower() != "outbound" or latest.created_at is None:
+        return False
+    return item.updated_at is None or _utc(latest.created_at) >= _utc(item.updated_at)
 
 
 def _start_job_url(customer, item) -> str:
@@ -1397,6 +1421,7 @@ def dashboard_context(db: Session, view: str = "open") -> dict:
         scheduled, scheduled_jobs = _scheduled_appointments(db)
         items = _select(db, view, scheduled, scheduled_jobs)
         cards = [_card(db, item, scheduled, scheduled_jobs) for item in items]
+        cards.sort(key=lambda card: card["last_from_us"])  # waiting-on-them items sink to the bottom
         health = _sync_health(db)
         paused = is_paused(db)
     except SQLAlchemyError:

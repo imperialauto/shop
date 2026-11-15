@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.imperial_task_model import ImperialTask, ImperialTaskAudit
+from app.imperial_task_model import PROBLEM_CATEGORY, ImperialTask, ImperialTaskAudit
 from app.routes.internal_messaging import require_internal_key
 
 router = APIRouter()
@@ -98,6 +98,7 @@ def owner_dashboard_tasks(db: Session, role: str) -> dict:
     try:
         rows = db.query(ImperialTask).filter(
             ImperialTask.status.in_(("open", "in_progress", "blocked")),
+            ImperialTask.category != PROBLEM_CATEGORY,
         ).order_by(ImperialTask.id.desc()).limit(12).all()
     except Exception:
         # Do not expose database exception detail through the dashboard.
@@ -120,6 +121,7 @@ def open_owner_tasks(
         raise HTTPException(status_code=422, detail="Limit must be between 1 and 25.")
     rows = db.query(ImperialTask).filter(
         ImperialTask.status.in_(("open", "in_progress", "blocked")),
+        ImperialTask.category != PROBLEM_CATEGORY,
     ).order_by(ImperialTask.id.desc()).limit(limit).all()
     return {"tasks": [task_record(task) for task in rows],
             "coverage": "Imperial internal tasks only; Quo and GitHub tasks may be separate."}
@@ -179,6 +181,16 @@ def create_dashboard_task(db, owner_id, title, due):
     ))
     db.commit()
 
+@router.get("/problems")
+def list_problem_reports(
+    db: Session = Depends(get_db),
+    _auth: bool = Depends(require_internal_key),
+    _enabled: bool = Depends(require_tasks_enabled),
+):
+    """For the developers and agents who work the fix list."""
+    return {"problems": [{**task_record(task), "details": task.details} for task in problem_reports(db)]}
+
+
 @router.get("/{task_id}")
 def read_owner_task(
     task_id: int, db: Session = Depends(get_db),
@@ -218,3 +230,35 @@ def quo_sync_ack(
 ):
     from app import quo_task_sync
     return {"acknowledged": quo_task_sync.acknowledge(db, payload.completed)}
+
+
+# ── App problem reports ("Report a problem" button) ─────────────────────────
+# Stored in the existing task table under their own category, so no new
+# migration is needed and they never mix into the owner's to-do lists.
+PROBLEM_SOURCE = "problem_report"
+
+
+def create_problem_report(db, user, page: str, comment: str) -> ImperialTask:
+    comment = (comment or "").strip()
+    if not 3 <= len(comment) <= 4000:
+        raise HTTPException(422, "Describe the problem in 3 to 4000 characters.")
+    page = (page or "")[:300]
+    title = " ".join(comment.split())[:200]
+    event_id = uuid4().hex
+    task = ImperialTask(
+        title=title, source=PROBLEM_SOURCE, external_id=event_id, category=PROBLEM_CATEGORY,
+        project_key="operations",
+        details=f"Page: {page}\nReported by: {getattr(user, 'username', None) or getattr(user, 'id', '?')}\n\n{comment}",
+    )
+    db.add(task)
+    db.flush()
+    db.add(ImperialTaskAudit(task_id=task.id, actor=f"user:{getattr(user, 'id', '?')}", action="reported", event_id=event_id))
+    db.commit()
+    return task
+
+
+def problem_reports(db, include_fixed: bool = False) -> list[ImperialTask]:
+    statuses = ("open", "in_progress", "blocked") + (("done_verified",) if include_fixed else ())
+    return db.query(ImperialTask).filter(
+        ImperialTask.category == PROBLEM_CATEGORY, ImperialTask.status.in_(statuses),
+    ).order_by(ImperialTask.id.desc()).limit(200).all()

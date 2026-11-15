@@ -1,8 +1,8 @@
 {% if calendar_events is defined and calendar_events is not none %}
-<div class="card" style="padding:12px 16px; margin-bottom:12px; font-size:13px; color:var(--imp-muted);">
-  <div style="font-size:13.5px; font-weight:600; color:var(--imp-ink); margin-bottom:6px;">Calendar, next 7 days</div>
-  {% for line in calendar_events %}<div style="overflow-wrap:anywhere;">{{ line }}</div>{% else %}Nothing scheduled.{% endfor %}
-</div>
+<details class="card" style="padding:12px 16px; margin-bottom:12px; font-size:13px; color:var(--imp-muted);">
+  <summary style="cursor:pointer; font-size:13.5px; font-weight:600; color:var(--imp-ink);">Calendar, next 7 days · {{ calendar_events|length }}</summary>
+  <div style="margin-top:6px;">{% for line in calendar_events %}<div style="overflow-wrap:anywhere;">{{ line }}</div>{% else %}Nothing scheduled.{% endfor %}</div>
+</details>
 {% endif %}
 <div class="card" style="padding:0; overflow:hidden; margin-bottom:20px;">
   <div style="padding:14px 16px 12px; border-bottom:1px solid var(--imp-line); display:flex; justify-content:space-between; gap:12px;">
@@ -12,16 +12,21 @@
   {% if imperial_task_snapshot is defined and imperial_task_snapshot.enabled %}
   <section aria-label="Saved Imperial tasks" style="padding:12px 16px; border-bottom:1px solid var(--imp-line);">
     <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:6px;">
-      <strong style="font-size:13px; color:var(--imp-ink);">Saved to-do tasks</strong>
-      <span style="font-size:12px; color:var(--imp-muted);">{{ imperial_task_snapshot.tasks|length }} shown</span>
+      <strong style="font-size:13px; color:var(--imp-ink);">To-do</strong>
+      <a href="/dashboard/tasks" style="font-size:12px; color:var(--imp-muted);">All tasks →</a>
     </div>
     {% if imperial_task_snapshot.error %}
     <p style="color:var(--imp-danger); font-size:12px; margin:0;">{{ imperial_task_snapshot.error }}</p>
     {% elif imperial_task_snapshot.tasks %}
       {% for task in imperial_task_snapshot.tasks %}
-      <div style="display:flex; gap:10px; justify-content:space-between; align-items:flex-start; font-size:12.5px; padding:5px 0;">
-        <span style="color:#d4d4d8; overflow-wrap:anywhere;">#{{ task.id }} {{ task.title }}</span>
-        <span style="color:{{ '#fbbf24' if task.status == 'blocked' else 'var(--imp-muted)' }}; white-space:nowrap;">{{ task.status.replace('_', ' ') }}</span>
+      <div class="task-row">
+        <a href="/dashboard/tasks?task={{ task.id }}" class="task-link">#{{ task.id }} {{ task.title }}{% if task.status == 'blocked' %} <span class="pill pill-warn">waiting on them</span>{% endif %}</a>
+        {% if not read_only %}
+        <form method="post" action="/dashboard/tasks/{{ task.id }}" style="margin:0;">
+          <input type="hidden" name="next" value="/dashboard">
+          <button class="qchip" name="operation" value="complete" aria-label="Mark task {{ task.id }} done">Done</button>
+        </form>
+        {% endif %}
       </div>
       {% endfor %}
     {% else %}
@@ -45,25 +50,18 @@
     {% endfor %}
   </nav>
   {% for row in dispatch_items %}{% set item = row.item %}
-  <details style="border-bottom:1px solid var(--imp-line);"{% if item.urgency == 'safety' or loop.first %} open{% endif %}>
+  <details style="border-bottom:1px solid var(--imp-line);"{% if item.urgency == 'safety' and not row.last_from_us %} open{% endif %}{% if row.last_from_us %} class="waiting-on-them"{% endif %}>
     <summary style="padding:12px 16px; cursor:pointer; color:var(--imp-ink); font-size:13px;">
-      {% if item.urgency == 'safety' %}<strong style="color:var(--imp-danger);">Safety</strong> ·{% elif item.urgency == 'urgent' %}<strong style="color: var(--imp-heading);">Urgent</strong> ·{% endif %}
+      {% if row.last_from_us %}<span class="pill">You replied · waiting on them</span>{% elif item.urgency == 'safety' %}<strong style="color:var(--imp-danger);">Safety</strong> ·{% elif item.urgency == 'urgent' %}<strong style="color: var(--imp-heading);">Urgent</strong> ·{% endif %}
       {{ row.customer_name or item.customer_phone }}{% if item.vehicle_text %} · {{ item.vehicle_text }}{% endif %} · {{ item.category|capitalize }}{% if item.status == 'needs_owner' %} · Your approval{% endif %}
       {% if item.summary %}<span style="display:block; margin-top:3px; color:var(--imp-muted); font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">“{{ item.summary[:90] }}”</span>{% endif %}
     </summary>
     <div style="padding:0 16px 14px; font-size:13px; color:var(--imp-muted);">
       <p style="margin:0 0 8px; overflow-wrap:anywhere;">{{ item.summary or 'No message text.' }}</p>
-      {% if row.reasons %}<p style="margin:0 0 8px;">Why you: {{ row.reasons|join(', ') }}</p>{% endif %}
-      <p style="margin:0 0 8px;">Price or impact: {% if row.estimate is not none %}${{ '%.2f'|format(row.estimate) }} on open RO #{{ row.open_ro.id }}{% else %}Nothing priced yet{% endif %}</p>
-      {% if row.open_ro %}<p style="margin:0 0 8px;">Job: <a href="/ro/{{ row.open_ro.id }}" style="color: var(--imp-heading);">RO #{{ row.open_ro.id }}</a> · {{ row.open_ro.status.replace('_',' ') }}</p>{% endif %}
-      {% if row.next_appointment %}<p style="margin:0 0 8px;">Next appointment is booked.</p>{% endif %}
-      <p style="margin:0 0 8px; display:flex; flex-wrap:wrap; gap:8px;">
-        {% if item.customer_id %}<a class="btn-secondary" href="/customers/{{ item.customer_id }}#file">Customer file</a>{% endif %}
-        {% if not row.open_ro %}<a class="btn-secondary" href="{{ row.start_job }}">Start job</a>{% endif %}
+      <p style="margin:0 0 8px; font-size:12.5px;">
+        {% if row.open_ro %}<a href="/ro/{{ row.open_ro.id }}" style="color: var(--imp-heading);">Job #{{ row.open_ro.id }}</a> · {{ row.open_ro.status.replace('_',' ') }}{% if row.estimate is not none %} · ${{ '%.2f'|format(row.estimate) }}{% endif %}{% else %}No job yet · Nothing priced yet{% endif %}
+        {% if row.next_appointment %} · Appointment booked{% endif %}
       </p>
-      {% if row.history %}<details style="margin-bottom:8px;"><summary style="cursor:pointer;">Recent history</summary>
-        {% for entry in row.history %}<p style="margin:6px 0 0; overflow-wrap:anywhere;">{{ entry.direction|capitalize }}: {{ (entry.body or '')[:160] }}</p>{% endfor %}
-      </details>{% endif %}
       {% if item.status in ('routine', 'needs_owner') %}
       <form method="post" action="/dispatch/{{ item.id }}/decide">
         <input type="hidden" name="expected_message_id" value="{{ item.last_message_id }}">
@@ -71,14 +69,29 @@
         {% if (item.quo_conversation_id or '').startswith('WEB') %}
         <p style="margin:0 0 8px;">Website request: contact this customer by phone.</p>
         {% else %}
-        <label style="display:block; margin-bottom:8px;">Reply to customer
-          <textarea name="reply_text" rows="3" maxlength="1500" class="form-input" style="display:block; margin-top:4px;" placeholder="Write a reply, or leave empty to just mark it handled">{{ item.draft_reply or '' }}</textarea>
-        </label>
+        {% if row.quick_replies %}
+        <div class="chip-row" role="group" aria-label="Quick replies">
+          {% for reply in row.quick_replies %}
+          <button type="button" class="qchip" data-quick-reply="{{ reply.text }}">{{ reply.label }}</button>
+          {% endfor %}
+        </div>
         {% endif %}
-        <div style="display:flex; flex-wrap:wrap; gap:8px;">
-          <button class="btn-primary" name="decision" value="approve">{{ 'Send reply' if item.draft_reply else 'Send or mark handled' }}</button>
-          <button class="btn-secondary" name="decision" value="decline">{{ 'Skip' if item.draft_reply else 'Close' }}</button>
-          <a class="btn-secondary" href="tel:{{ item.customer_phone }}">Call</a>
+        <label class="sr-only" for="reply-{{ item.id }}">Reply to customer</label>
+        <textarea id="reply-{{ item.id }}" name="reply_text" rows="3" maxlength="1500" class="form-input" style="display:block; margin:0 0 8px;" placeholder="Tap a quick reply or type your own">{{ item.draft_reply or '' }}</textarea>
+        {% endif %}
+        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+          <button class="btn-primary" name="decision" value="approve">{{ 'Send' if not (item.quo_conversation_id or '').startswith('WEB') else 'Mark handled' }}</button>
+          <button class="btn-secondary" name="decision" value="decline">Done, no reply</button>
+          <details class="more-menu">
+            <summary class="btn-secondary">More</summary>
+            <div class="more-menu-list">
+              <a href="tel:{{ item.customer_phone }}">Call</a>
+              {% if item.customer_id %}<a href="/customers/{{ item.customer_id }}#file">Customer file</a>{% endif %}
+              {% if not row.open_ro %}<a href="{{ row.start_job }}">Start job</a>{% endif %}
+              {% if row.reasons %}<span>Why you: {{ row.reasons|join(', ') }}</span>{% endif %}
+              {% for entry in row.history %}<span>{{ entry.direction|capitalize }}: {{ (entry.body or '')[:140] }}</span>{% endfor %}
+            </div>
+          </details>
         </div>
       </form>
       {% else %}
@@ -99,7 +112,7 @@
   </div>
   {% endfor %}
   <details style="padding:12px 16px; font-size:13px; color:var(--imp-muted);">
-    <summary style="cursor:pointer;">Approval rules</summary>
+    <summary style="cursor:pointer;">Approval rules (what needs your OK)</summary>
     <form method="post" action="/dispatch/policies" style="margin-top:10px; display:grid; gap:8px;">
       {% for policy in dispatch_policies %}
       <label style="display:flex; justify-content:space-between; gap:12px; align-items:center;">{{ policy.label }}

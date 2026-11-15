@@ -17,6 +17,7 @@
   .mt-card { background: var(--imp-surface); border: 1px solid var(--imp-line); border-radius: var(--imp-radius-card); padding: 14px; display: grid; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
   .mt-card.urgent { border-left: 4px solid var(--imp-danger); }
   .mt-card.overdue { border-left: 4px solid var(--imp-gold); }
+  .mt-card.focused { outline: 2px solid var(--imp-gold); outline-offset: 2px; scroll-margin-top: 80px; }
   .mt-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--imp-muted); }
   .mt-top .age { margin-left: auto; }
   .chip { font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; border-radius: 999px; padding: 3px 9px; background: var(--imp-surface-2); color: var(--imp-ink); }
@@ -73,7 +74,7 @@
 
   {% for card in cards %}
   {% set item = card.item %}
-  <article class="mt-card{% if card.urgent and tab != 'done' %} urgent{% elif card.overdue %} overdue{% endif %}">
+  <article class="mt-card{% if card.urgent and tab != 'done' %} urgent{% elif card.overdue %} overdue{% endif %}{% if request.query_params.get('task') in card.ids.split(',') %} focused{% endif %}" id="task-{{ card.ids.split(',')[0] }}">
     <div class="mt-top">
       <span class="chip gold">{{ card.kind }}</span>
       {% if card.urgent and tab != 'done' %}<span class="chip red">Urgent</span>{% endif %}
@@ -134,4 +135,8 @@
   </div>
   {% endfor %}
 </div>
+<script>
+  // A link to one task scrolls to it.
+  (function () { var el = document.querySelector('.mt-card.focused'); if (el) el.scrollIntoView({ block: 'center' }); })();
+</script>
 {% endblock %}

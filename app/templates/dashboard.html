@@ -41,6 +41,10 @@
   </a>
   {% endif %}
 
+  <div id="queue">
+  {% include "_dispatch.html" %}
+  </div>
+
   {% if home and home.ready %}
   <div class="stat-row">
     <a href="#queue" class="card-sm" style="display:block; text-decoration:none; {% if home.urgent %}border-color:rgba(248,113,113,0.5);{% endif %}">
@@ -75,9 +79,7 @@
   </div>
   {% endif %}
 
-  <div id="queue">
-  {% include "_dispatch.html" %}
-  </div>
+
 
   {% if user.role == 'owner' and dev_work_snapshot and dev_work_snapshot.enabled %}
   <div class="card" id="imperial-development-work" style="margin-bottom:18px;">

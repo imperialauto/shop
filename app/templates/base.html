@@ -15,6 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/imperial.css">
+  <link rel="stylesheet" href="/static/imperial-ui.css">
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
   <style>
     * { box-sizing: border-box; }
@@ -265,6 +266,23 @@
 </nav>
 {% endif %}
 
+{% if user is defined and user %}
+<button type="button" id="problem-fab" class="problem-fab" aria-haspopup="dialog">Report a problem</button>
+<dialog id="problem-dialog" class="problem-dialog" aria-labelledby="problem-title">
+  <form method="post" action="/problems" style="display:grid; gap:10px;">
+    <strong id="problem-title" style="font-size:16px;">What's wrong or missing?</strong>
+    <p style="margin:0; font-size:12.5px; color:var(--imp-muted);">It saves with this page attached, so we can find it and fix it.</p>
+    <input type="hidden" name="page" value="">
+    <textarea name="comment" rows="5" required minlength="3" maxlength="4000" class="form-input" placeholder="e.g. I can't open task #118 from the homepage"></textarea>
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button type="button" class="btn-secondary" data-close>Cancel</button>
+      <button class="btn-primary">Save report</button>
+    </div>
+  </form>
+</dialog>
+{% endif %}
+
+<script src="/static/imperial-ui.js" defer></script>
 <script>
   function toggleSidebar() {
     const s = document.getElementById('sidebar');

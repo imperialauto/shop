@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Fix list — Imperial Auto Care{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Fix list</h1>
+  <a href="/problems{{ '' if fixed else '?fixed=true' }}" class="btn-secondary">{{ 'Open only' if fixed else 'Show fixed' }}</a>
+</div>
+<div class="page-body" style="max-width:760px; display:grid; gap:10px;">
+  <p style="margin:0; color:var(--imp-muted); font-size:13px;">Everything sent with the "Report a problem" button. Developers work this list.</p>
+  {% for task in problems %}
+  <details class="card-sm" id="problem-{{ task.id }}">
+    <summary style="cursor:pointer; display:flex; justify-content:space-between; gap:10px;">
+      <span style="overflow-wrap:anywhere;">#{{ task.id }} {{ task.title }}</span>
+      <span class="pill">{{ 'fixed' if task.status == 'done_verified' else task.created_at.strftime('%b %d') }}</span>
+    </summary>
+    <pre style="white-space:pre-wrap; font-family:inherit; font-size:13px; color:var(--imp-muted); margin:10px 0;">{{ task.details }}</pre>
+    <form method="post" action="/problems/{{ task.id }}">
+      <button class="btn-secondary" name="operation" value="{{ 'reopen' if task.status == 'done_verified' else 'complete' }}">{{ 'Reopen' if task.status == 'done_verified' else 'Mark fixed' }}</button>
+    </form>
+  </details>
+  {% else %}
+  <p style="color:var(--imp-muted);">Nothing reported.</p>
+  {% endfor %}
+</div>
+{% endblock %}

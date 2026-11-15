@@ -12,6 +12,9 @@ def utc_now():
     return datetime.now(timezone.utc)
 
 
+PROBLEM_CATEGORY = "app_problem"  # "Report a problem" entries, kept off to-do lists
+
+
 class ImperialTask(Base):
     __tablename__ = "imperial_tasks"
     id = Column(Integer, primary_key=True)
