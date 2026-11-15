@@ -167,8 +167,18 @@ def view_customer(request: Request, customer_id: int, db: Session = Depends(get_
     show = request.query_params.get("show", "all")
     if show not in file["counts"]:
         show = "all"
+    from app import task_board
+    from app.routes.imperial_tasks import enabled as tasks_enabled
+    from app.sending_pause import is_paused
+    tasks = []
+    if user.role == "owner" and tasks_enabled():
+        try:
+            tasks = task_board.open_for_customer(db, file["conversation_ids"], customer.phone)
+        except Exception:
+            db.rollback()
     return templates.TemplateResponse("customers/detail.html", {
         "request": request, "user": user, "customer": customer, "file": file, "show": show, "tz": PHOENIX,
+        "tasks": tasks, "can_text": user.role in ("owner", "admin", "office"), "sending_paused": _paused(db, is_paused),
     })
 
 
@@ -214,3 +224,11 @@ def update_customer(
     customer.notes = notes or None
     db.commit()
     return RedirectResponse(f"/customers/{customer_id}", status_code=302)
+
+
+def _paused(db, check):
+    try:
+        return check(db)
+    except Exception:
+        db.rollback()
+        return False

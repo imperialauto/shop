@@ -1117,6 +1117,7 @@ def decide(
     expected_message_id: str = Form(...),
     proposed_action: str = Form(default=""),
     reply_text: str = Form(default=""),
+    next_page: str = Form(default="/dashboard", alias="next"),
     db: Session = Depends(get_db),
 ):
     user = get_current_user(request, db)
@@ -1150,7 +1151,80 @@ def decide(
         db.commit()
     except IntegrityError:
         db.rollback()
-    return RedirectResponse("/dashboard", status_code=303)
+    return RedirectResponse(back_to(next_page), status_code=303)
+
+
+def back_to(path: str) -> str:
+    """Return to the page the owner acted from; only this site's own staff pages."""
+    path = (path or "").strip()
+    if not path.startswith("/") or path.startswith("//") or "\\" in path or "://" in path:
+        return "/dashboard"
+    return path[:300]
+
+
+COMPOSE_ROLES = ("owner", "admin", "office")
+
+
+@router.post("/compose")
+def compose(
+    request: Request,
+    phone: str = Form(...),
+    reply_text: str = Form(...),
+    newest_message_id: str = Form(default=""),
+    next_page: str = Form(default="/dashboard", alias="next"),
+    db: Session = Depends(get_db),
+):
+    """Owner writes a text from any page that shows the conversation (customer file, tasks).
+
+    Same path as an approved dashboard reply: queued once, sent by the messaging service only if
+    nothing newer (text or call) arrived after the message the owner was looking at. If an item
+    for this customer is waiting on a reply, this reply answers it.
+    """
+    from uuid import uuid4
+
+    user = get_current_user(request, db)
+    if user.role not in COMPOSE_ROLES:
+        raise HTTPException(403, "Your login can't text customers.")
+    text = reply_text.strip()[:1500]
+    if not text:
+        raise HTTPException(422, "Write a message first.")
+    if is_paused(db):
+        raise HTTPException(409, "Texting is stopped. Resume it before sending.")
+    tail = "".join(c for c in _normalize_phone(phone) if c.isdigit())[-10:]
+    if len(tail) != 10:
+        raise HTTPException(422, "This customer has no phone number on file.")
+    number = "+1" + tail
+    newest_message_id = newest_message_id.strip()[:128]
+    if not newest_message_id:
+        raise HTTPException(409, "The latest messages couldn't be checked. Refresh the page, or reply in Quo.")
+    recent = [row for row in db.query(DispatchItem).order_by(DispatchItem.updated_at.desc()).limit(500)
+              if "".join(c for c in (row.customer_phone or "") if c.isdigit())[-10:] == tail]
+    if any(website_alerts.is_website(row) and row.status in OPEN_STATUSES for row in recent):
+        raise HTTPException(409, "Website requests must be contacted manually.")
+    now = datetime.now().astimezone()
+    item = open_item = next((row for row in recent if row.status in OPEN_STATUSES), None)
+    if item is None:
+        customer = _find_customer_by_phone(db, number)
+        item = DispatchItem(
+            quo_conversation_id=(recent[0].quo_conversation_id if recent else f"manual:{tail}"),
+            customer_phone=number, customer_id=customer.id if customer else None,
+            vehicle_text=recent[0].vehicle_text if recent else None, category="general",
+            summary="Message written by the shop", proposed_action="Sent from Imperial",
+            last_message_id=f"compose:{uuid4().hex}", created_at=now,
+        )
+        db.add(item)
+        db.flush()
+    item.status = "approved"
+    item.decided_by, item.decided_at, item.updated_at = user.id, now, now
+    item.draft_reply = text
+    item.thread_message_id = newest_message_id
+    audit(db, item.id, user.username, "owner_compose" if open_item is None else "owner_approve")
+    db.add(DispatchOutbound(dedupe_key=f"compose:{item.id}:{uuid4().hex}", kind=DASHBOARD_REPLY,
+                            item_id=item.id, status="queued"))
+    if PROMISE.search(text):
+        audit(db, item.id, "system", "follow_up_due", (now + PROMISE_AFTER).isoformat())
+    db.commit()
+    return RedirectResponse(back_to(next_page), status_code=303)
 
 
 @router.post("/{item_id}/close")

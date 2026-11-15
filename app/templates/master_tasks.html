@@ -1,46 +1,137 @@
 {% extends "base.html" %}
 {% block title %}Master Tasks — Imperial Auto Care{% endblock %}
 {% block content %}
+<style>
+  .mt { max-width: 760px; display: grid; gap: 14px; }
+  .mt-jot { display: flex; gap: 8px; background: var(--imp-surface); border: 1px solid var(--imp-line); border-radius: var(--imp-radius-card); padding: 8px; }
+  .mt-jot input[type=text] { flex: 1; min-width: 0; background: transparent; border: 0; color: var(--imp-ink); font-size: 15px; padding: 8px; outline: none; }
+  .mt-jot details { position: relative; }
+  .mt-jot summary { list-style: none; cursor: pointer; color: var(--imp-muted); padding: 10px 6px; font-size: 13px; white-space: nowrap; }
+  .mt-jot summary::-webkit-details-marker { display: none; }
+  .mt-jot .when { position: absolute; right: 0; top: 44px; z-index: 5; background: var(--imp-surface-2); border: 1px solid var(--imp-line); border-radius: var(--imp-radius); padding: 10px; display: grid; gap: 6px; width: 240px; }
+  .mt-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; background: var(--imp-header); border-radius: 999px; padding: 4px; position: sticky; top: 0; z-index: 4; }
+  .mt-tabs a { text-align: center; text-decoration: none; color: var(--imp-muted); font-size: 13.5px; font-weight: 600; padding: 9px 4px; border-radius: 999px; min-height: 40px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .mt-tabs a[aria-current] { background: var(--imp-gold); color: var(--imp-on-gold); }
+  .mt-tabs .n { font-size: 11.5px; font-weight: 700; background: var(--imp-surface-2); color: var(--imp-ink); border-radius: 999px; padding: 1px 7px; }
+  .mt-tabs a[aria-current] .n { background: rgba(26,20,32,.18); color: var(--imp-on-gold); }
+  .mt-card { background: var(--imp-surface); border: 1px solid var(--imp-line); border-radius: var(--imp-radius-card); padding: 14px; display: grid; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+  .mt-card.urgent { border-left: 4px solid var(--imp-danger); }
+  .mt-card.overdue { border-left: 4px solid var(--imp-gold); }
+  .mt-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--imp-muted); }
+  .mt-top .age { margin-left: auto; }
+  .chip { font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; border-radius: 999px; padding: 3px 9px; background: var(--imp-surface-2); color: var(--imp-ink); }
+  .chip.gold { background: var(--imp-gold-tint); color: var(--imp-gold); }
+  .chip.red { background: var(--imp-danger-tint); color: var(--imp-danger); }
+  .chip.green { background: var(--imp-ok-tint); color: var(--imp-ok); }
+  .mt-who { font-family: var(--imp-serif); font-size: 19px; font-weight: 700; color: var(--imp-heading); line-height: 1.2; }
+  .mt-who small { font-family: var(--imp-sans); font-size: 13px; font-weight: 500; color: var(--imp-muted); }
+  .mt-what { font-size: 14px; color: var(--imp-ink); line-height: 1.4; }
+  .mt-older summary { cursor: pointer; font-size: 12.5px; color: var(--imp-muted); }
+  .mt-older p { margin: 6px 0 0; font-size: 12.5px; color: var(--imp-muted); }
+  .mt-reply { display: grid; gap: 6px; }
+  .mt-reply textarea { width: 100%; min-height: 70px; resize: vertical; background: var(--imp-paper); color: var(--imp-ink); border: 1px solid var(--imp-line); border-radius: var(--imp-radius); padding: 10px; font: inherit; font-size: 14px; }
+  .mt-reply .hint { font-size: 11.5px; color: var(--imp-faint); }
+  .mt-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .mt-actions form { display: contents; }
+  .mt-actions button, .mt-actions a { min-height: 40px; padding: 0 14px; font-size: 13px; border-radius: 999px; display: inline-flex; align-items: center; text-decoration: none; cursor: pointer; border: 1px solid var(--imp-line); background: transparent; color: var(--imp-ink); }
+  .mt-actions .done { background: var(--imp-gold); border-color: var(--imp-gold); color: var(--imp-on-gold); font-weight: 700; }
+  .mt-actions .send { background: var(--imp-purple-soft); border-color: var(--imp-purple-soft); color: #fff; font-weight: 700; }
+  .mt-more { position: relative; }
+  .mt-more summary { list-style: none; min-height: 40px; padding: 0 14px; font-size: 13px; border-radius: 999px; display: inline-flex; align-items: center; border: 1px solid var(--imp-line); cursor: pointer; color: var(--imp-ink); }
+  .mt-more summary::-webkit-details-marker { display: none; }
+  .mt-more .sheet { margin-top: 8px; display: grid; gap: 6px; background: var(--imp-surface-2); border-radius: var(--imp-radius); padding: 10px; }
+  .mt-empty { text-align: center; color: var(--imp-muted); padding: 30px 10px; }
+  .mt-stats { font-size: 13px; color: var(--imp-muted); }
+</style>
 <div class="page-header">
   <h1 class="page-title">Master Tasks</h1>
   <a href="/dashboard" class="btn-secondary">Dashboard</a>
 </div>
-<div class="page-body" style="max-width:760px;display:grid;gap:14px">
+<div class="page-body mt">
   {% if read_only %}<p>Saving is paused while Imperial is in read-only mode.</p>{% endif %}
   {% if not read_only %}
-  <form method="post" action="/dashboard/tasks" class="card-sm" style="display:grid;gap:10px">
-    <label for="task-title">New task</label>
-    <input id="task-title" name="title" required minlength="4" maxlength="200">
-    <label for="task-due">Due date and time (Phoenix, optional)</label>
-    <input id="task-due" type="datetime-local" name="due">
-    <button class="btn-primary">Add task</button>
+  <form method="post" action="/dashboard/tasks" class="mt-jot" aria-label="Add a task">
+    <input type="text" name="title" required minlength="4" maxlength="200" placeholder="Jot a task or reminder…" aria-label="New task">
+    <details>
+      <summary>⏰ When</summary>
+      <div class="when">
+        <label for="task-due" style="font-size:12px;color:var(--imp-muted)">Remind me (Phoenix time)</label>
+        <input id="task-due" type="datetime-local" name="due" class="form-input">
+      </div>
+    </details>
+    <button class="btn-primary" style="min-height:40px">Add</button>
   </form>
   {% endif %}
-  <nav aria-label="Filter tasks" style="display:flex;gap:8px">
-    <a href="/dashboard/tasks" class="{{ 'btn-primary' if not done else 'btn-secondary' }}">Open</a>
-    <a href="/dashboard/tasks?done=true" class="{{ 'btn-primary' if done else 'btn-secondary' }}">Done</a>
+
+  <nav class="mt-tabs" aria-label="Task lists">
+    {% for t in tabs %}
+    <a href="/dashboard/tasks?tab={{ t.key }}"{% if t.key == tab %} aria-current="page"{% endif %}>{{ t.label }} <span class="n">{{ t.count }}</span></a>
+    {% endfor %}
   </nav>
-  {% for task in tasks %}
-  <article class="card-sm" style="display:grid;gap:10px;min-width:0;overflow-wrap:anywhere">
-    <div><strong>{{ task.title }}</strong><div>Task #{{ task.id }}{% if task.due_label %} · {{ task.due_label }}{% endif %}</div></div>
-    {% if not read_only %}
-    <form method="post" action="/dashboard/tasks/{{ task.id }}">
-      <button class="btn-secondary" name="operation" value="{{ 'reopen' if done else 'complete' }}">{{ 'Reopen' if done else 'Mark done' }}</button>
-    </form>
-    {% if not done %}
-    <details>
-      <summary>Change due date</summary>
-      <form method="post" action="/dashboard/tasks/{{ task.id }}" style="display:grid;gap:8px;margin-top:8px">
-        <label for="due-{{ task.id }}">Due date and time (Phoenix)</label>
-        <input id="due-{{ task.id }}" name="due" type="datetime-local" required value="{{ task.local_due }}">
-        <button class="btn-secondary" name="operation" value="reschedule">Save due date</button>
-      </form>
+
+  {% if tab == 'done' %}<p class="mt-stats">{{ done_this_week }} task{{ '' if done_this_week == 1 else 's' }} finished in the last 7 days.</p>{% endif %}
+
+  {% for card in cards %}
+  {% set item = card.item %}
+  <article class="mt-card{% if card.urgent and tab != 'done' %} urgent{% elif card.overdue %} overdue{% endif %}">
+    <div class="mt-top">
+      <span class="chip gold">{{ card.kind }}</span>
+      {% if card.urgent and tab != 'done' %}<span class="chip red">Urgent</span>{% endif %}
+      {% if card.due_label %}<span class="chip{{ ' red' if card.overdue else '' }}">{{ 'Overdue · ' if card.overdue else '' }}{{ card.due_label }}</span>{% endif %}
+      {% if card.source == 'quo' %}<span class="chip">Quo</span>{% endif %}
+      <span class="age">{{ card.age }}</span>
+    </div>
+    {% if card.name or card.phone %}
+    <div class="mt-who">{{ card.name or card.phone }}{% if card.vehicle %} <small>· {{ card.vehicle }}</small>{% endif %}</div>
+    {% endif %}
+    <div class="mt-what">{{ card.headline }}</div>
+    {% if card.older %}
+    <details class="mt-older">
+      <summary>{{ card.older|length }} earlier update{{ '' if card.older|length == 1 else 's' }}</summary>
+      {% for old in card.older %}<p>{{ old.created.strftime('%b %d, %-I:%M %p') if old.created else '' }} — {{ old.title }}</p>{% endfor %}
     </details>
     {% endif %}
+
+    {% if tab != 'done' and item and not read_only %}
+    <form method="post" action="/dispatch/{{ item.id }}/decide" class="mt-reply">
+      <input type="hidden" name="expected_message_id" value="{{ item.last_message_id }}">
+      <input type="hidden" name="next" value="/dashboard/tasks?tab={{ tab }}">
+      <textarea name="reply_text" maxlength="1500" placeholder="Write a reply…" aria-label="Reply to {{ card.name or card.phone }}">{{ item.draft_reply or '' }}</textarea>
+      <span class="hint">{% if item.draft_reply %}Imperial's draft. Edit it, then send.{% else %}No draft yet. Write your own.{% endif %}{% if sending_paused %} Texting is stopped, so sending won't work until you resume it.{% endif %} Nothing goes out until you press Send.</span>
+      <div class="mt-actions"><button class="send" name="decision" value="approve">Send</button></div>
+    </form>
+    {% endif %}
+
+    {% if not read_only %}
+    <div class="mt-actions">
+      {% if tab == 'done' %}
+      <form method="post" action="/dashboard/tasks/group"><input type="hidden" name="ids" value="{{ card.ids }}"><input type="hidden" name="tab" value="{{ tab }}"><button name="operation" value="reopen">Reopen</button></form>
+      {% else %}
+      <form method="post" action="/dashboard/tasks/group"><input type="hidden" name="ids" value="{{ card.ids }}"><input type="hidden" name="tab" value="{{ tab }}"><button class="done" name="operation" value="complete">✓ Done</button></form>
+      {% if tab != 'waiting' %}<form method="post" action="/dashboard/tasks/group"><input type="hidden" name="ids" value="{{ card.ids }}"><input type="hidden" name="tab" value="{{ tab }}"><button name="operation" value="wait">Waiting on them</button></form>{% else %}<form method="post" action="/dashboard/tasks/group"><input type="hidden" name="ids" value="{{ card.ids }}"><input type="hidden" name="tab" value="{{ tab }}"><button name="operation" value="now">Back to Now</button></form>{% endif %}
+      <form method="post" action="/dashboard/tasks/group"><input type="hidden" name="ids" value="{{ card.ids }}"><input type="hidden" name="tab" value="{{ tab }}"><button name="operation" value="tomorrow">Tomorrow</button></form>
+      {% endif %}
+      {% if card.phone %}<a href="tel:{{ card.phone }}">Call</a>{% endif %}
+      {% if card.customer_id %}<a href="/customers/{{ card.customer_id }}#file">File</a>{% endif %}
+      {% if tab != 'done' %}
+      <details class="mt-more">
+        <summary>Pick a time</summary>
+        <form method="post" action="/dashboard/tasks/group" class="sheet">
+          <input type="hidden" name="ids" value="{{ card.ids }}"><input type="hidden" name="tab" value="{{ tab }}">
+          <label style="font-size:12px;color:var(--imp-muted)">Remind me (Phoenix time)
+            <input type="datetime-local" name="due" required value="{{ card.local_due }}" class="form-input" style="display:block;margin-top:4px">
+          </label>
+          <button name="operation" value="reschedule" class="btn-secondary">Save</button>
+        </form>
+      </details>
+      {% endif %}
+    </div>
     {% endif %}
   </article>
   {% else %}
-  <p>{{ 'No completed tasks.' if done else 'No open tasks.' }}</p>
+  <div class="mt-empty">
+    {% if tab == 'now' %}Nothing needs you right now.{% elif tab == 'waiting' %}Nothing waiting on anyone.{% elif tab == 'later' %}Nothing scheduled for later.{% else %}Nothing finished in the last 7 days.{% endif %}
+  </div>
   {% endfor %}
 </div>
 {% endblock %}

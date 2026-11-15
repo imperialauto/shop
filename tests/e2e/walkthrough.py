@@ -78,26 +78,26 @@ def flows(page, device):
         page.goto(BASE + "/dashboard")
         page.get_by_role("link", name="Master Tasks", exact=True).click()
         page.wait_for_url("**/dashboard/tasks")
+        page.goto(BASE + "/dashboard/tasks?tab=later")  # due in 2027, so it waits under Later
         task = page.locator("article").filter(has_text=title)
         assert task.count() == 1
         assert "11:00 AM" in task.inner_text()
-        task.get_by_text("Change due date", exact=True).click()
-        task.get_by_label("Due date and time (Phoenix)").fill("2027-01-08T14:00")
-        task.get_by_role("button", name="Save due date").click()
-        assert "02:00 PM" in task.inner_text()
+        task.get_by_text("Pick a time", exact=True).click()
+        task.get_by_label("Remind me (Phoenix time)").fill("2027-01-08T14:00")
+        task.get_by_role("button", name="Save").click()
+        assert "2:00 PM" in task.inner_text()
         measure(page, "master-tasks", device, 200, [])
-        task.get_by_role("button", name="Mark done").click()
+        task.get_by_role("button", name="✓ Done").click()
         assert task.count() == 0
-        page.get_by_role("link", name="Done", exact=True).click()
-        page.wait_for_url("**/dashboard/tasks?done=true")
+        page.goto(BASE + "/dashboard/tasks?tab=done")
         assert task.is_visible()
         task.get_by_role("button", name="Reopen").click()
-        page.wait_for_url("**/dashboard/tasks")
+        page.goto(BASE + "/dashboard/tasks?tab=later")
         assert task.is_visible()
 
         created_title = "Dashboard task for " + device
         page.get_by_label("New task", exact=True).fill(created_title)
-        page.get_by_role("button", name="Add task").click()
+        page.get_by_role("button", name="Add", exact=True).click()
         assert page.locator("article").filter(has_text=created_title).is_visible()
         stored = page.request.get(
             BASE + f"/internal/imperial/tasks/{task_id}",

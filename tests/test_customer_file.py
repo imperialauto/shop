@@ -93,7 +93,7 @@ class CustomerFileTests(unittest.TestCase):
         self.assertIn("Customer approved a repair on job #7", titles)
         self.assertIn("Customer declined a repair on job #7", titles)
         self.assertIn("Waiting on customer approval for job #7", titles)
-        self.assertIn("Queue item #1 · estimate", titles)
+        self.assertIn("Imperial note · estimate", titles)  # its own words, not a copy of a text
         self.assertNotIn("Not Pat", [e["detail"] for e in f["entries"]])
         self.assertEqual([e["at"] for e in f["entries"]], sorted((e["at"] for e in f["entries"]), reverse=True))
         self.assertEqual(f["money"], {"billed": 380.0, "paid": 100.0, "balance": 280.0})
@@ -155,3 +155,31 @@ class CustomerFileTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CustomerFileDedupeTests(unittest.TestCase):
+    def test_queue_item_repeating_a_text_is_not_shown_twice(self):
+        from datetime import datetime, timezone
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+        from app import customer_file
+        item = SimpleNamespace(id=5, quo_conversation_id="CN9", customer_phone="+16232049200", status="needs_owner",
+                               summary="Hello is it possible to schedule for Monday instead?", category="scheduling",
+                               vehicle_text="2003 Chevrolet Suburban", created_at=datetime(2026, 11, 13, tzinfo=timezone.utc),
+                               updated_at=datetime(2026, 11, 14, tzinfo=timezone.utc))
+        db = MagicMock()
+        def query(model):
+            q = MagicMock()
+            q.filter.return_value.all.return_value = [item] if model is customer_file.DispatchItem else []
+            return q
+        db.query.side_effect = query
+        customer = SimpleNamespace(id=1, phone="(623) 204-9200")
+        texts = {"messages": [{"id": "AC1", "direction": "INBOUND", "createdAt": "2026-11-14T20:10:00Z",
+                               "body": "Hello is it possible to schedule for Monday instead?"},
+                              {"id": "AC0", "direction": "OUTBOUND", "createdAt": "2026-11-13T22:03:00Z", "body": "Sounds good"}]}
+        fetch = lambda path, phone: ((texts, None) if path == "/conversation" else ({"calls": []}, None))
+        out = customer_file.build(db, customer, fetch=fetch)
+        self.assertEqual([e["title"] for e in out["entries"]], ["Customer texted", "Shop texted"])
+        self.assertEqual(out["newest_message_id"], "AC1")
+        self.assertIs(out["open_item"], item)
+        self.assertEqual(out["mentioned_vehicle"], "2003 Chevrolet Suburban")

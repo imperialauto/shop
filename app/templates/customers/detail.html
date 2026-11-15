@@ -24,6 +24,42 @@
   </div>
 </div>
 
+{% set item = file.open_item %}
+{% set mv = file.mentioned_vehicle %}
+<section class="card mb-4" aria-label="Right now" style="display:grid;gap:10px;border-color:rgba(234,210,114,.45)">
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <h3 class="text-xs text-stone-400 uppercase tracking-wide">Right now</h3>
+    <div class="flex flex-wrap gap-2">
+      {% if customer.phone %}<a href="tel:{{ customer.phone }}" class="btn-secondary">Call</a>{% endif %}
+      {% if tasks %}<a href="/dashboard/tasks" class="btn-secondary">{{ tasks|length }} open task{{ '' if tasks|length == 1 else 's' }}</a>{% endif %}
+    </div>
+  </div>
+  {% if item %}
+  <p class="text-sm"><strong>Waiting on you:</strong> “{{ (item.summary or '')[:220] }}”</p>
+  {% if item.proposed_action and not item.draft_reply %}<p class="text-sm text-stone-400">Next step: {{ item.proposed_action }}</p>{% endif %}
+  {% elif tasks %}
+  <p class="text-sm"><strong>{{ tasks[0].kind }}:</strong> {{ tasks[0].title }}</p>
+  {% else %}
+  <p class="text-sm text-stone-400">Nothing waiting on you for this customer.</p>
+  {% endif %}
+  {% if mv and not customer.vehicles %}
+  {% set words = mv.split() %}
+  <p class="text-sm">Vehicle they mentioned: <strong>{{ mv }}</strong> ·
+    <a class="text-gold-400 underline" href="/vehicles/new?customer_id={{ customer.id }}{% if words and words[0]|length == 4 and words[0].isdigit() %}&year={{ words[0] }}&make={{ words[1] if words|length > 1 else '' }}&model={{ words[2:]|join(' ') }}{% endif %}">Save it to the file</a></p>
+  {% endif %}
+  {% if can_text and customer.phone %}
+  <form method="post" action="/dispatch/compose" style="display:grid;gap:6px">
+    <input type="hidden" name="phone" value="{{ customer.phone }}">
+    <input type="hidden" name="newest_message_id" value="{{ file.newest_message_id or '' }}">
+    <input type="hidden" name="next" value="/customers/{{ customer.id }}#file">
+    <label for="reply-text" class="text-xs text-stone-400">Text {{ customer.first_name if customer.first_name and not customer.first_name.lower().startswith('unknown') else 'this customer' }}</label>
+    <textarea id="reply-text" name="reply_text" rows="3" maxlength="1500" required class="form-input" placeholder="Write a text…">{{ item.draft_reply if item and item.draft_reply else '' }}</textarea>
+    <p class="text-xs text-stone-500">{% if item and item.draft_reply %}Imperial's draft. Edit it, then send. {% endif %}{% if not file.newest_message_id %}Texts couldn't be checked right now, so sending is off. Refresh, or reply in Quo.{% elif sending_paused %}Texting is stopped. Resume it on the dashboard to send.{% else %}It won't send if a newer text or call comes in first.{% endif %}</p>
+    <div><button class="btn-primary"{% if not file.newest_message_id or sending_paused %} disabled{% endif %}>Send text</button></div>
+  </form>
+  {% endif %}
+</section>
+
 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
   <div class="card">
     <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Contact</h3>

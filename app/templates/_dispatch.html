@@ -67,15 +67,16 @@
       {% if item.status in ('routine', 'needs_owner') %}
       <form method="post" action="/dispatch/{{ item.id }}/decide">
         <input type="hidden" name="expected_message_id" value="{{ item.last_message_id }}">
-        {% if item.draft_reply %}
-        <label style="display:block; margin-bottom:8px;">Reply to customer
-          <textarea name="reply_text" rows="3" maxlength="1500" class="form-input" style="display:block; margin-top:4px;">{{ item.draft_reply }}</textarea>
-        </label>
+        {% if not item.draft_reply and item.proposed_action %}<p style="margin:0 0 8px; overflow-wrap:anywhere;">Next step: {{ item.proposed_action }}</p>{% endif %}
+        {% if (item.quo_conversation_id or '').startswith('WEB') %}
+        <p style="margin:0 0 8px;">Website request: contact this customer by phone.</p>
         {% else %}
-        <p style="margin:0 0 8px; overflow-wrap:anywhere;">Next step: {{ item.proposed_action }}</p>
+        <label style="display:block; margin-bottom:8px;">Reply to customer
+          <textarea name="reply_text" rows="3" maxlength="1500" class="form-input" style="display:block; margin-top:4px;" placeholder="Write a reply, or leave empty to just mark it handled">{{ item.draft_reply or '' }}</textarea>
+        </label>
         {% endif %}
         <div style="display:flex; flex-wrap:wrap; gap:8px;">
-          <button class="btn-primary" name="decision" value="approve">{{ 'Send reply' if item.draft_reply else 'Mark handled' }}</button>
+          <button class="btn-primary" name="decision" value="approve">{{ 'Send reply' if item.draft_reply else 'Send or mark handled' }}</button>
           <button class="btn-secondary" name="decision" value="decline">{{ 'Skip' if item.draft_reply else 'Close' }}</button>
           <a class="btn-secondary" href="tel:{{ item.customer_phone }}">Call</a>
         </div>

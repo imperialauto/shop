@@ -371,25 +371,16 @@ def tracker_due(value: str):
 
 
 @app.get("/dashboard/tasks", response_class=HTMLResponse)
-def master_tasks(request: Request, done: bool = False, db: Session = Depends(get_db),
+def master_tasks(request: Request, tab: str = "now", done: bool = False, db: Session = Depends(get_db),
                  user: User = Depends(require_tracker_owner)):
-    from app.appointments import PHOENIX
-    from datetime import timezone
+    from app import task_board
 
-    query = db.query(imperial_tasks.ImperialTask)
-    model = imperial_tasks.ImperialTask
-    query = query.filter(model.status == "done_verified" if done else model.status.in_(("open", "in_progress", "blocked")))
-    tasks = []
-    for row in query.order_by(model.due_at.asc().nulls_last(), model.id.desc()).all():
-        due = row.due_at
-        if due:
-            due = (due if due.tzinfo else due.replace(tzinfo=timezone.utc)).astimezone(PHOENIX)
-        tasks.append({**imperial_tasks.task_record(row),
-                      "local_due": due.strftime("%Y-%m-%dT%H:%M") if due else "",
-                      "due_label": due.strftime("%b %d, %I:%M %p") if due else ""})
+    tab = "done" if done else (tab if tab in task_board.TABS else "now")
+    data = task_board.board(db)
     return templates.TemplateResponse("master_tasks.html", {
-        "request": request, "user": user, "tasks": tasks, "done": done,
-        "read_only": app.state.read_only,
+        "request": request, "user": user, "tab": tab, "cards": data["cards"][tab], "tabs": data["tabs"],
+        "done_this_week": data["done_this_week"], "read_only": app.state.read_only,
+        "sending_paused": dispatch.is_paused(db),
     })
 
 
@@ -400,12 +391,41 @@ def save_master_task(title: str = Form(...), due: str = Form(""),
     return RedirectResponse("/dashboard/tasks", status_code=303)
 
 
+@app.post("/dashboard/tasks/group")
+def update_task_group(ids: str = Form(...), operation: str = Form(...), due: str = Form(""), tab: str = Form("now"),
+                      db: Session = Depends(get_db), user: User = Depends(require_tracker_owner)):
+    """One tap acts on every task in a card (all of one customer's stacked Quo updates)."""
+    from uuid import uuid4
+    from app import task_board
+
+    if operation not in ("complete", "reopen", "wait", "tomorrow", "reschedule", "now"):
+        raise HTTPException(422, "Unknown task action.")
+    task_ids = [int(part) for part in ids.split(",") if part.strip().isdigit()][:50]
+    if not task_ids:
+        raise HTTPException(422, "No tasks selected.")
+    when = task_board.tomorrow_morning() if operation == "tomorrow" else tracker_due(due)
+    for task_id in task_ids:
+        if operation in ("tomorrow", "reschedule"):
+            if when is None:
+                raise HTTPException(422, "Pick a date and time.")
+            steps = [("reopen", None), ("reschedule", when)]
+        elif operation == "now":
+            steps = [("reopen", None)]
+        else:
+            steps = [(operation, None)]
+        for step, due_at in steps:
+            change = imperial_tasks.OwnerTaskChange(messageId=uuid4().hex, operation=step, dueAt=due_at)
+            imperial_tasks.change_task(db, task_id, change, f"owner:{user.id}")
+    tab = tab if tab in task_board.TABS else "now"
+    return RedirectResponse(f"/dashboard/tasks?tab={tab}", status_code=303)
+
+
 @app.post("/dashboard/tasks/{task_id}")
 def update_master_task(task_id: int, operation: str = Form(...), due: str = Form(""),
                        db: Session = Depends(get_db), user: User = Depends(require_tracker_owner)):
     from uuid import uuid4
 
-    if operation not in ("complete", "reopen", "reschedule"):
+    if operation not in ("complete", "reopen", "reschedule", "wait"):
         raise HTTPException(422, "Unknown task action.")
     change = imperial_tasks.OwnerTaskChange(
         messageId=uuid4().hex, operation=operation, dueAt=tracker_due(due),

@@ -127,7 +127,7 @@ def open_owner_tasks(
 
 class OwnerTaskChange(BaseModel):
     messageId: str = Field(min_length=1, max_length=128)
-    operation: Literal["complete", "reopen", "reschedule"]
+    operation: Literal["complete", "reopen", "reschedule", "wait"]
     dueAt: AwareDatetime | None = None
 
 
@@ -144,6 +144,8 @@ def change_task(db, task_id, change, actor):
         if change.dueAt is None:
             raise HTTPException(422, "A date and time are required.")
         task.due_at = change.dueAt.astimezone(timezone.utc)
+    elif change.operation == "wait":
+        task.status = "blocked"  # shown as "Waiting on them"
     else:
         task.status = "done_verified" if change.operation == "complete" else "open"
     task.updated_at = datetime.now(timezone.utc)
@@ -187,3 +189,32 @@ def read_owner_task(
     if not task:
         raise HTTPException(404, "Imperial task not found.")
     return task_record(task)
+
+
+class QuoTaskBatch(BaseModel):
+    tasks: list[dict] = Field(default_factory=list, max_length=1000)
+
+
+class QuoTaskAck(BaseModel):
+    completed: list[str] = Field(default_factory=list, max_length=200)
+
+
+@router.post("/quo-sync")
+def quo_sync(
+    payload: QuoTaskBatch, db: Session = Depends(get_db),
+    _auth: bool = Depends(require_internal_key),
+    _enabled: bool = Depends(require_tasks_enabled),
+):
+    """Messaging service posts Quo's task list; gets back tasks to mark done in Quo."""
+    from app import quo_task_sync
+    return quo_task_sync.sync(db, payload.tasks)
+
+
+@router.post("/quo-sync/ack")
+def quo_sync_ack(
+    payload: QuoTaskAck, db: Session = Depends(get_db),
+    _auth: bool = Depends(require_internal_key),
+    _enabled: bool = Depends(require_tasks_enabled),
+):
+    from app import quo_task_sync
+    return {"acknowledged": quo_task_sync.acknowledge(db, payload.completed)}

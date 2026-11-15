@@ -42,14 +42,14 @@
         <select name="year" id="year-select" class="form-input">
           <option value="">Year</option>
           {% for y in range(2027, 1984, -1) %}
-          <option value="{{ y }}" {% if vehicle and vehicle.year == y %}selected{% endif %}>{{ y }}</option>
+          <option value="{{ y }}" {% if (vehicle and vehicle.year == y) or (not vehicle and request.query_params.get('year') == y|string) %}selected{% endif %}>{{ y }}</option>
           {% endfor %}
         </select>
       </div>
       <div>
         <label class="form-label">Make</label>
         <input type="text" name="make" id="make-input"
-          value="{{ vehicle.make if vehicle else '' }}"
+          value="{{ vehicle.make if vehicle else request.query_params.get('make', '')[:40] }}"
           class="form-input" list="makes-list" placeholder="Ford" autocomplete="off" />
         <datalist id="makes-list">
           {% for m in makes %}<option value="{{ m }}">{% endfor %}
@@ -58,7 +58,7 @@
       <div>
         <label class="form-label">Model</label>
         <input type="text" name="model" id="model-input"
-          value="{{ vehicle.model if vehicle else '' }}"
+          value="{{ vehicle.model if vehicle else request.query_params.get('model', '')[:40] }}"
           class="form-input" list="models-list" placeholder="F-250" autocomplete="off" />
         <datalist id="models-list">
           {% for make, models in diesel_models.items() %}
