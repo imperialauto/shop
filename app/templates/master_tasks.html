@@ -86,7 +86,17 @@
   </nav>
 
   {% if tab == 'done' %}<p class="mt-stats">{{ done_this_week }} task{{ '' if done_this_week == 1 else 's' }} finished in the last 7 days.</p>{% endif %}
-  {% if tab == 'followup' %}<p class="mt-stats">Last text sent {{ followup_days }} or more days ago with no customer reply. <a href="/settings/business#task-followup-days">Change timing</a></p>{% endif %}
+  {% if tab == 'followup' %}
+  <p class="mt-stats">Unanswered conversations and estimates due for a check-in. <a href="/settings/business#task-followup-days">Change timing</a></p>
+  {% set reasons = {'unanswered': 'Needs a shop reply', 'waiting': 'Waiting for customer', 'estimate': 'Estimate sent', 'reactivate': 'Stalled service lead', 'missed_visit': 'Missed visit'} %}
+  {% set delivery = {'due': 'Due', 'reserved': 'Send unconfirmed', 'sent': 'Sent via Quo', 'failed': 'Send failed', 'skipped': 'Skipped after verification'} %}
+  {% for reminder in customer_outreach %}
+  <a class="mt-card" href="/customers/{{ reminder.customer.id }}#file">
+    <strong>{{ reminder.customer.first_name }} {{ reminder.customer.last_name }}</strong>
+    <span>{{ reasons[reminder.reason] }} · {{ reminder.when.strftime('%a %b %d, %-I:%M %p') }} · {{ delivery.get(reminder.status, reminder.status) }}</span>
+  </a>
+  {% endfor %}
+  {% endif %}
 
   {% for card in cards %}
   {% set item = card.item %}
@@ -164,7 +174,7 @@
   </article>
   {% else %}
   <div class="mt-empty">
-    {% if tab == 'now' %}Nothing needs you right now.{% elif tab == 'waiting' %}Nothing waiting on anyone.{% elif tab == 'followup' %}No customer follow-ups due.{% elif tab == 'later' %}Nothing scheduled for later.{% else %}Nothing finished in the last 7 days.{% endif %}
+    {% if tab == 'now' %}Nothing needs you right now.{% elif tab == 'waiting' %}Nothing waiting on anyone.{% elif tab == 'followup' and not customer_outreach %}No customer follow-ups due.{% elif tab == 'later' %}Nothing scheduled for later.{% elif tab == 'done' %}Nothing finished in the last 7 days.{% endif %}
   </div>
   {% endfor %}
 </div>

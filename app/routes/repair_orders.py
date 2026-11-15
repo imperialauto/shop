@@ -8,7 +8,8 @@ from app.database import get_db
 from app.models import RepairOrder, Customer, Vehicle, User, LineItem, Communication, PartsOrder
 from app.auth import get_current_user
 from app.config import GOOGLE_REVIEW_LINK
-from app import approval_links, customer_file, cycle_time, next_action, ro_status_policy, website_alerts
+from app import approval_links, customer_file, cycle_time, customer_followups, next_action, ro_status_policy, website_alerts
+from app.dispatch_model import DispatchAudit
 from app.routes import local_node
 import os, secrets
 
@@ -191,6 +192,7 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         "timeline": cycle_time.for_job(db, ro) if user.role in ("owner", "admin") else None,
         "open_invoice": next((i for i in ro.invoices if i.status != "void"), None),
         "ai_review": local_node.job_panel(db, ro),
+        "offsite_estimate": customer_followups.offsite_estimate_at(db, ro.id) is not None,
     })
 
 
@@ -277,6 +279,19 @@ def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db)
             db.commit()
             link = f"queued{item.id}"
     return RedirectResponse(f"/ro/{ro_id}?asked={len(fresh)}&link={link}", status_code=302)
+
+
+@router.post("/{ro_id}/estimate-location")
+def set_estimate_location(request: Request, ro_id: int, offsite: str = Form(""), db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if user.role not in ("owner", "admin", "office"):
+        raise HTTPException(403, "Only office staff can change the estimate follow-up location.")
+    if db.get(RepairOrder, ro_id) is None:
+        raise HTTPException(404, "Repair order not found.")
+    db.add(DispatchAudit(actor=user.username, action="followup_offsite_estimate" if offsite == "yes"
+                         else "followup_vehicle_present", detail=str(ro_id)))
+    db.commit()
+    return RedirectResponse(f"/ro/{ro_id}#line-items", status_code=303)
 
 
 @router.post("/{ro_id}/assign")

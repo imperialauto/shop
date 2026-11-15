@@ -195,8 +195,15 @@ async function ackQuoTasks(completed) {
   return request("/internal/imperial/tasks/quo-sync/ack", { method: "POST", body: JSON.stringify({ completed }) });
 }
 
-async function dispatchTick() {
-  return request("/internal/dispatch/tick", { method: "POST", body: "{}" });
+async function dispatchTick({ ownerTexts = true } = {}) {
+  const path = ownerTexts ? "/internal/dispatch/tick" : "/internal/dispatch/tick?owner_texts=false";
+  return request(path, { method: "POST", body: "{}" });
+}
+
+async function checkCustomerFollowup({ key, customerId, phone, messageId, callId }) {
+  return request("/internal/dispatch/followup-check", {
+    method: "POST", body: JSON.stringify({ key, customerId, phone, messageId, callId }),
+  });
 }
 
 async function dispatchOutbound({ key, status }) {
@@ -210,7 +217,7 @@ async function dispatchOutbound({ key, status }) {
 
 module.exports = {
   configured, getContext, getContextStrict, getSigningLink, logCommunication,
-  dispatchIntake, dispatchOwnerAction, dispatchHandled, dispatchSync, dispatchTick, dispatchOutbound, dispatchDraft,
+  dispatchIntake, dispatchOwnerAction, dispatchHandled, dispatchSync, dispatchTick, dispatchOutbound, dispatchDraft, checkCustomerFollowup,
   captureOwnerTask, readOwnerTask, changeOwnerTask, openOwnerTasks, syncQuoTasks, ackQuoTasks, submitDevelopmentWork, listDevelopmentWork,
 };
 
