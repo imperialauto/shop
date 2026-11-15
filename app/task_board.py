@@ -32,7 +32,7 @@ def _digits(phone):
 def _customer_name(customer):
     if not customer:
         return None
-    name = f"{customer.first_name or ''} {customer.last_name or ''}".strip()
+    name = f"{customer.first_name or ''} {customer.last_name or ''}".strip().rstrip("-").strip()
     return None if not name or name.lower().startswith("unknown") else name
 
 

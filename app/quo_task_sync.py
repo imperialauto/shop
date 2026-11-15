@@ -119,6 +119,13 @@ def sync(db, tasks: list[dict]) -> dict:
                 task.status = "done_verified"
                 _audit(db, task, "complete", f"quo-done:{task_id}")
                 closed += 1
+        # Quo "AWAITING ..." tasks belong under Waiting unless the owner already moved them.
+        if (task.status == "open" and label(title)["kind"] == "Waiting"
+                and not db.query(ImperialTaskAudit).filter(ImperialTaskAudit.task_id == task.id,
+                                                           ImperialTaskAudit.actor != ACTOR).first()):
+            task.status = "blocked"
+            _audit(db, task, "wait", f"quo-awaiting:{task_id}")
+            updated += 1
         if (task.title, task.details, task.due_at) != before:
             task.updated_at = now
             updated += 1
