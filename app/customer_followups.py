@@ -106,7 +106,7 @@ def _activity(db, customer, orders, now):
     return None
 
 
-def _rule(db, orders, anchor, at, now):
+def _rule(db, orders, anchor, at, now, possible_drop_by):
     order_ids = [order.id for order in orders]
     appointments = db.query(Appointment).filter(Appointment.repair_order_id.in_(order_ids)).all()
     if any(a.status in ("tentative", "confirmed") and utc(a.ends_at) > now for a in appointments):
@@ -142,7 +142,7 @@ def _rule(db, orders, anchor, at, now):
         return "reactivate"
     if now - at < timedelta(days=1):
         return None
-    if anchor and POSSIBLE_DROP_BY.search(anchor.body or ""):
+    if possible_drop_by:
         return None
     return "unanswered" if anchor is None or anchor.direction == INBOUND else "waiting"
 
@@ -164,7 +164,9 @@ def candidate(db, customer, now):
             ServiceLead.resolved_at >= at,
     ).first():
         return None
-    rule = _rule(db, orders, anchor, at, now)
+    possible_drop_by = bool(anchor and POSSIBLE_DROP_BY.search(anchor.body or "")
+                            or item and POSSIBLE_DROP_BY.search(item.summary or ""))
+    rule = _rule(db, orders, anchor, at, now, possible_drop_by)
     if not rule:
         return None
     if latest and latest.body in MESSAGES.values() and (
