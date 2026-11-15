@@ -76,7 +76,13 @@ def build(db: Session, customer: Customer, fetch=None) -> dict:
         problems["text"] = problems["call"] = "no_phone"
 
     seen = set()
+    bodies = set()
+    newest = None
     for m in (texts or {}).get("messages", []):
+        bodies.add(" ".join((m.get("body") or "").split()).lower())
+        when = _utc(m.get("createdAt"))
+        if m.get("id") and when and (newest is None or when > newest[0]):
+            newest = (when, m.get("id"))
         seen.add(m.get("id"))
         inbound = m.get("direction") == "INBOUND"
         entries.append(_entry("text", m.get("createdAt"), "Customer texted" if inbound else "Shop texted",
@@ -147,10 +153,18 @@ def build(db: Session, customer: Customer, fetch=None) -> dict:
         known = {i.id for i in items}
         items += [i for i in db.query(DispatchItem).filter(DispatchItem.customer_id.is_(None)).all()
                   if i.id not in known and digits(i.customer_phone) == phone]
-    for item in items:
-        source = "Website request" if (item.quo_conversation_id or "").startswith("WEB") else "Queue item"
-        entries.append(_entry("job", item.created_at, f"{source} #{item.id} · {item.category.replace('_', ' ')}",
-                              item.summary, link="/#queue"))
+    open_item = None
+    for item in sorted(items, key=lambda i: _utc(i.updated_at) or _utc(i.created_at) or datetime.min.replace(tzinfo=timezone.utc)):
+        if item.status in ("routine", "needs_owner"):
+            open_item = item
+        website = (item.quo_conversation_id or "").startswith("WEB")
+        said = " ".join((item.summary or "").split()).lower()
+        # A queue item for a text repeats that text; the text itself is already in the file.
+        if not website and (not said or said in bodies or item.summary == "Message written by the shop"):
+            continue
+        source = "Website request" if website else "Imperial note"
+        entries.append(_entry("job", item.created_at, f"{source} · {item.category.replace('_', ' ')}",
+                              item.summary, link="/dashboard"))
 
     entries = [e for e in entries if e["at"]]
     entries.sort(key=lambda e: e["at"], reverse=True)
@@ -161,4 +175,10 @@ def build(db: Session, customer: Customer, fetch=None) -> dict:
         "filters": FILTERS,
         "problems": {k: v for k, v in problems.items() if v},
         "money": {"billed": billed, "paid": paid, "balance": round(billed - paid, 2)},
+        # For the reply box: the newest live text, so a reply never goes out over a newer one.
+        "newest_message_id": newest[1] if newest else None,
+        "open_item": open_item,
+        "mentioned_vehicle": next((i.vehicle_text for i in sorted(items, key=lambda i: i.id, reverse=True)
+                                   if i.vehicle_text), None),
+        "conversation_ids": sorted({i.quo_conversation_id for i in items if i.quo_conversation_id}),
     }

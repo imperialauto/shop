@@ -73,7 +73,7 @@ const shopClient = require("../messaging/src/lib/shopClient");
   await makeResult(`Move task #${reminderId} to tomorrow at 2 PM`, "synthetic-reschedule");
   assert.match(delivered.at(-1), /2:00 PM Phoenix time/);
 
-  const tracker = await fetch(base + "/dashboard/tasks", { headers: { Cookie: cookie } });
+  const tracker = await fetch(base + "/dashboard/tasks?tab=later", { headers: { Cookie: cookie } });
   assert.equal(tracker.status, 200);
   assert.match(await tracker.text(), /check the synthetic Fusion tank/);
   const complete = await fetch(base + "/dashboard/tasks/" + reminderId, {

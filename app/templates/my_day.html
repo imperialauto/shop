@@ -6,6 +6,43 @@
 
 {% macro vehicle(ro) %}{{ ro.vehicle.label }}{% endmacro %}
 
+{% if owner %}
+<style>
+  .md-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:14px; }
+  .md-stats a { background:var(--imp-surface); border:1px solid var(--imp-line); border-radius:var(--imp-radius-card); padding:10px 8px; text-align:center; text-decoration:none; color:var(--imp-ink); }
+  .md-stats strong { display:block; font-family:var(--imp-serif); font-size:26px; color:var(--imp-heading); line-height:1; }
+  .md-stats span { font-size:11.5px; color:var(--imp-muted); }
+  .md-row { display:flex; gap:10px; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--imp-line); text-decoration:none; color:inherit; min-height:44px; }
+  .md-row:last-child { border-bottom:0; }
+  .md-chip { flex:none; font-size:10.5px; font-weight:700; text-transform:uppercase; border-radius:999px; padding:3px 8px; background:var(--imp-gold-tint); color:var(--imp-gold); }
+  .md-chip.red { background:var(--imp-danger-tint); color:var(--imp-danger); }
+</style>
+{% if owner.tasks_on %}
+<nav class="md-stats" aria-label="Today at a glance">
+  <a href="/dashboard/tasks?tab=now"><strong>{{ owner.counts.get('now', 0) }}</strong><span>Need you</span></a>
+  <a href="/dashboard/tasks?tab=waiting"><strong>{{ owner.counts.get('waiting', 0) }}</strong><span>Waiting</span></a>
+  <a href="/appointments/calendar"><strong>{{ appointment_count }}</strong><span>Booked today</span></a>
+  <a href="/ro/?status=in_progress"><strong>{{ mine|length }}</strong><span>My jobs</span></a>
+</nav>
+<h2 class="font-bold mb-2">Needs you</h2>
+<div class="card mb-4" style="padding:4px 14px">
+  {% for card in owner.now %}
+  <a class="md-row" href="{{ '/customers/' ~ card.customer_id ~ '#file' if card.customer_id else '/dashboard/tasks' }}">
+    <span class="md-chip{{ ' red' if card.urgent else '' }}">{{ 'Urgent' if card.urgent else card.kind }}</span>
+    <span style="min-width:0;overflow-wrap:anywhere"><strong>{{ card.name or card.phone or card.kind }}</strong>{% if card.vehicle %} <span class="text-stone-400">· {{ card.vehicle }}</span>{% endif %}<br><span class="text-sm text-stone-400">{{ card.headline[:120] }}</span></span>
+  </a>
+  {% else %}<p class="text-sm text-stone-400" style="padding:10px 0">Nothing needs you right now.</p>{% endfor %}
+  {% if owner.counts.get('now', 0) > owner.now|length %}<a class="md-row" href="/dashboard/tasks" style="color:var(--imp-link)">See all {{ owner.counts.get('now') }} →</a>{% endif %}
+</div>
+{% endif %}
+{% if owner.calendar is not none %}
+<h2 class="font-bold mb-2">Your calendar today</h2>
+<div class="card mb-4 text-sm">
+  {% for line in owner.calendar %}<div style="padding:4px 0;overflow-wrap:anywhere">{{ line }}</div>{% else %}<span class="text-stone-400">Nothing on your calendar today.</span>{% endfor %}
+</div>
+{% endif %}
+{% endif %}
+
 <h2 class="font-bold mb-2">My jobs ({{ mine|length }})</h2>
 {% for ro in mine %}
 <div class="card mb-3">

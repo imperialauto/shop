@@ -197,7 +197,20 @@ async function markConversationOpen(conversationId) {
   return quoFetch(`/v1/conversations/${conversationId}/mark-as-open`, { method: "POST" });
 }
 
+// Tasks (Quo API v1). Read the list; mark one done. Never deletes a task.
+async function listTasks({ maxResults = 100, pageToken } = {}) {
+  const params = new URLSearchParams({ maxResults: String(maxResults) });
+  if (pageToken) params.set("pageToken", pageToken);
+  return quoFetch(`/v1/tasks?${params.toString()}`); // { data, nextPageToken }
+}
+
+async function completeTask(taskId) {
+  return quoFetch(`/v1/tasks/${encodeURIComponent(taskId)}/complete`, { method: "POST" });
+}
+
 module.exports = {
+  listTasks,
+  completeTask,
   sendMessage,
   listMessages,
   listConversations,

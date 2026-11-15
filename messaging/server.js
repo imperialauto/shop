@@ -51,6 +51,12 @@ if (process.env.DISPATCH_RECOVERY_ENABLED === "true") {
   }
 }
 
+// Off unless explicitly enabled. Quo tasks <-> Imperial Master Tasks. Never sends a text.
+if (process.env.QUO_TASK_SYNC_ENABLED === "true") {
+  const { startQuoTaskSync } = require("./src/lib/quoTaskSync");
+  startQuoTaskSync({ quo: require("./src/lib/quoClient"), shopClient: require("./src/lib/shopClient") });
+}
+
 // Off unless explicitly enabled. Approvals, nudges and the morning summary.
 if (process.env.OWNER_TEXTS_ENABLED === "true") {
   const quo = require("./src/lib/quoClient");

@@ -186,6 +186,15 @@ async function listDevelopmentWork(limit = 8) {
   return request(`/internal/imperial/dev-work/jobs?limit=${encodeURIComponent(limit)}`);
 }
 
+// Quo task list -> Imperial Master Tasks. Returns Quo task ids finished in Imperial.
+async function syncQuoTasks(tasks) {
+  return request("/internal/imperial/tasks/quo-sync", { method: "POST", body: JSON.stringify({ tasks }) });
+}
+
+async function ackQuoTasks(completed) {
+  return request("/internal/imperial/tasks/quo-sync/ack", { method: "POST", body: JSON.stringify({ completed }) });
+}
+
 async function dispatchTick() {
   return request("/internal/dispatch/tick", { method: "POST", body: "{}" });
 }
@@ -202,7 +211,7 @@ async function dispatchOutbound({ key, status }) {
 module.exports = {
   configured, getContext, getContextStrict, getSigningLink, logCommunication,
   dispatchIntake, dispatchOwnerAction, dispatchHandled, dispatchSync, dispatchTick, dispatchOutbound, dispatchDraft,
-  captureOwnerTask, readOwnerTask, changeOwnerTask, openOwnerTasks, submitDevelopmentWork, listDevelopmentWork,
+  captureOwnerTask, readOwnerTask, changeOwnerTask, openOwnerTasks, syncQuoTasks, ackQuoTasks, submitDevelopmentWork, listDevelopmentWork,
 };
 
 
