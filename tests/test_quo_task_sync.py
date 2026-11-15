@@ -106,6 +106,16 @@ class QuoTaskSyncTests(unittest.TestCase):
             change_task(db, task.id, OwnerTaskChange(messageId="m3", operation="wait"), "owner:1")
             self.assertEqual(db.get(ImperialTask, task.id).status, "blocked")
 
+    def test_awaiting_tasks_wait_unless_owner_moved_them(self):
+        self.post([quo("TK1", "[AWAITING CUSTOMER] Kia Rio quote sent")])
+        with self.Session() as db:
+            self.assertEqual(db.query(ImperialTask).one().status, "blocked")
+            task = db.query(ImperialTask).one()
+            change_task(db, task.id, OwnerTaskChange(messageId="m9", operation="reopen"), "owner:1")
+        self.post([quo("TK1", "[AWAITING CUSTOMER] Kia Rio quote sent")])
+        with self.Session() as db:
+            self.assertEqual(db.query(ImperialTask).one().status, "open")
+
     def test_label(self):
         self.assertEqual(quo_task_sync.label("[REPLY DRAFT — UPDATE] Hellcat clips")["kind"], "Reply")
         self.assertTrue(quo_task_sync.label("[REPLY DRAFT — UPDATE] Hellcat")["update"])
