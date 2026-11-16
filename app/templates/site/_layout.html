@@ -23,20 +23,23 @@
     <a class="brand" href="/site/"><span class="brand-name">Imperial Auto Care</span><span class="brand-sub">Glendale, Arizona</span></a>
     <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-nav" onclick="var n=document.getElementById('site-nav');var o=n.classList.toggle('open');this.setAttribute('aria-expanded',o)">Menu</button>
     <nav class="nav" id="site-nav" aria-label="Main">
-      <a href="/site/" {% if active == 'home' %}aria-current="page"{% endif %}>Home</a>
-      <a href="/site/services" {% if active == 'services' %}aria-current="page"{% endif %}>Services</a>
-      <a href="/site/our-work" {% if active == 'our-work' %}aria-current="page"{% endif %}>Our work</a>
-      <a href="/site/book" {% if active == 'book' %}aria-current="page"{% endif %}>Book online</a>
-      <a href="/site/estimate" {% if active == 'estimate' %}aria-current="page"{% endif %}>Get an estimate</a>
-      <a href="/site/roadside" {% if active == 'roadside' %}aria-current="page"{% endif %}>Roadside &amp; towing</a>
-      <a href="/site/pricing" {% if active == 'pricing' %}aria-current="page"{% endif %}>Pricing</a>
-      {% if 'rentals' not in hidden_services %}<a href="/site/rentals" {% if active == 'rentals' %}aria-current="page"{% endif %}>Rentals</a>
-      {% endif %}      <a href="/site/faq" {% if active == 'faq' %}aria-current="page"{% endif %}>FAQ</a>
-      <a href="/site/status" {% if active == 'status' %}aria-current="page"{% endif %}>Repair status</a>
-      <a href="/site/contact" {% if active == 'contact' %}aria-current="page"{% endif %}>Contact</a>
-      <a class="call" href="tel:{{ business.phone_tel }}">Call {{ business.phone_display }}</a>
-      {% if site_controls.login_button %}<a class="staff-login" href="/login" rel="nofollow">Staff login</a>{% endif %}
+      <div class="nav-primary">
+        <a href="/site/" {% if active == 'home' %}aria-current="page"{% endif %}>Home</a>
+        <a href="/site/services" {% if active == 'services' %}aria-current="page"{% endif %}>Services</a>
+        <a href="/site/book" {% if active == 'book' %}aria-current="page"{% endif %}>Book online</a>
+        <a href="/site/estimate" {% if active == 'estimate' %}aria-current="page"{% endif %}>Get an estimate</a>
+        <a href="/site/roadside" {% if active == 'roadside' %}aria-current="page"{% endif %}>Roadside &amp; towing</a>
+      </div>
+      <div class="nav-secondary">
+        <a href="/site/status" {% if active == 'status' %}aria-current="page"{% endif %}>Repair status</a>
+        <a href="/site/pricing" {% if active == 'pricing' %}aria-current="page"{% endif %}>Pricing</a>
+        <a href="/site/our-work" {% if active == 'our-work' %}aria-current="page"{% endif %}>Our work</a>
+        {% if 'rentals' not in hidden_services %}<a href="/site/rentals" {% if active == 'rentals' %}aria-current="page"{% endif %}>Rentals</a>{% endif %}
+        <a href="/site/faq" {% if active == 'faq' %}aria-current="page"{% endif %}>FAQ</a>
+        <a href="/site/contact" {% if active == 'contact' %}aria-current="page"{% endif %}>Contact</a>
+      </div>
     </nav>
+    <a class="header-call" href="tel:{{ business.phone_tel }}" aria-label="Call {{ business.phone_display }}">Call</a>
   </div>
 </header>
 <main id="main">
