@@ -6,6 +6,7 @@ Synthetic jobs are deterministic and resume the same worktree and commit.
 """
 import argparse
 import contextlib
+import errno
 import hashlib
 import json
 import os
@@ -63,10 +64,17 @@ def lock(root):
         f.seek(0)
         if os.name == 'nt':
             import msvcrt
-            if not f.read(1):
-                f.write(b'0'); f.flush()
-            f.seek(0)
-            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+            # Windows permits locking beyond EOF. Avoid reading a byte that a
+            # terminating process may still have locked.
+            deadline = time.monotonic() + 0.5
+            while True:
+                try:
+                    msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as exc:
+                    if exc.errno != errno.EACCES or time.monotonic() >= deadline:
+                        raise
+                    time.sleep(0.05)
         else:
             import fcntl
             fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -231,8 +239,9 @@ def once(config):
             api(config, f"/runs/{job['id']}/heartbeat", journal['claim'])
             try:
                 journal['result'] = execute(config, journal, path)
-            except (Refuse, ValueError, KeyError, OSError, subprocess.SubprocessError):
-                journal['result'] = {'outcome': 'blocked', 'checks': 'not_run'}
+            except (Refuse, ValueError, KeyError, OSError, subprocess.SubprocessError) as exc:
+                journal['result'] = {'outcome': 'blocked', 'checks': 'not_run',
+                                     'failureType': type(exc).__name__}
             save(path, journal)
         # If the prior result response was lost, replay it first. If no result
         # exists server-side and lease expired, recover and retry on next run.

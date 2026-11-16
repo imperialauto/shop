@@ -82,6 +82,12 @@ class ExecutorTests(DevelopmentWorkTests):
                              json={**self.identity, 'outcome': 'review_needed', 'candidateSha': 'd'*40,
                                    'artifactHash': 'e'*64, 'checks': 'bounded_patch_validated'})
         self.assertEqual(r.status_code, 422)
+        r = self.client.post(self.prefix + '/runs/' + str(run['id']) + '/result', headers=self.worker_headers,
+                             json={**self.identity, 'outcome': 'blocked', 'checks': 'not_run',
+                                   'failureType': 'Refuse'})
+        self.assertEqual(r.status_code, 200, r.text)
+        status = self.client.get(f'{self.prefix}/jobs/1', headers=self.headers).json()
+        self.assertEqual(status['evidence']['failureType'], 'Refuse')
 
 
 class WorkerTests(unittest.TestCase):
@@ -120,6 +126,29 @@ class WorkerTests(unittest.TestCase):
                 with self.assertRaises(worker.Refuse):
                     worker.execute(config, journal, Path(config['root'])/'journal.json')
                 model.assert_not_called()
+
+    def test_blocked_result_records_only_safe_failure_type(self):
+        with tempfile.TemporaryDirectory() as td:
+            config, journal = self.fixture(Path(td))
+            config.update(api='https://qa.example', workerId='test-pc')
+            claimed = {'claimed': True, 'id': 7, 'jobId': 1, 'mode': 'synthetic',
+                       'baseSha': journal['job']['baseSha'], 'state': 'running',
+                       'instruction': 'Synthetic fixture', 'evidence': None}
+            sent = []
+
+            def fake_api(_config, path, data):
+                if path == '/claim':
+                    return claimed
+                if path.endswith('/result'):
+                    sent.append(data)
+                    return {'recorded': True, 'duplicate': False}
+                return {'renewed': True}
+
+            with patch.object(worker, 'api', side_effect=fake_api), \
+                    patch.object(worker, 'execute', side_effect=ValueError('sensitive model output')):
+                worker.once(config)
+            self.assertEqual(sent[0]['failureType'], 'ValueError')
+            self.assertNotIn('sensitive', json.dumps(sent[0]))
 
     def test_path_escape_refused(self):
         with self.assertRaises(worker.Refuse):

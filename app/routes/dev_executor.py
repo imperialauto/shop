@@ -160,6 +160,7 @@ class Result(Claim):
     candidateSha: str | None = Field(default=None, pattern=r'^[a-f0-9]{40}$')
     artifactHash: str | None = Field(default=None, pattern=r'^[a-f0-9]{64}$')
     checks: Literal['synthetic_contract_passed', 'bounded_patch_validated', 'not_run']
+    failureType: str | None = Field(default=None, pattern=r'^[A-Za-z][A-Za-z0-9_]{0,63}$')
 
 
 @router.post('/runs/{run_id}/result')
@@ -178,7 +179,8 @@ def result(run_id: int, payload: Result, db: Session = Depends(get_db), auth=Dep
     run.state, run.evidence = payload.outcome, evidence
     job = db.get(DevWorkJob, run.job_id)
     job.status = payload.outcome
-    job.latest_summary = f'{run.mode}: {payload.outcome}; {payload.checks}. Candidate {payload.candidateSha or "none"}. Not merged or deployed.'
+    failure = f' Failure {payload.failureType}.' if payload.failureType else ''
+    job.latest_summary = f'{run.mode}: {payload.outcome}; {payload.checks}. Candidate {payload.candidateSha or "none"}.{failure} Not merged or deployed.'
     job.updated_at = now()
     event(db, run, 'final_outcome', evidence)
     db.commit()
