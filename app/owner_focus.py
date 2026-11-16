@@ -20,12 +20,13 @@ MAKE_ALIASES = {"chevy": "chevrolet", "vw": "volkswagen", "benz": "mercedes-benz
 TYPES = {
     "ro": "ro", "r.o": "ro", "r.o.": "ro", "repair order": "ro", "job": "ro", "work order": "ro",
     "approval": "approval", "approvals": "approval", "item": "approval", "queue item": "approval",
+    "line": "line", "line item": "line", "lines": "line",
     "task": "task", "tasks": "task", "to-do": "task", "todo": "task",
     "fix": "fix", "fix list": "fix", "report": "fix", "problem": "fix",
     "invoice": "invoice", "estimate": "estimate", "appointment": "appointment", "appt": "appointment",
 }
 TYPED_REF = re.compile(
-    r"\b(repair\s+order|work\s+order|queue\s+item|fix\s+list|r\.o\.?|ro|job|approvals?|item|tasks?|to-?do|fix|"
+    r"\b(repair\s+order|work\s+order|queue\s+item|line\s+item|fix\s+list|r\.o\.?|ro|job|approvals?|lines?|item|tasks?|to-?do|fix|"
     r"report|problem|invoice|estimate|appointment|appt)\s*(?:number|no\.?|num|#)?\s*#?\s*(\d{1,5}|"
     + "|".join(sorted(NUMBER_WORDS, key=len, reverse=True)) + r")\b", re.I)
 EXPLICIT_RO = re.compile(r"\b(?:ro|r\.o\.?|repair\s+order|work\s+order|job)\s*(?:number|no\.?|#)?\s*#?\s*(\d{1,5})\b", re.I)
@@ -49,7 +50,9 @@ def typed_refs(text: str) -> list[dict]:
         kind = TYPES.get(word) or TYPES.get(word + ".") or ("ro" if word.startswith("r.o") else None)
         if kind:
             raw = match.group(2).lower()
-            out.append({"type": kind, "id": int(raw) if raw.isdigit() else NUMBER_WORDS[raw]})
+            ref = {"type": kind, "id": int(raw) if raw.isdigit() else NUMBER_WORDS[raw]}
+            if ref not in out:
+                out.append(ref)
     return out
 
 
@@ -88,13 +91,17 @@ def resolve(db, text: str, open_statuses_only: bool = True) -> dict:
     refs = typed_refs(text)
     ro_refs = [r["id"] for r in refs if r["type"] == "ro"]
     other = [r for r in refs if r["type"] != "ro"]
-    records = [record(db, r["type"], r["id"]) for r in other]
-    extra = {"refs": refs, "records": records} if refs else {}
+
+    def extra(ro=None):
+        if not refs:
+            return {}
+        return {"refs": refs, "records": [record(db, r["type"], r["id"], ro) for r in other]}
+
     if ro_refs:
         ro = db.get(RepairOrder, ro_refs[0])
         if ro is None:
-            return {"missing": ro_refs[0], "missingType": "ro", **extra}
-        return {"ro": summary(ro), "how": "explicit", **extra}
+            return {"missing": ro_refs[0], "missingType": "ro", **extra()}
+        return {"ro": summary(ro), "how": "explicit", **extra(ro)}
     words = [w.lower() for w in WORDS.findall(text) if w.lower() not in STOP and w.lower() not in TYPES]
     # A number typed as another record ("approval 12", "task #118") or written "#111" is never an RO number.
     numbers = _numbers(text) - {int(n) for n in APPROVAL_REF.findall(text)} - {r["id"] for r in other}
@@ -105,21 +112,26 @@ def resolve(db, text: str, open_statuses_only: bool = True) -> dict:
                     key=lambda pair: -pair[0])
     scored = [(score, ro) for score, ro in scored if score >= 3]
     if not scored:
-        return dict(extra)
+        return extra()
     if len(scored) == 1 or scored[0][0] - scored[1][0] >= 2:
-        return {"ro": summary(scored[0][1]), "how": "matched", **extra}
-    return {"candidates": [summary(ro) for _, ro in scored[:3]], **extra}
+        return {"ro": summary(scored[0][1]), "how": "matched", **extra(scored[0][1])}
+    return {"candidates": [summary(ro) for _, ro in scored[:3]], **extra()}
 
 
-def record(db, kind: str, record_id: int) -> dict:
-    """Look up a non-RO record the owner named, so a reply can say exactly what it is or that it
-    doesn't exist. Read-only; returns only what's needed to label it."""
-    found = {"type": kind, "id": record_id, "exists": False}
+def record(db, kind: str, record_id: int, focus_ro=None) -> dict:
+    """Look up a non-RO record the owner named, so a reply can say exactly what it is, that it
+    doesn't exist, or that it belongs to a different job than the one he's talking about.
+    Read-only. "exists": False only when the lookup ran and found nothing; a failed lookup is
+    "lookupFailed", and a kind with no numbered record (estimates live on the RO) is
+    "resolvable": False, so neither is ever reported as missing."""
+    found = {"type": kind, "id": record_id, "exists": False, "resolvable": True}
+    ro_id = customer_id = None
     try:
         if kind == "approval":
             from app.dispatch_model import DispatchItem
             item = db.get(DispatchItem, record_id)
             if item is not None:
+                customer_id = item.customer_id
                 found.update(exists=True, status=item.status, label=f"approval #{record_id}",
                              who=item.contact_name or item.customer_phone or "", customerId=item.customer_id)
         elif kind in ("task", "fix"):
@@ -127,16 +139,41 @@ def record(db, kind: str, record_id: int) -> dict:
             task = db.get(ImperialTask, record_id)
             if task is not None:
                 is_fix = (task.category or "") == PROBLEM_CATEGORY
+                actual = "fix" if is_fix else "task"
                 found.update(exists=True, status=task.status, label=f"{'Fix list' if is_fix else 'task'} #{record_id}",
-                             title=(task.title or "")[:120], actualType="fix" if is_fix else "task")
+                             title=(task.title or "")[:120], actualType=actual, typeMismatch=actual != kind)
         elif kind == "invoice":
             from app.models import Invoice
             invoice = db.get(Invoice, record_id)
             if invoice is not None:
-                found.update(exists=True, status=invoice.status, label=f"invoice #{record_id}", roId=invoice.repair_order_id)
+                ro_id = invoice.repair_order_id
+                found.update(exists=True, status=invoice.status, label=f"invoice #{record_id}", roId=ro_id)
+        elif kind == "appointment":
+            from app.appointment_model import Appointment
+            appointment = db.get(Appointment, record_id)
+            if appointment is not None:
+                ro_id = appointment.repair_order_id
+                found.update(exists=True, status=appointment.status, label=f"appointment #{record_id}", roId=ro_id,
+                             startsAt=appointment.starts_at.isoformat() if appointment.starts_at else None)
+        elif kind == "line":
+            from app.models import LineItem
+            line = db.get(LineItem, record_id)
+            if line is not None:
+                ro_id = line.repair_order_id
+                found.update(exists=True, label=f"line {record_id} on RO #{ro_id}", roId=ro_id,
+                             description=(line.description or "")[:120], approval=line.approval,
+                             completed=bool(getattr(line, "completed_at", None)))
+        else:  # estimates aren't stored under their own number; they belong to an RO
+            found.update(resolvable=False, label=f"{kind} {record_id}")
     except Exception:
         db.rollback()
-        found["lookupFailed"] = True
+        found.update(lookupFailed=True)
+        return found
+    if found["exists"] and focus_ro is not None:
+        if ro_id is not None:
+            found["matchesFocus"] = ro_id == focus_ro.id
+        elif customer_id is not None:
+            found["matchesFocus"] = customer_id == focus_ro.customer_id
     return found
 
 
