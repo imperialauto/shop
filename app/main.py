@@ -393,11 +393,17 @@ def master_tasks(request: Request, tab: str = "now", done: bool = False, task: i
             if key:
                 tab, scope, data = key, candidate, view
                 break
+    customer_outreach = []
+    if tab == "followup" and scope == "review":
+        from datetime import datetime, timezone
+        from app import customer_followups
+        customer_outreach = customer_followups.board_preview(db, datetime.now(timezone.utc))
     return templates.TemplateResponse("master_tasks.html", {
         "request": request, "user": user, "tab": tab, "cards": data["cards"][tab], "tabs": data["tabs"],
         "done_this_week": data["done_this_week"], "read_only": app.state.read_only,
         "sending_paused": dispatch.is_paused(db), "scope": scope, "sort": sort,
         "sorts": task_board.SORTS, "followup_days": data["followup_days"],
+        "customer_outreach": customer_outreach,
     })
 
 

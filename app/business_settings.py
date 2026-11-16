@@ -23,6 +23,7 @@ KEYS = {
     "booking_closed_days": "PUBLIC_BOOKING_CLOSED_DAYS",
     "owner_alert_batch_limit": "OWNER_ALERT_BATCH_LIMIT",
     "task_followup_days": "TASK_FOLLOWUP_DAYS",
+    "automatic_customer_followups": "AUTOMATIC_CUSTOMER_FOLLOWUPS",
     "alert_rules": "ALERT_RULES_JSON",
     "labor_rates": "LABOR_RATES_JSON",
     "booking_auto_times": "PUBLIC_AUTO_TIMES",
@@ -77,7 +78,7 @@ def raw(key: str) -> str | None:
 
 OWNER_ALERT_DEFAULT = 10
 OWNER_ALERT_MAX = 10
-TASK_FOLLOWUP_DEFAULT = 3
+TASK_FOLLOWUP_DEFAULT = 1
 TASK_FOLLOWUP_MAX = 30
 
 

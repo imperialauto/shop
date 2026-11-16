@@ -60,11 +60,12 @@
         const tr=document.createElement('tr');
         cell(tr,phoenixTime(a.starts_at)); cell(tr,phoenixTime(a.ends_at));
         const ro=cell(tr,''); const link=document.createElement('a'); link.href='/ro/'+encodeURIComponent(a.repair_order_id); link.textContent='#'+a.repair_order_id; ro.appendChild(link);
-        cell(tr,a.resource_id); cell(tr,a.status);
+        cell(tr,a.resource_id); cell(tr,a.missed?'missed':a.status);
         const actions=cell(tr,'');
         const transitions=a.status==='tentative'?['confirm','cancel']:a.status==='confirmed'?['complete','cancel']:[];
+        if ({{ may_mark_missed|tojson }} && a.status==='confirmed' && Date.parse(a.ends_at) <= Date.now()) transitions.push('missed');
         for(const action of transitions) {
-          const btn=document.createElement('button');btn.type='button';btn.textContent=action;btn.className='btn-secondary';
+          const btn=document.createElement('button');btn.type='button';btn.textContent=action==='missed'?'Mark missed':action;btn.className='btn-secondary';
           btn.addEventListener('click',async()=>{btn.disabled=true;try{await request('/appointments/'+a.id+'/'+action,{method:'POST'});await load();}catch(e){error.textContent=e.message;btn.disabled=false;}});
           actions.appendChild(btn);
         }

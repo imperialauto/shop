@@ -151,18 +151,6 @@ async function handleMessageEvent(event) {
   }
   if (!isNewInbound) return;
 
-  // Best-effort mirror into the shop app's native Communication log, so
-  // an inbound text shows up on the customer's RO detail page too.
-  // Fire-and-forget — never let this block draft generation.
-  shopClient
-    .logCommunication({
-      phone: customerPhone,
-      direction: "inbound",
-      body: msg.body || "",
-      externalId: msg.id,
-    })
-    .catch((err) => console.error("Failed to mirror inbound SMS to shop app:", err));
-
   // Queue the message, then send anything the owner has switched on. A failure
   // here must never stop message storage or the webhook ack.
   const dispatched = await shopClient.dispatchIntake({
@@ -175,6 +163,12 @@ async function handleMessageEvent(event) {
     knownCustomer: (await prisma.message.count({ where: { conversationId: conversation.id, id: { not: stored.id } } }).catch(() => 1)) > 0,
   });
   if (dispatched.reaction) return; // a tapback needs no reply, draft or alert
+  if (!dispatched.owner) {
+    await shopClient.logCommunication({
+      phone: customerPhone, direction: "inbound", body: msg.body || "",
+      externalId: msg.id, createdAt: msg.createdAt,
+    });
+  }
   const action = await handleIntakeResult({ result: dispatched, messageId: msg.id, phone: customerPhone, quo, shopClient })
     .catch((err) => {
       console.error("Dispatch action failed:", err.message);

@@ -9,7 +9,7 @@ customer-file links. Read-only view model; changes go through imperial_tasks.cha
 from collections import OrderedDict
 from datetime import datetime, time, timedelta, timezone
 
-from app import business_settings, quo_task_sync
+from app import business_settings, customer_followups, quo_task_sync
 from app.appointments import PHOENIX
 from app.dispatch_model import DispatchItem, OPEN_STATUSES
 from app.imperial_task_model import BACKLOG_CATEGORY, PERSONAL_CATEGORY, PROBLEM_CATEGORY, ImperialTask, ImperialTaskAudit
@@ -79,11 +79,16 @@ def _context(db, conversation_id, phone, cache, activity_id=None):
             DispatchItem.status.in_(OPEN_STATUSES),
         ).order_by(DispatchItem.updated_at.desc()).first()
     latest_sms = None
+    estimate = False
     if customer:
         latest_sms = db.query(Communication).filter(
             Communication.customer_id == customer.id, Communication.channel == "sms",
             Communication.direction.in_(("inbound", "outbound")),
+            (Communication.body.is_(None)) | Communication.body.notin_(tuple(customer_followups.MESSAGES.values())),
         ).order_by(Communication.created_at.desc(), Communication.id.desc()).first()
+        if latest_sms and latest_sms.direction == "outbound" and "your estimate" in (latest_sms.body or "").casefold():
+            orders = db.query(RepairOrder).filter_by(customer_id=customer.id).all()
+            estimate = customer_followups.estimate_order(db, orders, latest_sms) is not None
     cache[key] = {
         "phone": phone,
         "customer_id": customer.id if customer else None,
@@ -91,6 +96,7 @@ def _context(db, conversation_id, phone, cache, activity_id=None):
         "vehicle": item.vehicle_text if item else None,
         "item": open_item,
         "latest_sms": latest_sms,
+        "estimate_sent": estimate,
     }
     return cache[key]
 
@@ -153,20 +159,23 @@ def _conversation_bucket(task, bucket, context, manual_now, now, followup_days):
     at = _aware(sms.created_at)
     if at is None or bucket == "now" and manual_now and at <= manual_now:
         return bucket, at, False
-    if sms.direction == "inbound":
-        updated = _aware(task.updated_at)
-        if bucket == "waiting" and (updated is None or at > updated):
-            return "now", at, False
-        return bucket, at, False
     open_item = context.get("item")
     if task.priority == "safety" or open_item and open_item.urgency == "safety":
+        return bucket, at, False
+    if sms.direction == "inbound":
+        updated = _aware(task.updated_at)
+        if now - at >= timedelta(days=1) and open_item and open_item.category in ("repair", "pricing", "scheduling", "towing"):
+            return "followup", at, False
+        if bucket == "waiting" and (updated is None or at > updated):
+            return "now", at, False
         return bucket, at, False
     if open_item:
         updated = _aware(open_item.updated_at)
         from_call = bool(open_item.thread_message_id) or open_item.last_message_id.startswith(("call:", "summary:"))
         if updated and updated > at and from_call:
             return bucket, updated, False
-    return ("followup" if now - at >= timedelta(days=followup_days) else "waiting"), at, True
+    wait = 2 if context.get("estimate_sent") else followup_days
+    return ("followup" if now - at >= timedelta(days=wait) else "waiting"), at, True
 
 
 def board(db, now: datetime | None = None, *, linked: bool | None = None, sort: str = "priority") -> dict:
