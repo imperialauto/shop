@@ -1345,11 +1345,22 @@ def decide(
         db.add(DispatchOutbound(dedupe_key=f"dashboard:{item.id}:{item.last_message_id}", kind=DASHBOARD_REPLY, item_id=item.id, status="queued"))
         if PROMISE.search(text):
             audit(db, item.id, "system", "follow_up_due", (item.decided_at + PROMISE_AFTER).isoformat())
+    _commit_send(db)
+    return RedirectResponse(back_to(next_page), status_code=303)
+
+
+def _commit_send(db):
+    """Commit a decision and its queued reply. The only failure that may pass quietly is the
+    same reply already being queued (a double tap: unique dedupe key). Anything else rolls
+    back and tells the owner nothing was sent, instead of looking like it worked."""
     try:
         db.commit()
-    except IntegrityError:
+    except IntegrityError as error:
         db.rollback()
-    return RedirectResponse(back_to(next_page), status_code=303)
+        if "dedupe_key" in str(getattr(error, "orig", error)):
+            return
+        raise HTTPException(503, "That reply couldn't be queued, so nothing was sent and the item is still open. "
+                                 "Try again, or reply in Quo.") from error
 
 
 def back_to(path: str) -> str:
@@ -1422,7 +1433,7 @@ def compose(
                             item_id=item.id, status="queued"))
     if PROMISE.search(text):
         audit(db, item.id, "system", "follow_up_due", (now + PROMISE_AFTER).isoformat())
-    db.commit()
+    _commit_send(db)
     return RedirectResponse(back_to(next_page), status_code=303)
 
 
