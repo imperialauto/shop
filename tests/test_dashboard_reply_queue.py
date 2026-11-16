@@ -62,6 +62,16 @@ class DashboardReplyQueueTests(unittest.TestCase):
             replies = queued_replies(db)
         self.assertEqual([(r["phone"], r["text"]) for r in replies], [("+16235550159", "Monday at 2 works.")])
 
+    def test_compose_repeat_queues_once(self):
+        data = {"phone": "+16235550159", "newest_message_id": "AC59", "reply_text": "Monday at 2 works."}
+        for _ in range(2):
+            response = self.client.post("/dispatch/compose", data=data, follow_redirects=False)
+            self.assertEqual(response.status_code, 303)
+        with self.Session() as db:
+            self.assertEqual(db.query(DispatchOutbound).count(), 1)
+            self.assertEqual(len(queued_replies(db)), 1)
+            self.assertEqual(queued_replies(db), [])
+
     def test_model_rejects_statuses_production_rejects(self):
         from sqlalchemy.exc import IntegrityError
         with self.Session() as db:
