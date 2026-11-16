@@ -181,6 +181,26 @@ def create_dashboard_task(db, owner_id, title, due):
     ))
     db.commit()
 
+class OwnerProblemReport(BaseModel):
+    messageId: str = Field(min_length=1, max_length=128)
+    text: str = Field(min_length=3, max_length=4000)
+    context: str = Field(default="", max_length=300)
+
+
+@router.post("/problems")
+def save_owner_problem(
+    report: OwnerProblemReport,
+    db: Session = Depends(get_db),
+    _auth: bool = Depends(require_internal_key),
+    _enabled: bool = Depends(require_tasks_enabled),
+):
+    """An app-defect report the owner texted in. Same Fix list as the Report a problem button.
+    Returns the saved ID and status so the reply only confirms what was actually stored."""
+    task = create_problem_report(db, "owner (text)", report.context or "owner text", report.text,
+                                 source="owner_sms_problem", event_id=report.messageId)
+    return {"id": task.id, "status": task.status, "title": task.title}
+
+
 @router.get("/problems")
 def list_problem_reports(
     db: Session = Depends(get_db),
@@ -238,21 +258,31 @@ def quo_sync_ack(
 PROBLEM_SOURCE = "problem_report"
 
 
-def create_problem_report(db, user, page: str, comment: str) -> ImperialTask:
+def create_problem_report(db, user, page: str, comment: str, source: str = PROBLEM_SOURCE,
+                          event_id: str | None = None) -> ImperialTask:
+    """Saves a Fix list entry. With an event_id (e.g. the owner's Quo message ID) a repeat
+    delivery returns the existing entry instead of creating a duplicate."""
     comment = (comment or "").strip()
     if not 3 <= len(comment) <= 4000:
         raise HTTPException(422, "Describe the problem in 3 to 4000 characters.")
     page = (page or "")[:300]
     title = " ".join(comment.split())[:200]
-    event_id = uuid4().hex
+    if event_id:
+        existing = db.query(ImperialTask).filter(
+            ImperialTask.source == source, ImperialTask.external_id == event_id).first()
+        if existing:
+            return existing
+    event_id = event_id or uuid4().hex
+    reporter = getattr(user, "username", None) or getattr(user, "id", None) or str(user)
     task = ImperialTask(
-        title=title, source=PROBLEM_SOURCE, external_id=event_id, category=PROBLEM_CATEGORY,
+        title=title, source=source, external_id=event_id, category=PROBLEM_CATEGORY,
         project_key="operations",
-        details=f"Page: {page}\nReported by: {getattr(user, 'username', None) or getattr(user, 'id', '?')}\n\n{comment}",
+        details=f"Page: {page}\nReported by: {reporter}\n\n{comment}",
     )
     db.add(task)
     db.flush()
-    db.add(ImperialTaskAudit(task_id=task.id, actor=f"user:{getattr(user, 'id', '?')}", action="reported", event_id=event_id))
+    db.add(ImperialTaskAudit(task_id=task.id, actor=f"user:{getattr(user, 'id', None) or reporter}"[:64], action="reported",
+                             event_id=event_id))
     db.commit()
     return task
 

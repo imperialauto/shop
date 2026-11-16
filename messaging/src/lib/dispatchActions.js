@@ -7,6 +7,7 @@
 const { answerOwner, interpretOwner, recentTurns, customerDetail, leaksPrivateAcquisitionCost } = require("./ownerAssistant");
 const { answerProjectQuestion } = require("./projectStatus");
 const { answerImperialBrain } = require("./imperialBrain");
+const { isAppDefectReport, defectReply, historyForFocus, guardAnswer } = require("./ownerFocus");
 const { callContext } = require("./callIntake");
 const { verifyApprovedReplyContext } = require("./replyContext");
 
@@ -123,8 +124,23 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
     }
   }
   if (result.ownerQuestion && enabled("OWNER_TEXTS_ENABLED")) {
+    // Resolve the record first, without AI: "eight for Antoine Chevy Impala" is RO #8.
+    // A lookup failure leaves focus empty: the text is still answered, just without a resolved RO.
+    const focus = await Promise.resolve()
+      .then(() => shopClient.ownerFocus(result.ownerQuestion))
+      .then((found) => found || {}, () => ({}));
+    if (isAppDefectReport(result.ownerQuestion)) {
+      // An app problem goes to the Fix list. The reply confirms only what was stored.
+      const where = focus.ro ? `${focus.ro.label} ${focus.ro.customer} ${focus.ro.vehicle}`.trim() : "owner text";
+      const saved = await Promise.resolve()
+        .then(() => shopClient.saveOwnerProblem({ messageId, text: result.ownerQuestion, context: where }))
+        .catch((err) => { console.error("Owner problem save failed:", err.message); return null; });
+      await quo.sendMessage({ to: phone, content: defectReply(saved, focus) })
+        .catch((err) => console.error("Owner answer failed:", err.message));
+      return finishCustomerWork({ result, messageId, phone, quo, shopClient });
+    }
     const thread = await quo.listMessages({ participants: [phone], maxResults: 12 }).catch(() => ({ data: [] }));
-    const history = recentTurns(thread.data || [], messageId);
+    const history = historyForFocus(recentTurns(thread.data || [], messageId), focus, result.ownerQuestion);
     // Project progress is sourced from current GitHub data, not from the
     // customer queue or LLM guesses. It is strictly read-only and flag-gated.
     const brainReply = await answerImperialBrain({
@@ -140,6 +156,8 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
     const projectReply = brainReply || await answerProjectQuestion({ question: result.ownerQuestion, history });
     const snapshot = projectReply ? result.snapshot : {
       ...result.snapshot,
+      ...(focus.ro ? { focusRecord: focus.ro } : {}),
+      ...(focus.candidates ? { focusCandidates: focus.candidates } : {}),
       customerDetail: await customerDetail({
         question: result.ownerQuestion, snapshot: result.snapshot, quo, callContext,
       }),
@@ -170,13 +188,18 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
       }
       ownerActionReply = outcome.ownerReply;
     }
-    const content = projectReply || ownerActionReply || await answerOwner({
+    const answer = projectReply || ownerActionReply || await answerOwner({
       question: result.ownerQuestion,
       snapshot,
       history,
     });
+    const content = projectReply || ownerActionReply ? answer : guardAnswer(answer, { focus, snapshot, question: result.ownerQuestion });
     await quo.sendMessage({ to: phone, content }).catch((err) => console.error("Owner answer failed:", err.message));
   }
+  return finishCustomerWork({ result, messageId, phone, quo, shopClient });
+}
+
+async function finishCustomerWork({ result, messageId, phone, quo, shopClient }) {
   let customerSent = false;
   if (result.customerReply) {
     if (enabled("OWNER_TEXTS_ENABLED")) {

@@ -269,3 +269,15 @@ def log_communication(
         raise
 
     return {"logged": True, "repairOrderId": open_ro.id if open_ro else None}
+
+
+@router.get("/messaging/owner-focus")
+def owner_focus(
+    text: str = Query(..., min_length=1, max_length=2000),
+    db: Session = Depends(get_db),
+    _auth: bool = Depends(require_internal_key),
+):
+    """Which repair order the owner's text is about, resolved before any AI reads it."""
+    from app import owner_focus as focus
+
+    return focus.resolve(db, text)
