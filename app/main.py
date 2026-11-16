@@ -248,9 +248,9 @@ def not_found(request: Request, exc):
                         '<a href="/" style="color:#d4a853">Back to Imperial Operations</a></body>', status_code=404)
 
 
-def _legal_review_count() -> int:
+def _legal_review_titles() -> list[str]:
     from app import security_controls
-    return security_controls.waiting_for_review()
+    return security_controls.pending_review_titles()
 
 
 @app.get("/healthz")
@@ -508,7 +508,7 @@ def dashboard(request: Request, view: str = "open", db: Session = Depends(get_db
         **dispatch.dashboard_context(db, view),
         "home": home_summary.summary(db, user),
         "health": system_health.report(db) if user.role in ("owner", "admin") else None,
-        "legal_review": _legal_review_count() if user.role == "owner" else 0,
+        "legal_review": _legal_review_titles() if user.role == "owner" else [],
         "read_only": app.state.read_only,
     })
 

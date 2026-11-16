@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}{{ row.item.title }} — review{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">{{ row.item.title }}</h1>
+  <a href="/settings/security-privacy#review" class="btn-secondary">Back</a>
+</div>
+<div class="page-body" style="max-width:760px; display:grid; gap:12px;">
+  {% if approved == '1' %}<div class="card-sm" role="status" style="border-color:#2f6b45">Saved: you approved this exact wording.</div>{% endif %}
+  {% if approved == 'need_confirm' %}<div class="card-sm" role="alert" style="border-color:#7a2e2e">Tick the box to confirm you read it. Nothing was saved.</div>{% endif %}
+  <div class="card-sm">
+    <p style="margin:0 0 4px"><strong>Status:</strong> {{ label }}{% if row.approval %} · approved by {{ row.approval.by }} on {{ row.approval.at[:10] }}{% endif %}</p>
+    {% if control %}<p style="margin:0" class="text-sm text-stone-400">Shown to customers only when "{{ control.title }}" is switched on (now {{ 'on' if row.switched_on else 'off' }}). Approving here does not switch it on.</p>{% endif %}
+    <p style="margin:6px 0 0" class="text-sm text-stone-400">{{ row.item.what }}</p>
+  </div>
+  {% if row.state == 'missing' %}
+  <div class="card-sm" style="border-color:#7a2e2e">
+    <p style="margin:0">There is no wording on file for this yet, so there is nothing to approve. {% if row.item.key == 'warranty' %}Get the warranty and disclaimer wording from your lawyer; once it's added to the app it will show up here.{% else %}Once wording is written and added, it will show up here.{% endif %}</p>
+  </div>
+  {% else %}
+  <section class="card" aria-labelledby="wording-h">
+    <h2 id="wording-h" class="font-bold" style="margin:0 0 8px">Exact wording</h2>
+    <pre style="white-space:pre-wrap; font-family:inherit; font-size:14px; line-height:1.55; margin:0">{{ row.wording }}</pre>
+    {% if row.item.wording_control %}<p class="text-sm text-stone-400" style="margin:10px 0 0">To change it, edit "{{ row.item.wording_control.replace('_', ' ') }}" on the <a href="/settings/security-privacy#c-{{ row.item.wording_control }}">Security &amp; Privacy page</a>. Any edit needs approving again.</p>{% endif %}
+  </section>
+  {% if not row.done %}
+  <form method="post" class="card-sm" style="display:grid; gap:10px">
+    <label style="display:flex; gap:10px; align-items:center"><input type="checkbox" name="confirm"> I read this wording and approve it</label>
+    <button class="btn-primary" style="justify-self:start">Approve this wording</button>
+  </form>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

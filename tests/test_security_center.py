@@ -279,19 +279,57 @@ class LegalReviewTests(_Setup):
         self.assertIn("Waiting for your review", page)
         for item in controls.REVIEW_ITEMS:
             self.assertIn(item.title, page)
-        self.assertIn("legal items waiting for your review", client.get("/dashboard").text)
-        self.assertNotIn("legal item", self.sign_in("office").get("/dashboard").text)
+        home = client.get("/dashboard").text
+        self.assertIn(f"{len(controls.REVIEW_ITEMS)} items waiting for your review", home)
+        self.assertIn("Privacy notice", home)  # the alert names the actual pending items
+        self.assertNotIn("waiting for your review", self.sign_in("office").get("/dashboard").text)
+        for item in controls.REVIEW_ITEMS:  # every item has a Read / review action
+            self.assertIn(f'href="/settings/security-privacy/review/{item.key}"', page)
         # The public site works while everything is still waiting
         self.assertEqual(TestClient(app).get("/site/").status_code, 200)
 
-    def test_manual_items_tick_done_and_switches_count_as_done(self):
+    def test_switching_on_is_not_reviewing(self):
+        self.save(self.sign_in(), privacy_notice_published="on")
+        rows = {r["item"].key: r for r in controls.review_status()}
+        self.assertFalse(rows["privacy"]["done"])
+        self.assertEqual(rows["privacy"]["state"], "draft")
+        self.assertTrue(rows["privacy"]["switched_on"])
+
+    def test_review_page_shows_exact_wording_and_records_approval(self):
         client = self.sign_in()
-        self.save(client, done_call_notice="on", privacy_notice_published="on")
-        rows = {r["item"].key: r["done"] for r in controls.review_status()}
-        self.assertTrue(rows["call_notice"])
-        self.assertTrue(rows["privacy"])
-        self.assertFalse(rows["warranty"])
-        self.assertEqual(controls.waiting_for_review(), len(controls.REVIEW_ITEMS) - 2)
+        page = client.get("/settings/security-privacy/review/privacy").text
+        self.assertIn("Exact wording", page)
+        self.assertIn("collects the information you give us", page)  # the actual wording, not a summary
+        # Approving needs the confirm tick
+        unconfirmed = client.post("/settings/security-privacy/review/privacy", data={}, follow_redirects=False)
+        self.assertIn("need_confirm", unconfirmed.headers["location"])
+        self.assertFalse({r["item"].key: r["done"] for r in controls.review_status()}["privacy"])
+        client.post("/settings/security-privacy/review/privacy", data={"confirm": "on"})
+        rows = {r["item"].key: r for r in controls.review_status()}
+        self.assertTrue(rows["privacy"]["done"])
+        self.assertFalse(rows["privacy"]["switched_on"])  # approval does not publish it
+        self.assertEqual(controls.waiting_for_review(), len(controls.REVIEW_ITEMS) - 1)
+        # Editing the wording makes it need approval again
+        self.save(client, privacy_notice_text="New privacy wording for the shop.")
+        self.assertEqual({r["item"].key: r["state"] for r in controls.review_status()}["privacy"], "changed")
+
+    def test_missing_wording_is_shown_as_missing_and_cannot_be_approved(self):
+        client = self.sign_in()
+        page = client.get("/settings/security-privacy/review/warranty").text
+        self.assertIn("no wording on file", page)
+        self.assertNotIn("Approve this wording", page)
+        self.assertEqual(client.post("/settings/security-privacy/review/warranty", data={"confirm": "on"}).status_code, 422)
+        self.assertEqual({r["item"].key: r["state"] for r in controls.review_status()}["warranty"], "missing")
+
+    def test_call_notice_wording_is_readable_and_approvable(self):
+        client = self.sign_in()
+        self.assertIn(controls.CALL_NOTICE_TEXT, client.get("/settings/security-privacy/review/call_notice").text)
+        client.post("/settings/security-privacy/review/call_notice", data={"confirm": "on"})
+        self.assertTrue({r["item"].key: r["done"] for r in controls.review_status()}["call_notice"])
+
+    def test_only_owner_opens_review_pages(self):
+        self.assertEqual(self.sign_in("office").get("/settings/security-privacy/review/privacy").status_code, 403)
+        self.assertEqual(self.sign_in().get("/settings/security-privacy/review/nope").status_code, 404)
 
     def test_terms_at_signature_off_by_default_then_required_and_recorded(self):
         ro_id, line_id = self.make_pending_job()
