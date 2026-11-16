@@ -1,6 +1,6 @@
 const { test, beforeEach } = require("node:test");
 const assert = require("node:assert/strict");
-const { isAppDefectReport, defectReply, historyForFocus, guardAnswer } = require("../src/lib/ownerFocus");
+const { isAppDefectReport, defectReply, historyForFocus, guardAnswer, whichJobReply } = require("../src/lib/ownerFocus");
 const { handleIntakeResult } = require("../src/lib/dispatchActions");
 
 const OWNER = "+16025550199";
@@ -108,4 +108,20 @@ test("the defect path still delivers customer work in the same result", async ()
   await handleIntakeResult({ result: { ownerQuestion: HEADLIGHT, snapshot: SNAPSHOT, autoReply: { key: "k", text: "t" } },
     messageId: "owner-msg-3", phone: OWNER, ...f });
   assert.deepEqual(outcomes, [{ key: "k", status: "skipped" }]);
+});
+
+
+test("two different ROs named: ask which, list both, nothing changed (QA on 6887684)", async () => {
+  const twelve = { roId: 12, label: "RO #12", customer: "Dana Jeep", firstName: "Dana", vehicle: "2014 Jeep Compass", lines: [] };
+  const focus = { how: "named_several", candidates: [RO8.ro, twelve] };
+  assert.equal(whichJobReply(focus),
+    "Which job do you mean: RO #8 (Antwon Test, 2009 Chevrolet Impala) or RO #12 (Dana Jeep, 2014 Jeep Compass)? Nothing was changed.");
+  assert.equal(whichJobReply({ how: "named_several", candidates: [RO8.ro], missingRos: [404] }),
+    "Did you mean RO #8 (Antwon Test, 2009 Chevrolet Impala)? I couldn't find RO #404. Nothing was changed.");
+
+  const { quo, shopClient, sent, asked } = owner({ focus });
+  await handleIntakeResult({ result: { ownerQuestion: "close out RO 8 or RO 12" }, messageId: "m-alt", phone: OWNER, quo, shopClient });
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].content, /^Which job do you mean: RO #8 .* or RO #12 .*\? Nothing was changed\.$/);
+  assert.deepEqual(asked, ["close out RO 8 or RO 12"]); // one deterministic lookup; the reply above is the only message
 });

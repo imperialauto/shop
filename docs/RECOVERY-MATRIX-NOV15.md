@@ -55,10 +55,20 @@ Trial merge onto `89d28f1`: #188 clean. #189 conflicts in `app/routes/imperial_t
 - Finding R190-3 (Low): `_rule` checks RO status `approval_received`, which is not one of the RO statuses (`intake … delivered`). Harmless, but the intended case may be unhandled.
 - Finding R190-4 (Low): completed work is judged by whole-RO status only. With B, a job whose approved lines are all marked done but whose status wasn't changed still counts as active, so it is skipped (safe direction).
 
-## Release and rollback plan (needs one designated executor; not authorized by this handoff)
-1. Fresh `pg_dump` of the web database.
-2. Run `migrations/20261115_ro_line_completion_attachments.sql` **before** deploying `89d28f1` or later: every line-item query selects the new columns. The migration is additive, so the current production code keeps working after it.
-3. Deploy web and shop together from the reviewed SHA.
-4. Check: an RO page loads; `/settings/security-privacy` lists Read/review links; one synthetic owner text resolves an RO on preview first.
-5. Rollback: redeploy `20360d3` (web and shop). Leave the migration in place (unused columns and table are ignored). Run the `.down.sql` only if no files were uploaded or after exporting `ro_attachments`.
-6. Quo webhook: confirm `message.sent` / `message.delivered` are subscribed (owner action in Quo). D works without them through the recovery loop, a few minutes later.
+## Release and rollback plan (one executor; each ⚠ step needs Jaelan's go-ahead)
+`web` and `shop` auto-deploy `main`, so **merging #191 is the deploy**. The migration has to be in place first: every line-item query in this code selects `completed_at` / `completed_by`.
+
+1. ⚠ **Preconditions.** Railway → `web` → Variables: `APP_READ_ONLY` is `false`. Last night's `db-backup-temp` run logged `NIGHTLY_BACKUP_OK` (dashboard backup alert green). Candidate SHA has green CI and ChatGPT's acceptance.
+2. ⚠ **Backup immediately before the migration** (house procedure, `docs/LOCAL-AI-NODE-PRODUCTION-RUNBOOK.md` step 3): run `db-backup-temp` once (dump, restore test, offsite copy) and record its `BACKUP_OK` line and table counts. **Stop** if the dump or its restore check fails. Railway snapshots aren't available on this plan.
+3. ⚠ **Migration.** Railway → `Postgres` (production) → Query: run all of `migrations/20261115_ro_line_completion_attachments.sql`. Additive, inside one transaction, safe to run twice. Verify:
+   ```sql
+   SELECT column_name FROM information_schema.columns
+    WHERE table_name = 'line_items' AND column_name IN ('completed_at', 'completed_by')
+   UNION ALL SELECT 'table:' || to_regclass('ro_attachments')::text
+   UNION ALL SELECT 'index:' || indexname FROM pg_indexes WHERE indexname = 'ix_ro_attachments_repair_order_id';
+   ```
+   Expect **4 rows**. The current production code (`20360d3`) ignores the new columns and table, so it keeps working.
+4. ⚠ **Deploy:** merge #191 (web and shop redeploy together from the merge commit). Check `/healthz` and `/readyz` are 200 and the `imperial_database_audit` line shows `"missing_tables": []` and `"missing_columns": {}` (`/readyz` returns 503 if the migration was skipped).
+5. **Smoke checks (no customer contact):** an RO page loads with per-line Done/Reopen and Photos & files; `/settings/security-privacy` lists Read/review links; Report a problem from `/customers/new` keeps the typed name; one owner text "RO 8 or RO 12" gets the which-job question.
+6. **Rollback:** redeploy `20360d3` on `web` and `shop`. **Leave the migration in place**: the old code ignores it, and uploaded photos/files stay in `ro_attachments` for when the fix is redeployed. Run the `.down.sql` only if nothing was uploaded, or after exporting `ro_attachments` (`COPY (SELECT id, repair_order_id, line_item_id, filename, content_type, encode(data,'base64') FROM ro_attachments) TO STDOUT` into the offsite backup). Restore from step 2's dump only for data damage, not for a code problem.
+7. Quo webhook: confirm `message.sent` / `message.delivered` are subscribed (owner action in Quo). D works without them through the recovery loop, a few minutes later.

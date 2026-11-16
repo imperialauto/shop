@@ -7,7 +7,7 @@
 const { answerOwner, interpretOwner, recentTurns, customerDetail, leaksPrivateAcquisitionCost } = require("./ownerAssistant");
 const { answerProjectQuestion } = require("./projectStatus");
 const { answerImperialBrain } = require("./imperialBrain");
-const { isAppDefectReport, defectReply, historyForFocus, guardAnswer } = require("./ownerFocus");
+const { isAppDefectReport, defectReply, historyForFocus, guardAnswer, whichJobReply } = require("./ownerFocus");
 const { callContext } = require("./callIntake");
 const { verifyApprovedReplyContext } = require("./replyContext");
 
@@ -139,6 +139,12 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
         .catch((err) => console.error("Owner answer failed:", err.message));
       return finishCustomerWork({ result, messageId, phone, quo, shopClient });
     }
+    if (focus.how === "named_several" && (focus.candidates || []).length) {
+      // "RO 8 or RO 12": he named two different jobs. Ask which; never pick one or let the AI guess.
+      await quo.sendMessage({ to: phone, content: whichJobReply(focus) })
+        .catch((err) => console.error("Owner answer failed:", err.message));
+      return finishCustomerWork({ result, messageId, phone, quo, shopClient });
+    }
     const thread = await quo.listMessages({ participants: [phone], maxResults: 12 }).catch(() => ({ data: [] }));
     const history = historyForFocus(recentTurns(thread.data || [], messageId), focus, result.ownerQuestion);
     // Project progress is sourced from current GitHub data, not from the
@@ -160,6 +166,7 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
       ...(focus.candidates ? { focusCandidates: focus.candidates } : {}),
       ...(focus.records && focus.records.length ? { namedRecords: focus.records } : {}),
       ...(focus.missing ? { missingRecord: { type: focus.missingType || "ro", id: focus.missing } } : {}),
+      ...(focus.missingRos ? { missingRos: focus.missingRos } : {}),
       customerDetail: await customerDetail({
         question: result.ownerQuestion, snapshot: result.snapshot, quo, callContext,
       }),

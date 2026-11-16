@@ -194,9 +194,13 @@ class TypedRecordIdTests(OwnerFocusTests):
         out = self.resolve(f"RO 8: appointment {ids['appt']}, invoice {ids['invoice']}, approval {ids['item']}")
         by_type = {r["type"]: r for r in out["records"]}
         self.assertEqual(out["ro"]["roId"], 8)
-        for kind in ("appointment", "invoice", "approval"):
+        for kind in ("appointment", "invoice"):
             self.assertTrue(by_type[kind]["exists"], kind)
-            self.assertFalse(by_type[kind]["matchesFocus"], kind)
+            self.assertIs(by_type[kind]["matchesFocus"], False, kind)
+        # The approval has a customer but no vehicle or lead: its job can't be verified
+        self.assertTrue(by_type["approval"]["exists"])
+        self.assertIsNone(by_type["approval"]["matchesFocus"])
+        self.assertTrue(by_type["approval"]["jobUnverified"])
         self.assertEqual(by_type["appointment"]["status"], "tentative")
 
         # Estimates live on the RO: not "missing", just not resolvable by number
@@ -214,6 +218,68 @@ class TypedRecordIdTests(OwnerFocusTests):
 
         # The same record named twice is looked up once
         self.assertEqual(len(self.resolve("task 5 and task #5")["refs"]), 1)
+
+    def test_two_different_ros_named_as_alternatives_ask_which(self):
+        # QA on 6887684: "RO 8 or RO 12" picked RO #8.
+        for text, order in (("RO 8 or RO 12", [8, 12]), ("RO 12 or RO 8?", [12, 8]),
+                            ("is it ro #8 or repair order 12", [8, 12]), ("job 12 or job eight", [12, 8])):
+            with self.subTest(text=text):
+                out = self.resolve(text)
+                self.assertNotIn("ro", out)
+                self.assertEqual([c["roId"] for c in out["candidates"]], order)
+                self.assertEqual(out["how"], "named_several")
+        # The same RO named twice is still one job
+        for text in ("RO 8, yes RO #8", "ro 8 ... job number 8", "RO 8 or RO 8"):
+            with self.subTest(text=text):
+                self.assertEqual(self.resolve(text)["ro"]["roId"], 8)
+        # An alternative that doesn't exist is reported, the real one is offered
+        out = self.resolve("RO 8 or RO 404")
+        self.assertEqual([c["roId"] for c in out["candidates"]], [8])
+        self.assertEqual(out["missingRos"], [404])
+
+    def test_approval_uses_its_own_job_not_the_customer(self):
+        # QA on 6887684: one customer, two vehicles, an approval about the Jeep matched the Impala's RO.
+        from app.dispatch_model import DispatchItem
+        from app.lead_model import ServiceLead
+        with self.Session() as db:
+            antwon = db.get(RepairOrder, 8).customer
+            jeep = Vehicle(customer=antwon, year=2014, make="Jeep", model="Cherokee")
+            db.add(jeep)
+            db.flush()
+            db.add(RepairOrder(id=20, customer=antwon, vehicle=jeep, status="in_progress", concern="x"))
+            on_jeep = DispatchItem(quo_conversation_id="CNa", customer_phone="+16025550108", customer_id=antwon.id,
+                                   vehicle_id=jeep.id, status="needs_owner", last_message_id="a")
+            no_vehicle = DispatchItem(quo_conversation_id="CNb", customer_phone="+16025550108", customer_id=antwon.id,
+                                      status="needs_owner", last_message_id="b")
+            via_lead = DispatchItem(quo_conversation_id="CNc", customer_phone="+16025550108", customer_id=antwon.id,
+                                    status="needs_owner", last_message_id="c")
+            db.add_all([on_jeep, no_vehicle, via_lead])
+            db.flush()
+            db.add(ServiceLead(source="quo", external_thread_id="CNc", customer_id=antwon.id, repair_order_id=20,
+                               last_dispatch_item_id=via_lead.id))
+            db.commit()
+            ids = (on_jeep.id, no_vehicle.id, via_lead.id)
+
+        def approval(text):
+            out = self.resolve(text)
+            return out, next(r for r in out["records"] if r["type"] == "approval")
+
+        out, rec = approval(f"RO 8 approval {ids[0]}")
+        self.assertEqual(out["ro"]["roId"], 8)
+        self.assertEqual((rec["roId"], rec["roLink"], rec["matchesFocus"]), (20, "vehicle", False))
+        out, rec = approval(f"RO 20 approval {ids[0]}")
+        self.assertIs(rec["matchesFocus"], True)
+        with patch.dict(os.environ, {"SERVICE_LEADS_ENABLED": "true"}):
+            out, rec = approval(f"RO 8 approval {ids[2]}")
+        self.assertEqual((rec["roId"], rec["roLink"], rec["matchesFocus"]), (20, "lead", False))
+        with patch.dict(os.environ, {"SERVICE_LEADS_ENABLED": ""}):  # lead tables absent: no lookup failure
+            out, rec = approval(f"RO 8 approval {ids[2]}")
+        self.assertTrue(rec["jobUnverified"])
+        self.assertNotIn("lookupFailed", rec)
+        out, rec = approval(f"RO 8 approval {ids[1]}")
+        self.assertNotIn("roId", rec)
+        self.assertIsNone(rec["matchesFocus"])
+        self.assertTrue(rec["jobUnverified"])
 
     def test_missing_ro_says_ro(self):
         out = self.resolve("RO 404")

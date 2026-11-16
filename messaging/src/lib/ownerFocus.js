@@ -71,4 +71,15 @@ function guardAnswer(answer, { focus, snapshot = {}, question = "" }) {
   });
 }
 
-module.exports = { isAppDefectReport, defectReply, historyForFocus, guardAnswer, focusLine };
+// He named two or more different repair orders. List them and change nothing.
+function whichJobReply(focus) {
+  const jobs = (focus.candidates || []).map((ro) => `${ro.label} (${[ro.customer, ro.vehicle].filter(Boolean).join(", ")})`);
+  const missing = (focus.missingRos || []).map((n) => `RO #${n}`);
+  const asked = jobs.length > 1 ? `Which job do you mean: ${jobs.slice(0, -1).join(", ")} or ${jobs[jobs.length - 1]}?`
+    : `Did you mean ${jobs[0]}?`;
+  const notFound = missing.length ? ` I couldn't find ${missing.join(" or ")}.` : "";
+  return `${asked}${notFound} Nothing was changed.`;
+}
+
+module.exports = {
+  whichJobReply, isAppDefectReport, defectReply, historyForFocus, guardAnswer, focusLine };

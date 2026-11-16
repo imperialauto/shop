@@ -97,10 +97,19 @@ def resolve(db, text: str, open_statuses_only: bool = True) -> dict:
             return {}
         return {"refs": refs, "records": [record(db, r["type"], r["id"], ro) for r in other]}
 
-    if ro_refs:
-        ro = db.get(RepairOrder, ro_refs[0])
+    distinct = list(dict.fromkeys(ro_refs))  # "RO 8 ... RO #8" is one job
+    if len(distinct) > 1:
+        # "RO 8 or RO 12": two different jobs named. Never pick one; ask which.
+        found = [ro for ro in (db.get(RepairOrder, n) for n in distinct) if ro is not None]
+        missing = [n for n in distinct if n not in {ro.id for ro in found}]
+        out = {"candidates": [summary(ro) for ro in found], "how": "named_several", **extra()}
+        if missing:
+            out["missingRos"] = missing
+        return out
+    if distinct:
+        ro = db.get(RepairOrder, distinct[0])
         if ro is None:
-            return {"missing": ro_refs[0], "missingType": "ro", **extra()}
+            return {"missing": distinct[0], "missingType": "ro", **extra()}
         return {"ro": summary(ro), "how": "explicit", **extra(ro)}
     words = [w.lower() for w in WORDS.findall(text) if w.lower() not in STOP and w.lower() not in TYPES]
     # A number typed as another record ("approval 12", "task #118") or written "#111" is never an RO number.
@@ -125,15 +134,17 @@ def record(db, kind: str, record_id: int, focus_ro=None) -> dict:
     "lookupFailed", and a kind with no numbered record (estimates live on the RO) is
     "resolvable": False, so neither is ever reported as missing."""
     found = {"type": kind, "id": record_id, "exists": False, "resolvable": True}
-    ro_id = customer_id = None
+    ro_id = None
     try:
         if kind == "approval":
             from app.dispatch_model import DispatchItem
             item = db.get(DispatchItem, record_id)
             if item is not None:
-                customer_id = item.customer_id
+                link = linked_ro(db, item)
+                ro_id = link.get("roId")
                 found.update(exists=True, status=item.status, label=f"approval #{record_id}",
-                             who=item.contact_name or item.customer_phone or "", customerId=item.customer_id)
+                             who=item.contact_name or item.customer_phone or "", customerId=item.customer_id,
+                             roLink=link["how"], **({"roId": ro_id} if ro_id else {}))
         elif kind in ("task", "fix"):
             from app.imperial_task_model import PROBLEM_CATEGORY, ImperialTask
             task = db.get(ImperialTask, record_id)
@@ -172,9 +183,37 @@ def record(db, kind: str, record_id: int, focus_ro=None) -> dict:
     if found["exists"] and focus_ro is not None:
         if ro_id is not None:
             found["matchesFocus"] = ro_id == focus_ro.id
-        elif customer_id is not None:
-            found["matchesFocus"] = customer_id == focus_ro.customer_id
+        elif kind == "approval":
+            # Same customer is not the same job (one customer, two vehicles). Without a
+            # verified link to an RO, say so instead of attaching it to the job in focus.
+            found["matchesFocus"] = None
+            found["jobUnverified"] = True
     return found
+
+
+def linked_ro(db, item) -> dict:
+    """Which repair order an approval belongs to, only from a recorded link:
+    1. the service lead that holds this queue item and an RO, or
+    2. the item's own vehicle, when that vehicle has exactly one open RO.
+    Customer alone never counts: one customer can have several jobs open."""
+    import os
+    from app.models import RepairOrder
+
+    lead = None
+    if os.getenv("SERVICE_LEADS_ENABLED", "").strip().lower() == "true":  # lead tables exist only when enabled
+        from app.lead_model import ServiceLead
+        lead = (db.query(ServiceLead).filter(ServiceLead.last_dispatch_item_id == item.id,
+                                             ServiceLead.repair_order_id.isnot(None))
+                .order_by(ServiceLead.id.desc()).first())
+    if lead is not None:
+        return {"roId": lead.repair_order_id, "how": "lead"}
+    if item.vehicle_id:
+        open_ros = db.query(RepairOrder).filter(RepairOrder.vehicle_id == item.vehicle_id,
+                                                RepairOrder.status != "delivered").all()
+        if len(open_ros) == 1:
+            return {"roId": open_ros[0].id, "how": "vehicle"}
+        return {"how": "vehicle_ambiguous" if open_ros else "vehicle_no_open_ro"}
+    return {"how": "unverified"}
 
 
 def summary(ro) -> dict | None:
