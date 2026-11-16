@@ -18,6 +18,39 @@ The AI assistant is named **Imperial**.
 - **Continuous workflow optimization (permanent, Nov 9):** for every button, link, form, screen and workflow, ask how to make it easier, quicker, more intuitive, or unnecessary. Trace the journey, count taps, screens, entries and decisions, reuse data already on file, make the next action obvious, update every screen at once, and work on phone and desktop. Never remove safeguards, approvals, financial controls or audit history to save a step. Record findings and measured results under R37, not in a separate list.
 - **Imperial as an operations manager (permanent, Nov 9):** Imperial manages work proactively, not just displays it. For every workflow ask whether the action can be eliminated, completed from existing data, combined, or prepared before it's asked for; whether routine work can finish without interrupting the owner; whether unfinished work recovers by itself; whether every record updates; how failures are detected and reported; and what happens when Quo, Railway or an AI provider is down. Every important action has an owner, status, completion condition and audit trail. Prefer existing screens over new ones. Safe, reversible, already-authorized admin actions need no extra confirmation. Customer messages, financial commitments and destructive changes always keep their approval. Measure every significant change (taps, screens, entries, errors, recovery). Goal: fewer steps from a customer needing service to the work done and paid. Recorded under R38.
 
+## Current handoff (single writer per branch; read before starting, update at each checkpoint)
+
+Status words for this section: Planned, Implemented, Tested, Merged, Deployed, Owner-Verified. A reported problem is never "fixed" because code was written.
+
+### Roles (owner, Nov 15)
+- **Claude**: implementation, Git changes, tests, recovery PRs. One branch: `claude/recovery-nov15`.
+- **ChatGPT**: independent requirements reconciliation, read-only production inspection, preview acceptance testing, review of the exact candidate SHA. Reproducible findings only; no competing code.
+- No Ollama/other-agent implementation overlapping recovery. Production release: one designated executor after review.
+
+### Baseline (checked 2026-11-15 ~17:55 Phoenix)
+| Item | Value |
+|---|---|
+| Production (Railway `respectful-charm`) | `web` and `shop` both SUCCESS on `20360d3` (PR #187) |
+| Shared QA preview (`imperial-pr52-preview` / `web-preview`) | branch `claude/launch-batch-nov13`, deployed Nov 13; not the recovery candidate. Left untouched |
+| Other preview services | `imperial-web-qa` (`codex/imperial-qa-website-leads-20261107`), `imperial-assistant-qa` (`codex/imperial-qa-unified-leads-20261107`), `local-node-qa` (`claude/local-ai-node`). Left untouched |
+| Open PRs | #188 `codex/public-navigation-spacing` 19a9f92; #189 `codex/my-day-personal-todos` cc4e65b; #190 `codex/automatic-customer-followups` e27f935 (stacked on #189). Not touched by Claude; reviewed against the matrix only |
+| Recovery branch | `claude/recovery-nov15`, baseline `20360d3` |
+
+### Recovery scope (Claude)
+- A. Owner SMS context: RO / approval / task IDs distinguished; customer and vehicle resolved before acting; app-defect texts saved to the Fix list; acknowledgements only after the backend confirms.
+- B. Repair-line completion and evidence: per-line complete/reopen, photo/file upload on RO (optionally per line), internal vs customer-visible media; authorization, technician completion, invoicing and payment stay separate.
+- C. Report #122: every reviewable document on `/settings/security-privacy` opens with its exact wording; missing vs draft shown plainly; alerts match pending items; enabling a setting is not reviewing its wording.
+- D. Communication history and AI drafts: trace why RO #8 history omits outgoing Quo texts and why 10 customer messages wait for drafts; show failure/retry states; no replayed sends.
+- Out of scope without owner approval: production deploy, database changes, customer messages, domain changes.
+
+### Recovery matrix
+Kept in `docs/RECOVERY-MATRIX-NOV15.md` (same branch).
+
+### Checkpoints
+| When (Phoenix) | Status | Note |
+|---|---|---|
+| Nov 15 17:58 | Planned | Branch created at `20360d3`; baseline and scope recorded. No code changes yet |
+
 ## Requirements
 | ID | Area | Requirement | Status | Evidence or gap |
 |---|---|---|---|---|
