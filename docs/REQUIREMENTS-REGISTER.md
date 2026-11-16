@@ -50,6 +50,7 @@ Kept in `docs/RECOVERY-MATRIX-NOV15.md` (same branch).
 | When (Phoenix) | Status | Note |
 |---|---|---|
 | Nov 15 17:58 | Planned | Branch created at `20360d3`; baseline and scope recorded. No code changes yet |
+| Nov 15 | Tested | C `8682b1c`, A `93147ed`, D `6eff3b5`, B `89d28f1` on `claude/recovery-nov15`. Python 492 run / 2 known clock failures; messaging 140/140. PRs #188–#190 reviewed read-only; findings in `docs/RECOVERY-MATRIX-NOV15.md`. Next: draft PR, isolated preview on synthetic data, handoff to ChatGPT |
 
 ## Requirements
 | ID | Area | Requirement | Status | Evidence or gap |
