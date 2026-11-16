@@ -72,7 +72,8 @@ class OwnerFocusTests(unittest.TestCase):
     def test_explicit_ro_number_wins_and_unknown_number_is_reported(self):
         self.assertEqual(self.resolve("RO 12 is ready")["ro"]["roId"], 12)
         self.assertEqual(self.resolve("job #8 headlight done")["ro"]["roId"], 8)
-        self.assertEqual(self.resolve("RO 999 status?"), {"missing": 999})
+        missing = self.resolve("RO 999 status?")
+        self.assertEqual((missing["missing"], missing["missingType"]), (999, "ro"))
 
     def test_approval_numbers_are_not_repair_orders(self):
         self.assertEqual(self.resolve("111 more context?"), {})
@@ -116,6 +117,108 @@ class OwnerFocusTests(unittest.TestCase):
         with patch.dict(os.environ, {"IMPERIAL_TASKS_ENABLED": "false"}):
             self.assertNotEqual(self.client.post("/internal/imperial/tasks/problems", json=body, headers=HEADERS).status_code, 200)
 
+
+class TypedRecordIdTests(OwnerFocusTests):
+    """QA on #191: "approval 12" or "task 12" must never resolve toward RO #12."""
+
+    def resolve(self, text):
+        with self.Session() as db:
+            return owner_focus.resolve(db, text)
+
+    def test_typed_numbers_are_not_repair_orders(self):
+        for text in ("approval 12", "approval #12 is done", "task 12", "task twelve", "fix list 12",
+                     "invoice 12 paid?", "queue item 12", "what's the status on approval 12"):
+            with self.subTest(text=text):
+                out = self.resolve(text)
+                self.assertNotIn("ro", out)
+                self.assertNotIn("candidates", out)
+                self.assertNotEqual(out.get("missing"), 12)
+                self.assertTrue(out["refs"])
+                self.assertNotEqual(out["refs"][0]["type"], "ro")
+
+    def test_ro_words_still_resolve(self):
+        for text in ("RO 12", "ro #12", "repair order 12", "job number 12", "R.O. 12", "work order 12"):
+            with self.subTest(text=text):
+                self.assertEqual(self.resolve(text)["ro"]["roId"], 12)
+
+    def test_typed_number_with_a_name_still_finds_that_customers_job(self):
+        out = self.resolve("task 3 for Antwon's Impala")
+        self.assertEqual(out["ro"]["roId"], 8)
+        self.assertEqual(out["refs"], [{"type": "task", "id": 3}])
+
+    def test_typed_number_cannot_tip_a_close_match_to_the_wrong_ro(self):
+        # Dana's job is RO #12 (a Compass). The model alone scores 2; before this fix the typed
+        # number added 2 more and tipped it over the line to RO #12.
+        out = self.resolve("approval 12 Compass")
+        self.assertNotIn("ro", out)
+
+    def test_named_records_are_looked_up_with_type_and_state(self):
+        with self.Session() as db:
+            task = ImperialTask(source="dashboard", external_id="t1", title="Order tank", category="general")
+            problem = ImperialTask(source="owner_sms", external_id="p1", title="Can't upload", category=PROBLEM_CATEGORY)
+            db.add_all([task, problem])
+            db.commit()
+            task_id, problem_id = task.id, problem.id
+        out = self.resolve(f"task {task_id} and fix list {problem_id} and approval 999")
+        records = {(r["type"], r["id"]): r for r in out["records"]}
+        self.assertTrue(records[("task", task_id)]["exists"])
+        self.assertEqual(records[("task", task_id)]["label"], f"task #{task_id}")
+        self.assertEqual(records[("fix", problem_id)]["label"], f"Fix list #{problem_id}")
+        self.assertFalse(records[("approval", 999)]["exists"])
+
+    def test_lookup_cases_line_appointment_estimate_scope_and_failure(self):
+        from datetime import datetime, timedelta, timezone
+        from app.appointment_model import Appointment
+        from app.dispatch_model import DispatchItem
+        from app.models import Invoice
+        with self.Session() as db:
+            line = db.query(LineItem).filter(LineItem.repair_order_id == 8).first()
+            start = datetime(2026, 11, 18, 17, tzinfo=timezone.utc)
+            appt = Appointment(repair_order_id=12, resource_id="bay-1", starts_at=start, ends_at=start + timedelta(hours=1))
+            invoice = Invoice(repair_order_id=12, total=10, status="sent")
+            dana = db.get(RepairOrder, 12).customer_id
+            item = DispatchItem(quo_conversation_id="CN1", customer_phone="+16025550112", customer_id=dana,
+                                status="needs_owner", last_message_id="m")
+            task = ImperialTask(source="dashboard", external_id="t9", title="Order tank", category="general")
+            db.add_all([appt, invoice, item, task])
+            db.commit()
+            ids = dict(line=line.id, appt=appt.id, invoice=invoice.id, item=item.id, task=task.id)
+
+        # "line item 3" is a line on a job, not approval 3
+        out = self.resolve(f"line item {ids['line']} on RO 8 is done")
+        rec = out["records"][0]
+        self.assertEqual((rec["type"], rec["exists"], rec["roId"], rec["matchesFocus"]), ("line", True, 8, True))
+        self.assertEqual(out["ro"]["roId"], 8)
+
+        # Records on a different job than the one in focus are flagged, never silently attached
+        out = self.resolve(f"RO 8: appointment {ids['appt']}, invoice {ids['invoice']}, approval {ids['item']}")
+        by_type = {r["type"]: r for r in out["records"]}
+        self.assertEqual(out["ro"]["roId"], 8)
+        for kind in ("appointment", "invoice", "approval"):
+            self.assertTrue(by_type[kind]["exists"], kind)
+            self.assertFalse(by_type[kind]["matchesFocus"], kind)
+        self.assertEqual(by_type["appointment"]["status"], "tentative")
+
+        # Estimates live on the RO: not "missing", just not resolvable by number
+        est = self.resolve("estimate 7")["records"][0]
+        self.assertEqual((est["exists"], est["resolvable"]), (False, False))
+
+        # He calls a to-do a Fix list item: the record says what it really is
+        fix = self.resolve(f"fix list {ids['task']}")["records"][0]
+        self.assertEqual((fix["actualType"], fix["typeMismatch"], fix["label"]), ("task", True, f"task #{ids['task']}"))
+
+        # A lookup that errors is "couldn't check", never "doesn't exist"
+        with patch("app.models.Invoice", None):
+            failed = self.resolve("invoice 1")["records"][0]
+        self.assertTrue(failed.get("lookupFailed"))
+
+        # The same record named twice is looked up once
+        self.assertEqual(len(self.resolve("task 5 and task #5")["refs"]), 1)
+
+    def test_missing_ro_says_ro(self):
+        out = self.resolve("RO 404")
+        self.assertEqual(out["missing"], 404)
+        self.assertEqual(out["missingType"], "ro")
 
 if __name__ == "__main__":
     unittest.main()

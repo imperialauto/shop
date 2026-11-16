@@ -44,6 +44,20 @@ test("another customer's approval number never gets attached to the record in fo
   assert.equal(guardAnswer("For #111 do X", { focus: {}, snapshot: SNAPSHOT, question: "x" }), "For #111 do X");
 });
 
+test("typed records are never relabelled as the RO in focus (QA on #191)", () => {
+  const ctx = { focus: RO8, snapshot: SNAPSHOT, question: "eight for Antoine" };
+  for (const kept of ["Saved as task #118.", "That's Fix list #23.", "RO #12 is Dana's.", "Invoice #4 is paid.",
+    "See job #5.", "Estimate #9 was sent."]) {
+    assert.equal(guardAnswer(kept, ctx), kept, kept);
+  }
+  // A number he typed as another record ("approval 12", "task 12") counts as named
+  assert.equal(guardAnswer("#12 is waiting.", { ...ctx, question: "approval 12?" }), "#12 is waiting.");
+  assert.equal(guardAnswer("#12 is waiting.", { ...ctx, question: "task 12?" }), "#12 is waiting.");
+  // Bare unnamed approval for someone else is still caught
+  assert.equal(guardAnswer("Saved task #118. For #111 with Antwon, call back.", ctx),
+    "Saved task #118. For RO #8 with Antwon, call back.");
+});
+
 test("a topic switch drops earlier turns about another customer's number", () => {
   const history = [
     { role: "user", content: "111 more context?" },

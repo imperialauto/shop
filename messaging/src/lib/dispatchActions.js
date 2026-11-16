@@ -158,6 +158,8 @@ async function handleIntakeResult({ result, messageId, phone, quo, shopClient })
       ...result.snapshot,
       ...(focus.ro ? { focusRecord: focus.ro } : {}),
       ...(focus.candidates ? { focusCandidates: focus.candidates } : {}),
+      ...(focus.records && focus.records.length ? { namedRecords: focus.records } : {}),
+      ...(focus.missing ? { missingRecord: { type: focus.missingType || "ro", id: focus.missing } } : {}),
       customerDetail: await customerDetail({
         question: result.ownerQuestion, snapshot: result.snapshot, quo, callContext,
       }),
