@@ -134,7 +134,8 @@ class AskImperialTests(unittest.TestCase):
             "operation": "Brake pads and rotors, front, replace", "guide_hours": hours, "rate_type": "shop",
             "inclusions": "Includes rotor replacement", "overlap": "", "shop_manager_ref": "SM-4471",
             "part_description_0": "Front pads", "part_vendor_0": "AutoZonePro", "part_part_number_0": "", "part_price_0": price,
-            "part_qty_0": "1", "part_availability_0": "In stock", "save_as": "job", "rule_text": ""})
+            "part_qty_0": "1", "part_availability_0": "In stock", "save_as": "job", "rule_text": "",
+            "part_description_1": "front rotors", "part_vendor_1": "AutoZonePro", "part_price_1": ""})  # suggestion, not priced
 
     # -- entry points and roles -------------------------------------------
     def test_button_everywhere_with_job_context_and_off_switch(self):

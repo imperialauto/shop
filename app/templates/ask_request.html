@@ -118,7 +118,7 @@
       <label>Shop Manager estimate ref<input name="shop_manager_ref" maxlength="64" value="{{ evidence.shop_manager_ref or '' if evidence else '' }}"></label>
     </div>
     <label style="display:flex;gap:10px;align-items:center;color:var(--imp-ink)"><input type="checkbox" name="verified" value="yes" required> I checked this operation for this vehicle in ALLDATA Repair</label>
-    <details{% if not parts %} open{% endif %}><summary>Parts (AutoZonePro or O'Reilly)</summary>
+    <details{% if not parts %} open{% endif %}><summary>Parts (AutoZonePro or O'Reilly) · leave the price empty to skip a part</summary>
       {% for i in range(6) %}{% set p = parts[i] if parts|length > i else None %}
       <div class="ai-grid" style="margin-top:8px">
         <label>Part<input name="part_description_{{ i }}" maxlength="120" value="{{ p.description if p else ((reading.parts_to_price[i]) if reading and reading.parts_to_price|length > i else '') }}"></label>

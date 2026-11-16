@@ -109,6 +109,7 @@ class Worker:
         env = {**os.environ, "LOCAL_NODE_WORKER_KEY": NODE_KEY}
         self.proc = subprocess.Popen([sys.executable, "local_node/worker.py", "--config", str(cfg)],
                                      stdout=self.out, stderr=subprocess.STDOUT, env=env)
+        RUNNING.append(self)
         log("worker started", worker=name, pid=self.proc.pid)
 
     def kill(self):
@@ -142,6 +143,9 @@ def login(page, username):
 
 def shot(page, device, name):
     page.screenshot(path=str(OUT / f"{device}-{name}.png"), full_page=True)
+
+
+RUNNING = []
 
 
 def run_device(browser, device, options, ro_a, ro_b, phone, conversation):
@@ -294,7 +298,13 @@ def main():
                 run_device(browser, device, options, ro_a, ro_b, phone, conversation)
             except Exception as error:  # record and continue with the other device
                 failed = True
-                results.append({"step": "device failed", "ok": False, "device": device, "error": str(error)[:500]})
+                entry = {"step": "device failed", "ok": False, "device": device, "error": str(error)[:800]}
+                results.append(entry)
+                print(json.dumps(entry), flush=True)
+            finally:
+                for worker in RUNNING:  # a device's workers never carry over to the next device
+                    worker.stop()
+                RUNNING.clear()
         browser.close()
     (OUT / "results.json").write_text(json.dumps(results, indent=1, default=str))
     bad = [r for r in results if not r.get("ok")]

@@ -318,8 +318,8 @@ def parse_parts(rows: list[dict]) -> list[dict]:
     out = []
     for row in rows:
         name = (row.get("description") or "").strip()
-        if not name:
-            continue
+        if not name or not str(row.get("price") or "").strip():
+            continue  # a suggested part with no price checked yet is skipped, not an error
         vendor = (row.get("vendor") or "").strip()
         if vendor not in ("AutoZonePro", "O'Reilly"):
             raise HTTPException(422, "Parts must be checked at AutoZonePro or O'Reilly.")
