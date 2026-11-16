@@ -12,15 +12,15 @@
   {% if imperial_task_snapshot is defined and imperial_task_snapshot.enabled %}
   <section aria-label="Saved Imperial tasks" style="padding:12px 16px; border-bottom:1px solid var(--imp-line);">
     <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:6px;">
-      <strong style="font-size:13px; color:var(--imp-ink);">To-do</strong>
-      <a href="/dashboard/tasks" style="font-size:12px; color:var(--imp-muted);">All tasks →</a>
+      <strong style="font-size:13px; color:var(--imp-ink);">Saved tasks</strong>
+      <a href="/dashboard/tasks?scope=review" style="font-size:12px; color:var(--imp-muted);">Review tasks →</a>
     </div>
     {% if imperial_task_snapshot.error %}
     <p style="color:var(--imp-danger); font-size:12px; margin:0;">{{ imperial_task_snapshot.error }}</p>
     {% elif imperial_task_snapshot.tasks %}
       {% for task in imperial_task_snapshot.tasks %}
       <div class="task-row">
-        <a href="/dashboard/tasks?task={{ task.id }}" class="task-link">#{{ task.id }} {{ task.title }}{% if task.status == 'blocked' %} <span class="pill pill-warn">waiting on them</span>{% endif %}</a>
+        <a href="{{ '/my-day#todo-' ~ task.id if task.personal else '/dashboard/tasks?task=' ~ task.id }}" class="task-link">#{{ task.id }} {{ task.title }}{% if task.status == 'blocked' %} <span class="pill pill-warn">waiting on them</span>{% endif %}</a>
         {% if not read_only %}
         <form method="post" action="/dashboard/tasks/{{ task.id }}" style="margin:0;">
           <input type="hidden" name="next" value="/dashboard">
@@ -30,7 +30,7 @@
       </div>
       {% endfor %}
     {% else %}
-    <p style="color:var(--imp-muted); font-size:12px; margin:0;">No saved to-do tasks. Customer communications appear below.</p>
+    <p style="color:var(--imp-muted); font-size:12px; margin:0;">No saved tasks. Customer communications appear below.</p>
     {% endif %}
   </section>
   {% endif %}

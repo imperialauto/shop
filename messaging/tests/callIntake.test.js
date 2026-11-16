@@ -18,7 +18,7 @@ test("answered and outgoing calls are not missed", () => {
 test("uses the newest missed call and its voicemail", async () => {
   const q = quo([call("old", { createdAt: "2026-11-01T20:00:00Z" }), call("new")], { transcript: "2003 Mercedes rack and pinion" });
   assert.deepEqual(await missedCall({ quo: q, phone: "+16025550100", since: "x" }),
-    { id: "new", body: "Voicemail: 2003 Mercedes rack and pinion" });
+    { id: "new", body: "Voicemail: 2003 Mercedes rack and pinion", at: "2026-11-02T20:00:00Z" });
 });
 
 test("a plain missed call is still a lead", async () => {

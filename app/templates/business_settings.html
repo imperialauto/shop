@@ -80,6 +80,13 @@
       Direct replies and customer texting use separate controls.
     </p>
   </section>
+  <section class="card">
+    <h2 class="font-bold mb-2">Customer follow-ups</h2>
+    <label for="task-followup-days">Show in Follow-up after this many days without a reply</label>
+    <input id="task-followup-days" name="task_followup_days" type="number" min="1" max="{{ settings.task_followup_max }}"
+           value="{{ settings.task_followup_days }}" class="form-input" style="width:90px" required>
+    <p class="text-sm text-stone-400 mt-2">Counts from the last outgoing text and changes the task board only.</p>
+  </section>
   <section class="card" aria-labelledby="payment-methods">
     <h2 id="payment-methods" class="font-bold mb-1">Payment methods</h2>
     <p class="text-sm text-stone-400 mb-3">What staff can pick when marking a job paid at pickup.</p>

@@ -22,6 +22,7 @@ KEYS = {
     "booking_lead_minutes": "PUBLIC_BOOKING_LEAD_MINUTES",
     "booking_closed_days": "PUBLIC_BOOKING_CLOSED_DAYS",
     "owner_alert_batch_limit": "OWNER_ALERT_BATCH_LIMIT",
+    "task_followup_days": "TASK_FOLLOWUP_DAYS",
     "alert_rules": "ALERT_RULES_JSON",
     "labor_rates": "LABOR_RATES_JSON",
     "booking_auto_times": "PUBLIC_AUTO_TIMES",
@@ -76,6 +77,8 @@ def raw(key: str) -> str | None:
 
 OWNER_ALERT_DEFAULT = 10
 OWNER_ALERT_MAX = 10
+TASK_FOLLOWUP_DEFAULT = 3
+TASK_FOLLOWUP_MAX = 30
 
 
 def owner_alert_batch_limit() -> int:
@@ -84,6 +87,14 @@ def owner_alert_batch_limit() -> int:
     except ValueError:
         return OWNER_ALERT_DEFAULT
     return value if 0 <= value <= OWNER_ALERT_MAX else OWNER_ALERT_DEFAULT
+
+
+def task_followup_days() -> int:
+    try:
+        value = int(raw("task_followup_days") or "")
+    except ValueError:
+        return TASK_FOLLOWUP_DEFAULT
+    return value if 1 <= value <= TASK_FOLLOWUP_MAX else TASK_FOLLOWUP_DEFAULT
 
 
 def save(db: Session, key: str, value, actor: str) -> bool:

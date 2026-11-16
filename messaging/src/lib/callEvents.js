@@ -99,7 +99,7 @@ function createCallEvents({ quo, shopClient, contacts, runPass, deliver, phoneNu
     const phone = (call?.participants || []).find((p) => p !== ownNumber);
     if (!at || !phone) return;
     const conversationId = await conversationFor(phone);
-    if (conversationId) await shopClient.dispatchHandled({ conversationId, at });
+    if (conversationId) await shopClient.dispatchHandled({ conversationId, at, phone, byCall: true });
   }
 
   async function handle(body) {

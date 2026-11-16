@@ -367,63 +367,90 @@ def tracker_due(value: str):
         due = datetime.fromisoformat(value)
     except ValueError:
         raise HTTPException(422, "Enter a valid Phoenix date and time.") from None
-    return due.replace(tzinfo=PHOENIX)
+    return due.replace(tzinfo=PHOENIX) if due.tzinfo is None else due.astimezone(PHOENIX)
 
 
 @app.get("/dashboard/tasks", response_class=HTMLResponse)
-def master_tasks(request: Request, tab: str = "now", done: bool = False, task: int = 0, db: Session = Depends(get_db),
+def master_tasks(request: Request, tab: str = "now", done: bool = False, task: int = 0, scope: str = "jobs",
+                 sort: str = "priority",
+                 db: Session = Depends(get_db),
                  user: User = Depends(require_tracker_owner)):
     from app import task_board
 
     tab = "done" if done else (tab if tab in task_board.TABS else "now")
-    data = task_board.board(db)
+    scope = "review" if scope == "review" else "jobs"
+    sort = sort if sort in task_board.SORTS else "priority"
+    data = task_board.board(db, linked=scope == "jobs", sort=sort)
     if task:  # a link to one task opens whichever tab holds it
-        wanted = str(task)
-        for key, cards in data["cards"].items():
-            if any(wanted in card["ids"].split(",") for card in cards):
-                tab = key
+        from app.imperial_task_model import BACKLOG_CATEGORY, PERSONAL_CATEGORY, ImperialTask
+        saved = db.get(ImperialTask, task)
+        if saved and saved.category in (PERSONAL_CATEGORY, BACKLOG_CATEGORY):
+            return RedirectResponse(f"/my-day#todo-{task}", status_code=303)
+        for candidate in (scope, "jobs" if scope == "review" else "review"):
+            view = data if candidate == scope else task_board.board(db, linked=candidate == "jobs", sort=sort)
+            key = next((name for name, cards in view["cards"].items()
+                        if any(str(task) in card["ids"].split(",") for card in cards)), None)
+            if key:
+                tab, scope, data = key, candidate, view
                 break
     return templates.TemplateResponse("master_tasks.html", {
         "request": request, "user": user, "tab": tab, "cards": data["cards"][tab], "tabs": data["tabs"],
         "done_this_week": data["done_this_week"], "read_only": app.state.read_only,
-        "sending_paused": dispatch.is_paused(db),
+        "sending_paused": dispatch.is_paused(db), "scope": scope, "sort": sort,
+        "sorts": task_board.SORTS, "followup_days": data["followup_days"],
     })
 
 
 @app.post("/dashboard/tasks")
-def save_master_task(title: str = Form(...), due: str = Form(""),
+def save_master_task(title: str = Form(...), due: str = Form(""), note: str = Form(""),
+                     repair_order_id: int | None = Form(None, ge=1),
                      db: Session = Depends(get_db), user: User = Depends(require_tracker_owner)):
-    imperial_tasks.create_dashboard_task(db, user.id, title, tracker_due(due))
-    return RedirectResponse("/dashboard/tasks", status_code=303)
+    imperial_tasks.create_dashboard_task(db, user.id, title, tracker_due(due), details=note, repair_order_id=repair_order_id)
+    return RedirectResponse("/dashboard/tasks" if repair_order_id else "/dashboard/tasks?scope=review", status_code=303)
+
+
+@app.post("/my-day/todos")
+def save_personal_todo(title: str = Form(...), due: str = Form(""), note: str = Form(""),
+                       db: Session = Depends(get_db), user: User = Depends(require_tracker_owner)):
+    from app.imperial_task_model import PERSONAL_CATEGORY
+
+    imperial_tasks.create_dashboard_task(db, user.id, title, tracker_due(due), category=PERSONAL_CATEGORY, details=note)
+    return RedirectResponse("/my-day#my-to-do", status_code=303)
 
 
 @app.post("/dashboard/tasks/group")
 def update_task_group(ids: str = Form(...), operation: str = Form(...), due: str = Form(""), tab: str = Form("now"),
+                      scope: str = Form("jobs"), sort: str = Form("priority"), repair_order_id: int | None = Form(None, ge=1),
                       db: Session = Depends(get_db), user: User = Depends(require_tracker_owner)):
     """One tap acts on every task in a card (all of one customer's stacked Quo updates)."""
     from uuid import uuid4
     from app import task_board
 
-    if operation not in ("complete", "reopen", "wait", "tomorrow", "reschedule", "now"):
+    if operation not in ("complete", "reopen", "wait", "tomorrow", "reschedule", "now", "personal", "defer", "shop"):
         raise HTTPException(422, "Unknown task action.")
     task_ids = [int(part) for part in ids.split(",") if part.strip().isdigit()][:50]
     if not task_ids:
         raise HTTPException(422, "No tasks selected.")
+    if operation == "shop" and repair_order_id is None:
+        raise HTTPException(422, "Choose an open repair order.")
     when = task_board.tomorrow_morning() if operation == "tomorrow" else tracker_due(due)
     for task_id in task_ids:
         if operation in ("tomorrow", "reschedule"):
             if when is None:
                 raise HTTPException(422, "Pick a date and time.")
             steps = [("reopen", None), ("reschedule", when)]
-        elif operation == "now":
-            steps = [("reopen", None)]
         else:
             steps = [(operation, None)]
         for step, due_at in steps:
-            change = imperial_tasks.OwnerTaskChange(messageId=uuid4().hex, operation=step, dueAt=due_at)
+            change = imperial_tasks.OwnerTaskChange(messageId=uuid4().hex, operation=step, dueAt=due_at,
+                                                   repairOrderId=repair_order_id if step == "shop" else None)
             imperial_tasks.change_task(db, task_id, change, f"owner:{user.id}")
     tab = tab if tab in task_board.TABS else "now"
-    return RedirectResponse(f"/dashboard/tasks?tab={tab}", status_code=303)
+    scope = "review" if scope == "review" else "jobs"
+    sort = sort if sort in task_board.SORTS else "priority"
+    if operation == "personal":
+        return RedirectResponse("/my-day#my-to-do", status_code=303)
+    return RedirectResponse(f"/dashboard/tasks?tab={tab}&scope={scope}&sort={sort}", status_code=303)
 
 
 @app.post("/dashboard/tasks/{task_id}")
@@ -431,13 +458,13 @@ def update_master_task(task_id: int, operation: str = Form(...), due: str = Form
                        db: Session = Depends(get_db), user: User = Depends(require_tracker_owner)):
     from uuid import uuid4
 
-    if operation not in ("complete", "reopen", "reschedule", "wait"):
+    if operation not in ("complete", "reopen", "reschedule", "wait", "defer", "personal", "shop"):
         raise HTTPException(422, "Unknown task action.")
     change = imperial_tasks.OwnerTaskChange(
         messageId=uuid4().hex, operation=operation, dueAt=tracker_due(due),
     )
     imperial_tasks.change_task(db, task_id, change, f"owner:{user.id}")
-    return RedirectResponse("/dashboard" if next == "/dashboard" else "/dashboard/tasks", status_code=303)
+    return RedirectResponse(next if next in ("/dashboard", "/my-day#my-to-do") else "/dashboard/tasks", status_code=303)
 
 
 @app.post("/problems")

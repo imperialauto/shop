@@ -17,7 +17,7 @@ from app.database import Base, get_db
 from app.dispatch_model import DispatchItem, DispatchOutbound
 from app.imperial_task_model import ImperialTask
 from app.main import app
-from app.models import Customer, User
+from app.models import Communication, Customer, User
 from app.routes.dispatch import back_to, queued_replies
 
 
@@ -119,7 +119,7 @@ class BoardTests(unittest.TestCase):
             db.add(ImperialTask(source="dashboard", external_id="d2", title="Waiting on parts", status="blocked"))
             db.commit()
             data = task_board.board(db, now)
-        self.assertEqual([t["count"] for t in data["tabs"]], [1, 1, 1, 0])
+        self.assertEqual([t["count"] for t in data["tabs"]], [1, 1, 0, 1, 0])
         card = data["cards"]["now"][0]
         self.assertEqual(card["name"], "Anastasia Carpenter")
         self.assertEqual(card["vehicle"], "2003 Chevrolet Suburban")
@@ -145,6 +145,35 @@ class BoardTests(unittest.TestCase):
                 cards = task_board.board(db, now)["cards"]["now"]
         names = sorted(str(c["name"]) for c in cards)
         self.assertEqual(names, ["Amaya", "None"])
+
+    def test_outgoing_text_sets_waiting_and_followup_and_new_reply_returns_to_now(self):
+        now = datetime(2026, 11, 15, 17, tzinfo=timezone.utc)
+        with self.Session() as db:
+            db.add(Customer(id=1, first_name="Fixture", last_name="Customer", phone="602-555-0195"))
+            db.add(ImperialTask(source="quo", external_id="TK1", title="[P1 PRICE CHECK] Verify fixture quote",
+                                details=json.dumps({"conversationId": "CNowner", "activityId": "thread-message"}),
+                                created_at=now - timedelta(days=6)))
+            db.add(Communication(customer_id=1, direction="inbound", channel="sms", external_id="thread-message",
+                                 created_at=now - timedelta(days=5)))
+            db.add(Communication(customer_id=1, direction="outbound", channel="sms", created_at=now-timedelta(days=4)))
+            db.commit()
+            with patch("app.business_settings.task_followup_days", return_value=5):
+                self.assertEqual(len(task_board.board(db, now, linked=False)["cards"]["waiting"]), 1)
+            with patch("app.business_settings.task_followup_days", return_value=3):
+                cards = task_board.board(db, now, linked=False)["cards"]
+                self.assertEqual(cards["now"], [])
+                self.assertTrue(cards["followup"][0]["waiting_on_customer"])
+                self.assertFalse(cards["followup"][0]["urgent"])
+                db.add(Communication(customer_id=1, direction="inbound", channel="sms",
+                                     created_at=now-timedelta(hours=1)))
+                db.add(ImperialTask(source="dashboard", external_id="D1", title="Earlier action",
+                                    created_at=now-timedelta(days=2), due_at=now-timedelta(hours=2)))
+                db.commit()
+                cards = task_board.board(db, now, linked=False, sort="newest")["cards"]
+                self.assertEqual(cards["followup"], [])
+                self.assertEqual([card["headline"] for card in cards["now"]], ["Verify fixture quote", "Earlier action"])
+                due = task_board.board(db, now, linked=False, sort="due")["cards"]["now"]
+                self.assertEqual(due[0]["headline"], "Earlier action")
 
 
 if __name__ == "__main__":
