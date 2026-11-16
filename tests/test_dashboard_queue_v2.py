@@ -129,6 +129,19 @@ class QueueSyncAndProblemTests(unittest.TestCase):
         self.assertEqual(saved.headers["location"], "/dashboard?reported=1")
 
 
+    def test_problem_report_from_the_dialog_stays_on_the_page(self):
+        # Fix list #130: reporting from a half-filled New Customer form must not reload it.
+        with patch("app.main.get_current_user", side_effect=lambda request, db: db.get(User, 1)):
+            saved = self.client.post("/problems", data={"page": "/customers/new", "comment": "Phone field too small"},
+                                     headers={"Accept": "application/json"}, follow_redirects=False)
+        self.assertEqual(saved.status_code, 200)
+        body = saved.json()
+        with self.Session() as db:
+            task = db.query(ImperialTask).one()
+        self.assertEqual(body, {"id": task.id, "status": task.status})
+        self.assertIn("Page: /customers/new", task.details)
+
+
 if __name__ == "__main__":
     unittest.main()
 

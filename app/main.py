@@ -447,7 +447,10 @@ def report_problem(request: Request, page: str = Form(""), comment: str = Form(.
     """Any signed-in user can report a problem; it lands on the owner's Fix list."""
     user = get_current_user(request, db)
     imperial_tasks.require_tasks_enabled()
-    imperial_tasks.create_problem_report(db, user, page, comment)
+    task = imperial_tasks.create_problem_report(db, user, page, comment)
+    if "application/json" in request.headers.get("accept", ""):
+        # Sent from the dialog without leaving the page, so a half-filled form keeps its values.
+        return JSONResponse({"id": task.id, "status": task.status})
     back = page if page.startswith("/") and not page.startswith("//") else "/dashboard"
     sep = "&" if "?" in back else "?"
     return RedirectResponse(f"{back}{sep}reported=1", status_code=303)

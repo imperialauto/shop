@@ -28,8 +28,35 @@
       dialog.querySelector("textarea").focus();
     });
     dialog.querySelector("[data-close]").addEventListener("click", function () { dialog.close(); });
+    // Save without leaving the page: whatever is typed in the page's own form stays put (Fix list #130).
+    var reportForm = dialog.querySelector("form");
+    reportForm.addEventListener("submit", function (event) {
+      if (!window.fetch || !window.FormData) return; // plain post still works
+      event.preventDefault();
+      var send = reportForm.querySelector("button:not([type='button'])");
+      var note = reportForm.querySelector("[data-report-status]");
+      if (!note) {
+        note = document.createElement("p");
+        note.setAttribute("data-report-status", "");
+        note.setAttribute("role", "status");
+        note.style.cssText = "margin:0; font-size:13px;";
+        reportForm.insertBefore(note, send.parentNode);
+      }
+      send.disabled = true;
+      note.textContent = "Saving…";
+      fetch("/problems", { method: "POST", body: new FormData(reportForm), headers: { Accept: "application/json" }, credentials: "same-origin" })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function (saved) {
+          note.textContent = "Saved to the Fix list as #" + saved.id + ". Nothing on this page was changed.";
+          reportForm.querySelector("textarea").value = "";
+          setTimeout(function () { dialog.close(); note.textContent = ""; }, 1800);
+        })
+        .catch(function () { note.textContent = "Couldn't save it. Your text is still here; try again."; })
+        .then(function () { send.disabled = false; });
+    });
   } else if (fab) {
-    fab.addEventListener("click", function () { location.href = "/problems?page=" + encodeURIComponent(location.pathname); });
+    // No dialog support: open the report page in a new tab so this page's form isn't lost.
+    fab.addEventListener("click", function () { window.open("/problems?page=" + encodeURIComponent(location.pathname), "_blank", "noopener"); });
   }
 
   // ── Year / make / model picker ───────────────────────────────────────────
