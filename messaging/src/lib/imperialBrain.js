@@ -208,7 +208,8 @@ async function answerImperialBrain({
       return "I understood the to-do, but task storage hasn't been activated yet. Nothing was saved.";
     }
     try {
-      const result = await taskWriter({ messageId, title, projectKey: inferredProjectKey(title) });
+      const personal = /(?:to|on)\s+(?:my|the)\s+to.?do(?:\s+list)?[.!]?$/i.test(q);
+      const result = await taskWriter({ messageId, title, projectKey: inferredProjectKey(title), ...(personal ? { personal } : {}) });
       if (!result?.recorded || !Number.isSafeInteger(result.id) || result.id < 1) throw Error("Unverified write");
       return taskReceipt({ ...result, title: result.title || title });
     } catch (_) {

@@ -9,7 +9,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -42,6 +42,7 @@ class IntakeMessage(BaseModel):
     contactName: str | None = Field(default=None, max_length=120)
     kind: str = Field(default="message", pattern="^(message|call)$")
     callOutcome: str | None = Field(default=None, pattern="^(answered|missed|voicemail|unknown)$")
+    callAt: AwareDatetime | None = None
     threadMessageId: str | None = Field(default=None, max_length=128)
     recovery: bool = False  # replayed by the catch-up job: never reply or act on it
     autoRepliesOn: bool = False
@@ -174,6 +175,11 @@ def _record(db: Session, message: IntakeMessage, result) -> DispatchItem:
     db.flush()
     # The service lead is independent of this short-lived communication task.
     # If the feature has not been migrated and enabled, existing intake is unchanged.
+    missed = message.kind == "call" and message.callOutcome in ("missed", "voicemail")
+    if missed:
+        from app.routes import imperial_tasks
+        if imperial_tasks.enabled():
+            imperial_tasks.record_callback(db, item, message)
     if os.getenv("SERVICE_LEADS_ENABLED", "").strip().lower() == "true":
         from app.lead_lifecycle import intake_from_quo
         intake_from_quo(db, message, result, item)
@@ -1131,6 +1137,7 @@ class HandledInput(BaseModel):
     conversationId: str = Field(min_length=1, max_length=64)
     at: datetime
     phone: str | None = Field(default=None, max_length=32)
+    byCall: bool = False
 
 
 @internal_router.post("/handled")
@@ -1155,6 +1162,10 @@ def handled(report: HandledInput, db: Session = Depends(get_db), _auth: bool = D
         item.decided_at = item.updated_at = datetime.now().astimezone()
         audit(db, item.id, "system", "replied_in_quo")
         closed.append(item.id)
+    if report.byCall and report.phone:
+        from app.routes import imperial_tasks
+        if imperial_tasks.enabled():
+            imperial_tasks.finish_callback(db, report.phone, _utc(report.at))
     db.commit()
     return {"closed": bool(closed), "items": closed}
 

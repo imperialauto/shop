@@ -15,7 +15,7 @@ import json
 import re
 from datetime import datetime, timezone
 
-from app.imperial_task_model import ImperialTask, ImperialTaskAudit
+from app.imperial_task_model import BACKLOG_CATEGORY, PERSONAL_CATEGORY, ImperialTask, ImperialTaskAudit
 
 SOURCE = "quo"
 OPEN = ("open", "in_progress", "blocked")
@@ -110,7 +110,7 @@ def sync(db, tasks: list[dict]) -> dict:
         before = (task.title, task.details, task.due_at)
         previous = details(task)
         task.title, task.details = title, json.dumps({**previous, **info})
-        if due is not None:
+        if due is not None and task.category not in (PERSONAL_CATEGORY, BACKLOG_CATEGORY):
             task.due_at = due
         if quo_done and task.status in OPEN:
             reopened = _last(db, task.id, ("reopen",))

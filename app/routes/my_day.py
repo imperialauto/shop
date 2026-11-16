@@ -62,6 +62,7 @@ def my_day(request: Request, db: Session = Depends(get_db)):
         "request": request, "user": user, "mine": mine, "unassigned": unassigned,
         "next_steps": next_steps, "visit_by_ro": visit_by_ro, "visits": additional_visits,
         "appointment_count": len(today),
+        "read_only": request.app.state.read_only,
         "can_take": user.role != "tech" and user in workers(db),
         "today": now.strftime("%A, %B %-d"),
     })
@@ -73,14 +74,16 @@ def _owner_day(db, user, now):
         return None
     from app import calendar_feed, task_board
     from app.routes.imperial_tasks import enabled
-    day = {"now": [], "counts": {}, "calendar": None, "tasks_on": enabled()}
+    day = {
+        "plan": {"next": [], "overdue": [], "later": [], "backlog": []},
+        "calendar": None, "tasks_on": enabled(), "load_error": False,
+    }
     if day["tasks_on"]:
         try:
-            data = task_board.board(db, now)
-            day["now"] = data["cards"]["now"][:6]
-            day["counts"] = {t["key"]: t["count"] for t in data["tabs"]}
+            day["plan"] = task_board.personal_plan(db, user.id, now)
         except Exception:
             db.rollback()
+            day["load_error"] = True
     try:
         events = calendar_feed.upcoming(now, days=1)
         if events is not None:

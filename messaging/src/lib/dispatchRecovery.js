@@ -29,6 +29,7 @@ async function offerMissedCall({ quo, shopClient, contacts, phoneNumberId, conve
     recovery: true,
     kind: "call",
     callOutcome: call.body.startsWith("Voicemail:") || call.body.startsWith("Left a voicemail") ? "voicemail" : "missed",
+    callAt: call.at,
     threadMessageId: newest?.id || "none",
     contactName: contacts ? await contacts.nameFor(phone) : null,
   });
@@ -124,7 +125,7 @@ async function runRecovery({ quo, shopClient, contacts, phoneNumberId, now = Dat
         if (callPhone) {
         const { data: calls = [] } = await quo.listCalls({ phoneNumberId, participants: [callPhone], createdAfter: since, maxResults: 10 });
         const talkedAt = lastConversationAt(calls);
-        if (talkedAt) await shopClient.dispatchHandled({ conversationId: conversation.id, at: talkedAt });
+        if (talkedAt) await shopClient.dispatchHandled({ conversationId: conversation.id, at: talkedAt, phone: callPhone, byCall: true });
       }
       await offerMissedCall({ quo, shopClient, contacts, phoneNumberId, conversation, since, messages, totals, draft, skip });
       for (const message of messages.filter(isInbound)) {
