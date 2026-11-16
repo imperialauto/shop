@@ -687,12 +687,50 @@ def _name_sweep():
 
 
 @internal_router.post("/tick")
-def tick(background: BackgroundTasks, db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
+def tick(request: Request, background: BackgroundTasks, owner_texts: bool = True, db: Session = Depends(get_db),
+         _auth: bool = Depends(require_internal_key)):
+    from app import customer_followups
+
     background.add_task(_name_sweep)
     if is_paused(db):  # nothing is reserved, so held alerts go out after RESUME
         return {"ownerPhone": OWNER_PHONE or None, "messages": [], "customerReplies": [], "paused": True}
-    return {"ownerPhone": OWNER_PHONE or None, "messages": due_owner_messages(db, datetime.now(timezone.utc)),
-            "customerReplies": queued_replies(db)}
+    now = datetime.now(timezone.utc)
+    messages = due_owner_messages(db, now) if owner_texts else []
+    replies = queued_replies(db) if owner_texts else []
+    followups = []
+    if (not request.app.state.read_only and not replies and customer_followups.enabled()
+            and not db.query(DispatchOutbound.id).filter_by(kind=DASHBOARD_REPLY, status="queued").first()):
+        try:
+            followups = customer_followups.due(db, now)
+        except (SQLAlchemyError, HTTPException, ValueError) as exc:
+            db.rollback()
+            print(f"customer_followups_unavailable {type(exc).__name__}")
+    return {"ownerPhone": OWNER_PHONE or None, "messages": messages,
+            "customerReplies": replies, "customerFollowups": followups}
+
+
+class FollowupCheck(BaseModel):
+    key: str = Field(max_length=160)
+    customerId: int = Field(gt=0)
+    phone: str = Field(max_length=32)
+    messageId: str | None = Field(None, max_length=128)
+    callId: str | None = Field(None, max_length=128)
+
+
+@internal_router.post("/followup-check")
+def followup_check(payload: FollowupCheck, request: Request, db: Session = Depends(get_db),
+                   _auth: bool = Depends(require_internal_key)):
+    from app import customer_followups
+
+    row = db.query(DispatchOutbound).filter_by(dedupe_key=payload.key, kind=customer_followups.KIND, status="reserved").first()
+    now = datetime.now(timezone.utc)
+    if (request.app.state.read_only or not row or is_paused(db) or not customer_followups.enabled()
+            or not customer_followups.allowed_now(now)):
+        return {"ok": False}
+    customer = db.get(Customer, payload.customerId)
+    reminder = customer_followups.candidate(db, customer, now) if customer else None
+    return {"ok": bool(reminder and reminder["key"] == payload.key and reminder["phone"] == payload.phone and
+                       reminder["messageId"] == payload.messageId and reminder["callId"] == payload.callId)}
 
 
 @internal_router.post("/draft")

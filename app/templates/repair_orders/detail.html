@@ -234,6 +234,11 @@
   </table>
   <div class="text-right text-gold-300 font-bold">Subtotal: ${{ "%.2f"|format(subtotal) }}</div>
   {% if user.role != 'tech' %}
+  <form method="post" action="/ro/{{ ro.id }}/estimate-location" class="mt-3 flex flex-wrap items-center gap-2">
+    <input type="hidden" name="offsite" value="{{ 'no' if offsite_estimate else 'yes' }}">
+    <span class="text-sm text-stone-400">{{ 'Estimate follow-up: vehicle off-site' if offsite_estimate else 'Estimate follow-up: vehicle location unconfirmed or at shop' }}</span>
+    <button type="submit" class="btn-secondary">{{ 'Clear off-site status' if offsite_estimate else 'Mark vehicle off-site' }}</button>
+  </form>
   {% set undecided = ro.line_items|selectattr('approval', 'none')|list %}
   {% set link = request.query_params.get('link', '') %}
   {% if link.startswith('queued') %}<p class="text-sm text-green-400 mt-2">Approval text is waiting for you as #{{ link[6:] }}. Reply YES {{ link[6:] }} to the alert, or approve it on the dashboard, to text the customer their link. Nothing has been sent yet.</p>

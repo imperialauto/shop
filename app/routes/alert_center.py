@@ -25,7 +25,7 @@ STATUS = {"sent": "Sent via Quo (delivery unconfirmed)", "failed": "Failed — r
 
 def recipient_for(kind: str) -> str:
     """Separate owner alerts from customer replies in the same outbound log."""
-    return "Customer" if kind in ("customer", "dashboard_reply") else "Owner"
+    return "Customer" if kind in ("customer", "dashboard_reply", "cust_followup") else "Owner"
 
 
 def _owner(request: Request, db: Session):

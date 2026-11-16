@@ -10,6 +10,7 @@ const { answerImperialBrain } = require("./imperialBrain");
 const { isAppDefectReport, defectReply, historyForFocus, guardAnswer, whichJobReply } = require("./ownerFocus");
 const { callContext } = require("./callIntake");
 const { verifyApprovedReplyContext } = require("./replyContext");
+const { sendCustomerFollowup } = require("./customerFollowups");
 
 function enabled(name) {
   return process.env[name] === "true";
@@ -45,11 +46,16 @@ async function sendAutoReply({ autoReply, messageId, phone, quo, shopClient }) {
 }
 
 async function deliverOwnerMessages({ quo, shopClient }) {
-  if (!enabled("OWNER_TEXTS_ENABLED")) return { sent: 0 };
-  const { ownerPhone, messages = [], customerReplies = [] } = await shopClient.dispatchTick();
+  const ownerTexts = enabled("OWNER_TEXTS_ENABLED");
+  if (!ownerTexts && !enabled("CUSTOMER_FOLLOWUP_WORKER_ENABLED")) return { sent: 0 };
+  const tick = ownerTexts ? await shopClient.dispatchTick() : await shopClient.dispatchTick({ ownerTexts: false });
+  const { ownerPhone, messages = [], customerReplies = [], customerFollowups = [] } = tick;
   let sent = 0;
   for (const reply of customerReplies) {
     await sendApprovedReply({ reply, ownerPhone, quo, shopClient });
+  }
+  for (const reminder of customerFollowups) {
+    await sendCustomerFollowup({ reminder, quo, shopClient });
   }
   for (const message of messages) {
     try {

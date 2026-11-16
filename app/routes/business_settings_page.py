@@ -59,6 +59,7 @@ def current() -> dict:
         "owner_alert_max": store.OWNER_ALERT_MAX,
         "task_followup_days": store.task_followup_days(),
         "task_followup_max": store.TASK_FOLLOWUP_MAX,
+        "automatic_customer_followups": (store.raw("automatic_customer_followups") or "").strip().lower() == "true",
         "buffer": store.raw("shop_buffer_minutes") or "60",
         "lead": store.raw("booking_lead_minutes") or "120",
         "payment_methods": [{"key": k, "label": label, "on": k in enabled_methods()} for k, label in METHOD_LABELS.items()],
@@ -132,6 +133,8 @@ def parse(form) -> dict:
         alerts["task_followup_days"] = str(_number(
             form.get("task_followup_days", ""), "Customer follow-up days", 1, store.TASK_FOLLOWUP_MAX,
         ))
+    if "automatic_customer_followups_shown" in form:
+        alerts["automatic_customer_followups"] = str(form.get("automatic_customer_followups") == "on").lower()
     if any(k.startswith("pay_") for k in form.keys()) or form.get("payment_methods_shown") == "1":
         methods = [k for k in METHOD_LABELS if form.get(f"pay_{k}") == "on"]
         if not methods:
