@@ -40,8 +40,10 @@ with engine.begin() as conn:
     user = conn.execute(text("INSERT INTO users (username, password_hash, role, is_active, must_change_password) "
                              "VALUES ('ask-fixture-' || floor(random()*1e9)::text, 'x', 'office', true, false) RETURNING id")).scalar_one()
     customer = conn.execute(text("INSERT INTO customers (first_name, last_name) VALUES ('Synthetic', 'Fixture') RETURNING id")).scalar_one()
-    ro = conn.execute(text("INSERT INTO repair_orders (customer_id, status) VALUES (:c, 'diagnosing') RETURNING id"),
-                      {"c": customer}).scalar_one()
+    vehicle = conn.execute(text("INSERT INTO vehicles (customer_id, year, make, model) VALUES (:c, 2022, 'Dodge', 'Charger') "
+                                "RETURNING id"), {"c": customer}).scalar_one()
+    ro = conn.execute(text("INSERT INTO repair_orders (customer_id, vehicle_id, status) VALUES (:c, :v, 'diagnosing') RETURNING id"),
+                      {"c": customer, "v": vehicle}).scalar_one()
 
 INSERT = ("INSERT INTO assist_requests (requested_by_user_id, repair_order_id, request_text, source_snapshot, "
           "base_fingerprint, prompt_version, status) VALUES (:u, :r, 'estimate brakes', '{}', 'f', 'v', :s) RETURNING id")
