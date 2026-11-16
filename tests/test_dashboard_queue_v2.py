@@ -129,5 +129,74 @@ class QueueSyncAndProblemTests(unittest.TestCase):
         self.assertEqual(saved.headers["location"], "/dashboard?reported=1")
 
 
+    def test_problem_report_from_the_dialog_stays_on_the_page(self):
+        # Fix list #130: reporting from a half-filled New Customer form must not reload it.
+        with patch("app.main.get_current_user", side_effect=lambda request, db: db.get(User, 1)):
+            saved = self.client.post("/problems", data={"page": "/customers/new", "comment": "Phone field too small"},
+                                     headers={"Accept": "application/json"}, follow_redirects=False)
+        self.assertEqual(saved.status_code, 200)
+        body = saved.json()
+        with self.Session() as db:
+            task = db.query(ImperialTask).one()
+        self.assertEqual(body, {"id": task.id, "status": task.status})
+        self.assertIn("Page: /customers/new", task.details)
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class DraftRetryTests(unittest.TestCase):
+    """Recovery D: customer messages without an AI draft are retried and the card says so."""
+
+    setUp = QueueSyncAndProblemTests.setUp
+    tearDown = QueueSyncAndProblemTests.tearDown
+
+    def add(self, item_id, minutes_ago=10, draft=None, phone="+16025550100", status="needs_owner"):
+        with self.Session() as db:
+            db.add(DispatchItem(id=item_id, quo_conversation_id=f"CN{item_id}", customer_phone=phone, summary="brakes",
+                                category="repair", urgency="normal", status=status, last_message_id=f"m{item_id}",
+                                draft_reply=draft, updated_at=datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)))
+            db.commit()
+
+    def needed(self):
+        return [i["itemId"] for i in self.client.get("/internal/dispatch/drafts-needed", headers=HEADERS).json()["items"]]
+
+    def fail(self, item_id, reason="empty draft"):
+        return self.client.post("/internal/dispatch/draft-failed", headers=HEADERS,
+                                json={"conversationId": f"CN{item_id}", "messageId": f"m{item_id}", "reason": reason}).json()
+
+    def test_only_undrafted_settled_customer_messages_are_listed(self):
+        self.add(1)                      # needs a draft
+        self.add(2, draft="Hi there")    # already drafted
+        self.add(3, minutes_ago=0)       # webhook may still be drafting
+        self.add(4, draft="")            # no reply needed
+        self.assertEqual(self.needed(), [1])
+        self.assertEqual(self.client.get("/internal/dispatch/drafts-needed").status_code, 401)
+
+    def test_failures_are_counted_per_message_and_stop_after_the_limit(self):
+        self.add(1)
+        self.assertEqual(self.fail(1)["attempts"], 1)
+        self.fail(1)
+        self.assertEqual(self.needed(), [1])
+        self.assertEqual(self.fail(1)["attempts"], dispatch.DRAFT_RETRY_LIMIT)
+        self.assertEqual(self.needed(), [])
+        self.assertEqual(self.client.post("/internal/dispatch/draft-failed", headers=HEADERS, json={
+            "conversationId": "CN1", "messageId": "older", "reason": "x"}).json(), {"recorded": False})
+
+    def test_card_shows_retrying_then_gave_up_then_clears_when_a_draft_lands(self):
+        self.add(1)
+        with self.Session() as db:
+            item = db.get(DispatchItem, 1)
+            self.assertIsNone(dispatch._draft_state(db, item))
+            self.fail(1)
+            db.expire_all()
+            self.assertEqual(dispatch._draft_state(db, item), "retrying")
+            self.fail(1); self.fail(1)
+            db.expire_all()
+            self.assertEqual(dispatch._draft_state(db, item), "gave_up")
+        saved = self.client.post("/internal/dispatch/draft", headers=HEADERS,
+                                 json={"conversationId": "CN1", "messageId": "m1", "body": "Hey, what year is it?"}).json()
+        self.assertTrue(saved["recorded"])
+        with self.Session() as db:
+            self.assertIsNone(dispatch._draft_state(db, db.get(DispatchItem, 1)))

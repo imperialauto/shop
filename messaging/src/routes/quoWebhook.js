@@ -250,10 +250,14 @@ async function handleMessageEvent(event) {
       }
       await shopClient.dispatchDraft({ conversationId: msg.conversationId, messageId: msg.id, body: draftBody, note });
     }
+    if (!draftBody) {
+      await shopClient.draftFailed({ conversationId: msg.conversationId, messageId: msg.id, reason: "empty draft" });
+    }
   } catch (err) {
     // A failed AI draft should never block message storage or the webhook
     // ack — the coordinator can still hit "Regenerate draft" manually.
     console.error("Draft generation failed for conversation", conversation.id, err);
+    await shopClient.draftFailed({ conversationId: msg.conversationId, messageId: msg.id, reason: err.message || "draft error" });
   }
   await deliverSoon();
 }

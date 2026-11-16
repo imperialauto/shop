@@ -593,6 +593,18 @@ def flows(page, device):
             page.screenshot(path=str(OUT / "phone-menu.png"))
     step("open menu", device, menu)
 
+    def report_keeps_form():
+        # Fix list #130: a report sent from a half-filled form must not wipe it.
+        page.goto(BASE + "/customers/new")
+        page.fill("input[name='first_name']", "Halfway")
+        page.click("#problem-fab")
+        page.fill("#problem-dialog textarea", "Walkthrough: report from the new customer form")
+        page.click("#problem-dialog button:not([type='button'])")
+        page.wait_for_selector("text=Saved to the Fix list as #")
+        assert page.url.endswith("/customers/new"), page.url
+        assert page.input_value("input[name='first_name']") == "Halfway"
+    step("report keeps the form", device, report_keeps_form)
+
 
 DEVICE_OPTIONS = {"phone": {"viewport": {"width": 390, "height": 844}, "has_touch": True, "is_mobile": True, "device_scale_factor": 2},
                   "desktop": {"viewport": {"width": 1440, "height": 900}}}

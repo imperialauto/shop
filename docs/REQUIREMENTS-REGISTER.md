@@ -18,6 +18,55 @@ The AI assistant is named **Imperial**.
 - **Continuous workflow optimization (permanent, Nov 9):** for every button, link, form, screen and workflow, ask how to make it easier, quicker, more intuitive, or unnecessary. Trace the journey, count taps, screens, entries and decisions, reuse data already on file, make the next action obvious, update every screen at once, and work on phone and desktop. Never remove safeguards, approvals, financial controls or audit history to save a step. Record findings and measured results under R37, not in a separate list.
 - **Imperial as an operations manager (permanent, Nov 9):** Imperial manages work proactively, not just displays it. For every workflow ask whether the action can be eliminated, completed from existing data, combined, or prepared before it's asked for; whether routine work can finish without interrupting the owner; whether unfinished work recovers by itself; whether every record updates; how failures are detected and reported; and what happens when Quo, Railway or an AI provider is down. Every important action has an owner, status, completion condition and audit trail. Prefer existing screens over new ones. Safe, reversible, already-authorized admin actions need no extra confirmation. Customer messages, financial commitments and destructive changes always keep their approval. Measure every significant change (taps, screens, entries, errors, recovery). Goal: fewer steps from a customer needing service to the work done and paid. Recorded under R38.
 
+## Current handoff (single writer per branch; read before starting, update at each checkpoint)
+
+Status words for this section: Planned, Implemented, Tested, Merged, Deployed, Owner-Verified. A reported problem is never "fixed" because code was written.
+
+### Roles (owner, Nov 15)
+- **Claude**: implementation, Git changes, tests, recovery PRs. One branch: `claude/recovery-nov15`.
+- **ChatGPT**: independent requirements reconciliation, read-only production inspection, preview acceptance testing, review of the exact candidate SHA. Reproducible findings only; no competing code.
+- No Ollama/other-agent implementation overlapping recovery. Production release: one designated executor after review.
+
+### Baseline (checked 2026-11-15 ~17:55 Phoenix)
+| Item | Value |
+|---|---|
+| Production (Railway `respectful-charm`) | `web` and `shop` both SUCCESS on `20360d3` (PR #187) |
+| Shared QA preview (`imperial-pr52-preview` / `web-preview`) | branch `claude/launch-batch-nov13`, deployed Nov 13; not the recovery candidate. Left untouched |
+| Other preview services | `imperial-web-qa` (`codex/imperial-qa-website-leads-20261107`), `imperial-assistant-qa` (`codex/imperial-qa-unified-leads-20261107`), `local-node-qa` (`claude/local-ai-node`). Left untouched |
+| Open PRs | #188 `codex/public-navigation-spacing` 19a9f92; #189 `codex/my-day-personal-todos` cc4e65b; #190 `codex/automatic-customer-followups` e27f935 (stacked on #189). Not touched by Claude; reviewed against the matrix only |
+| Recovery branch | `claude/recovery-nov15`, baseline `20360d3` |
+
+### Recovery scope (Claude)
+- A. Owner SMS context: RO / approval / task IDs distinguished; customer and vehicle resolved before acting; app-defect texts saved to the Fix list; acknowledgements only after the backend confirms.
+- B. Repair-line completion and evidence: per-line complete/reopen, photo/file upload on RO (optionally per line), internal vs customer-visible media; authorization, technician completion, invoicing and payment stay separate.
+- C. Report #122: every reviewable document on `/settings/security-privacy` opens with its exact wording; missing vs draft shown plainly; alerts match pending items; enabling a setting is not reviewing its wording.
+- D. Communication history and AI drafts: trace why RO #8 history omits outgoing Quo texts and why 10 customer messages wait for drafts; show failure/retry states; no replayed sends.
+- Out of scope without owner approval: production deploy, database changes, customer messages, domain changes.
+
+### Recovery matrix
+Kept in `docs/RECOVERY-MATRIX-NOV15.md` (same branch).
+
+### Acceptance packet for ChatGPT
+- **Candidate:** head of `claude/recovery-nov15` as of the commit that added this section (PR #191). The preview auto-deploys that branch; any later push will be announced here with its SHA before retest.
+- **Preview:** https://recovery-preview-preview.up.railway.app — owner login `preview-owner`, same password and access code as `web-preview` (referenced, not copied). Synthetic data only: 3 made-up customers and ROs. No messaging service and no Quo connection, so nothing can reach a real customer.
+- **Internal endpoints:** `INTERNAL_API_KEY` is a generated secret on `recovery-preview` (read it from Railway variables; it is not in chat or Git).
+- **Workflows to run (phone 390px and desktop):**
+  1. RO → add lines → request approval → approve some on `/sign/ro/<token>` → upload photos (whole job and one line) → Mark done on one approved line ("1 of N done") → the rest → "all work done" prompt → status change. Confirm prices, approvals, invoice untouched; declined/pending lines can't be marked done; refresh keeps everything.
+  2. Share one photo with the customer → visible on `/status/<token>`; unshare → gone; internal file URL under the status page → 404.
+  3. Report a problem (button) and `POST /internal/imperial/tasks/problems` (same messageId twice) → one Fix list entry with its ID.
+  4. `GET /internal/messaging/owner-focus?text=...` with "RO 2", a customer first name + vehicle, and "111 more context?" → RO, RO, nothing.
+  5. Dispatch draft states: create an item, `POST /internal/dispatch/draft-failed` ×1 and ×3 → card shows "Retrying" then "Use a quick reply".
+  6. Settings → Security & privacy → Read/review each item; approve one; edit its wording → shows "changed".
+- **Not testable on this preview:** live owner SMS round-trip and Quo history mirroring (unit tests only: `messaging/tests/ownerFocus.test.js`, `dispatchRecovery.test.js`).
+- **Known, outside recovery scope:** the preview's built-in public-booking self-check (`PREVIEW_CHECK`) fails on nvzn-customs page, instant/Saturday/mobile booking, status lookup and the dashboard booking check. Recovery changed no public-site or booking code; please compare with `web-preview` / baseline `20360d3` before attributing.
+
+### Checkpoints
+| When (Phoenix) | Status | Note |
+|---|---|---|
+| Nov 15 17:58 | Planned | Branch created at `20360d3`; baseline and scope recorded. No code changes yet |
+| Nov 15 | Tested | C `8682b1c`, A `93147ed`, D `6eff3b5`, B `89d28f1` on `claude/recovery-nov15`. Python 492 run / 2 known clock failures; messaging 140/140. PRs #188–#190 reviewed read-only; findings in `docs/RECOVERY-MATRIX-NOV15.md`. Next: draft PR, isolated preview on synthetic data, handoff to ChatGPT |
+| Nov 15 18:20 MST | Ready for acceptance | Draft PR #191. CI green on `2725329` (app-tests, test, walkthrough). Isolated preview `recovery-preview` in `imperial-pr52-preview`/preview, own DB `Postgres-r2PI` (synthetic seed only), https://recovery-preview-preview.up.railway.app, tracking `claude/recovery-nov15` (candidate = the SHA in this row's commit). `web-preview` and the QA services untouched |
+
 ## Requirements
 | ID | Area | Requirement | Status | Evidence or gap |
 |---|---|---|---|---|

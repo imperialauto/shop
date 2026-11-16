@@ -29,6 +29,7 @@ KEYS = {
     "booking_auto_times": "PUBLIC_AUTO_TIMES",
     "security_controls": "SECURITY_CONTROLS_JSON",
     "payment_methods": "PAYMENT_METHODS",
+    "legal_review": "LEGAL_REVIEW_JSON",
 }
 CACHE_SECONDS = 15
 _cache: dict = {"at": 0.0, "values": None}

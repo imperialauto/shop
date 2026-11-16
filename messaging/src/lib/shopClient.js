@@ -195,6 +195,36 @@ async function ackQuoTasks(completed) {
   return request("/internal/imperial/tasks/quo-sync/ack", { method: "POST", body: JSON.stringify({ completed }) });
 }
 
+// Which repair order an owner text is about, resolved by the shop app (no AI).
+async function ownerFocus(text) {
+  return request(`/internal/messaging/owner-focus?text=${encodeURIComponent(String(text).slice(0, 2000))}`);
+}
+
+// An app-defect report the owner texted in; saved to the same Fix list as the
+// dashboard's Report a problem button. Repeat deliveries return the same entry.
+async function saveOwnerProblem({ messageId, text, context = "" }) {
+  return request("/internal/imperial/tasks/problems", {
+    method: "POST", body: JSON.stringify({ messageId, text: String(text).slice(0, 4000), context: String(context).slice(0, 300) }),
+  });
+}
+
+// Customer messages still waiting for an AI draft (never sends anything).
+async function draftsNeeded(limit = 5) {
+  return request(`/internal/dispatch/drafts-needed?limit=${encodeURIComponent(limit)}`);
+}
+
+// A failed or empty AI draft, recorded so the dashboard card says so.
+async function draftFailed({ conversationId, messageId, reason = "" }) {
+  try {
+    return await request("/internal/dispatch/draft-failed", {
+      method: "POST", body: JSON.stringify({ conversationId, messageId, reason: String(reason).slice(0, 180) }),
+    });
+  } catch (err) {
+    console.error("shopClient.draftFailed failed:", err.message);
+    return { recorded: false };
+  }
+}
+
 async function dispatchTick({ ownerTexts = true } = {}) {
   const path = ownerTexts ? "/internal/dispatch/tick" : "/internal/dispatch/tick?owner_texts=false";
   return request(path, { method: "POST", body: "{}" });
@@ -219,6 +249,7 @@ module.exports = {
   configured, getContext, getContextStrict, getSigningLink, logCommunication,
   dispatchIntake, dispatchOwnerAction, dispatchHandled, dispatchSync, dispatchTick, dispatchOutbound, dispatchDraft, checkCustomerFollowup,
   captureOwnerTask, readOwnerTask, changeOwnerTask, openOwnerTasks, syncQuoTasks, ackQuoTasks, submitDevelopmentWork, listDevelopmentWork,
+  ownerFocus, saveOwnerProblem, draftsNeeded, draftFailed,
 };
 
 

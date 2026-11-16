@@ -11,13 +11,17 @@
 <form method="post" action="/settings/security-privacy" class="max-w-3xl space-y-6">
   <section class="card" id="review" aria-labelledby="review-h" style="border-color:#5A4C24">
     <h2 id="review-h" class="font-bold" style="margin-bottom:4px">Waiting for your review</h2>
-    <p class="text-sm text-stone-400" style="margin:0 0 8px">Legal wording and settings to approve when you're ready. None of these block the website or launch; each stays off until you turn it on.</p>
+    <p class="text-sm text-stone-400" style="margin:0 0 8px">Open each one to read the exact wording and approve it. Approving wording and switching it on are separate. None of these block the website.</p>
     <ul style="list-style:none;padding:0;margin:0;display:grid;gap:8px">
       {% for row in review %}{% set it = row.item %}
-      <li style="display:flex;gap:10px;align-items:flex-start">
-        <span class="badge {{ 'badge-complete' if row.done else 'badge-waiting_approval' }}" style="min-width:76px;justify-content:center">{{ 'Done' if row.done else 'To review' }}</span>
-        <span><strong>{{ it.title }}</strong><span class="text-sm text-stone-400" style="display:block">{{ it.what }}{% if it.control %} Switch: "{{ controls_by_key[it.control].title }}" below.{% endif %}</span>
-        {% if not it.control %}<label class="text-sm" style="display:block;margin-top:4px"><input type="checkbox" name="done_{{ it.key }}" {% if row.done %}checked{% endif %}> Done</label>{% endif %}</span>
+      <li style="display:flex;gap:10px;align-items:flex-start;justify-content:space-between">
+        <span style="flex:1"><strong>{{ it.title }}</strong>
+          <span class="text-sm text-stone-400" style="display:block">{{ it.what }}</span>
+          <span class="text-sm" style="display:block;margin-top:2px;color:{{ '#86efac' if row.done else ('#fca5a5' if row.state == 'missing' else 'var(--imp-gold)') }}">
+            {{ {'approved': 'Approved', 'draft': 'Draft, not reviewed', 'changed': 'Changed since you approved it', 'missing': 'Missing: no wording yet'}[row.state] }}{% if it.control %} · {{ 'Switched on' if row.switched_on else 'Switched off' }}{% endif %}
+          </span>
+        </span>
+        <a class="btn-secondary" style="white-space:nowrap" href="/settings/security-privacy/review/{{ it.key }}">{{ 'Read / review' if row.state != 'missing' else 'See what\'s needed' }}</a>
       </li>
       {% endfor %}
     </ul>
@@ -26,7 +30,7 @@
   <section class="card" aria-labelledby="g{{ loop.index }}">
     <h2 id="g{{ loop.index }}" class="font-bold mb-3">{{ g.group }}</h2>
     {% for row in g.controls %}{% set c = row.c %}
-    <div class="py-3 border-b border-stone-800" style="padding:12px 0;border-bottom:1px solid var(--imp-line)">
+    <div class="py-3 border-b border-stone-800" id="c-{{ c.key }}" style="padding:12px 0;border-bottom:1px solid var(--imp-line); scroll-margin-top:80px">
       {% if c.kind == 'bool' %}
       <label class="flex items-start gap-3">
         <input type="checkbox" name="{{ c.key }}" {% if row.value %}checked{% endif %} style="margin-top:4px;min-width:20px;min-height:20px">

@@ -49,9 +49,61 @@ async function offerMissedCall({ quo, shopClient, contacts, phoneNumberId, conve
   if (body) await shopClient.dispatchDraft({ conversationId: conversation.id, messageId: call.id, body });
 }
 
+function mirrorBody(message) {
+  const text = message.text || message.body || "";
+  const photos = (message.media || []).length;
+  if (!photos) return text;
+  return `${text}${text ? " " : ""}[${photos} photo${photos === 1 ? "" : "s"}]`;
+}
+
+async function mirrorMessages({ shopClient, phone, messages, totals }) {
+  if (!phone || typeof shopClient.logCommunication !== "function") return;
+  for (const message of messages) {
+    const body = mirrorBody(message);
+    if (!body || !message.id) continue;
+    const result = await shopClient.logCommunication({
+      phone, direction: isInbound(message) ? "inbound" : "outbound", body, externalId: message.id, createdAt: message.createdAt,
+    }).catch(() => null);
+    if (result && result.logged && !result.duplicate) totals.mirrored += 1;
+  }
+}
+
+// Drafts for customer messages the webhook path never drafted. Saves drafts only;
+// a failure is recorded so the dashboard card shows it and the owner isn't left guessing.
+async function draftWaiting({ quo, shopClient, phoneNumberId, draft, totals, pauseMs }) {
+  if (typeof shopClient.draftsNeeded !== "function") return;
+  const { items = [] } = await shopClient.draftsNeeded(5).catch(() => ({ items: [] }));
+  for (const item of items) {
+    await pause(pauseMs);
+    let body = null;
+    let reason = "";
+    try {
+      const { data: messages = [] } = await quo.listMessages({ phoneNumberId, participants: [item.phone], maxResults: 15 });
+      const history = [...messages].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)).map((m) => ({
+        direction: isInbound(m) ? "INBOUND" : "OUTBOUND", body: m.text || m.body || (m.media?.length ? "[photo]" : ""),
+      }));
+      const summary = await callContext({ quo, phone: item.phone, phoneNumberId }).catch(() => null);
+      body = await draft({ history, jobContext: summary ? { summary } : null, allowNoReply: true });
+      if (!body) reason = "empty draft";
+    } catch (err) {
+      reason = String(err.message || err).slice(0, 120);
+    }
+    const saved = body
+      ? await shopClient.dispatchDraft({ conversationId: item.conversationId, messageId: item.messageId, body }).catch(() => null)
+      : null;
+    if (saved && saved.recorded) {
+      totals.drafted += 1;
+    } else {
+      totals.draftFailed += 1;
+      await shopClient.draftFailed({ conversationId: item.conversationId, messageId: item.messageId,
+        reason: reason || "draft not accepted" });
+    }
+  }
+}
+
 async function runRecovery({ quo, shopClient, contacts, phoneNumberId, now = Date.now, lookbackHours = DEFAULT_LOOKBACK_HOURS, pauseMs = 300, draft = generateDraftReply, skip = new Set() }) {
   const since = new Date(now() - lookbackHours * 3600 * 1000).toISOString();
-  const totals = { conversations: 0, offered: 0, recorded: 0, failed: 0, calls: 0 };
+  const totals = { conversations: 0, offered: 0, recorded: 0, failed: 0, calls: 0, mirrored: 0, drafted: 0, draftFailed: 0 };
   try {
     const { data: conversations = [] } = await quo.listConversations({ updatedAfter: since });
     for (const conversation of conversations) {
@@ -63,9 +115,14 @@ async function runRecovery({ quo, shopClient, contacts, phoneNumberId, now = Dat
         createdAfter: since,
       });
       const latest = [...messages].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
-      if (latest && !isInbound(latest)) await shopClient.dispatchHandled({ conversationId: conversation.id, at: latest.createdAt });
       const callPhone = conversation.participants?.[0];
-      if (callPhone) {
+      // Every text, both directions, into the customer's history. Idempotent on the Quo
+      // message ID with its original time, so repeats and webhook overlap add nothing.
+      await mirrorMessages({ shopClient, phone: callPhone, messages, totals });
+      if (latest && !isInbound(latest)) {
+        await shopClient.dispatchHandled({ conversationId: conversation.id, at: latest.createdAt, phone: callPhone });
+      }
+        if (callPhone) {
         const { data: calls = [] } = await quo.listCalls({ phoneNumberId, participants: [callPhone], createdAfter: since, maxResults: 10 });
         const talkedAt = lastConversationAt(calls);
         if (talkedAt) await shopClient.dispatchHandled({ conversationId: conversation.id, at: talkedAt, phone: callPhone, byCall: true });
@@ -86,11 +143,13 @@ async function runRecovery({ quo, shopClient, contacts, phoneNumberId, now = Dat
         else if (!result.duplicate) totals.failed += 1;
       }
     }
+    await draftWaiting({ quo, shopClient, phoneNumberId, draft, totals, pauseMs });
   } catch (err) {
     totals.failed += 1;
     console.error("Dispatch recovery failed:", err.message);
   }
-  const detail = `checked ${totals.conversations}, recovered ${totals.recorded}, calls ${totals.calls}, failed ${totals.failed}`;
+  const detail = `checked ${totals.conversations}, recovered ${totals.recorded}, calls ${totals.calls}, `
+    + `mirrored ${totals.mirrored}, drafted ${totals.drafted}, draft failures ${totals.draftFailed}, failed ${totals.failed}`;
   await shopClient.dispatchSync({ source: SOURCE, ok: totals.failed === 0, detail });
   return totals;
 }

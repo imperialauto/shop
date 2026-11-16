@@ -1,0 +1,290 @@
+"""Owner texts resolve to the right repair order; texted app problems reach the Fix list once."""
+import os
+import unittest
+from unittest.mock import patch
+
+import fixture_environment  # noqa: F401
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app import owner_focus
+from app.database import Base, get_db
+from app.imperial_task_model import PROBLEM_CATEGORY, ImperialTask
+from app.main import app
+from app.models import Customer, LineItem, RepairOrder, Vehicle
+from app.routes import internal_messaging
+
+KEY = "test-internal-secret"
+HEADERS = {"X-Internal-Key": KEY}
+HEADLIGHT = ("Note I'm not able to upload photos to our number I believe it's eight for Antoine Chevy Impala SS. "
+             "I just installed a headlight bulb and it re-the headlight is currently working")
+
+
+class OwnerFocusTests(unittest.TestCase):
+    def setUp(self):
+        self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        Base.metadata.create_all(self.engine)
+        self.Session = sessionmaker(bind=self.engine)
+
+        def override():
+            with self.Session() as db:
+                yield db
+
+        app.dependency_overrides[get_db] = override
+        self.read_only = app.state.read_only
+        app.state.read_only = False
+        for patcher in (patch.object(internal_messaging, "INTERNAL_API_KEY", KEY),
+                        patch.dict(os.environ, {"IMPERIAL_TASKS_ENABLED": "true"})):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.client = TestClient(app)
+        with self.Session() as db:
+            def job(ro_id, first, last, year, make, model, lines=(), status="in_progress"):
+                customer = Customer(first_name=first, last_name=last, phone=f"60255501{ro_id:02d}")
+                vehicle = Vehicle(customer=customer, year=year, make=make, model=model)
+                ro = RepairOrder(id=ro_id, customer=customer, vehicle=vehicle, status=status, concern="x")
+                db.add_all([customer, vehicle, ro])
+                for description in lines:
+                    db.add(LineItem(repair_order=ro, description=description, quantity=1, unit_price=10))
+            job(8, "Antwon", "Test", 2009, "Chevrolet", "Impala", ("Headlight bulb", "Lower radiator hose", "Oil leak diagnosis"))
+            job(12, "Dana", "Jeep", 2014, "Jeep", "Compass")
+            job(14, "Robert", "Focus", 2016, "Ford", "Focus", status="delivered")
+            db.commit()
+
+    def tearDown(self):
+        app.state.read_only = self.read_only
+        app.dependency_overrides.pop(get_db, None)
+        self.engine.dispose()
+
+    def resolve(self, text):
+        with self.Session() as db:
+            return owner_focus.resolve(db, text)
+
+    def test_number_word_misspelt_name_and_vehicle_find_ro_8(self):
+        found = self.resolve(HEADLIGHT)
+        self.assertEqual(found["ro"]["roId"], 8)
+        self.assertEqual(found["ro"]["label"], "RO #8")
+        self.assertEqual([line["description"] for line in found["ro"]["lines"]],
+                         ["Headlight bulb", "Lower radiator hose", "Oil leak diagnosis"])
+
+    def test_explicit_ro_number_wins_and_unknown_number_is_reported(self):
+        self.assertEqual(self.resolve("RO 12 is ready")["ro"]["roId"], 12)
+        self.assertEqual(self.resolve("job #8 headlight done")["ro"]["roId"], 8)
+        missing = self.resolve("RO 999 status?")
+        self.assertEqual((missing["missing"], missing["missingType"]), (999, "ro"))
+
+    def test_approval_numbers_are_not_repair_orders(self):
+        self.assertEqual(self.resolve("111 more context?"), {})
+        self.assertEqual(self.resolve("YES 12"), {})  # a bare number alone is not enough to pick a job
+
+    def test_two_close_matches_ask_instead_of_guessing(self):
+        with self.Session() as db:
+            customer = Customer(first_name="Antwon", last_name="Other", phone="6025550199")
+            vehicle = Vehicle(customer=customer, year=2010, make="Chevrolet", model="Impala")
+            db.add_all([customer, vehicle, RepairOrder(id=20, customer=customer, vehicle=vehicle, status="intake")])
+            db.commit()
+        found = self.resolve("Antoine Chevy Impala headlight")
+        self.assertNotIn("ro", found)
+        self.assertEqual(sorted(c["roId"] for c in found["candidates"]), [8, 20])
+
+    def test_delivered_jobs_are_not_matched_by_name(self):
+        self.assertEqual(self.resolve("Robert Ford Focus clutch"), {})
+
+    def test_internal_lookup_requires_key(self):
+        self.assertEqual(self.client.get("/internal/messaging/owner-focus", params={"text": HEADLIGHT}).status_code, 401)
+        found = self.client.get("/internal/messaging/owner-focus", params={"text": HEADLIGHT}, headers=HEADERS).json()
+        self.assertEqual(found["ro"]["roId"], 8)
+
+    def test_texted_problem_is_saved_once_and_returns_its_real_id(self):
+        body = {"messageId": "AC359ed48", "text": HEADLIGHT, "context": "RO #8 Antwon Test 2009 Chevrolet Impala"}
+        first = self.client.post("/internal/imperial/tasks/problems", json=body, headers=HEADERS)
+        again = self.client.post("/internal/imperial/tasks/problems", json=body, headers=HEADERS)  # Quo redelivery
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.json()["id"], again.json()["id"])
+        self.assertEqual(first.json()["status"], "open")
+        with self.Session() as db:
+            rows = db.query(ImperialTask).filter(ImperialTask.category == PROBLEM_CATEGORY).all()
+            self.assertEqual(len(rows), 1)
+            self.assertIn("Page: RO #8 Antwon Test", rows[0].details)
+        listed = self.client.get("/internal/imperial/tasks/problems", headers=HEADERS).json()["problems"]
+        self.assertEqual([p["id"] for p in listed], [first.json()["id"]])
+
+    def test_texted_problem_rejected_without_key_or_when_tasks_are_off(self):
+        body = {"messageId": "m", "text": HEADLIGHT}
+        self.assertEqual(self.client.post("/internal/imperial/tasks/problems", json=body).status_code, 401)
+        with patch.dict(os.environ, {"IMPERIAL_TASKS_ENABLED": "false"}):
+            self.assertNotEqual(self.client.post("/internal/imperial/tasks/problems", json=body, headers=HEADERS).status_code, 200)
+
+
+class TypedRecordIdTests(OwnerFocusTests):
+    """QA on #191: "approval 12" or "task 12" must never resolve toward RO #12."""
+
+    def resolve(self, text):
+        with self.Session() as db:
+            return owner_focus.resolve(db, text)
+
+    def test_typed_numbers_are_not_repair_orders(self):
+        for text in ("approval 12", "approval #12 is done", "task 12", "task twelve", "fix list 12",
+                     "invoice 12 paid?", "queue item 12", "what's the status on approval 12"):
+            with self.subTest(text=text):
+                out = self.resolve(text)
+                self.assertNotIn("ro", out)
+                self.assertNotIn("candidates", out)
+                self.assertNotEqual(out.get("missing"), 12)
+                self.assertTrue(out["refs"])
+                self.assertNotEqual(out["refs"][0]["type"], "ro")
+
+    def test_ro_words_still_resolve(self):
+        for text in ("RO 12", "ro #12", "repair order 12", "job number 12", "R.O. 12", "work order 12"):
+            with self.subTest(text=text):
+                self.assertEqual(self.resolve(text)["ro"]["roId"], 12)
+
+    def test_typed_number_with_a_name_still_finds_that_customers_job(self):
+        out = self.resolve("task 3 for Antwon's Impala")
+        self.assertEqual(out["ro"]["roId"], 8)
+        self.assertEqual(out["refs"], [{"type": "task", "id": 3}])
+
+    def test_typed_number_cannot_tip_a_close_match_to_the_wrong_ro(self):
+        # Dana's job is RO #12 (a Compass). The model alone scores 2; before this fix the typed
+        # number added 2 more and tipped it over the line to RO #12.
+        out = self.resolve("approval 12 Compass")
+        self.assertNotIn("ro", out)
+
+    def test_named_records_are_looked_up_with_type_and_state(self):
+        with self.Session() as db:
+            task = ImperialTask(source="dashboard", external_id="t1", title="Order tank", category="general")
+            problem = ImperialTask(source="owner_sms", external_id="p1", title="Can't upload", category=PROBLEM_CATEGORY)
+            db.add_all([task, problem])
+            db.commit()
+            task_id, problem_id = task.id, problem.id
+        out = self.resolve(f"task {task_id} and fix list {problem_id} and approval 999")
+        records = {(r["type"], r["id"]): r for r in out["records"]}
+        self.assertTrue(records[("task", task_id)]["exists"])
+        self.assertEqual(records[("task", task_id)]["label"], f"task #{task_id}")
+        self.assertEqual(records[("fix", problem_id)]["label"], f"Fix list #{problem_id}")
+        self.assertFalse(records[("approval", 999)]["exists"])
+
+    def test_lookup_cases_line_appointment_estimate_scope_and_failure(self):
+        from datetime import datetime, timedelta, timezone
+        from app.appointment_model import Appointment
+        from app.dispatch_model import DispatchItem
+        from app.models import Invoice
+        with self.Session() as db:
+            line = db.query(LineItem).filter(LineItem.repair_order_id == 8).first()
+            start = datetime(2026, 11, 18, 17, tzinfo=timezone.utc)
+            appt = Appointment(repair_order_id=12, resource_id="bay-1", starts_at=start, ends_at=start + timedelta(hours=1))
+            invoice = Invoice(repair_order_id=12, total=10, status="sent")
+            dana = db.get(RepairOrder, 12).customer_id
+            item = DispatchItem(quo_conversation_id="CN1", customer_phone="+16025550112", customer_id=dana,
+                                status="needs_owner", last_message_id="m")
+            task = ImperialTask(source="dashboard", external_id="t9", title="Order tank", category="general")
+            db.add_all([appt, invoice, item, task])
+            db.commit()
+            ids = dict(line=line.id, appt=appt.id, invoice=invoice.id, item=item.id, task=task.id)
+
+        # "line item 3" is a line on a job, not approval 3
+        out = self.resolve(f"line item {ids['line']} on RO 8 is done")
+        rec = out["records"][0]
+        self.assertEqual((rec["type"], rec["exists"], rec["roId"], rec["matchesFocus"]), ("line", True, 8, True))
+        self.assertEqual(out["ro"]["roId"], 8)
+
+        # Records on a different job than the one in focus are flagged, never silently attached
+        out = self.resolve(f"RO 8: appointment {ids['appt']}, invoice {ids['invoice']}, approval {ids['item']}")
+        by_type = {r["type"]: r for r in out["records"]}
+        self.assertEqual(out["ro"]["roId"], 8)
+        for kind in ("appointment", "invoice"):
+            self.assertTrue(by_type[kind]["exists"], kind)
+            self.assertIs(by_type[kind]["matchesFocus"], False, kind)
+        # The approval has a customer but no vehicle or lead: its job can't be verified
+        self.assertTrue(by_type["approval"]["exists"])
+        self.assertIsNone(by_type["approval"]["matchesFocus"])
+        self.assertTrue(by_type["approval"]["jobUnverified"])
+        self.assertEqual(by_type["appointment"]["status"], "tentative")
+
+        # Estimates live on the RO: not "missing", just not resolvable by number
+        est = self.resolve("estimate 7")["records"][0]
+        self.assertEqual((est["exists"], est["resolvable"]), (False, False))
+
+        # He calls a to-do a Fix list item: the record says what it really is
+        fix = self.resolve(f"fix list {ids['task']}")["records"][0]
+        self.assertEqual((fix["actualType"], fix["typeMismatch"], fix["label"]), ("task", True, f"task #{ids['task']}"))
+
+        # A lookup that errors is "couldn't check", never "doesn't exist"
+        with patch("app.models.Invoice", None):
+            failed = self.resolve("invoice 1")["records"][0]
+        self.assertTrue(failed.get("lookupFailed"))
+
+        # The same record named twice is looked up once
+        self.assertEqual(len(self.resolve("task 5 and task #5")["refs"]), 1)
+
+    def test_two_different_ros_named_as_alternatives_ask_which(self):
+        # QA on 6887684: "RO 8 or RO 12" picked RO #8.
+        for text, order in (("RO 8 or RO 12", [8, 12]), ("RO 12 or RO 8?", [12, 8]),
+                            ("is it ro #8 or repair order 12", [8, 12]), ("job 12 or job eight", [12, 8])):
+            with self.subTest(text=text):
+                out = self.resolve(text)
+                self.assertNotIn("ro", out)
+                self.assertEqual([c["roId"] for c in out["candidates"]], order)
+                self.assertEqual(out["how"], "named_several")
+        # The same RO named twice is still one job
+        for text in ("RO 8, yes RO #8", "ro 8 ... job number 8", "RO 8 or RO 8"):
+            with self.subTest(text=text):
+                self.assertEqual(self.resolve(text)["ro"]["roId"], 8)
+        # An alternative that doesn't exist is reported, the real one is offered
+        out = self.resolve("RO 8 or RO 404")
+        self.assertEqual([c["roId"] for c in out["candidates"]], [8])
+        self.assertEqual(out["missingRos"], [404])
+
+    def test_approval_uses_its_own_job_not_the_customer(self):
+        # QA on 6887684: one customer, two vehicles, an approval about the Jeep matched the Impala's RO.
+        from app.dispatch_model import DispatchItem
+        from app.lead_model import ServiceLead
+        with self.Session() as db:
+            antwon = db.get(RepairOrder, 8).customer
+            jeep = Vehicle(customer=antwon, year=2014, make="Jeep", model="Cherokee")
+            db.add(jeep)
+            db.flush()
+            db.add(RepairOrder(id=20, customer=antwon, vehicle=jeep, status="in_progress", concern="x"))
+            on_jeep = DispatchItem(quo_conversation_id="CNa", customer_phone="+16025550108", customer_id=antwon.id,
+                                   vehicle_id=jeep.id, status="needs_owner", last_message_id="a")
+            no_vehicle = DispatchItem(quo_conversation_id="CNb", customer_phone="+16025550108", customer_id=antwon.id,
+                                      status="needs_owner", last_message_id="b")
+            via_lead = DispatchItem(quo_conversation_id="CNc", customer_phone="+16025550108", customer_id=antwon.id,
+                                    status="needs_owner", last_message_id="c")
+            db.add_all([on_jeep, no_vehicle, via_lead])
+            db.flush()
+            db.add(ServiceLead(source="quo", external_thread_id="CNc", customer_id=antwon.id, repair_order_id=20,
+                               last_dispatch_item_id=via_lead.id))
+            db.commit()
+            ids = (on_jeep.id, no_vehicle.id, via_lead.id)
+
+        def approval(text):
+            out = self.resolve(text)
+            return out, next(r for r in out["records"] if r["type"] == "approval")
+
+        out, rec = approval(f"RO 8 approval {ids[0]}")
+        self.assertEqual(out["ro"]["roId"], 8)
+        self.assertEqual((rec["roId"], rec["roLink"], rec["matchesFocus"]), (20, "vehicle", False))
+        out, rec = approval(f"RO 20 approval {ids[0]}")
+        self.assertIs(rec["matchesFocus"], True)
+        with patch.dict(os.environ, {"SERVICE_LEADS_ENABLED": "true"}):
+            out, rec = approval(f"RO 8 approval {ids[2]}")
+        self.assertEqual((rec["roId"], rec["roLink"], rec["matchesFocus"]), (20, "lead", False))
+        with patch.dict(os.environ, {"SERVICE_LEADS_ENABLED": ""}):  # lead tables absent: no lookup failure
+            out, rec = approval(f"RO 8 approval {ids[2]}")
+        self.assertTrue(rec["jobUnverified"])
+        self.assertNotIn("lookupFailed", rec)
+        out, rec = approval(f"RO 8 approval {ids[1]}")
+        self.assertNotIn("roId", rec)
+        self.assertIsNone(rec["matchesFocus"])
+        self.assertTrue(rec["jobUnverified"])
+
+    def test_missing_ro_says_ro(self):
+        out = self.resolve("RO 404")
+        self.assertEqual(out["missing"], 404)
+        self.assertEqual(out["missingType"], "ro")
+
+if __name__ == "__main__":
+    unittest.main()

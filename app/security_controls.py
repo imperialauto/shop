@@ -7,9 +7,11 @@ the default, so a settings problem can never lock anyone out or take the site do
 Adding a control: add it to CONTROLS, then read it with `value("key")` where it applies.
 Nothing else is needed for it to appear on the settings page with its change history.
 """
+import hashlib
 import json
 import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from app import business_settings as store
 
@@ -168,42 +170,41 @@ FIXED: tuple[FixedProtection, ...] = (
 BY_KEY = {c.key: c for c in CONTROLS}
 
 
+CALL_NOTICE_TEXT = "This call may be recorded and answered by an automated assistant."
+REVIEW_KEY = "legal_review"
+
+
 @dataclass(frozen=True)
 class ReviewItem:
-    """Legal wording or a setting outside this app that waits for the owner. Never blocks launch."""
+    """Legal wording or a setting outside this app that waits for the owner. Never blocks launch.
+
+    Reviewing is its own decision: the owner reads the exact wording and approves it. Switching a
+    setting on is separate and never counts as review.
+    """
     key: str
     title: str
     what: str
-    control: str = ""  # the switch that turns it on here, if any
+    control: str = ""          # the switch that turns it on here, if any
+    wording_control: str = ""  # the setting that holds its wording, if any
+    fixed_wording: str = ""    # wording that lives outside this app (e.g. the Quo greeting)
 
 
 REVIEW_ITEMS: tuple[ReviewItem, ...] = (
-    ReviewItem("privacy", "Privacy notice", "Read the wording below, edit anything, then switch it on.", "privacy_notice_published"),
-    ReviewItem("terms", "Service terms on the website", "Read the terms wording below, then switch it on.", "terms_published"),
-    ReviewItem("terms_sign", "Terms on the approval and signature page", "Shows storage, deposit and pickup terms where customers sign.", "terms_on_approval_page"),
+    ReviewItem("privacy", "Privacy notice", "What customers see on /site/privacy.", "privacy_notice_published",
+               wording_control="privacy_notice_text"),
+    ReviewItem("terms", "Service terms on the website", "What customers see on /site/terms.", "terms_published",
+               wording_control="terms_text"),
+    ReviewItem("terms_sign", "Terms on the approval and signature page",
+               "The same service terms, shown above the signature box.", "terms_on_approval_page",
+               wording_control="terms_text"),
     ReviewItem("call_notice", "Call recording notice in the Sona greeting",
-               "Add \"This call may be recorded and answered by an automated assistant\" to the Sona greeting in Quo, then tick done."),
-    ReviewItem("warranty", "Warranty wording on invoices", "Get the exact warranty and disclaimer wording from your lawyer, then tick done."),
-    ReviewItem("text_optin", "Marketing text opt-in", "Only needed before sending promotions. Service texts are already fine. Tick done once approved."),
+               "This sentence goes in the Sona greeting in Quo. Approve the wording here, then add it in Quo.",
+               fixed_wording=CALL_NOTICE_TEXT),
+    ReviewItem("warranty", "Warranty wording on invoices",
+               "Needs the exact warranty and disclaimer wording from your lawyer."),
+    ReviewItem("text_optin", "Marketing text opt-in", "Only needed before sending promotions. Service texts are already fine."),
 )
-
-
-def review_status() -> list[dict]:
-    """Each review item with whether it's done: its switch is on, or the owner ticked it done."""
-    current = values()
-    done_manual = set(current.get("review_done") or ())
-    rows = []
-    for item in REVIEW_ITEMS:
-        done = bool(current.get(item.control)) if item.control else item.key in done_manual
-        rows.append({"item": item, "done": done})
-    return rows
-
-
-def waiting_for_review() -> int:
-    try:
-        return sum(1 for row in review_status() if not row["done"])
-    except Exception:
-        return 0
+REVIEW_BY_KEY = {item.key: item for item in REVIEW_ITEMS}
 
 
 def _saved() -> dict:
@@ -277,7 +278,7 @@ def parse(form) -> dict:
             if not new:
                 new = c.default
         elif c.key == "review_done":
-            new = tuple(item.key for item in REVIEW_ITEMS if not item.control and form.get(f"done_{item.key}") == "on")
+            new = tuple(current.get("review_done") or ())  # retired: approval is recorded per item now
         else:
             new = _coerce(c, form.get(c.key, ""))
         if new != c.default:
@@ -344,3 +345,72 @@ def link_expired(ro, now=None) -> bool:
         return False
     changed = ro.updated_at if ro.updated_at.tzinfo else ro.updated_at.replace(tzinfo=timezone.utc)
     return (now or datetime.now(timezone.utc)) - changed > timedelta(days=days)
+
+
+# ── Legal review: reading and approving the exact wording ─────────────────
+def review_wording(item: ReviewItem) -> str:
+    """The exact wording being reviewed, or "" when nothing is on file yet."""
+    if item.wording_control:
+        return str(value(item.wording_control) or "").strip()
+    return item.fixed_wording.strip()
+
+
+def wording_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def review_approvals() -> dict:
+    try:
+        data = json.loads(store.raw(REVIEW_KEY) or "{}")
+    except (ValueError, KeyError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def review_status() -> list[dict]:
+    """Each item: its wording, whether that exact wording was approved, and whether it's switched on.
+
+    `done` means the owner approved the wording on file now; a later edit makes it "changed since
+    approval". Items with no wording on file are "missing". Switching a setting on never counts.
+    """
+    approvals = review_approvals()
+    current = values()
+    rows = []
+    for item in REVIEW_ITEMS:
+        wording = review_wording(item)
+        approval = approvals.get(item.key) or {}
+        approved = bool(wording) and approval.get("hash") == wording_hash(wording)
+        state = "missing" if not wording else "approved" if approved else "changed" if approval else "draft"
+        rows.append({
+            "item": item, "wording": wording, "state": state, "done": approved,
+            "approval": approval if approved else None,
+            "switched_on": bool(current.get(item.control)) if item.control else None,
+        })
+    return rows
+
+
+def approve_review(db, key: str, actor: str) -> dict:
+    """Records that the owner approved the exact wording on file now. Caller commits."""
+    item = REVIEW_BY_KEY.get(key)
+    if item is None:
+        raise Invalid("Unknown review item.")
+    wording = review_wording(item)
+    if not wording:
+        raise Invalid(f"There is no wording on file for {item.title} yet, so there is nothing to approve.")
+    approvals = review_approvals()
+    record = {"hash": wording_hash(wording), "by": actor,
+              "at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    approvals[key] = record
+    store.save(db, REVIEW_KEY, approvals, actor)
+    return record
+
+
+def pending_review_titles() -> list[str]:
+    try:
+        return [row["item"].title for row in review_status() if not row["done"]]
+    except Exception:
+        return []
+
+
+def waiting_for_review() -> int:
+    return len(pending_review_titles())

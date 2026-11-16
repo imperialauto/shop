@@ -11,7 +11,7 @@ from app.database import get_db, init_db
 from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user, after_login
 from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, my_day, business_settings_page, dispatch, imperial_tasks, dev_work, live, finance, owner_setup, public_site, staff
-from app.routes import account_security, local_node, security_center
+from app.routes import account_security, local_node, security_center, ro_evidence
 from app.scheduler import start_scheduler
 
 import os
@@ -46,7 +46,9 @@ app.include_router(dev_work.router, prefix="/internal/imperial/dev-work", tags=[
 app.include_router(live.router, prefix="/live", tags=["live"])
 app.include_router(vehicles.router, prefix="/vehicles", tags=["vehicles"])
 app.include_router(local_node.staff_router, prefix="/ro", tags=["local_node"])
+app.include_router(ro_evidence.router, prefix="/ro", tags=["repair_orders"])
 app.include_router(repair_orders.router, prefix="/ro", tags=["repair_orders"])
+app.include_router(ro_evidence.public_router, tags=["public"])
 # Shop workstation (Imperial Local Node) — its own key, never INTERNAL_API_KEY.
 app.include_router(local_node.worker_router, prefix="/internal/local-node", tags=["internal"])
 app.include_router(invoices.router, prefix="/invoices", tags=["invoices"])
@@ -248,9 +250,9 @@ def not_found(request: Request, exc):
                         '<a href="/" style="color:#d4a853">Back to Imperial Operations</a></body>', status_code=404)
 
 
-def _legal_review_count() -> int:
+def _legal_review_titles() -> list[str]:
     from app import security_controls
-    return security_controls.waiting_for_review()
+    return security_controls.pending_review_titles()
 
 
 @app.get("/healthz")
@@ -478,7 +480,10 @@ def report_problem(request: Request, page: str = Form(""), comment: str = Form(.
     """Any signed-in user can report a problem; it lands on the owner's Fix list."""
     user = get_current_user(request, db)
     imperial_tasks.require_tasks_enabled()
-    imperial_tasks.create_problem_report(db, user, page, comment)
+    task = imperial_tasks.create_problem_report(db, user, page, comment)
+    if "application/json" in request.headers.get("accept", ""):
+        # Sent from the dialog without leaving the page, so a half-filled form keeps its values.
+        return JSONResponse({"id": task.id, "status": task.status})
     back = page if page.startswith("/") and not page.startswith("//") else "/dashboard"
     sep = "&" if "?" in back else "?"
     return RedirectResponse(f"{back}{sep}reported=1", status_code=303)
@@ -541,7 +546,7 @@ def dashboard(request: Request, view: str = "open", db: Session = Depends(get_db
         **dispatch.dashboard_context(db, view),
         "home": home_summary.summary(db, user),
         "health": system_health.report(db) if user.role in ("owner", "admin") else None,
-        "legal_review": _legal_review_count() if user.role == "owner" else 0,
+        "legal_review": _legal_review_titles() if user.role == "owner" else [],
         "read_only": app.state.read_only,
     })
 
@@ -615,6 +620,7 @@ def public_status(request: Request, token: str, db: Session = Depends(get_db)):
         "request": request, "ro": ro, "reference": f"WEB-{ro.id}",
         "visit": visit, "visit_label": phoenix_label(visit.starts_at) if visit else "",
         "status_url": str(request.url_for("public_status", token=token)),
+        "shared_files": ro_evidence.attachments_for(db, ro.id, customer_only=True),
     }, headers=PRIVATE_PAGE)
 
 
