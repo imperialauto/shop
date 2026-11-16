@@ -50,8 +50,29 @@ except IntegrityError:
     pass
 print("ok: migration allows 'queued', keeps the others, still rejects unknown statuses, repeatable")
 
+# Hold an outbound row in another transaction while the real queue function runs.
+# Null item IDs exercise claiming without creating customer data or sending messages.
+import fixture_environment  # noqa: F401
+from sqlalchemy.orm import Session
+from app.routes.dispatch import queued_replies
+
 with engine.begin() as conn:
     conn.execute(text("DELETE FROM dispatch_outbound WHERE status = 'queued'"))
+    conn.execute(text("INSERT INTO dispatch_outbound (dedupe_key, kind, status) VALUES "
+                      "('locked-claim', 'dashboard_reply', 'queued'), "
+                      "('available-claim', 'dashboard_reply', 'queued')"))
+with engine.begin() as holder:
+    holder.execute(text("SELECT id FROM dispatch_outbound WHERE dedupe_key = 'locked-claim' FOR UPDATE"))
+    with Session(engine) as worker:
+        worker.execute(text("SET LOCAL lock_timeout = '1s'"))
+        assert queued_replies(worker) == []
+    statuses = dict(holder.execute(text("SELECT dedupe_key, status FROM dispatch_outbound "
+                                        "WHERE dedupe_key IN ('locked-claim', 'available-claim')")).all())
+    assert statuses == {"locked-claim": "queued", "available-claim": "skipped"}, statuses
+with Session(engine) as worker:
+    assert queued_replies(worker) == []
+    assert worker.execute(text("SELECT status FROM dispatch_outbound WHERE dedupe_key = 'locked-claim'")).scalar_one() == "skipped"
+print("ok: a competing tick skips a locked row and claims the available row")
 with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
     conn.execute(text(DOWN))
 try:
