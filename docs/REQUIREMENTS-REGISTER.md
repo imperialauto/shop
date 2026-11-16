@@ -46,11 +46,26 @@ Status words for this section: Planned, Implemented, Tested, Merged, Deployed, O
 ### Recovery matrix
 Kept in `docs/RECOVERY-MATRIX-NOV15.md` (same branch).
 
+### Acceptance packet for ChatGPT
+- **Candidate:** head of `claude/recovery-nov15` as of the commit that added this section (PR #191). The preview auto-deploys that branch; any later push will be announced here with its SHA before retest.
+- **Preview:** https://recovery-preview-preview.up.railway.app — owner login `preview-owner`, same password and access code as `web-preview` (referenced, not copied). Synthetic data only: 3 made-up customers and ROs. No messaging service and no Quo connection, so nothing can reach a real customer.
+- **Internal endpoints:** `INTERNAL_API_KEY` is a generated secret on `recovery-preview` (read it from Railway variables; it is not in chat or Git).
+- **Workflows to run (phone 390px and desktop):**
+  1. RO → add lines → request approval → approve some on `/sign/ro/<token>` → upload photos (whole job and one line) → Mark done on one approved line ("1 of N done") → the rest → "all work done" prompt → status change. Confirm prices, approvals, invoice untouched; declined/pending lines can't be marked done; refresh keeps everything.
+  2. Share one photo with the customer → visible on `/status/<token>`; unshare → gone; internal file URL under the status page → 404.
+  3. Report a problem (button) and `POST /internal/imperial/tasks/problems` (same messageId twice) → one Fix list entry with its ID.
+  4. `GET /internal/messaging/owner-focus?text=...` with "RO 2", a customer first name + vehicle, and "111 more context?" → RO, RO, nothing.
+  5. Dispatch draft states: create an item, `POST /internal/dispatch/draft-failed` ×1 and ×3 → card shows "Retrying" then "Use a quick reply".
+  6. Settings → Security & privacy → Read/review each item; approve one; edit its wording → shows "changed".
+- **Not testable on this preview:** live owner SMS round-trip and Quo history mirroring (unit tests only: `messaging/tests/ownerFocus.test.js`, `dispatchRecovery.test.js`).
+- **Known, outside recovery scope:** the preview's built-in public-booking self-check (`PREVIEW_CHECK`) fails on nvzn-customs page, instant/Saturday/mobile booking, status lookup and the dashboard booking check. Recovery changed no public-site or booking code; please compare with `web-preview` / baseline `20360d3` before attributing.
+
 ### Checkpoints
 | When (Phoenix) | Status | Note |
 |---|---|---|
 | Nov 15 17:58 | Planned | Branch created at `20360d3`; baseline and scope recorded. No code changes yet |
 | Nov 15 | Tested | C `8682b1c`, A `93147ed`, D `6eff3b5`, B `89d28f1` on `claude/recovery-nov15`. Python 492 run / 2 known clock failures; messaging 140/140. PRs #188–#190 reviewed read-only; findings in `docs/RECOVERY-MATRIX-NOV15.md`. Next: draft PR, isolated preview on synthetic data, handoff to ChatGPT |
+| Nov 15 18:20 MST | Ready for acceptance | Draft PR #191. CI green on `2725329` (app-tests, test, walkthrough). Isolated preview `recovery-preview` in `imperial-pr52-preview`/preview, own DB `Postgres-r2PI` (synthetic seed only), https://recovery-preview-preview.up.railway.app, tracking `claude/recovery-nov15` (candidate = the SHA in this row's commit). `web-preview` and the QA services untouched |
 
 ## Requirements
 | ID | Area | Requirement | Status | Evidence or gap |
