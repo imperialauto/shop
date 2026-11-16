@@ -1,5 +1,5 @@
-from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, ForeignKey, Enum
+from datetime import datetime, timezone
+from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, ForeignKey, Enum, LargeBinary
 from sqlalchemy.orm import relationship
 from app.database import Base
 import enum
@@ -119,8 +119,16 @@ class LineItem(Base):
     approval = Column(String(12))  # None: not sent for approval. pending, approved, declined
     decided_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Technician completion. Separate from customer approval, invoicing and payment.
+    completed_at = Column(DateTime(timezone=True))
+    completed_by = Column(String(64))
 
     repair_order = relationship("RepairOrder", back_populates="line_items")
+
+    @property
+    def workable(self):
+        """Work can be marked done only on lines that don't need, or already have, customer approval."""
+        return self.approval in (None, "approved")
 
     @property
     def total(self):
@@ -130,6 +138,21 @@ class LineItem(Base):
     def billable(self):
         """Declined or still-pending lines are never billed."""
         return self.approval in (None, "approved")
+
+
+class RoAttachment(Base):
+    """A photo or file on a repair order, optionally tied to one line. Internal unless marked for the customer."""
+    __tablename__ = "ro_attachments"
+    id = Column(Integer, primary_key=True)
+    repair_order_id = Column(Integer, ForeignKey("repair_orders.id"), nullable=False, index=True)
+    line_item_id = Column(Integer, ForeignKey("line_items.id", ondelete="SET NULL"))
+    filename = Column(String(200), nullable=False)
+    content_type = Column(String(64), nullable=False)
+    size = Column(Integer, nullable=False)
+    data = Column(LargeBinary, nullable=False)
+    visibility = Column(String(12), nullable=False, default="internal")  # internal, customer
+    uploaded_by = Column(String(64), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
 class PartsOrder(Base):

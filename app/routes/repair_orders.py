@@ -191,7 +191,14 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         "timeline": cycle_time.for_job(db, ro) if user.role in ("owner", "admin") else None,
         "open_invoice": next((i for i in ro.invoices if i.status != "void"), None),
         "ai_review": local_node.job_panel(db, ro),
+        "attachments": _evidence().attachments_for(db, ro.id),
+        "progress": _evidence().progress(ro),
     })
+
+
+def _evidence():
+    from app.routes import ro_evidence  # imports require_user from here
+    return ro_evidence
 
 
 async def _send_review_request(phone: str, first_name: str):
@@ -411,10 +418,13 @@ def delete_line_item(request: Request, ro_id: int, li_id: int, db: Session = Dep
     user = require_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=302)
-    li = db.query(LineItem).filter(LineItem.id == li_id, LineItem.repair_order_id == ro_id).first()
-    if li:
-        db.delete(li)
-        db.commit()
+    if user.role not in ("owner", "admin", "office"):
+        raise HTTPException(403, "Office access required.")
+    li = editable_line_item(db, ro_id, li_id)  # 409 once sent for approval or invoiced: records stay
+    if li.completed_at:
+        raise HTTPException(409, "This line is marked done. Reopen it first if it really should be removed.")
+    db.delete(li)
+    db.commit()
     return RedirectResponse(f"/ro/{ro_id}", status_code=302)
 
 

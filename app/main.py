@@ -11,7 +11,7 @@ from app.database import get_db, init_db
 from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user, after_login
 from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, my_day, business_settings_page, dispatch, imperial_tasks, dev_work, live, finance, owner_setup, public_site, staff
-from app.routes import account_security, local_node, security_center
+from app.routes import account_security, local_node, security_center, ro_evidence
 from app.scheduler import start_scheduler
 
 import os
@@ -46,7 +46,9 @@ app.include_router(dev_work.router, prefix="/internal/imperial/dev-work", tags=[
 app.include_router(live.router, prefix="/live", tags=["live"])
 app.include_router(vehicles.router, prefix="/vehicles", tags=["vehicles"])
 app.include_router(local_node.staff_router, prefix="/ro", tags=["local_node"])
+app.include_router(ro_evidence.router, prefix="/ro", tags=["repair_orders"])
 app.include_router(repair_orders.router, prefix="/ro", tags=["repair_orders"])
+app.include_router(ro_evidence.public_router, tags=["public"])
 # Shop workstation (Imperial Local Node) — its own key, never INTERNAL_API_KEY.
 app.include_router(local_node.worker_router, prefix="/internal/local-node", tags=["internal"])
 app.include_router(invoices.router, prefix="/invoices", tags=["invoices"])
@@ -582,6 +584,7 @@ def public_status(request: Request, token: str, db: Session = Depends(get_db)):
         "request": request, "ro": ro, "reference": f"WEB-{ro.id}",
         "visit": visit, "visit_label": phoenix_label(visit.starts_at) if visit else "",
         "status_url": str(request.url_for("public_status", token=token)),
+        "shared_files": ro_evidence.attachments_for(db, ro.id, customer_only=True),
     }, headers=PRIVATE_PAGE)
 
 

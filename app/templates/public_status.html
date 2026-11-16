@@ -85,6 +85,20 @@
     <div style="font-size:13px; color:var(--imp-muted);">Bookmark this page or add it to your home screen to check back any time. It is private to you, so please don't share the link.</div>
   </div>
 
+  {% if shared_files %}
+    <div class="card">
+      <div class="label">Photos from the shop</div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:8px;">
+        {% for f in shared_files %}
+        <a href="/status/{{ ro.public_token }}/files/{{ f.id }}" target="_blank" rel="noopener" style="font-size:12px; color:var(--imp-muted); overflow-wrap:anywhere;">
+          {% if f.content_type in ('image/jpeg', 'image/png', 'image/webp') %}<img src="/status/{{ ro.public_token }}/files/{{ f.id }}" alt="Photo from your repair" loading="lazy" style="width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:6px;">
+          {% else %}{{ 'PDF' if f.content_type == 'application/pdf' else 'Photo' }}: {{ f.filename }}{% endif %}
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
   {% set pending = ro.line_items|selectattr('approval', 'equalto', 'pending')|list %}
   {% if pending %}
     <div class="card" style="border-color: rgba(203,176,107,0.3);">
