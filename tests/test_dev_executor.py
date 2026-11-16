@@ -150,6 +150,20 @@ class WorkerTests(unittest.TestCase):
             self.assertEqual(sent[0]['failureType'], 'ValueError')
             self.assertNotIn('sensitive', json.dumps(sent[0]))
 
+    def test_documentation_proposal_disables_model_thinking(self):
+        with tempfile.TemporaryDirectory() as td:
+            config, _journal = self.fixture(Path(td))
+            config['model'] = 'qwen3.5:9b'
+            captured = {}
+
+            def fake_http(_url, data, headers=None):
+                captured.update(data)
+                return {'message': {'content': '{}'}}
+
+            with patch.object(worker, 'http', side_effect=fake_http):
+                worker.propose(config, Path(config['repository']), {'instruction': 'Fix one heading.'})
+            self.assertIs(captured['think'], False)
+
     def test_path_escape_refused(self):
         with self.assertRaises(worker.Refuse):
             worker.validate_edit(Path('.'), {'path': '../secret', 'find': 'a', 'replace': 'b'})
