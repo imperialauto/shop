@@ -15,7 +15,20 @@ NUMBER_WORDS = {
 }
 MAKE_ALIASES = {"chevy": "chevrolet", "vw": "volkswagen", "benz": "mercedes-benz", "mercedes": "mercedes-benz",
                 "dodge": "dodge", "ram": "ram", "ford": "ford"}
-EXPLICIT_RO = re.compile(r"\b(?:ro|r\.o\.?|repair\s+order|job)\s*(?:number|no\.?|#)?\s*#?\s*(\d{1,5})\b", re.I)
+# "RO 8", "approval 12", "task #118", "fix list 23": the word before a number says what kind of
+# record it is. Only RO-typed (or untyped) numbers may point at a repair order.
+TYPES = {
+    "ro": "ro", "r.o": "ro", "r.o.": "ro", "repair order": "ro", "job": "ro", "work order": "ro",
+    "approval": "approval", "approvals": "approval", "item": "approval", "queue item": "approval",
+    "task": "task", "tasks": "task", "to-do": "task", "todo": "task",
+    "fix": "fix", "fix list": "fix", "report": "fix", "problem": "fix",
+    "invoice": "invoice", "estimate": "estimate", "appointment": "appointment", "appt": "appointment",
+}
+TYPED_REF = re.compile(
+    r"\b(repair\s+order|work\s+order|queue\s+item|fix\s+list|r\.o\.?|ro|job|approvals?|item|tasks?|to-?do|fix|"
+    r"report|problem|invoice|estimate|appointment|appt)\s*(?:number|no\.?|num|#)?\s*#?\s*(\d{1,5}|"
+    + "|".join(sorted(NUMBER_WORDS, key=len, reverse=True)) + r")\b", re.I)
+EXPLICIT_RO = re.compile(r"\b(?:ro|r\.o\.?|repair\s+order|work\s+order|job)\s*(?:number|no\.?|#)?\s*#?\s*(\d{1,5})\b", re.I)
 WORDS = re.compile(r"[a-z0-9][a-z0-9'-]+", re.I)
 APPROVAL_REF = re.compile(r"(?:^|\s)#\s*(\d{1,5})\b")
 STOP = {"the", "and", "for", "with", "this", "that", "just", "about", "number", "there", "their", "they",
@@ -26,6 +39,18 @@ def _close(a: str, b: str) -> bool:
     if not a or not b or len(a) < 3 or len(b) < 3:
         return False
     return a == b or difflib.SequenceMatcher(None, a, b).ratio() >= 0.75
+
+
+def typed_refs(text: str) -> list[dict]:
+    """Every "<record type> <number>" in the text, in order, with its normalized type."""
+    out = []
+    for match in TYPED_REF.finditer(text or ""):
+        word = " ".join(match.group(1).lower().split()).rstrip(".")
+        kind = TYPES.get(word) or TYPES.get(word + ".") or ("ro" if word.startswith("r.o") else None)
+        if kind:
+            raw = match.group(2).lower()
+            out.append({"type": kind, "id": int(raw) if raw.isdigit() else NUMBER_WORDS[raw]})
+    return out
 
 
 def _numbers(text: str) -> set[int]:
@@ -60,12 +85,19 @@ def resolve(db, text: str, open_statuses_only: bool = True) -> dict:
     from app.models import RepairOrder
 
     text = text or ""
-    explicit = EXPLICIT_RO.search(text)
-    if explicit:
-        ro = db.get(RepairOrder, int(explicit.group(1)))
-        return {"ro": summary(ro), "how": "explicit"} if ro else {"missing": int(explicit.group(1))}
-    words = [w.lower() for w in WORDS.findall(text) if w.lower() not in STOP]
-    numbers = _numbers(text) - {int(n) for n in APPROVAL_REF.findall(text)}  # "#111" is an approval, not an RO
+    refs = typed_refs(text)
+    ro_refs = [r["id"] for r in refs if r["type"] == "ro"]
+    other = [r for r in refs if r["type"] != "ro"]
+    records = [record(db, r["type"], r["id"]) for r in other]
+    extra = {"refs": refs, "records": records} if refs else {}
+    if ro_refs:
+        ro = db.get(RepairOrder, ro_refs[0])
+        if ro is None:
+            return {"missing": ro_refs[0], "missingType": "ro", **extra}
+        return {"ro": summary(ro), "how": "explicit", **extra}
+    words = [w.lower() for w in WORDS.findall(text) if w.lower() not in STOP and w.lower() not in TYPES]
+    # A number typed as another record ("approval 12", "task #118") or written "#111" is never an RO number.
+    numbers = _numbers(text) - {int(n) for n in APPROVAL_REF.findall(text)} - {r["id"] for r in other}
     query = db.query(RepairOrder)
     if open_statuses_only:
         query = query.filter(RepairOrder.status != "delivered")
@@ -73,10 +105,39 @@ def resolve(db, text: str, open_statuses_only: bool = True) -> dict:
                     key=lambda pair: -pair[0])
     scored = [(score, ro) for score, ro in scored if score >= 3]
     if not scored:
-        return {}
+        return dict(extra)
     if len(scored) == 1 or scored[0][0] - scored[1][0] >= 2:
-        return {"ro": summary(scored[0][1]), "how": "matched"}
-    return {"candidates": [summary(ro) for _, ro in scored[:3]]}
+        return {"ro": summary(scored[0][1]), "how": "matched", **extra}
+    return {"candidates": [summary(ro) for _, ro in scored[:3]], **extra}
+
+
+def record(db, kind: str, record_id: int) -> dict:
+    """Look up a non-RO record the owner named, so a reply can say exactly what it is or that it
+    doesn't exist. Read-only; returns only what's needed to label it."""
+    found = {"type": kind, "id": record_id, "exists": False}
+    try:
+        if kind == "approval":
+            from app.dispatch_model import DispatchItem
+            item = db.get(DispatchItem, record_id)
+            if item is not None:
+                found.update(exists=True, status=item.status, label=f"approval #{record_id}",
+                             who=item.contact_name or item.customer_phone or "", customerId=item.customer_id)
+        elif kind in ("task", "fix"):
+            from app.imperial_task_model import PROBLEM_CATEGORY, ImperialTask
+            task = db.get(ImperialTask, record_id)
+            if task is not None:
+                is_fix = (task.category or "") == PROBLEM_CATEGORY
+                found.update(exists=True, status=task.status, label=f"{'Fix list' if is_fix else 'task'} #{record_id}",
+                             title=(task.title or "")[:120], actualType="fix" if is_fix else "task")
+        elif kind == "invoice":
+            from app.models import Invoice
+            invoice = db.get(Invoice, record_id)
+            if invoice is not None:
+                found.update(exists=True, status=invoice.status, label=f"invoice #{record_id}", roId=invoice.repair_order_id)
+    except Exception:
+        db.rollback()
+        found["lookupFailed"] = True
+    return found
 
 
 def summary(ro) -> dict | None:

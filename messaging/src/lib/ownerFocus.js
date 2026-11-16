@@ -44,22 +44,31 @@ function historyForFocus(history, focus, question) {
 
 // Removes "#N" approval references the owner did not name when that item
 // belongs to someone other than the record in focus, and labels the RO.
+// Only bare "#N" and "approval #N" are approval references: "RO #8", "task #118",
+// "Fix list #23", "invoice #4" are other records and are never relabelled.
+const OTHER_TYPE = /(?:\bRO|\bR\.O\.?|\brepair order|\bwork order|\bjob|\btasks?|\bto-?do|\bfix(?: list)?|\breport|\bproblem|\binvoice|\bestimate|\bappointment|\bappt)\s*(?:number|no\.?|num)?\s*$/i;
+const NAMED_NUMBER = /(?:#\s*|\b(?:approval|item|task|ro|job|fix(?: list)?|invoice|estimate)\s*(?:number|no\.?|#)?\s*)(\d{1,5})\b/gi;
+
+function namedNumbers(question) {
+  return new Set([...String(question || "").matchAll(NAMED_NUMBER)].map((m) => Number(m[1])));
+}
+
 function guardAnswer(answer, { focus, snapshot = {}, question = "" }) {
-  let text = String(answer || "");
+  const text = String(answer || "");
   const ro = focus && focus.ro;
   if (!ro) return text;
-  const named = new Set((String(question).match(/#\s*(\d+)/g) || []).map((m) => Number(m.replace(/\D/g, ""))));
+  const named = namedNumbers(question);
   const items = [...(snapshot.waitingOnYou || []), ...(snapshot.otherOpenMessages || []), ...(snapshot.approvedAwaitingFollowUp || [])];
   const first = String(ro.firstName || "").toLowerCase();
-  text = text.replace(/(approval\s+)?#\s*(\d+)(\s+with\s+[A-Z][a-z]+)?/g, (match, _approval, num, withName) => {
+  return text.replace(/(approval\s+)?#\s*(\d+)(\s+with\s+[A-Z][a-z]+)?/g, (match, approval, num, withName, offset) => {
     const id = Number(num);
-    if (named.has(id) || id === ro.roId && /RO\s*$/i.test(text.slice(0, text.indexOf(match)))) return match;
+    if (!approval && OTHER_TYPE.test(text.slice(Math.max(0, offset - 20), offset))) return match; // another record type
+    if (named.has(id)) return match;
     const item = items.find((i) => i.id === id);
     const belongsElsewhere = !item || !first || !String(item.who || "").toLowerCase().includes(first);
-    if (!belongsElsewhere) return `approval #${id}`;
+    if (!belongsElsewhere) return `approval #${id}${withName || ""}`;
     return `${ro.label}${withName || ""}`;
   });
-  return text;
 }
 
 module.exports = { isAppDefectReport, defectReply, historyForFocus, guardAnswer, focusLine };
