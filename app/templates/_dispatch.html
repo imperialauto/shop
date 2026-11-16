@@ -69,6 +69,8 @@
         {% if (item.quo_conversation_id or '').startswith('WEB') %}
         <p style="margin:0 0 8px;">Website request: contact this customer by phone.</p>
         {% else %}
+        {% if row.draft_state == 'retrying' %}<p class="pill pill-warn" style="display:inline-block; margin:0 0 6px;">AI draft didn't come through. Retrying automatically.</p>
+        {% elif row.draft_state == 'gave_up' %}<p class="pill pill-warn" style="display:inline-block; margin:0 0 6px;">AI couldn't draft this one after 3 tries. Use a quick reply or write your own.</p>{% endif %}
         {% if row.quick_replies %}
         <div class="chip-row" role="group" aria-label="Quick replies">
           {% for reply in row.quick_replies %}

@@ -208,6 +208,23 @@ async function saveOwnerProblem({ messageId, text, context = "" }) {
   });
 }
 
+// Customer messages still waiting for an AI draft (never sends anything).
+async function draftsNeeded(limit = 5) {
+  return request(`/internal/dispatch/drafts-needed?limit=${encodeURIComponent(limit)}`);
+}
+
+// A failed or empty AI draft, recorded so the dashboard card says so.
+async function draftFailed({ conversationId, messageId, reason = "" }) {
+  try {
+    return await request("/internal/dispatch/draft-failed", {
+      method: "POST", body: JSON.stringify({ conversationId, messageId, reason: String(reason).slice(0, 180) }),
+    });
+  } catch (err) {
+    console.error("shopClient.draftFailed failed:", err.message);
+    return { recorded: false };
+  }
+}
+
 async function dispatchTick() {
   return request("/internal/dispatch/tick", { method: "POST", body: "{}" });
 }
@@ -225,7 +242,7 @@ module.exports = {
   configured, getContext, getContextStrict, getSigningLink, logCommunication,
   dispatchIntake, dispatchOwnerAction, dispatchHandled, dispatchSync, dispatchTick, dispatchOutbound, dispatchDraft,
   captureOwnerTask, readOwnerTask, changeOwnerTask, openOwnerTasks, syncQuoTasks, ackQuoTasks, submitDevelopmentWork, listDevelopmentWork,
-  ownerFocus, saveOwnerProblem,
+  ownerFocus, saveOwnerProblem, draftsNeeded, draftFailed,
 };
 
 

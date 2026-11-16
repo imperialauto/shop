@@ -715,6 +715,74 @@ def save_draft(draft: DraftInput, db: Session = Depends(get_db), _auth: bool = D
     return {"recorded": True, "itemId": item.id}
 
 
+DRAFT_RETRY_AFTER = timedelta(minutes=2)
+DRAFT_RETRY_LIMIT = 3  # failed attempts per customer message before it waits for the owner
+
+
+def _draft_failures(db: Session, item: DispatchItem) -> int:
+    """Failed draft attempts for the item's current customer message."""
+    return db.query(DispatchAudit).filter(
+        DispatchAudit.item_id == item.id, DispatchAudit.action == "draft_failed",
+        DispatchAudit.detail.like(f"{item.last_message_id}|%"),
+    ).count()
+
+
+@internal_router.get("/drafts-needed")
+def drafts_needed(limit: int = 5, db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
+    """Open customer messages that still have no AI draft. The messaging service drafts them.
+
+    Never sends anything. Items past the retry limit are left for the owner, and the card shows why.
+    """
+    now = datetime.now(timezone.utc)
+    rows = db.query(DispatchItem).filter(
+        DispatchItem.status.in_(("needs_owner", "routine")), DispatchItem.draft_reply.is_(None),
+    ).order_by(DispatchItem.updated_at.asc()).limit(50).all()
+    out = []
+    for item in rows:
+        if website_alerts.is_website(item) or _is_owner(item.customer_phone) or not item.quo_conversation_id:
+            continue
+        if item.updated_at and now - _utc(item.updated_at) < DRAFT_RETRY_AFTER:
+            continue  # the webhook path is probably still drafting it
+        if _draft_failures(db, item) >= DRAFT_RETRY_LIMIT:
+            continue
+        out.append({"itemId": item.id, "conversationId": item.quo_conversation_id,
+                    "messageId": item.last_message_id, "phone": item.customer_phone})
+        if len(out) >= max(1, min(limit, 20)):
+            break
+    return {"items": out}
+
+
+class DraftFailure(BaseModel):
+    conversationId: str = Field(min_length=1, max_length=64)
+    messageId: str = Field(min_length=1, max_length=128)
+    reason: str = Field(default="", max_length=180)
+
+
+@internal_router.post("/draft-failed")
+def draft_failed(failure: DraftFailure, db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
+    """Records a failed or empty AI draft so the card says so instead of waiting silently."""
+    item = db.query(DispatchItem).filter(
+        DispatchItem.quo_conversation_id == failure.conversationId,
+        DispatchItem.last_message_id == failure.messageId,
+        DispatchItem.status.in_(OPEN_STATUSES),
+    ).first()
+    if item is None:
+        return {"recorded": False}
+    audit(db, item.id, "system", "draft_failed", f"{failure.messageId}|{failure.reason}"[:255])
+    db.commit()
+    return {"recorded": True, "attempts": _draft_failures(db, item), "limit": DRAFT_RETRY_LIMIT}
+
+
+def _draft_state(db: Session, item: DispatchItem) -> str | None:
+    """'retrying' or 'gave_up' when drafting the current customer message failed; None otherwise."""
+    if item.draft_reply is not None or not item.last_message_id:
+        return None
+    failures = _draft_failures(db, item)
+    if not failures:
+        return None
+    return "gave_up" if failures >= DRAFT_RETRY_LIMIT else "retrying"
+
+
 def _owner_part_cost(db: Session, request_: OwnerAction) -> dict:
     """Save private parts sourcing to a verified job, never a customer quote.
 
@@ -1370,6 +1438,7 @@ def _card(db: Session, item: DispatchItem, scheduled: dict[int, datetime], sched
         # it waits on them, not on the owner.
         "last_from_us": _last_from_us(item, history),
         "quick_replies": quick_replies.suggestions(item, customer, history),
+        "draft_state": _draft_state(db, item),
         "open_ro": open_ro,
         "estimate": estimate,
         "next_appointment": _appointment_for(item, scheduled, scheduled_jobs),
