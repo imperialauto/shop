@@ -1,0 +1,7 @@
+{
+  "api": "https://REPLACE-WITH-ISOLATED-QA-HOST",
+  "workerId": "imperial-development-pc",
+  "repository": "D:\\Imperial\\Development\\shop",
+  "root": "D:\\Imperial\\Development\\state",
+  "model": "qwen3.5:9b"
+}
