@@ -11,9 +11,9 @@ ROLES = {"admin": "Admin", "office": "Office Coordinator", "tech": "Technician"}
 PUBLIC = ("/site", "/login", "/logout", "/status", "/sign", "/webhooks", "/internal", "/healthz", "/readyz", "/live/overlay", "/owner-setup")
 OWNER_ONLY = ("/finance", "/settings/users", "/settings/business", "/settings/security-privacy", "/alerts")
 ADMIN_ONLY = ("/live", "/dispatch/sending", "/dispatch/policies")
-OFFICE = ("/my-day", "/dashboard", "/customers", "/vehicles", "/ro", "/appointments", "/invoices", "/estimates", "/dispatch", "/ai", "/settings")
-TECH_READ = re.compile(r"^/(my-day|ro(/board|/|/\d+(/vehicles|/attachments/\d+|/ai-review/\d+(/status)?)?)?|vehicles/\d+|appointments/?|appointments/calendar|settings(/security)?)$")
-TECH_WRITE = re.compile(r"^/(ro/\d+/(update-status|update-notes|add-line-item|lines/\d+/(complete|reopen)|attachments|ai-review(/\d+/(approve|reject|retry|cancel))?)|ai/[a-z-]+/\d+|settings/change-password|settings/security/(start|confirm|disable))$")
+OFFICE = ("/my-day", "/dashboard", "/customers", "/vehicles", "/ro", "/appointments", "/invoices", "/estimates", "/dispatch", "/ai", "/settings", "/ask")
+TECH_READ = re.compile(r"^/(ask|ask/requests/\d+(/state)?|my-day|ro(/board|/|/\d+(/vehicles|/attachments/\d+|/ai-review/\d+(/status)?)?)?|vehicles/\d+|appointments/?|appointments/calendar|settings(/security)?)$")
+TECH_WRITE = re.compile(r"^/(ask|ask/note|ro/\d+/(update-status|update-notes|add-line-item|lines/\d+/(complete|reopen)|attachments|ai-review(/\d+/(approve|reject|retry|cancel))?)|ai/[a-z-]+/\d+|settings/change-password|settings/security/(start|confirm|disable))$")
 PASSWORD_CHANGE_PATHS = ("/settings", "/settings/change-password", "/logout")
 
 

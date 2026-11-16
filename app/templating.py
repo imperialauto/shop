@@ -4,7 +4,24 @@ patched Starlette without rewriting every route at once."""
 from fastapi.templating import Jinja2Templates as _Base
 
 
+def _ask_on() -> bool:
+    import os
+    return os.getenv("ASK_IMPERIAL_ENABLED", "").strip().lower() == "true"
+
+
+def _ask_href(request) -> str:
+    """Ask Imperial opens with the job selected when used from inside a job."""
+    import re
+    match = re.match(r"^/ro/(\d+)(?:/|$)", request.url.path) if request is not None else None
+    return f"/ask?ro={match.group(1)}" if match else "/ask"
+
+
 class Jinja2Templates(_Base):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.env.globals.setdefault("ask_on", _ask_on)
+        self.env.globals.setdefault("ask_href", _ask_href)
+
     def TemplateResponse(self, *args, **kwargs):  # noqa: N802 - Starlette's name
         if args and isinstance(args[0], str):
             name, rest = args[0], args[1:]

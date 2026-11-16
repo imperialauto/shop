@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}Estimate draft · {{ job.label }} — Imperial Auto Care{% endblock %}
+{% block content %}
+<style>
+  .ai { max-width: 760px; display: grid; gap: 14px; }
+  .ai-card { background: var(--imp-surface); border: 1px solid var(--imp-line); border-radius: var(--imp-radius-card); padding: 16px; display: grid; gap: 10px; overflow-wrap: anywhere; }
+  .ai-card.gold { border-color: rgba(234,210,114,.55); }
+  .ai-card.warn { border-color: var(--imp-danger); }
+  .ai-label { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--imp-heading); margin: 0; }
+  .ai-big { font-size: 19px; font-weight: 800; margin: 0; }
+  .ai-muted { color: var(--imp-muted); font-size: 14px; margin: 0; }
+  .ai-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .ai-go { min-height: 52px; padding: 0 26px; border-radius: 999px; background: var(--imp-gold); color: var(--imp-on-gold); font-weight: 800; font-size: 16px; border: 0; cursor: pointer; }
+  .ai-go[disabled] { opacity: .45; cursor: not-allowed; }
+  .ai-alt { min-height: 48px; padding: 0 18px; border-radius: 999px; background: transparent; color: var(--imp-ink); border: 1px solid var(--imp-line); font-size: 14.5px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
+  .ai-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+  .ai-grid label, .ai-card > label { display: grid; gap: 4px; font-size: 13px; color: var(--imp-muted); }
+  .ai-card input, .ai-card select, .ai-card textarea { min-height: 46px; font-size: 16px; background: var(--imp-paper); color: var(--imp-ink); border: 1px solid var(--imp-line); border-radius: var(--imp-radius); padding: 8px 10px; font-family: inherit; }
+  .ai-card input[type=checkbox], .ai-card input[type=radio] { min-height: 22px; width: 22px; }
+  .pill { font-size: 12px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; border-radius: 999px; padding: 5px 12px; background: var(--imp-gold-tint); color: var(--imp-gold); }
+  .pill.red { background: var(--imp-danger-tint); color: var(--imp-danger); }
+  .pill.green { background: var(--imp-ok-tint); color: var(--imp-ok); }
+  table.ai-t { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.ai-t td { padding: 6px 0; border-bottom: 1px solid var(--imp-line); }
+  table.ai-t td:last-child { text-align: right; white-space: nowrap; }
+  details summary { cursor: pointer; color: var(--imp-muted); font-size: 13.5px; min-height: 40px; display: flex; align-items: center; }
+</style>
+<div class="page-header"><h1 class="page-title">Estimate draft</h1><a href="/ro/{{ job.roId }}" class="btn-secondary">Open {{ job.label }}</a></div>
+<div class="page-body ai">
+  <div class="ai-card gold">
+    <p class="ai-label">{{ job.label }} · {{ job.customer }}{% if job.vehicle %} · {{ job.vehicle }}{% endif %}</p>
+    <div class="ai-row" id="state" data-url="/ask/requests/{{ row.id }}/state" data-status="{{ row.status }}">
+      {% set red = row.status in ('stale', 'failed') or state.title == 'Workstation offline' %}
+      <span class="pill{{ ' red' if red else (' green' if row.status == 'applied' else '') }}" id="state-title">{{ state.title }}</span>
+      <span class="ai-muted" id="state-detail">{{ state.detail }}{% if row.status in ('queued','processing','retry_wait') %} · try {{ state.attempt }} of {{ state.maxAttempts }}{% endif %}</span>
+    </div>
+    <p class="ai-muted">Asked: “{{ row.request_text }}”</p>
+    {% if error %}<p class="ai-big" style="color:var(--imp-danger)" role="alert">{{ error }}</p>{% endif %}
+  </div>
+
+  {% if row.status == 'stale' %}
+  <div class="ai-card warn" role="alert">
+    <p class="ai-big">This draft is out of date. Nothing was applied or sent.</p>
+    <ul style="margin:0;padding-left:20px">{% for r in stale %}<li>{{ r }}</li>{% endfor %}</ul>
+    <p class="ai-muted">Your verified labor evidence is kept. Revise to base the draft on the job as it is now, then check and apply it.</p>
+    {% if can_edit %}<form method="post" action="/ask/requests/{{ row.id }}/revise" class="ai-row"><button class="ai-go">Revise draft</button></form>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if row.status == 'applied' %}
+  <div class="ai-card gold" role="status">
+    <p class="ai-big">Applied: {{ (row.applied_line_ids and row.applied_line_ids|length > 2) and 'draft lines added' or 'done' }} to {{ job.label }}.</p>
+    <p class="ai-muted">They are draft lines. Nothing was sent to the customer; use Request approval on the job when you're ready.</p>
+    <a class="ai-go" style="display:inline-flex;align-items:center;text-decoration:none;width:max-content" href="/ro/{{ job.roId }}#line-items">Open {{ job.label }} →</a>
+  </div>
+  {% endif %}
+
+  {% if reading %}
+  <div class="ai-card">
+    <p class="ai-label">What Imperial read from the request (AI, not pricing)</p>
+    {% for op in reading.operations %}<p style="margin:0"><strong>{{ op.name }}</strong>{% if op.position %} · {{ op.position }}{% endif %}{% if op.system %} · {{ op.system }}{% endif %}</p>{% endfor %}
+    {% if reading.vehicle_details_to_confirm %}<p class="ai-muted">Confirm before looking up labor: {{ reading.vehicle_details_to_confirm|join(', ') }}</p>{% endif %}
+    {% if reading.parts_to_price %}<p class="ai-muted">Parts to price: {{ reading.parts_to_price|join(', ') }}</p>{% endif %}
+    {% for n in reading.notes_for_advisor %}<p class="ai-muted">{{ n }}</p>{% endfor %}
+  </div>
+  {% endif %}
+
+  {% if evidence %}
+  <div class="ai-card">
+    <p class="ai-label">Labor evidence (verified)</p>
+    <table class="ai-t">
+      <tr><td>Source</td><td>{{ evidence.source }}</td></tr>
+      <tr><td>Operation</td><td>{{ evidence.operation }}</td></tr>
+      <tr><td>Vehicle configuration</td><td>{{ evidence.vehicle_config }}</td></tr>
+      <tr><td>Guide hours (published)</td><td>{{ '%.2f'|format(evidence.guide_hours|float) }}</td></tr>
+      {% if evidence.inclusions %}<tr><td>Includes</td><td>{{ evidence.inclusions }}</td></tr>{% endif %}
+      {% if evidence.overlap %}<tr><td>Overlap</td><td>{{ evidence.overlap }}</td></tr>{% endif %}
+      <tr><td>Verified</td><td>{{ evidence.verified_at.strftime('%b %d, %Y %-I:%M %p') }} UTC · user {{ evidence.verified_by_user_id }}</td></tr>
+      {% if evidence.shop_manager_ref %}<tr><td>Shop Manager estimate</td><td>{{ evidence.shop_manager_ref }}</td></tr>{% endif %}
+    </table>
+    <p class="ai-muted">Guide hours are the published labor time. Quoted, scheduled and actual tech time are tracked separately.</p>
+  </div>
+  {% endif %}
+
+  {% if priced.status == 'ready' %}
+  <div class="ai-card gold">
+    <p class="ai-label">Draft price (Imperial's approved rates; tax on parts only)</p>
+    <table class="ai-t">
+      <tr><td>Labor: {{ '%.2f'|format(priced.hours) }} h × ${{ '%.2f'|format(priced.rate) }} ({{ priced.rateType }})</td><td>${{ '%.2f'|format(priced.labor) }}</td></tr>
+      {% for p in priced.parts %}<tr><td>{{ p.description }} · {{ p.vendor }}{% if p.partNumber %} {{ p.partNumber }}{% endif %}{% if p.availability %} · {{ p.availability }}{% endif %} · ×{{ p.qty|round(2) }}</td><td>${{ '%.2f'|format(p.price * p.qty) }}</td></tr>{% endfor %}
+      <tr><td>Tax on parts ({{ '%.1f'|format(priced.taxRate * 100) }}%)</td><td>${{ '%.2f'|format(priced.tax) }}</td></tr>
+      <tr><td><strong>Total</strong></td><td><strong>${{ '%.2f'|format(priced.total) }}</strong></td></tr>
+    </table>
+    {% if row.status == 'ready' and can_edit %}
+    <form method="post" action="/ask/requests/{{ row.id }}/apply" class="ai-row">
+      <input type="hidden" name="updated" value="{{ row.updated_at.isoformat() }}">
+      <button class="ai-go">Apply to {{ job.label }}</button>
+      <span class="ai-muted">Adds draft lines only. Imperial re-checks the job and the customer's messages first.</span>
+    </form>
+    {% endif %}
+  </div>
+  {% elif row.status in ('needs_labor', 'queued', 'processing', 'retry_wait', 'failed') %}
+  <div class="ai-card"><p class="ai-big">Needs labor lookup</p><p class="ai-muted">No price until labor is verified in ALLDATA Repair.</p></div>
+  {% endif %}
+
+  {% if can_edit and row.status in ('needs_labor', 'ready', 'failed', 'queued', 'retry_wait', 'processing') %}
+  <form method="post" action="/ask/requests/{{ row.id }}/evidence" class="ai-card" aria-label="Labor and parts evidence">
+    <p class="ai-label">{{ 'Update' if evidence else 'Enter' }} labor from ALLDATA Repair</p>
+    <input type="hidden" name="updated" value="{{ row.updated_at.isoformat() }}">
+    <input type="hidden" name="source" value="ALLDATA Repair">
+    <div class="ai-grid">
+      <label>Vehicle configuration (engine, drive, trim)<input name="vehicle_config" required maxlength="300" value="{{ evidence.vehicle_config if evidence else (job.vehicle or '') }}"></label>
+      <label>Operation as listed in ALLDATA<input name="operation" required maxlength="300" value="{{ evidence.operation if evidence else ((reading.operations[0].name) if reading and reading.operations else '') }}"></label>
+      <label>Guide hours<input name="guide_hours" required inputmode="decimal" pattern="[0-9]+(\.[0-9]{1,2})?" value="{{ evidence.guide_hours if evidence else '' }}"></label>
+      <label>Rate<select name="rate_type">{% for k, v in [('shop','In-shop'),('mobile','Mobile'),('diesel','Diesel'),('cspr','Customer-supplied parts')] %}<option value="{{ k }}"{% if evidence and evidence.rate_type == k %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+      <label>Includes<input name="inclusions" maxlength="1000" value="{{ evidence.inclusions or '' if evidence else '' }}"></label>
+      <label>Overlap with other work on this job<input name="overlap" maxlength="1000" value="{{ evidence.overlap or '' if evidence else '' }}"></label>
+      <label>Shop Manager estimate ref<input name="shop_manager_ref" maxlength="64" value="{{ evidence.shop_manager_ref or '' if evidence else '' }}"></label>
+    </div>
+    <label style="display:flex;gap:10px;align-items:center;color:var(--imp-ink)"><input type="checkbox" name="verified" value="yes" required> I checked this operation for this vehicle in ALLDATA Repair</label>
+    <details{% if not parts %} open{% endif %}><summary>Parts (AutoZonePro or O'Reilly)</summary>
+      {% for i in range(6) %}{% set p = parts[i] if parts|length > i else None %}
+      <div class="ai-grid" style="margin-top:8px">
+        <label>Part<input name="part_description_{{ i }}" maxlength="120" value="{{ p.description if p else ((reading.parts_to_price[i]) if reading and reading.parts_to_price|length > i else '') }}"></label>
+        <label>Vendor<select name="part_vendor_{{ i }}"><option value="AutoZonePro"{% if p and p.vendor == 'AutoZonePro' %} selected{% endif %}>AutoZonePro</option><option value="O'Reilly"{% if p and p.vendor == "O'Reilly" %} selected{% endif %}>O'Reilly</option></select></label>
+        <label>Part number<input name="part_part_number_{{ i }}" maxlength="40" value="{{ p.partNumber if p else '' }}"></label>
+        <label>Price each<input name="part_price_{{ i }}" inputmode="decimal" value="{{ p.price if p else '' }}"></label>
+        <label>Qty<input name="part_qty_{{ i }}" inputmode="decimal" value="{{ p.qty if p else '1' }}"></label>
+        <label>Availability<input name="part_availability_{{ i }}" maxlength="60" value="{{ p.availability if p else '' }}"></label>
+      </div>{% endfor %}
+    </details>
+    <fieldset style="border:0;padding:0;margin:0;display:grid;gap:6px">
+      <legend class="ai-label">Correction to remember?</legend>
+      <label style="display:flex;gap:10px;align-items:center;color:var(--imp-ink)"><input type="radio" name="save_as" value="job" checked> This job only</label>
+      <label style="display:flex;gap:10px;align-items:center;color:var(--imp-ink)"><input type="radio" name="save_as" value="shop_rule"> Save as a shop rule</label>
+      <input name="rule_text" maxlength="1000" placeholder="e.g. Quote rotors with every pad job on Chargers">
+    </fieldset>
+    <div class="ai-row"><button class="ai-go">Save labor and price it</button></div>
+  </form>
+  {% endif %}
+
+  {% if rules %}<details class="ai-card"><summary>Shop rules ({{ rules|length }})</summary>{% for r in rules %}<p class="ai-muted">• {{ r }}</p>{% endfor %}</details>{% endif %}
+
+  <details class="ai-card"><summary>History ({{ events|length }})</summary>
+    {% for e in events %}<p class="ai-muted">{{ e.created_at.strftime('%b %d %-I:%M:%S %p') }} · {{ e.actor }} · {{ e.action|replace('_',' ') }}{% if e.detail %} · {{ e.detail[:200] }}{% endif %}</p>{% endfor %}
+  </details>
+
+  {% if can_edit and row.status not in ('applied', 'cancelled') %}
+  <div class="ai-row">
+    {% if row.status == 'failed' %}<form method="post" action="/ask/requests/{{ row.id }}/retry"><button class="ai-alt">Send to workstation again</button></form>{% endif %}
+    <form method="post" action="/ask/requests/{{ row.id }}/cancel"><button class="ai-alt">Cancel draft</button></form>
+  </div>
+  {% endif %}
+</div>
+<script>
+  (function () {
+    var box = document.getElementById("state");
+    if (!box || ["queued", "processing", "retry_wait"].indexOf(box.dataset.status) < 0) return;
+    var timer = setInterval(function () {
+      fetch(box.dataset.url, { credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (s) {
+        document.getElementById("state-title").textContent = s.title;
+        document.getElementById("state-detail").textContent = s.detail + (s.error ? " · " + s.error : "");
+        if (s.status !== box.dataset.status) { clearInterval(timer); location.reload(); }
+      }).catch(function () {});
+    }, 5000);
+  })();
+</script>
+{% endblock %}

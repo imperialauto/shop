@@ -1,0 +1,63 @@
+name: Ask Imperial worker restart
+on:
+  workflow_dispatch:
+  push:
+    branches: ['claude/ask-imperial**']
+  pull_request:
+jobs:
+  restart:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test-only
+          POSTGRES_DB: askqa
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://test:test-only@127.0.0.1:5432/askqa
+      SECRET_KEY: ask-qa-only-key
+      APP_READ_ONLY: 'false'
+      IMPERIAL_TASKS_ENABLED: 'true'
+      LOCAL_NODE_ENABLED: 'true'
+      ASK_IMPERIAL_ENABLED: 'true'
+      LOCAL_NODE_WORKER_KEY: ask-qa-only-worker-key-0123456789abcdef
+      INTERNAL_API_KEY: ask-qa-only-internal-key
+      LOCAL_NODE_LEASE_SECONDS: '20'
+      LOCAL_NODE_OFFLINE_SECONDS: '10'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: |
+          pip install -r requirements.txt playwright
+          playwright install --with-deps chromium
+      - name: Seed made-up data and start the app
+        run: |
+          PYTHONPATH=. python tests/e2e/ask_seed.py
+          nohup python -m uvicorn app.main:app --port 8099 > server.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8099/healthz && break; sleep 1; done
+      - name: Kill and restart the real worker mid-task, phone and desktop
+        run: PYTHONPATH=. python tests/e2e/ask_imperial_restart.py
+      - name: Worker and server logs
+        if: always()
+        run: |
+          for f in ask-restart-output/worker-*.log ask-restart-output/node-*/*.log; do echo "== $f"; cat "$f"; done || true
+          grep -nE "Traceback|Error" server.log | head -40 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ask-imperial-restart
+          path: |
+            ask-restart-output
+            server.log

@@ -262,6 +262,10 @@ def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db)
     ro = db.get(RepairOrder, ro_id)
     if not ro:
         raise HTTPException(status_code=404)
+    from app import assist
+    blocked = assist.send_blocked(db, ro, user)
+    if blocked:
+        raise HTTPException(status_code=409, detail=blocked)
     fresh = [li for li in ro.line_items if li.approval is None]
     for li in fresh:
         li.approval = "pending"
