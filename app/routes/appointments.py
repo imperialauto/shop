@@ -18,6 +18,7 @@ from app import business_settings, lead_lifecycle, website_alerts
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import RepairOrder
+from app.dispatch_model import DispatchAudit
 from app.appointment_model import Appointment
 from app.appointments import AppointmentWindow, AppointmentValidationError, overlaps, validate_slot
 
@@ -27,7 +28,8 @@ templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), '.
 @router.get('/calendar', response_class=HTMLResponse)
 def calendar_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
-    return templates.TemplateResponse('calendar.html', {'request': request, 'user': user})
+    return templates.TemplateResponse('calendar.html', {'request': request, 'user': user,
+                                                        'may_mark_missed': user.role in ('owner', 'admin', 'office')})
 
 MAX_TRAVEL_MINUTES = 240
 ACTIVE_STATUSES = ("tentative", "confirmed")
@@ -115,10 +117,11 @@ def configured_hours():
 @router.get("/")
 def list_appointments(request: Request, db: Session = Depends(get_db)):
     get_current_user(request, db)
+    missed = {detail for (detail,) in db.query(DispatchAudit.detail).filter_by(action="followup_missed_visit")}
     return [
         {"id": a.id, "repair_order_id": a.repair_order_id, "resource_id": a.resource_id,
          "starts_at": a.starts_at, "ends_at": a.ends_at, "status": a.status,
-         "booked_value": float(a.booked_value or 0), "location": a.location,
+         "booked_value": float(a.booked_value or 0), "location": a.location, "missed": str(a.id) in missed,
          "travel_before_minutes": a.travel_before_minutes, "buffer_after_minutes": a.buffer_after_minutes}
         for a in db.query(Appointment).order_by(Appointment.starts_at).limit(250).all()
     ]
@@ -215,4 +218,23 @@ def complete_appointment(appointment_id: int, request: Request, db: Session = De
     appointment.status = "completed"
     db.commit()
     return {"id": appointment.id, "status": appointment.status}
+
+
+@router.post("/{appointment_id}/missed")
+def missed_appointment(appointment_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if user.role not in ("owner", "admin", "office"):
+        raise HTTPException(403, "Only office staff can record missed visits.")
+    appointment = db.query(Appointment).filter_by(id=appointment_id).with_for_update().first()
+    if appointment is None:
+        raise HTTPException(404, "Appointment not found.")
+    from app.customer_followups import utc
+    if appointment.status != "confirmed" or utc(appointment.ends_at) > datetime.now(timezone.utc):
+        raise HTTPException(409, "Only a past confirmed appointment can be marked missed.")
+    appointment.status = "cancelled"
+    db.add(DispatchAudit(actor=user.username, action="followup_missed_visit", detail=str(appointment.id)))
+    if lead_lifecycle.enabled():
+        lead_lifecycle.reopen_cancelled_booking(db, appointment.id, f"user:{user.id}")
+    db.commit()
+    return {"id": appointment.id, "status": appointment.status, "missed": True}
 

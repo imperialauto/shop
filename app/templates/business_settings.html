@@ -80,6 +80,16 @@
       Direct replies and customer texting use separate controls.
     </p>
   </section>
+  <section class="card">
+    <h2 class="font-bold mb-2">Customer follow-ups</h2>
+    <input type="hidden" name="automatic_customer_followups_shown" value="1">
+    <label><input type="checkbox" name="automatic_customer_followups" {% if settings.automatic_customer_followups %}checked{% endif %}> Send automatic customer follow-up texts</label>
+    <p class="text-sm text-stone-400 mt-2">One check-in after 24 hours, or after 48 hours for an estimate marked vehicle off-site. Stalled service leads can get another check-in after 72 hours. Messages are sent during shop hours.</p>
+    <label for="task-followup-days">Show in Follow-up after this many days without a reply</label>
+    <input id="task-followup-days" name="task_followup_days" type="number" min="1" max="{{ settings.task_followup_max }}"
+           value="{{ settings.task_followup_days }}" class="form-input" style="width:90px" required>
+    <p class="text-sm text-stone-400 mt-2">This field controls when conversations appear in the task board. Confirmed off-site estimates appear after two days.</p>
+  </section>
   <section class="card" aria-labelledby="payment-methods">
     <h2 id="payment-methods" class="font-bold mb-1">Payment methods</h2>
     <p class="text-sm text-stone-400 mb-3">What staff can pick when marking a job paid at pickup.</p>

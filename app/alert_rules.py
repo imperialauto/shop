@@ -18,6 +18,7 @@ LABELS = {
     "owner_daily": "Morning summary", "owner_calendar": "Appointment heads-up", "owner_backup": "Backup problem",
     "owner_stuck": "Stuck jobs", "owner_leads": "Open leads",
     "dashboard_reply": "Reply sent from dashboard",
+    "cust_followup": "Automatic customer follow-up",
 }
 DEFAULTS = {"quiet_start": "", "quiet_end": "", "off": []}
 

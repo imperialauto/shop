@@ -98,12 +98,12 @@ async function logCommunication({ phone, direction, body, externalId, createdAt 
  * Best-effort hand-off of an inbound SMS to the Operations queue. Records work
  * for the owner only; it never sends anything and never throws.
  */
-async function dispatchIntake({ conversationId, messageId, phone, body, recovery = false, contactName = null, kind = "message", callOutcome = null, threadMessageId = null, autoRepliesOn = false, knownCustomer = false }) {
+async function dispatchIntake({ conversationId, messageId, phone, body, recovery = false, contactName = null, kind = "message", callOutcome = null, callAt = null, threadMessageId = null, autoRepliesOn = false, knownCustomer = false }) {
   if (!configured()) return { recorded: false, reason: "not_configured" };
   try {
     return await request("/internal/dispatch/intake", {
       method: "POST",
-      body: JSON.stringify({ conversationId, messageId, phone, body, recovery, contactName, kind, callOutcome, threadMessageId, autoRepliesOn, knownCustomer }),
+      body: JSON.stringify({ conversationId, messageId, phone, body, recovery, contactName, kind, callOutcome, callAt, threadMessageId, autoRepliesOn, knownCustomer }),
     });
   } catch (err) {
     console.error("shopClient.dispatchIntake failed:", err.message);
@@ -111,10 +111,10 @@ async function dispatchIntake({ conversationId, messageId, phone, body, recovery
   }
 }
 
-async function dispatchHandled({ conversationId, at, phone }) {
+async function dispatchHandled({ conversationId, at, phone, byCall = false }) {
   if (!configured()) return { closed: false };
   try {
-    return await request("/internal/dispatch/handled", { method: "POST", body: JSON.stringify({ conversationId, at, ...(phone ? { phone } : {}) }) });
+    return await request("/internal/dispatch/handled", { method: "POST", body: JSON.stringify({ conversationId, at, ...(phone ? { phone } : {}), byCall }) });
   } catch (err) {
     console.error("shopClient.dispatchHandled failed:", err.message);
     return { closed: false };
@@ -152,10 +152,10 @@ async function dispatchDraft({ conversationId, messageId, body, note = null }) {
 
 // Canonical internal task store. The web service enforces its own write
 // feature gate; this client never sends a customer SMS or bypasses recovery.
-async function captureOwnerTask({ messageId, title, projectKey = null, dueAt }) {
+async function captureOwnerTask({ messageId, title, projectKey = null, dueAt, personal = false }) {
   return request("/internal/imperial/tasks/capture", {
     method: "POST",
-    body: JSON.stringify({ messageId, title, projectKey, dueAt }),
+    body: JSON.stringify({ messageId, title, projectKey, dueAt, personal }),
   });
 }
 
@@ -225,8 +225,15 @@ async function draftFailed({ conversationId, messageId, reason = "" }) {
   }
 }
 
-async function dispatchTick() {
-  return request("/internal/dispatch/tick", { method: "POST", body: "{}" });
+async function dispatchTick({ ownerTexts = true } = {}) {
+  const path = ownerTexts ? "/internal/dispatch/tick" : "/internal/dispatch/tick?owner_texts=false";
+  return request(path, { method: "POST", body: "{}" });
+}
+
+async function checkCustomerFollowup({ key, customerId, phone, messageId, callId }) {
+  return request("/internal/dispatch/followup-check", {
+    method: "POST", body: JSON.stringify({ key, customerId, phone, messageId, callId }),
+  });
 }
 
 async function dispatchOutbound({ key, status }) {
@@ -240,7 +247,7 @@ async function dispatchOutbound({ key, status }) {
 
 module.exports = {
   configured, getContext, getContextStrict, getSigningLink, logCommunication,
-  dispatchIntake, dispatchOwnerAction, dispatchHandled, dispatchSync, dispatchTick, dispatchOutbound, dispatchDraft,
+  dispatchIntake, dispatchOwnerAction, dispatchHandled, dispatchSync, dispatchTick, dispatchOutbound, dispatchDraft, checkCustomerFollowup,
   captureOwnerTask, readOwnerTask, changeOwnerTask, openOwnerTasks, syncQuoTasks, ackQuoTasks, submitDevelopmentWork, listDevelopmentWork,
   ownerFocus, saveOwnerProblem, draftsNeeded, draftFailed,
 };

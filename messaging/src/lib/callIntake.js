@@ -23,7 +23,7 @@ function callBody(voicemail) {
 
 function reachedAfter(call, calls, messages) {
   const missedAt = new Date(call.createdAt);
-  const talked = calls.some((c) => c.id !== call.id && new Date(c.createdAt) > missedAt && !isMissed(c) && (c.duration || c.answeredAt));
+  const talked = calls.some((c) => c.id !== call.id && new Date(c.createdAt) > missedAt && lastConversationAt([c]));
   // A later text only counts if the customer has not written again since.
   const after = messages.filter((m) => new Date(m.createdAt) > missedAt)
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -39,7 +39,7 @@ async function missedCall({ quo, phone, phoneNumberId, since, messages = [], ski
   const voicemail = await quo.getVoicemail(newest.id).catch(() => null);
   if (!voicemail && isTollFree(phone)) return null;
   const body = callBody(voicemail);
-  return NOT_LEADS.test(body) ? null : { id: newest.id, body };
+  return NOT_LEADS.test(body) ? null : { id: newest.id, body, at: newest.createdAt };
 }
 
 // The newest moment a person at the shop spoke with this customer by phone.

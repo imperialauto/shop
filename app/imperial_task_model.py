@@ -13,6 +13,9 @@ def utc_now():
 
 
 PROBLEM_CATEGORY = "app_problem"  # "Report a problem" entries, kept off to-do lists
+PERSONAL_CATEGORY = "owner_todo"
+BACKLOG_CATEGORY = "owner_backlog"
+SHOP_CATEGORY = "shop_task"
 
 
 class ImperialTask(Base):

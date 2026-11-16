@@ -56,7 +56,7 @@ async function answerOwnerTaskCommand({
       const parts = /^remind me (.+?) to (.{4,200})$/i.exec(text);
       const dueAt = parts && parsePhoenixDue(parts[1].toLowerCase(), now);
       if (!dueAt) return `When should this task be due? ${dateHelp}`;
-      const task = await taskWriter({ messageId, title: parts[2], dueAt });
+      const task = await taskWriter({ messageId, title: parts[2], dueAt, personal: true });
       return task?.recorded ? taskReceipt(task) : "I couldn't confirm that the task was saved.";
     }
 

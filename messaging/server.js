@@ -57,8 +57,8 @@ if (process.env.QUO_TASK_SYNC_ENABLED === "true") {
   startQuoTaskSync({ quo: require("./src/lib/quoClient"), shopClient: require("./src/lib/shopClient") });
 }
 
-// Off unless explicitly enabled. Approvals, nudges and the morning summary.
-if (process.env.OWNER_TEXTS_ENABLED === "true") {
+// Run the same dispatch loop for owner notices or customer follow-up scheduling.
+if (process.env.OWNER_TEXTS_ENABLED === "true" || process.env.CUSTOMER_FOLLOWUP_WORKER_ENABLED === "true") {
   const quo = require("./src/lib/quoClient");
   const shopClient = require("./src/lib/shopClient");
   const { deliverOwnerMessages } = require("./src/lib/dispatchActions");

@@ -64,7 +64,7 @@ const shopClient = require("../messaging/src/lib/shopClient");
   });
   assert.equal(dashboard.status, 200);
   const html = await dashboard.text();
-  assert.match(html, />To-do</);
+  assert.match(html, />Saved tasks</);
   assert.match(html, /verify website booking flow/);
 
   await makeResult("Remind me tomorrow at 11 AM to check the synthetic Fusion tank", "synthetic-reminder");
@@ -73,7 +73,7 @@ const shopClient = require("../messaging/src/lib/shopClient");
   await makeResult(`Move task #${reminderId} to tomorrow at 2 PM`, "synthetic-reschedule");
   assert.match(delivered.at(-1), /2:00 PM Phoenix time/);
 
-  const tracker = await fetch(base + "/dashboard/tasks?tab=later", { headers: { Cookie: cookie } });
+  const tracker = await fetch(base + "/my-day", { headers: { Cookie: cookie } });
   assert.equal(tracker.status, 200);
   assert.match(await tracker.text(), /check the synthetic Fusion tank/);
   const complete = await fetch(base + "/dashboard/tasks/" + reminderId, {

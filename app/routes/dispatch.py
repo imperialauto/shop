@@ -9,7 +9,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -42,6 +42,7 @@ class IntakeMessage(BaseModel):
     contactName: str | None = Field(default=None, max_length=120)
     kind: str = Field(default="message", pattern="^(message|call)$")
     callOutcome: str | None = Field(default=None, pattern="^(answered|missed|voicemail|unknown)$")
+    callAt: AwareDatetime | None = None
     threadMessageId: str | None = Field(default=None, max_length=128)
     recovery: bool = False  # replayed by the catch-up job: never reply or act on it
     autoRepliesOn: bool = False
@@ -174,6 +175,11 @@ def _record(db: Session, message: IntakeMessage, result) -> DispatchItem:
     db.flush()
     # The service lead is independent of this short-lived communication task.
     # If the feature has not been migrated and enabled, existing intake is unchanged.
+    missed = message.kind == "call" and message.callOutcome in ("missed", "voicemail")
+    if missed:
+        from app.routes import imperial_tasks
+        if imperial_tasks.enabled():
+            imperial_tasks.record_callback(db, item, message)
     if os.getenv("SERVICE_LEADS_ENABLED", "").strip().lower() == "true":
         from app.lead_lifecycle import intake_from_quo
         intake_from_quo(db, message, result, item)
@@ -681,12 +687,50 @@ def _name_sweep():
 
 
 @internal_router.post("/tick")
-def tick(background: BackgroundTasks, db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
+def tick(request: Request, background: BackgroundTasks, owner_texts: bool = True, db: Session = Depends(get_db),
+         _auth: bool = Depends(require_internal_key)):
+    from app import customer_followups
+
     background.add_task(_name_sweep)
     if is_paused(db):  # nothing is reserved, so held alerts go out after RESUME
         return {"ownerPhone": OWNER_PHONE or None, "messages": [], "customerReplies": [], "paused": True}
-    return {"ownerPhone": OWNER_PHONE or None, "messages": due_owner_messages(db, datetime.now(timezone.utc)),
-            "customerReplies": queued_replies(db)}
+    now = datetime.now(timezone.utc)
+    messages = due_owner_messages(db, now) if owner_texts else []
+    replies = queued_replies(db) if owner_texts else []
+    followups = []
+    if (not request.app.state.read_only and not replies and customer_followups.enabled()
+            and not db.query(DispatchOutbound.id).filter_by(kind=DASHBOARD_REPLY, status="queued").first()):
+        try:
+            followups = customer_followups.due(db, now)
+        except (SQLAlchemyError, HTTPException, ValueError) as exc:
+            db.rollback()
+            print(f"customer_followups_unavailable {type(exc).__name__}")
+    return {"ownerPhone": OWNER_PHONE or None, "messages": messages,
+            "customerReplies": replies, "customerFollowups": followups}
+
+
+class FollowupCheck(BaseModel):
+    key: str = Field(max_length=160)
+    customerId: int = Field(gt=0)
+    phone: str = Field(max_length=32)
+    messageId: str | None = Field(None, max_length=128)
+    callId: str | None = Field(None, max_length=128)
+
+
+@internal_router.post("/followup-check")
+def followup_check(payload: FollowupCheck, request: Request, db: Session = Depends(get_db),
+                   _auth: bool = Depends(require_internal_key)):
+    from app import customer_followups
+
+    row = db.query(DispatchOutbound).filter_by(dedupe_key=payload.key, kind=customer_followups.KIND, status="reserved").first()
+    now = datetime.now(timezone.utc)
+    if (request.app.state.read_only or not row or is_paused(db) or not customer_followups.enabled()
+            or not customer_followups.allowed_now(now)):
+        return {"ok": False}
+    customer = db.get(Customer, payload.customerId)
+    reminder = customer_followups.candidate(db, customer, now) if customer else None
+    return {"ok": bool(reminder and reminder["key"] == payload.key and reminder["phone"] == payload.phone and
+                       reminder["messageId"] == payload.messageId and reminder["callId"] == payload.callId)}
 
 
 @internal_router.post("/draft")
@@ -1131,6 +1175,7 @@ class HandledInput(BaseModel):
     conversationId: str = Field(min_length=1, max_length=64)
     at: datetime
     phone: str | None = Field(default=None, max_length=32)
+    byCall: bool = False
 
 
 @internal_router.post("/handled")
@@ -1155,6 +1200,10 @@ def handled(report: HandledInput, db: Session = Depends(get_db), _auth: bool = D
         item.decided_at = item.updated_at = datetime.now().astimezone()
         audit(db, item.id, "system", "replied_in_quo")
         closed.append(item.id)
+    if report.byCall and report.phone:
+        from app.routes import imperial_tasks
+        if imperial_tasks.enabled():
+            imperial_tasks.finish_callback(db, report.phone, _utc(report.at))
     db.commit()
     return {"closed": bool(closed), "items": closed}
 

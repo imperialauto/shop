@@ -12,28 +12,91 @@
   .md-stats a { background:var(--imp-surface); border:1px solid var(--imp-line); border-radius:var(--imp-radius-card); padding:10px 8px; text-align:center; text-decoration:none; color:var(--imp-ink); }
   .md-stats strong { display:block; font-family:var(--imp-serif); font-size:26px; color:var(--imp-heading); line-height:1; }
   .md-stats span { font-size:11.5px; color:var(--imp-muted); }
-  .md-row { display:flex; gap:10px; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--imp-line); text-decoration:none; color:inherit; min-height:44px; }
-  .md-row:last-child { border-bottom:0; }
-  .md-chip { flex:none; font-size:10.5px; font-weight:700; text-transform:uppercase; border-radius:999px; padding:3px 8px; background:var(--imp-gold-tint); color:var(--imp-gold); }
-  .md-chip.red { background:var(--imp-danger-tint); color:var(--imp-danger); }
+  .md-todo { display:grid; gap:8px; padding:12px 0; border-bottom:1px solid var(--imp-line); overflow-wrap:anywhere; }
+  .md-todo:last-child { border-bottom:0; }
+  .md-actions { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; }
+  .md-todo summary, .md-fold summary { cursor:pointer; color:var(--imp-link); padding:10px 0; }
+  .md-fold { border-top:1px solid var(--imp-line); }
 </style>
 {% if owner.tasks_on %}
+{% set plan = owner.plan %}
+{% macro todo_row(item, group) %}
+<article class="md-todo" id="todo-{{ item.id }}">
+  <div>
+    <strong>{{ item.title }}</strong>
+    {% if item.due and group != 'backlog' %}<span class="text-sm text-stone-400"> · {{ item.due.strftime('%a %-I:%M %p') }}</span>{% endif %}
+    {% if item.note %}<p class="text-sm text-stone-400">{{ item.note }}</p>{% endif %}
+  </div>
+  <div class="md-actions">
+    {% if item.phone %}<a class="btn-secondary" href="tel:{{ item.phone }}">Call</a>{% endif %}
+    {% if item.customer_id %}<a class="btn-secondary" href="/customers/{{ item.customer_id }}#file">Contact history</a>{% endif %}
+    {% if not read_only %}
+    <form method="post" action="/dashboard/tasks/{{ item.id }}" class="md-actions">
+      <input type="hidden" name="next" value="/my-day#my-to-do">
+      {% if group != 'next' %}<button class="btn-secondary" name="operation" value="personal">Do now</button>{% endif %}
+      <button class="btn-primary" name="operation" value="complete">Done</button>
+      {% if group != 'backlog' %}<button class="btn-secondary" name="operation" value="defer">Backburner</button>{% endif %}
+    </form>
+    <details>
+      <summary>Schedule</summary>
+      <form method="post" action="/dashboard/tasks/{{ item.id }}" class="md-actions">
+        <input type="hidden" name="next" value="/my-day#my-to-do">
+        <label>Phoenix time <input class="form-input" type="datetime-local" name="due" required></label>
+        <button class="btn-secondary" name="operation" value="personal">Save time</button>
+      </form>
+    </details>
+    {% endif %}
+  </div>
+</article>
+{% endmacro %}
 <nav class="md-stats" aria-label="Today at a glance">
-  <a href="/dashboard/tasks?tab=now"><strong>{{ owner.counts.get('now', 0) }}</strong><span>Need you</span></a>
-  <a href="/dashboard/tasks?tab=waiting"><strong>{{ owner.counts.get('waiting', 0) }}</strong><span>Waiting</span></a>
+  <a href="#my-to-do"><strong>{{ plan.next|length }}</strong><span>Next 3 hours</span></a>
   <a href="/appointments/calendar"><strong>{{ appointment_count }}</strong><span>Booked today</span></a>
   <a href="/ro/?status=in_progress"><strong>{{ mine|length }}</strong><span>My jobs</span></a>
+  <a href="/dashboard/tasks"><strong>↗</strong><span>Shop Tasks</span></a>
 </nav>
-<h2 class="font-bold mb-2">Needs you</h2>
-<div class="card mb-4" style="padding:4px 14px">
-  {% for card in owner.now %}
-  <a class="md-row" href="{{ '/customers/' ~ card.customer_id ~ '#file' if card.customer_id else '/dashboard/tasks' }}">
-    <span class="md-chip{{ ' red' if card.urgent else '' }}">{{ 'Urgent' if card.urgent else card.kind }}</span>
-    <span style="min-width:0;overflow-wrap:anywhere"><strong>{{ card.name or card.phone or card.kind }}</strong>{% if card.vehicle %} <span class="text-stone-400">· {{ card.vehicle }}</span>{% endif %}<br><span class="text-sm text-stone-400">{{ card.headline[:120] }}</span></span>
-  </a>
-  {% else %}<p class="text-sm text-stone-400" style="padding:10px 0">Nothing needs you right now.</p>{% endfor %}
-  {% if owner.counts.get('now', 0) > owner.now|length %}<a class="md-row" href="/dashboard/tasks" style="color:var(--imp-link)">See all {{ owner.counts.get('now') }} →</a>{% endif %}
-</div>
+<section id="my-to-do" class="card mb-4" aria-labelledby="todo-heading">
+  <h2 class="font-bold mb-2" id="todo-heading">My To-do</h2>
+  {% if not read_only %}
+  <form method="post" action="/my-day/todos" class="mb-3" aria-label="Add a personal to-do">
+    <div class="md-actions">
+      <input name="title" class="form-input" style="flex:1;min-width:150px" type="text" aria-label="New to-do" placeholder="What do you need to do?" required minlength="4" maxlength="200">
+      <button class="btn-primary">Add</button>
+    </div>
+    <details class="mt-2">
+      <summary>Time and details</summary>
+      <label class="form-label">When (Phoenix time)<input class="form-input" type="datetime-local" name="due"></label>
+      <label class="form-label">Who, where, why or how<textarea class="form-input" name="note" rows="2" maxlength="1000"></textarea></label>
+    </details>
+  </form>
+  {% endif %}
+  <h3 class="font-bold text-sm">Next 3 hours</h3>
+  {% if owner.load_error %}<p role="alert">My To-do could not load.</p>{% endif %}
+  {% for item in plan.next[:6] %}{{ todo_row(item, 'next') }}
+  {% else %}{% if not owner.load_error %}<p class="text-sm text-stone-400 my-2">Nothing due in the next three hours.</p>{% endif %}{% endfor %}
+  {% if plan.next|length > 6 %}
+  <details class="md-fold"><summary>{{ plan.next|length - 6 }} more due soon</summary>
+    {% for item in plan.next[6:] %}{{ todo_row(item, 'next') }}{% endfor %}
+  </details>
+  {% endif %}
+  {% for key, label in [('overdue', 'Overdue'), ('later', 'Later'), ('backlog', 'Backburner')] %}
+  {% if plan[key] %}
+  <details class="md-fold"><summary>{{ label }} ({{ plan[key]|length }})</summary>
+    {% for item in plan[key] %}{{ todo_row(item, key) }}{% endfor %}
+  </details>
+  {% endif %}
+  {% endfor %}
+</section>
+<script>
+  (function () {
+    if (!/^#todo-\d+$/.test(location.hash)) return;
+    var item = document.getElementById(location.hash.slice(1));
+    if (!item) return;
+    var fold = item.closest('.md-fold');
+    if (fold) fold.open = true;
+    item.scrollIntoView({block: 'center'});
+  })();
+</script>
 {% endif %}
 {% if owner.calendar is not none %}
 <h2 class="font-bold mb-2">Your calendar today</h2>
