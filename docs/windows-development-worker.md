@@ -50,9 +50,9 @@ Artifact hashes are worker receipts, not independent security approval or CI pro
    No automatic migration/startup is performed. Production needs backup and
    separate authorization. Roll back by disabling executor flag and stopping
    this scheduled task; preserve job/event/execution tables and state.
-6. `py -3 dev_worker/worker.py --config D:\Imperial\Development\config.json --check`
+6. `py -3.12 dev_worker/worker.py --config D:\Imperial\Development\config.json --check`
    checks local settings only; it does not prove connectivity or commissioning.
-7. Run `dev_worker/install.ps1 -Config D:\Imperial\Development\config.json`
+7. Run `dev_worker/install.ps1 -Config D:\Imperial\Development\config.json -PythonVersion 3.12`
    to register `ImperialDevelopmentWorker` for logon (does not start it).
    Use `run-worker.ps1` interactively for the first test, then test logon startup.
 
