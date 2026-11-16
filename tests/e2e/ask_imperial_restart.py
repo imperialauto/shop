@@ -60,11 +60,14 @@ class StubOllama(BaseHTTPRequestHandler):
 
     def _send(self, body):
         data = json.dumps(body).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # the worker that asked was killed mid-task: that's the point of the test
 
     def do_GET(self):
         if self.path == "/api/version":
@@ -210,9 +213,10 @@ def run_device(browser, device, options, ro_a, ro_b, phone, conversation):
           and "late_result_refused" in events and events.count("claimed") == 1 and "reclaimed" in events)
     log("right RO, original reading kept, reasons recorded", ok=ok, device=device, ro=row["repair_order_id"], events=events)
     page.goto(f"{BASE}/ask/requests/{request_id}")
-    body = page.inner_text("main") if page.locator("main").count() else page.inner_text("body")
+    body = page.inner_text("body").lower()  # status pills are upper-cased by CSS
     shot(page, device, "3-stale")
-    log("advisor sees Out of date with reasons", ok="Out of date" in body and "hold off" in body
+    log("advisor sees Out of date with reasons", ok="out of date" in body and "hold off" in body
+        and "brake fluid flush" in body
         and page.locator("text=Apply to RO").count() == 0, device=device)
     applied = page.request.post(f"{BASE}/ask/requests/{request_id}/apply", form={"updated": str(row["updated_at"].isoformat())},
                                 max_redirects=0)
@@ -260,10 +264,10 @@ def run_device(browser, device, options, ro_a, ro_b, phone, conversation):
     page.click("button.ai-go")
     page.wait_for_url("**/ask/requests/*")
     offline_id = int(page.url.rsplit("/", 1)[1])
-    text_now = page.inner_text("body")
+    text_now = page.inner_text("body").lower()
     shot(page, device, "6-offline")
-    log("labor unavailable: offline and Needs labor lookup, no Apply", ok="Workstation offline" in text_now
-        and "Needs labor lookup" in text_now and page.locator("text=Apply to RO").count() == 0, device=device)
+    log("labor unavailable: offline and Needs labor lookup, no Apply", ok="workstation offline" in text_now
+        and "needs labor lookup" in text_now and page.locator("text=Apply to RO").count() == 0, device=device)
     page.fill("input[name='vehicle_config']", "2.0L, 6-speed dual clutch")
     page.fill("input[name='operation']", "Clutch assembly, replace")
     page.fill("input[name='guide_hours']", "5.2")
