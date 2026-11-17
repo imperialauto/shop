@@ -1,0 +1,23 @@
+name: Development worker contract
+on:
+  pull_request:
+    paths:
+      - 'dev_worker/**'
+      - 'app/routes/dev_executor.py'
+      - 'tests/test_dev_executor.py'
+      - '.github/workflows/dev-worker.yml'
+permissions:
+  contents: read
+jobs:
+  worker-contract:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - run: python -m unittest discover -s tests -p test_dev_executor.py -v

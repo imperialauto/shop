@@ -10,6 +10,7 @@ from app.config import SECRET_KEY
 from app.database import get_db, init_db
 from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user, after_login
+from app.routes import dev_executor
 from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, my_day, business_settings_page, dispatch, imperial_tasks, dev_work, live, finance, owner_setup, public_site, staff
 from app.routes import account_security, local_node, security_center, ro_evidence
 from app.scheduler import start_scheduler
@@ -42,6 +43,7 @@ app.include_router(appointments.router, prefix="/appointments", tags=["appointme
 app.include_router(dispatch.router, prefix="/dispatch", tags=["dispatch"])
 app.include_router(dispatch.internal_router, prefix="/internal/dispatch", tags=["internal"])
 app.include_router(imperial_tasks.router, prefix="/internal/imperial/tasks", tags=["internal"])
+app.include_router(dev_executor.router, prefix="/internal/imperial/dev-executor", tags=["internal"])
 app.include_router(dev_work.router, prefix="/internal/imperial/dev-work", tags=["internal"])
 app.include_router(live.router, prefix="/live", tags=["live"])
 app.include_router(vehicles.router, prefix="/vehicles", tags=["vehicles"])
