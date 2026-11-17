@@ -26,8 +26,8 @@ class ExecutorTests(DevelopmentWorkTests):
         self.extra.stop()
         super().tearDown()
 
-    def authorized(self):
-        job = self.submit().json()['id']
+    def authorized(self, message="owner-sms-unique"):
+        job = self.submit(message).json()['id']
         r = self.client.post(f'{self.prefix}/jobs/{job}/authorize', headers=self.headers,
                              json={'workerId': 'test-pc', 'baseSha': 'c' * 40})
         self.assertEqual(r.status_code, 200, r.text)
@@ -67,6 +67,25 @@ class ExecutorTests(DevelopmentWorkTests):
         self.assertEqual(status['state'], 'review_needed')
         self.assertNotIn('token', json.dumps(status))
 
+    def test_expired_execution_releases_worker_and_rejects_late_results(self):
+        job = self.authorized()
+        run = self.claim().json()
+        next_job = self.authorized('next-job')
+        path = f"{self.prefix}/runs/{run['id']}"
+        with self.Session() as db:
+            db.get(DevExecution, run['id']).deadline = now() - timedelta(seconds=1)
+            db.commit()
+        for _ in range(2):
+            response = self.client.post(path + '/heartbeat', headers=self.worker_headers, json=self.identity)
+            self.assertEqual(response.json(), {'renewed': False, 'expired': True})
+        response = self.client.post(path + '/result', headers=self.worker_headers,
+                                    json={**self.identity, 'outcome': 'blocked', 'checks': 'not_run'})
+        self.assertEqual(response.status_code, 409)
+        with self.Session() as db:
+            self.assertEqual(db.query(DevWorkEvent).filter_by(job_id=job, action='final_outcome').count(), 1)
+        self.identity['claimId'] = 'f' * 32
+        self.assertEqual(self.claim().json()['jobId'], next_job)
+
     def test_stolen_claim_and_disabled_gate(self):
         self.authorized(); run = self.claim().json()
         bad = {**self.identity, 'token': 'f' * 64}
@@ -91,6 +110,21 @@ class ExecutorTests(DevelopmentWorkTests):
 
 
 class WorkerTests(unittest.TestCase):
+    def test_worker_archives_expired_claim_without_executing(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            config = {'root': td, 'workerId': 'test-pc'}
+            job = {'claimed': True, 'id': 1, 'jobId': 2, 'state': 'running'}
+            with patch.object(worker, 'api', side_effect=[job, {'expired': True}]) as api:
+                with patch.object(worker, 'execute') as execute:
+                    worker.once(config)
+                    worker.once(config)
+                execute.assert_not_called()
+            self.assertEqual(api.call_count, 2)
+            self.assertFalse((root / 'journal.json').exists())
+            archive = json.loads((root / 'outcome-1.json').read_text())
+            self.assertEqual(archive['coordinatorOutcome'], 'expired')
+
     def fixture(self, root):
         repo = root / 'repo'; repo.mkdir()
         subprocess.run(['git', 'init', str(repo)], check=True, capture_output=True)

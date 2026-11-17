@@ -233,10 +233,22 @@ def once(config):
             journal['job'] = job
             save(path, journal)
         job = journal['job']
-        if job['state'] != 'running' and not journal.get('result'):
+        if job['state'] not in ('running', 'expired') and not journal.get('result'):
             raise Refuse('Coordinator is terminal; inspect recorded outcome.')
+        heartbeat_path = f"/runs/{job['id']}/heartbeat"
+
+        def renew():
+            response = api(config, heartbeat_path, journal['claim'])
+            if isinstance(response, dict) and response.get('expired'):
+                journal['coordinatorOutcome'] = 'expired'
+                journal['acknowledged'] = True
+                save(path, journal)
+                return False
+            return True
+
         if not journal.get('result'):
-            api(config, f"/runs/{job['id']}/heartbeat", journal['claim'])
+            if not renew():
+                return
             try:
                 journal['result'] = execute(config, journal, path)
             except (Refuse, ValueError, KeyError, OSError, subprocess.SubprocessError) as exc:
@@ -248,7 +260,8 @@ def once(config):
         try:
             api(config, f"/runs/{job['id']}/result", {**journal['claim'], **journal['result']})
         except Exception:
-            api(config, f"/runs/{job['id']}/heartbeat", journal['claim'])
+            if not renew():
+                return
             api(config, f"/runs/{job['id']}/result", {**journal['claim'], **journal['result']})
         journal['acknowledged'] = True
         save(path, journal)

@@ -80,7 +80,9 @@ acknowledged. Keep the same state and checkout. Restart after lease expiry. Veri
 Read the events with authenticated GET `/internal/imperial/dev-executor/jobs/{id}`.
 Capture sanitized job ID, candidate SHA, worker-code SHA, Windows version,
 timestamps and dashboard screenshot. Do not publish tokens or the raw journal.
-A 24-hour attempt deadline fails closed and requires operator investigation.
+A 24-hour attempt deadline rejects late results. When the original worker
+reconnects, its heartbeat records one expiry outcome, and the worker archives
+the original journal before polling for another job.
 Do not delete/re-authorize an ambiguous execution to force retries.
 
 ## Gates still required before claiming the whole #160 goal complete

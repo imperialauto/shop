@@ -144,8 +144,19 @@ def owned(db, run_id, payload):
 @router.post('/runs/{run_id}/heartbeat')
 def heartbeat(run_id: int, payload: Claim, db: Session = Depends(get_db), auth=Depends(worker_auth)):
     run = owned(db, run_id, payload)
-    if run.state != 'running' or now() >= utc(run.deadline):
+    if run.state == 'expired':
+        return {'renewed': False, 'expired': True}
+    if run.state != 'running':
         raise HTTPException(409, 'Execution is no longer renewable.')
+    if now() >= utc(run.deadline):
+        run.state = 'expired'
+        job = db.get(DevWorkJob, run.job_id)
+        job.status = 'failed'
+        job.latest_summary = 'Development execution expired. No candidate accepted.'
+        job.updated_at = now()
+        event(db, run, 'final_outcome', 'Execution deadline expired; late results rejected.')
+        db.commit()
+        return {'renewed': False, 'expired': True}
     # Only the same durable claim can renew after interruption. Worker must
     # hold its OS lock and reconcile its local journal before doing more work.
     if now() >= utc(run.lease_until):
@@ -171,7 +182,7 @@ def result(run_id: int, payload: Result, db: Session = Depends(get_db), auth=Dep
         if run.evidence != evidence:
             raise HTTPException(409, 'A different final outcome is already recorded.')
         return {'recorded': True, 'duplicate': True}
-    if run.state != 'running' or now() >= utc(run.lease_until):
+    if run.state != 'running' or now() >= min(utc(run.lease_until), utc(run.deadline)):
         raise HTTPException(409, 'Lease expired; recover before reporting.')
     expected = 'synthetic_contract_passed' if run.mode == 'synthetic' else 'bounded_patch_validated'
     if payload.outcome == 'review_needed' and (not payload.candidateSha or not payload.artifactHash or payload.checks != expected):
