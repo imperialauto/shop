@@ -358,8 +358,32 @@ def _waited(delta: timedelta) -> str:
     return f"{minutes // 60}h {minutes % 60}m" if minutes < 1440 else f"{minutes // 1440}d"
 
 
-def _follow_ups(db: Session, now: datetime) -> list[tuple[DispatchItem, str]]:
-    """What the owner still owes a customer, urgent first, then longest waiting."""
+def _reserved(db: Session, key: str, prefix: bool = False) -> bool:
+    """True when a text with this key (or key prefix) is reserved or sent. A failed one is retried."""
+    column = DispatchOutbound.dedupe_key
+    match = column.startswith(key, autoescape=True) if prefix else column == key
+    return db.query(DispatchOutbound.id).filter(match, DispatchOutbound.status != "failed").first() is not None
+
+
+def _same_day(when: datetime, now: datetime) -> bool:
+    return _utc(when).astimezone(PHOENIX).date() == now.astimezone(PHOENIX).date()
+
+
+def _urgent_step(age: timedelta) -> int:
+    """How many reminder steps are due for an urgent item of this age (0 = none yet)."""
+    return sum(1 for step in URGENT_STEPS if age >= step)
+
+
+def _follow_ups(db: Session, now: datetime) -> list[tuple[DispatchItem, str, str | None]]:
+    """What the owner still owes a customer, urgent first, then longest waiting.
+
+    Each row carries the dedupe key its reminder would use. A key of None means
+    the item still counts as waiting but gets no text right now.
+    Policy, per customer message: an urgent item gets the first alert, then at
+    most len(URGENT_STEPS) reminders with growing gaps, then nothing more that
+    day. From the next day it is a normal item: one reminder a day at most.
+    LATER brings an item back exactly once when its time comes.
+    """
     found = []
     rows = db.query(DispatchItem).filter(DispatchItem.status.in_(("needs_owner", "approved"))).all()
     for item in rows:
@@ -371,15 +395,33 @@ def _follow_ups(db: Session, now: datetime) -> list[tuple[DispatchItem, str]]:
             continue
         if item.status == "approved":
             if remind is not None:
-                found.append((item, "promised"))
-        elif remind is not None or age >= (URGENT_REMINDER if item.urgency != "normal" else NORMAL_REMINDER):
-            found.append((item, "urgent" if item.urgency != "normal" and age < URGENT_WINDOW else "waiting"))
-    return sorted(found, key=lambda row: (row[1] != "urgent", row[0].updated_at))
+                found.append((item, "promised", f"nudges:{item.id}:{now.date()}"))
+            continue
+        if remind is not None:
+            later_key = f"later:{item.id}:{remind.isoformat()}"
+            if not _reserved(db, later_key):
+                found.append((item, "later", later_key))
+                continue
+            if _same_day(remind, now):  # already brought back today
+                found.append((item, "waiting", None))
+                continue
+        urgent_prefix = f"urgent:{item.id}:{item.last_message_id}:"
+        if item.urgency != "normal" and age < URGENT_WINDOW:
+            step = _urgent_step(age)
+            if step:
+                found.append((item, "urgent", f"{urgent_prefix}{step}"))
+        elif remind is not None or age >= NORMAL_REMINDER:
+            # An urgent item that already had its reminders today waits until tomorrow.
+            quiet = (item.urgency != "normal" and _same_day(item.updated_at, now)
+                     and _reserved(db, urgent_prefix, prefix=True))
+            found.append((item, "waiting", None if quiet else f"nudges:{item.id}:{now.date()}"))
+    return sorted(found, key=lambda row: (row[1] not in ("urgent", "later"), row[0].updated_at))
 
 
-def _follow_up_line(db: Session, now: datetime, item: DispatchItem, kind: str) -> str:
+def _follow_up_line(db: Session, now: datetime, item: DispatchItem, kind: str, last: bool = False) -> str:
     what = "You promised a reply." if kind == "promised" else _next_step(db, item)[:100]
-    return (f"#{item.id} {_label(db, item)}, waiting {_waited(now - _utc(item.updated_at))}\n{what}\n"
+    tail = " (last reminder today)" if last else ""
+    return (f"#{item.id} {_label(db, item)}, waiting {_waited(now - _utc(item.updated_at))}{tail}\n{what}\n"
             f"Tell me what to say, DONE {item.id}, or LATER {item.id}.")
 
 
@@ -491,7 +533,9 @@ def intake(message: IntakeMessage, db: Session = Depends(get_db), _auth: bool = 
 
 FOLLOW_UP_STATUSES = ("routine", "needs_owner", "approved")
 PROMISE_AFTER = timedelta(hours=2)
-URGENT_REMINDER = timedelta(minutes=20)
+# Reminders after the first alert on an urgent item, counted from the customer's
+# message. Gaps grow (30 min, then 90 more), and there are never more than these.
+URGENT_STEPS = (timedelta(minutes=30), timedelta(hours=2))
 NORMAL_REMINDER = timedelta(hours=2)
 STALE_AFTER = timedelta(days=3)
 URGENT_WINDOW = timedelta(hours=4)  # after this an item moves to the regular digests
@@ -590,13 +634,12 @@ def due_owner_messages(db: Session, now: datetime) -> list[dict]:
             due.append((f"alert:{item.id}:{item.last_message_id}", "owner_alert", item.id, _alert_text(db, item)))
     if now.weekday() != 6 and now.hour in FOLLOW_UP_HOURS:
         queued = 0
-        for item, kind in _follow_ups(db, now):
-            if kind == "waiting" and now.hour not in DIGEST_HOURS:
+        for item, kind, key in _follow_ups(db, now):
+            if key is None or (kind == "waiting" and now.hour not in DIGEST_HOURS):
                 continue
-            # Urgent repeats every half hour. Everything else comes once a day.
-            key = f"urgent:{item.id}:{now.date()}:{now.hour}:{now.minute // 30}" if kind == "urgent" else f"nudges:{item.id}:{now.date()}"
-            if not db.query(DispatchOutbound).filter(DispatchOutbound.dedupe_key == key).first():
-                due.append((key, "owner_nudge", item.id, _follow_up_line(db, now, item, kind)))
+            if not _reserved(db, key):
+                last = kind == "urgent" and key.endswith(f":{len(URGENT_STEPS)}")
+                due.append((key, "owner_nudge", item.id, _follow_up_line(db, now, item, kind, last)))
                 queued += 1
             if queued >= MAX_FOLLOW_UPS:
                 break
