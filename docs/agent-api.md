@@ -46,3 +46,27 @@ Endpoints (all under `/internal/agent/v1`): `GET /whoami`, `GET /customers?q=`,
 `GET /customers/{id}`, `POST /customers`, `POST /customers/{id}/vehicles`,
 `GET /jobs/{id}`, `POST /estimates`, `POST /jobs/{id}/lines`,
 `GET /appointments`, `POST /appointments`.
+
+## Claude connector (sign in once, no key in chat)
+
+The same keys can be handed to Claude through a standard sign-in instead of
+being copied anywhere. See `app/agent_connector.py`.
+
+1. In Claude, add a custom connector with the URL
+   `https://<dashboard host>/internal/agent/mcp`.
+2. Tap Connect. Claude opens `/connect/authorize` on the dashboard. Sign in as the
+   owner (password and two-step code as usual), tick what Claude may do and tap Allow.
+3. The dashboard gives Claude's servers a key named "Claude connector". It shows in
+   Settings → Assistant Access with its last use and every change it made, and
+   Revoke there cuts Claude off at once. Connecting again replaces the old key.
+
+Safety rules in the code:
+
+* Only Claude's own callback addresses (`https://claude.ai/api/mcp/auth_callback`,
+  `https://claude.com/api/mcp/auth_callback`) can register, so a code is never sent elsewhere.
+* Only the owner can approve. One-time codes last five minutes, work once and need PKCE (S256).
+* No new tables: registrations and codes are signed with `SECRET_KEY`. Changing
+  `SECRET_KEY` cancels any connect that is half done; existing keys keep working.
+* Tools are the assistant API's own actions, limited to the key's scopes. Nothing
+  invoices, takes payments, changes settings or contacts customers.
+* Everything is off unless `AGENT_API_ENABLED=true`. Recovery read-only mode blocks it.

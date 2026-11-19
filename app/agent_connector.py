@@ -1,0 +1,435 @@
+"""Claude connector: the owner signs in once and Claude gets its own assistant key.
+
+This turns the assistant API (app/routes/agent_api.py) into a remote MCP server
+that Claude can add as a custom connector. The key is created by the dashboard
+and handed straight to Claude's servers through the standard OAuth sign-in, so
+it never passes through a chat, a text or anyone's clipboard.
+
+How it fits together:
+
+* GET  /.well-known/oauth-protected-resource   tells Claude where to sign in.
+* GET  /.well-known/oauth-authorization-server describes the sign-in endpoints.
+* POST /internal/agent/oauth/register          Claude registers itself. Only Claude's own
+                                               callback addresses are accepted, so a code can
+                                               never be sent to another site.
+* GET  /connect/authorize                      the owner, signed in with password and two-step
+                                               code as usual, sees what Claude is asking for
+                                               and taps Allow or Deny.
+* POST /internal/agent/oauth/token             Claude trades the one-time code (with PKCE) for
+                                               an assistant key. The key is stored hashed, shows
+                                               in Settings as "Claude connector" and can be
+                                               revoked there like any other key.
+* POST /internal/agent/mcp                     the tools Claude can call, limited to the key's
+                                               scopes, with every change logged in agent_actions.
+
+No new tables: client registrations and one-time codes are signed with SECRET_KEY
+instead of stored. Everything here is off unless AGENT_API_ENABLED=true.
+"""
+import base64
+import hashlib
+import html
+import json
+import logging
+import secrets
+import threading
+import time
+from urllib.parse import urlencode
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from itsdangerous import BadSignature, SignatureExpired, URLSafeSerializer, URLSafeTimedSerializer
+from pydantic import BaseModel, Field, ValidationError
+from sqlalchemy.orm import Session
+
+from app import agent_keys
+from app.auth import get_current_user
+from app.config import SECRET_KEY
+from app.database import get_db
+from app.routes import agent_api
+from app.routes.account_security import client_key
+from app.routes.appointments import AppointmentInput
+from app.security import limiter
+
+log = logging.getLogger("uvicorn.error")
+
+CONNECTOR_NAME = "Claude connector"
+MCP_PATH = "/internal/agent/mcp"
+# Claude's own OAuth callback addresses. A code is only ever sent to one of these.
+ALLOWED_REDIRECTS = (
+    "https://claude.ai/api/mcp/auth_callback",
+    "https://claude.com/api/mcp/auth_callback",
+)
+CODE_SECONDS = 300
+PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
+
+_clients = URLSafeSerializer(SECRET_KEY, salt="imperial-agent-oauth-client")
+_codes = URLSafeTimedSerializer(SECRET_KEY, salt="imperial-agent-oauth-code")
+_used_codes: dict[str, float] = {}
+_used_lock = threading.Lock()
+
+public_router = APIRouter()   # /.well-known/...
+staff_router = APIRouter()    # /connect/authorize (owner session)
+api_router = APIRouter()      # /internal/agent/... (no session)
+
+
+def _require_enabled():
+    if not agent_keys.enabled():
+        raise HTTPException(404, "Not found")
+
+
+def base_url(request: Request) -> str:
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc).split(",")[0].strip()
+    return f"{proto}://{host}"
+
+
+def _first_use(nonce: str) -> bool:
+    """A one-time code works once. Codes expire after five minutes, so the memory stays small."""
+    now = time.time()
+    with _used_lock:
+        for old in [n for n, at in _used_codes.items() if now - at > CODE_SECONDS * 2]:
+            _used_codes.pop(old, None)
+        if nonce in _used_codes:
+            return False
+        _used_codes[nonce] = now
+        return True
+
+
+def _oauth_error(error: str, description: str, status: int = 400) -> JSONResponse:
+    return JSONResponse({"error": error, "error_description": description}, status_code=status,
+                        headers={"Cache-Control": "no-store"})
+
+
+def _client(client_id: str | None) -> dict | None:
+    try:
+        data = _clients.loads(client_id or "")
+    except BadSignature:
+        return None
+    uris = data.get("redirect_uris") if isinstance(data, dict) else None
+    if not uris or any(u not in ALLOWED_REDIRECTS for u in uris):
+        return None
+    return data
+
+
+# ---------------------------------------------------------------- discovery
+
+def _resource_metadata(request: Request) -> dict:
+    base = base_url(request)
+    return {"resource": base + MCP_PATH, "authorization_servers": [base],
+            "scopes_supported": list(agent_keys.SCOPES), "bearer_methods_supported": ["header"],
+            "resource_name": "Imperial Operations"}
+
+
+@public_router.get("/.well-known/oauth-protected-resource")
+@public_router.get("/.well-known/oauth-protected-resource/internal/agent/mcp")
+def protected_resource(request: Request):
+    _require_enabled()
+    return _resource_metadata(request)
+
+
+@public_router.get("/.well-known/oauth-authorization-server")
+@public_router.get("/.well-known/oauth-authorization-server/internal/agent/mcp")
+def authorization_server(request: Request):
+    _require_enabled()
+    base = base_url(request)
+    return {"issuer": base, "authorization_endpoint": base + "/connect/authorize",
+            "token_endpoint": base + "/internal/agent/oauth/token",
+            "registration_endpoint": base + "/internal/agent/oauth/register",
+            "response_types_supported": ["code"], "grant_types_supported": ["authorization_code"],
+            "code_challenge_methods_supported": ["S256"], "token_endpoint_auth_methods_supported": ["none"],
+            "scopes_supported": list(agent_keys.SCOPES)}
+
+
+# ---------------------------------------------------------------- registration
+
+@api_router.post("/oauth/register", status_code=201)
+async def register(request: Request):
+    _require_enabled()
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return _oauth_error("invalid_client_metadata", "Send JSON.")
+    uris = body.get("redirect_uris") if isinstance(body, dict) else None
+    if not isinstance(uris, list) or not uris or len(uris) > 4 or any(u not in ALLOWED_REDIRECTS for u in uris):
+        return _oauth_error("invalid_redirect_uri", "Only Claude can connect to this dashboard.")
+    name = str(body.get("client_name") or "Claude")[:64]
+    client_id = _clients.dumps({"redirect_uris": uris, "name": name})
+    return JSONResponse({"client_id": client_id, "client_name": name, "redirect_uris": uris,
+                         "grant_types": ["authorization_code"], "response_types": ["code"],
+                         "token_endpoint_auth_method": "none"}, status_code=201)
+
+
+# ---------------------------------------------------------------- owner consent
+
+PAGE = """<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
+<title>Connect Claude</title>
+<body style="background:#09090b;color:#e4e4e7;font-family:-apple-system,sans-serif;max-width:520px;margin:0 auto;padding:40px 20px">
+<h1 style="font-size:22px">Let Claude use Imperial Operations?</h1>
+{body}
+</body>"""
+
+
+def _authorize_params(source) -> dict:
+    return {k: str(source.get(k) or "") for k in
+            ("response_type", "client_id", "redirect_uri", "code_challenge", "code_challenge_method", "state", "scope")}
+
+
+def _check_request(params: dict) -> str | None:
+    client = _client(params["client_id"])
+    if client is None:
+        return "This connection request didn't come from Claude."
+    if params["redirect_uri"] not in client["redirect_uris"]:
+        return "This connection request didn't come from Claude."
+    if params["response_type"] != "code" or params["code_challenge_method"] != "S256" or len(params["code_challenge"]) < 43:
+        return "This connection request is incomplete. Start again from Claude."
+    return None
+
+
+def _owner(request: Request, db: Session):
+    user = get_current_user(request, db)
+    if user.role != "owner":
+        raise HTTPException(403, "Only the owner can connect Claude.")
+    return user
+
+
+@staff_router.get("/connect/authorize", response_class=HTMLResponse)
+def authorize_page(request: Request, db: Session = Depends(get_db)):
+    _require_enabled()
+    params = _authorize_params(request.query_params)
+    try:
+        _owner(request, db)
+    except HTTPException as exc:
+        if exc.status_code != 401 or _check_request(params):
+            raise
+        # The usual sign-in keeps only a short return address; this one carries the whole request.
+        request.session["next"] = request.url.path + "?" + urlencode(params)
+        return RedirectResponse("/login", status_code=303)
+    problem = _check_request(params)
+    if problem:
+        return HTMLResponse(PAGE.format(body=f"<p>{html.escape(problem)}</p>"), status_code=400)
+    asked = [s for s in params["scope"].split() if s in agent_keys.SCOPES] or list(agent_keys.SCOPES)
+    hidden = "".join(f'<input type="hidden" name="{k}" value="{html.escape(v)}">' for k, v in params.items())
+    boxes = "".join(
+        f'<label style="display:block;margin:10px 0"><input type="checkbox" name="scopes" value="{s}"'
+        f'{" checked" if s in asked else ""}> {html.escape(label)}</label>' for s, label in agent_keys.SCOPES.items())
+    days = "".join(f'<option value="{d}"{" selected" if d == agent_keys.DEFAULT_EXPIRY_DAYS else ""}>{d} days</option>'
+                   for d in agent_keys.EXPIRY_DAYS)
+    body = (
+        '<p style="color:#a1a1aa">Claude will get its own key for this dashboard. It can only do what you tick here. '
+        'It can never invoice, take payments, see finances, change logins or settings, or text customers. '
+        'Every change it makes is listed in Settings, where you can turn it off any time.</p>'
+        f'<form method="post" action="/connect/authorize">{hidden}{boxes}'
+        f'<p>Key lasts <select name="days">{days}</select></p>'
+        '<button name="decision" value="allow" style="min-height:48px;padding:0 28px;font-size:16px;font-weight:700;background:#d4a853;border:0;border-radius:10px">Allow</button> '
+        '<button name="decision" value="deny" style="min-height:48px;padding:0 20px;font-size:16px;background:#27272a;color:#e4e4e7;border:0;border-radius:10px">Deny</button>'
+        '</form>')
+    return HTMLResponse(PAGE.format(body=body), headers={"Cache-Control": "no-store", "X-Frame-Options": "DENY"})
+
+
+@staff_router.post("/connect/authorize")
+async def authorize_decision(request: Request, db: Session = Depends(get_db)):
+    _require_enabled()
+    owner = _owner(request, db)
+    form = await request.form()
+    params = _authorize_params(form)
+    problem = _check_request(params)
+    if problem:
+        return HTMLResponse(PAGE.format(body=f"<p>{html.escape(problem)}</p>"), status_code=400)
+    redirect = params["redirect_uri"]
+    if form.get("decision") != "allow":
+        return RedirectResponse(redirect + "?" + urlencode({"error": "access_denied", "state": params["state"]}), status_code=303)
+    scopes = agent_keys.clean_scopes(form.getlist("scopes"))
+    try:
+        days = int(form.get("days", agent_keys.DEFAULT_EXPIRY_DAYS))
+    except ValueError:
+        days = 0
+    if not scopes or days not in agent_keys.EXPIRY_DAYS:
+        return HTMLResponse(PAGE.format(body="<p>Tick at least one thing Claude may do, then try again from Claude.</p>"), status_code=400)
+    code = _codes.dumps({"c": hashlib.sha256(params["client_id"].encode()).hexdigest(), "r": redirect,
+                         "p": params["code_challenge"], "s": scopes, "d": days, "u": owner.id,
+                         "n": secrets.token_urlsafe(16)})
+    log.info("assistant_connector_approved by_user=%s scopes=%s days=%s", owner.id, " ".join(scopes), days)
+    return RedirectResponse(redirect + "?" + urlencode({"code": code, "state": params["state"]}), status_code=303)
+
+
+# ---------------------------------------------------------------- token
+
+@api_router.post("/oauth/token")
+async def token(request: Request, db: Session = Depends(get_db)):
+    _require_enabled()
+    throttle = "agent:" + client_key(request)
+    if limiter.locked(throttle):
+        return _oauth_error("invalid_grant", "Too many failed attempts. Wait a few minutes.", 429)
+    form = await request.form()
+    if form.get("grant_type") != "authorization_code":
+        return _oauth_error("unsupported_grant_type", "Only authorization_code is supported.")
+    try:
+        data = _codes.loads(str(form.get("code", "")), max_age=CODE_SECONDS)
+    except (BadSignature, SignatureExpired):
+        limiter.record(throttle)
+        return _oauth_error("invalid_grant", "The code is invalid or expired.")
+    verifier = str(form.get("code_verifier", ""))
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    client_hash = hashlib.sha256(str(form.get("client_id", "")).encode()).hexdigest()
+    if (not secrets.compare_digest(challenge, data["p"]) or not secrets.compare_digest(client_hash, data["c"])
+            or form.get("redirect_uri") != data["r"]):
+        limiter.record(throttle)
+        return _oauth_error("invalid_grant", "The code doesn't match this request.")
+    if not _first_use(data["n"]):
+        return _oauth_error("invalid_grant", "That code was already used.")
+    # Reconnecting replaces the old connector key rather than piling up keys.
+    for old in agent_keys.active_keys(db):
+        if old.name == CONNECTOR_NAME:
+            agent_keys.revoke(db, old.id, data["u"])
+    try:
+        key, raw = agent_keys.issue(db, data["u"], CONNECTOR_NAME, data["s"], data["d"])
+    except ValueError as exc:
+        return _oauth_error("invalid_grant", str(exc))
+    log.info("assistant_key_issued id=%s prefix=%s by_user=%s via=connector", key.id, key.key_prefix, data["u"])
+    seconds = int((agent_keys._aware(key.expires_at) - agent_keys.utc_now()).total_seconds())
+    return JSONResponse({"access_token": raw, "token_type": "Bearer", "expires_in": seconds,
+                         "scope": " ".join(key.scope_list)}, headers={"Cache-Control": "no-store", "Pragma": "no-cache"})
+
+
+# ---------------------------------------------------------------- MCP tools
+
+class _Id(BaseModel):
+    customer_id: int = Field(gt=0)
+
+
+class _Job(BaseModel):
+    job_id: int = Field(gt=0)
+
+
+class _Search(BaseModel):
+    query: str = Field(default="", max_length=100, description="Name, phone number, fleet name or email. Blank lists the newest.")
+
+
+class _Vehicle(agent_api.VehicleIn):
+    customer_id: int = Field(gt=0)
+
+
+class _Lines(BaseModel):
+    job_id: int = Field(gt=0)
+    lines: list[agent_api.LineIn] = Field(min_length=1, max_length=60)
+
+
+class _Empty(BaseModel):
+    pass
+
+
+def _call_search(db, key, a: _Search):
+    return agent_api.search_customers(a.query, db, key)
+
+
+def _call_vehicle(db, key, a: _Vehicle):
+    data = a.model_dump()
+    customer_id = data.pop("customer_id")
+    return agent_api.add_vehicle(customer_id, agent_api.VehicleIn(**data), db, key)
+
+
+TOOLS = {
+    "find_customers": ("customers:read", "Find customers by name, phone, fleet name or email (up to 25).", _Search,
+                       _call_search, True),
+    "get_customer": ("customers:read", "One customer with their vehicles and recent jobs.", _Id,
+                     lambda db, key, a: agent_api.get_customer(a.customer_id, db, key), True),
+    "add_customer": ("customers:write", "Add a customer. If the phone number is already on file, returns that customer instead.",
+                     agent_api.CustomerIn, lambda db, key, a: agent_api.create_customer(a, db, key), False),
+    "add_vehicle": ("customers:write", "Add a vehicle to a customer. A VIN already on that customer returns the existing vehicle.",
+                    _Vehicle, _call_vehicle, False),
+    "get_job": ("estimates:read", "One job (repair order) with its estimate lines.", _Job,
+                lambda db, key, a: agent_api.get_job(a.job_id, db, key), True),
+    "start_estimate": ("estimates:write", "Start a job with draft estimate lines. Nothing is sent to the customer.",
+                       agent_api.EstimateIn, lambda db, key, a: agent_api.create_estimate(a, db, key), False),
+    "add_estimate_lines": ("estimates:write", "Add draft lines to an open job that has no invoice.", _Lines,
+                           lambda db, key, a: agent_api.add_lines(a.job_id, a.lines, db, key), False),
+    "list_appointments": ("appointments:read", "The appointment calendar.", _Empty,
+                          lambda db, key, a: agent_api.list_appointments(db, key), True),
+    "book_appointment": ("appointments:write", "Book a tentative appointment for a job, within shop hours and without double-booking.",
+                         AppointmentInput, lambda db, key, a: agent_api.book_appointment(a, db, key), False),
+}
+
+
+def _tool_list(key) -> list[dict]:
+    allowed = set(key.scope_list)
+    return [{"name": name, "description": desc, "inputSchema": model.model_json_schema(),
+             "annotations": {"readOnlyHint": read_only, "destructiveHint": False}}
+            for name, (scope, desc, model, _, read_only) in TOOLS.items() if scope in allowed]
+
+
+def _text(payload, error: bool = False) -> dict:
+    return {"content": [{"type": "text", "text": json.dumps(jsonable_encoder(payload), default=str)}], "isError": error}
+
+
+def _call_tool(db, key, params: dict) -> dict:
+    name = params.get("name")
+    if name not in TOOLS:
+        return _text({"error": f"Unknown tool {name}."}, True)
+    scope, _, model, run, _ = TOOLS[name]
+    if scope not in key.scope_list:
+        return _text({"error": f"This connection is not allowed to {agent_keys.SCOPES[scope].lower()}."}, True)
+    try:
+        args = model.model_validate(params.get("arguments") or {})
+        return _text(run(db, key, args))
+    except ValidationError as exc:
+        return _text({"error": "Check the details sent.", "problems": json.loads(exc.json(include_url=False))}, True)
+    except HTTPException as exc:
+        db.rollback()
+        return _text({"error": exc.detail, "status": exc.status_code}, True)
+
+
+def _unauthorized(request: Request, message: str) -> JSONResponse:
+    meta = base_url(request) + "/.well-known/oauth-protected-resource"
+    return JSONResponse({"error": "invalid_token", "error_description": message}, status_code=401,
+                        headers={"WWW-Authenticate": f'Bearer resource_metadata="{meta}"'})
+
+
+def _rpc(id_, result=None, error=None):
+    body = {"jsonrpc": "2.0", "id": id_}
+    body["error" if error else "result"] = error or result
+    return JSONResponse(body)
+
+
+@api_router.post("/mcp")
+async def mcp(request: Request, db: Session = Depends(get_db)):
+    _require_enabled()
+    throttle = "agent:" + client_key(request)
+    if limiter.locked(throttle):
+        return JSONResponse({"error": "Too many failed key attempts. Wait a few minutes."}, status_code=429)
+    key = agent_keys.find(db, agent_api._presented(request.headers.get("authorization"), None))
+    if key is None:
+        limiter.record(throttle)
+        return _unauthorized(request, "Missing, expired or revoked connection. Reconnect from Claude.")
+    try:
+        message = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return _rpc(None, error={"code": -32700, "message": "Parse error"})
+    if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
+        return _rpc(None, error={"code": -32600, "message": "Invalid request"})
+    method, id_ = message.get("method"), message.get("id")
+    if id_ is None:  # notifications need no answer
+        return Response(status_code=202)
+    key.last_used_at = agent_keys.utc_now()
+    db.commit()
+    params = message.get("params") or {}
+    if method == "initialize":
+        asked = params.get("protocolVersion")
+        return _rpc(id_, {"protocolVersion": asked if asked in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0],
+                          "capabilities": {"tools": {"listChanged": False}},
+                          "serverInfo": {"name": "imperial-operations", "version": "1.0.0"},
+                          "instructions": "Imperial Auto Care's shop dashboard. Look a customer up before adding one. "
+                                          "Estimates are drafts until staff send them; nothing here contacts customers."})
+    if method == "ping":
+        return _rpc(id_, {})
+    if method == "tools/list":
+        return _rpc(id_, {"tools": _tool_list(key)})
+    if method == "tools/call":
+        return _rpc(id_, _call_tool(db, key, params))
+    return _rpc(id_, error={"code": -32601, "message": f"Method not found: {method}"})
+
+
+@api_router.get("/mcp")
+@api_router.delete("/mcp")
+def mcp_no_stream():
+    return Response(status_code=405, headers={"Allow": "POST"})

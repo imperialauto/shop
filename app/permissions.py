@@ -8,7 +8,7 @@ from app.database import get_db
 from app.models import User
 
 ROLES = {"admin": "Admin", "office": "Office Coordinator", "tech": "Technician"}
-PUBLIC = ("/site", "/login", "/logout", "/status", "/sign", "/webhooks", "/internal", "/healthz", "/readyz", "/live/overlay", "/owner-setup")
+PUBLIC = ("/site", "/login", "/logout", "/status", "/sign", "/webhooks", "/internal", "/healthz", "/readyz", "/live/overlay", "/owner-setup", "/.well-known")
 OWNER_ONLY = ("/finance", "/settings/users", "/settings/business", "/settings/security-privacy", "/alerts")
 ADMIN_ONLY = ("/live", "/dispatch/sending", "/dispatch/policies")
 OFFICE = ("/my-day", "/dashboard", "/customers", "/vehicles", "/ro", "/appointments", "/invoices", "/estimates", "/dispatch", "/ai", "/settings")
