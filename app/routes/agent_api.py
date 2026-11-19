@@ -1,0 +1,293 @@
+"""Assistant API: what an owner-issued assistant key (app/agent_keys.py) may do.
+
+Mounted at /internal/agent/v1. Send the key as `Authorization: Bearer iak_...`
+(or `X-Agent-Key: iak_...`). The key never opens a staff page or a session.
+
+Deliberately limited:
+* customers, vehicles, jobs/estimate lines and tentative appointments only;
+* never invoices, payments, finance, logins, settings or messaging;
+* nothing here texts or emails a customer, requests an approval, or changes a
+  price that a customer has already been asked to approve or that is invoiced;
+* every change is written to agent_actions in the same transaction.
+Read-only (recovery) mode still blocks every write, as for staff.
+"""
+import secrets
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import or_
+from sqlalchemy.orm import Session
+
+from app import agent_keys
+from app.agent_keys import AgentKey
+from app.appointment_model import Appointment
+from app.database import get_db
+from app.models import Customer, LineItem, RepairOrder, Vehicle
+from app.routes.account_security import client_key
+from app.routes.appointments import AppointmentInput, create_appointment
+from app.security import limiter
+
+router = APIRouter()
+
+
+def _presented(authorization: str | None, x_agent_key: str | None) -> str | None:
+    if x_agent_key:
+        return x_agent_key.strip()
+    if authorization and authorization[:7].lower() == "bearer ":
+        return authorization[7:].strip()
+    return None
+
+
+def agent(scope: str):
+    """Dependency: the active key, which must carry `scope`."""
+    if scope not in agent_keys.SCOPES:
+        raise ValueError(scope)
+
+    def dependency(request: Request, db: Session = Depends(get_db),
+                   authorization: str | None = Header(default=None),
+                   x_agent_key: str | None = Header(default=None)) -> AgentKey:
+        if not agent_keys.enabled():
+            raise HTTPException(503, "The assistant API is turned off.")
+        throttle = "agent:" + client_key(request)
+        if limiter.locked(throttle):
+            raise HTTPException(429, "Too many failed key attempts. Wait a few minutes.")
+        key = agent_keys.find(db, _presented(authorization, x_agent_key))
+        if key is None:
+            limiter.record(throttle)
+            raise HTTPException(401, "Missing, expired or revoked assistant key.")
+        if scope not in key.scope_list:
+            raise HTTPException(403, f"This key is not allowed to {agent_keys.SCOPES[scope].lower()}.")
+        key.last_used_at = agent_keys.utc_now()
+        db.commit()
+        return key
+
+    return dependency
+
+
+# ---------------------------------------------------------------- serializers
+
+def _digits(phone: str | None) -> str:
+    return "".join(c for c in (phone or "") if c.isdigit())[-10:]
+
+
+def vehicle_json(v: Vehicle) -> dict:
+    return {"id": v.id, "customer_id": v.customer_id, "year": v.year, "make": v.make, "model": v.model,
+            "trim": v.trim, "engine": v.engine, "vin": v.vin, "license_plate": v.license_plate,
+            "mileage": v.mileage, "color": v.color, "notes": v.notes}
+
+
+def customer_json(c: Customer, detail: bool = False) -> dict:
+    data = {"id": c.id, "first_name": c.first_name, "last_name": c.last_name, "phone": c.phone,
+            "email": c.email, "customer_type": c.customer_type, "fleet_name": c.fleet_name}
+    if detail:
+        data.update(address=c.address, notes=c.notes, vehicles=[vehicle_json(v) for v in c.vehicles],
+                    jobs=[{"id": r.id, "vehicle_id": r.vehicle_id, "status": r.status, "concern": r.concern}
+                          for r in sorted(c.repair_orders, key=lambda r: r.id, reverse=True)[:20]])
+    return data
+
+
+def line_json(li: LineItem) -> dict:
+    return {"id": li.id, "description": li.description, "item_type": li.item_type, "quantity": li.quantity,
+            "unit_price": li.unit_price, "taxable": li.taxable, "approval": li.approval, "total": li.total}
+
+
+def job_json(ro: RepairOrder) -> dict:
+    return {"id": ro.id, "customer_id": ro.customer_id, "vehicle_id": ro.vehicle_id, "status": ro.status,
+            "concern": ro.concern, "tech_notes": ro.tech_notes, "mileage_in": ro.mileage_in,
+            "invoiced": bool(ro.invoices), "lines": [line_json(li) for li in ro.line_items]}
+
+
+# ---------------------------------------------------------------- inputs
+
+def _blank_to_none(value):
+    if isinstance(value, str):
+        value = value.strip()
+        return value or None
+    return value
+
+
+class CustomerIn(BaseModel):
+    first_name: str = Field(min_length=1, max_length=64)
+    last_name: str = Field(min_length=1, max_length=64)
+    phone: str | None = Field(default=None, max_length=32)
+    email: str | None = Field(default=None, max_length=128)
+    address: str | None = Field(default=None, max_length=256)
+    notes: str | None = Field(default=None, max_length=4000)
+    customer_type: str = Field(default="individual", pattern="^(individual|fleet)$")
+    fleet_name: str | None = Field(default=None, max_length=128)
+
+    _clean = field_validator("phone", "email", "address", "notes", "fleet_name", mode="before")(_blank_to_none)
+
+
+class VehicleIn(BaseModel):
+    year: int | None = Field(default=None, ge=1900, le=2100)
+    make: str | None = Field(default=None, max_length=64)
+    model: str | None = Field(default=None, max_length=128)
+    trim: str | None = Field(default=None, max_length=64)
+    engine: str | None = Field(default=None, max_length=64)
+    vin: str | None = Field(default=None, max_length=17)
+    license_plate: str | None = Field(default=None, max_length=16)
+    mileage: int | None = Field(default=None, ge=0, le=5_000_000)
+    color: str | None = Field(default=None, max_length=32)
+    notes: str | None = Field(default=None, max_length=4000)
+
+    _clean = field_validator("make", "model", "trim", "engine", "vin", "license_plate", "color", "notes",
+                             mode="before")(_blank_to_none)
+
+    @field_validator("vin")
+    @classmethod
+    def upper_vin(cls, value):
+        return value.upper() if value else value
+
+
+class LineIn(BaseModel):
+    description: str = Field(min_length=1, max_length=2000)
+    item_type: str = Field(default="labor", pattern="^(labor|part|sublet|misc)$")
+    quantity: float = Field(default=1.0, gt=0, le=10_000)
+    unit_price: float = Field(default=0.0, ge=0, le=1_000_000)
+    taxable: bool = True
+
+
+class EstimateIn(BaseModel):
+    customer_id: int = Field(gt=0)
+    vehicle_id: int = Field(gt=0)
+    concern: str | None = Field(default=None, max_length=4000)
+    mileage_in: int | None = Field(default=None, ge=0, le=5_000_000)
+    lines: list[LineIn] = Field(default_factory=list, max_length=60)
+
+
+# ---------------------------------------------------------------- routes
+
+@router.get("/whoami")
+def whoami(key: AgentKey = Depends(agent("customers:read"))):
+    return {"key": key.key_prefix + "…", "name": key.name, "scopes": key.scope_list,
+            "expires_at": key.expires_at}
+
+
+@router.get("/customers")
+def search_customers(q: str = Query(default="", max_length=100), db: Session = Depends(get_db),
+                     key: AgentKey = Depends(agent("customers:read"))):
+    query = db.query(Customer)
+    term = q.strip()
+    digits = _digits(term)
+    if len(digits) >= 7:
+        found = [c for c in query.filter(Customer.phone.isnot(None)).all() if digits in _digits(c.phone)]
+        return [customer_json(c) for c in found[:25]]
+    if term:
+        like = f"%{term}%"
+        query = query.filter(or_(Customer.first_name.ilike(like), Customer.last_name.ilike(like),
+                                 Customer.fleet_name.ilike(like), Customer.email.ilike(like)))
+    return [customer_json(c) for c in query.order_by(Customer.id.desc()).limit(25).all()]
+
+
+@router.get("/customers/{customer_id}")
+def get_customer(customer_id: int, db: Session = Depends(get_db), key: AgentKey = Depends(agent("customers:read"))):
+    customer = db.get(Customer, customer_id)
+    if customer is None:
+        raise HTTPException(404, "Customer not found.")
+    return customer_json(customer, detail=True)
+
+
+@router.post("/customers", status_code=201)
+def create_customer(payload: CustomerIn, db: Session = Depends(get_db),
+                    key: AgentKey = Depends(agent("customers:write"))):
+    """A phone number already on file returns that customer instead of a duplicate."""
+    digits = _digits(payload.phone)
+    if len(digits) == 10:
+        for existing in db.query(Customer).filter(Customer.phone.isnot(None)).all():
+            if _digits(existing.phone) == digits:
+                return {"existing": True, "customer": customer_json(existing, detail=True)}
+    customer = Customer(first_name=payload.first_name.strip(), last_name=payload.last_name.strip(),
+                        phone=payload.phone, email=payload.email, address=payload.address, notes=payload.notes,
+                        customer_type=payload.customer_type, fleet_name=payload.fleet_name, name_source="staff")
+    db.add(customer)
+    db.flush()
+    agent_keys.record(db, key, "customer.create", "customer", customer.id,
+                      f"{customer.first_name} {customer.last_name}")
+    db.commit()
+    return {"existing": False, "customer": customer_json(customer, detail=True)}
+
+
+@router.post("/customers/{customer_id}/vehicles", status_code=201)
+def add_vehicle(customer_id: int, payload: VehicleIn, db: Session = Depends(get_db),
+                key: AgentKey = Depends(agent("customers:write"))):
+    if db.get(Customer, customer_id) is None:
+        raise HTTPException(404, "Customer not found.")
+    if payload.vin:
+        same = db.query(Vehicle).filter(Vehicle.customer_id == customer_id, Vehicle.vin == payload.vin).first()
+        if same is not None:
+            return {"existing": True, "vehicle": vehicle_json(same)}
+    vehicle = Vehicle(customer_id=customer_id, **payload.model_dump())
+    db.add(vehicle)
+    db.flush()
+    agent_keys.record(db, key, "vehicle.create", "vehicle", vehicle.id,
+                      " ".join(str(p) for p in (vehicle.year, vehicle.make, vehicle.model) if p))
+    db.commit()
+    return {"existing": False, "vehicle": vehicle_json(vehicle)}
+
+
+@router.get("/jobs/{ro_id}")
+def get_job(ro_id: int, db: Session = Depends(get_db), key: AgentKey = Depends(agent("estimates:read"))):
+    ro = db.get(RepairOrder, ro_id)
+    if ro is None:
+        raise HTTPException(404, "Job not found.")
+    return job_json(ro)
+
+
+@router.post("/estimates", status_code=201)
+def create_estimate(payload: EstimateIn, db: Session = Depends(get_db),
+                    key: AgentKey = Depends(agent("estimates:write"))):
+    """Start a job with draft estimate lines. Nothing is sent; staff send it for approval."""
+    vehicle = db.get(Vehicle, payload.vehicle_id)
+    if db.get(Customer, payload.customer_id) is None or vehicle is None:
+        raise HTTPException(404, "Customer or vehicle not found.")
+    if vehicle.customer_id != payload.customer_id:
+        raise HTTPException(422, "That vehicle belongs to another customer.")
+    ro = RepairOrder(customer_id=payload.customer_id, vehicle_id=payload.vehicle_id, concern=payload.concern,
+                     mileage_in=payload.mileage_in, public_token=secrets.token_urlsafe(32))
+    db.add(ro)
+    db.flush()
+    for line in payload.lines:
+        db.add(LineItem(repair_order_id=ro.id, **line.model_dump()))
+    agent_keys.record(db, key, "estimate.create", "repair_order", ro.id,
+                      f"{len(payload.lines)} line(s); {(payload.concern or '')[:200]}")
+    db.commit()
+    db.refresh(ro)
+    return job_json(ro)
+
+
+@router.post("/jobs/{ro_id}/lines", status_code=201)
+def add_lines(ro_id: int, lines: list[LineIn], db: Session = Depends(get_db),
+              key: AgentKey = Depends(agent("estimates:write"))):
+    if not lines or len(lines) > 60:
+        raise HTTPException(422, "Send between 1 and 60 lines.")
+    ro = db.get(RepairOrder, ro_id)
+    if ro is None:
+        raise HTTPException(404, "Job not found.")
+    if ro.invoices:
+        raise HTTPException(409, "This job already has an invoice. Staff must review charges.")
+    if ro.status in ("complete", "delivered"):
+        raise HTTPException(409, "This job is finished. Staff must review charges.")
+    for line in lines:
+        db.add(LineItem(repair_order_id=ro.id, **line.model_dump()))
+    agent_keys.record(db, key, "estimate.add_lines", "repair_order", ro.id,
+                      "; ".join(line.description[:60] for line in lines))
+    db.commit()
+    db.refresh(ro)
+    return job_json(ro)
+
+
+@router.get("/appointments")
+def list_appointments(db: Session = Depends(get_db), key: AgentKey = Depends(agent("appointments:read"))):
+    return [{"id": a.id, "repair_order_id": a.repair_order_id, "resource_id": a.resource_id,
+             "starts_at": a.starts_at, "ends_at": a.ends_at, "status": a.status, "location": a.location}
+            for a in db.query(Appointment).order_by(Appointment.starts_at).limit(250).all()]
+
+
+@router.post("/appointments", status_code=201)
+def book_appointment(payload: AppointmentInput, db: Session = Depends(get_db),
+                     key: AgentKey = Depends(agent("appointments:write"))):
+    """Same rules as the calendar: shop hours, buffers and no double-booking. Always tentative."""
+    return create_appointment(db, payload, before_commit=lambda item: agent_keys.record(
+        db, key, "appointment.create", "appointment", item.id,
+        f"job {item.repair_order_id} at {item.starts_at.isoformat()} ({item.resource_id})"))

@@ -129,6 +129,13 @@ def list_appointments(request: Request, db: Session = Depends(get_db)):
 @router.post("/", status_code=201)
 def book_appointment(payload: AppointmentInput, request: Request, db: Session = Depends(get_db)):
     get_current_user(request, db)
+    return create_appointment(db, payload)
+
+
+def create_appointment(db: Session, payload: AppointmentInput, before_commit=None):
+    """Book a tentative appointment. Shared by staff pages and the assistant API.
+
+    before_commit(item) runs inside the booking transaction, after the row is flushed."""
     if db.get(RepairOrder, payload.repair_order_id) is None:
         raise HTTPException(404, "Repair order not found.")
     try:
@@ -157,6 +164,9 @@ def book_appointment(payload: AppointmentInput, request: Request, db: Session = 
             travel_before_minutes=payload.travel_minutes, buffer_after_minutes=buffer_minutes,
         )
         db.add(item)
+        if before_commit is not None:
+            db.flush()
+            before_commit(item)
         db.commit()
         db.refresh(item)
         return {"id": item.id, "status": item.status, "repair_order_id": item.repair_order_id}

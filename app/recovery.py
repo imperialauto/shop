@@ -14,6 +14,7 @@ def database_audit(include_counts=True):
     dev_work_enabled = os.getenv("DEV_COORDINATOR_CAPTURE_ENABLED", "").strip().lower() == "true"
     leads_enabled = os.getenv("SERVICE_LEADS_ENABLED", "").strip().lower() == "true"
     local_node_enabled = os.getenv("LOCAL_NODE_ENABLED", "").strip().lower() == "true"
+    agent_api_enabled = os.getenv("AGENT_API_ENABLED", "").strip().lower() == "true"
     if leads_enabled:
         from app import lead_model  # noqa: F401; only audit new tables after enablement
     result = {"connected": False, "driver": engine.url.get_backend_name(),
@@ -37,6 +38,8 @@ def database_audit(include_counts=True):
                     continue  # WIP lead schema intentionally absent until approved migration
                 if not local_node_enabled and name in ("diagnostic_reviews", "diagnostic_review_events", "local_node_heartbeats"):
                     continue  # Local Node tables are uncreated until separately approved migration
+                if not agent_api_enabled and name in ("agent_keys", "agent_actions"):
+                    continue  # Assistant key tables are uncreated until separately approved migration
                 if name not in existing:
                     result["missing_tables"].append(name)
                     continue
