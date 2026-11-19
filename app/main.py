@@ -11,8 +11,9 @@ from app.database import get_db, init_db
 from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user, after_login
 from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, my_day, business_settings_page, dispatch, imperial_tasks, dev_work, live, finance, owner_setup, public_site, staff
-from app.routes import account_security, local_node, security_center, ro_evidence, ask
+from app.routes import account_security, local_node, security_center, ro_evidence, ask, agent_api
 import app.assist_model  # noqa: F401  registers Ask Imperial tables
+from app import agent_keys
 from app.scheduler import start_scheduler
 
 import os
@@ -73,6 +74,8 @@ app.include_router(sign.router, prefix="/sign", tags=["sign"])
 # app/routes/internal_messaging.py) — gated by INTERNAL_API_KEY, not a user
 # session, since the caller is another Railway service, not a browser.
 app.include_router(internal_messaging.router, prefix="/internal", tags=["internal"])
+# Assistant (Claude) API — owner-issued, scoped, revocable keys; never a staff session.
+app.include_router(agent_api.router, prefix="/internal/agent/v1", tags=["internal"])
 
 
 # Recovery startup is intentionally read-only: no schema mutation, default
@@ -162,7 +165,7 @@ async def preview_gate(request: Request):
     # The outbound workstation authenticates with its dedicated X-Local-Node-Key;
     # it cannot complete the browser-only preview access-code challenge.
     if (not code or request.url.path in ("/healthz", "/readyz")
-            or request.url.path.startswith("/internal/local-node/")):
+            or request.url.path.startswith(("/internal/local-node/", "/internal/agent/"))):
         return None
     expected = hashlib.sha256(code.encode()).hexdigest()
     if hmac.compare_digest(request.cookies.get(PREVIEW_COOKIE, ""), expected):
@@ -560,7 +563,50 @@ def _settings(request: Request, db: Session, user: User, **extra):
         "request": request, "user": user, "roles": ROLES,
         "users": db.query(User).order_by(User.id).all() if user.role == "owner" else None,
         "user_success": staff.MESSAGES.get(query.get("user_saved")), "user_error": staff.ERRORS.get(query.get("user_error")),
-        "must_change": bool(user.must_change_password), **extra})
+        "must_change": bool(user.must_change_password), **_assistant_keys(db, user), **extra})
+
+
+def _assistant_keys(db: Session, user: User) -> dict:
+    """Owner-only Settings section. Hidden until the feature and its tables are turned on."""
+    if user.role != "owner" or not agent_keys.enabled():
+        return {}
+    return {"agent_api_on": True, "agent_scopes": agent_keys.SCOPES, "agent_expiry_days": agent_keys.EXPIRY_DAYS,
+            "agent_default_days": agent_keys.DEFAULT_EXPIRY_DAYS,
+            "agent_keys": db.query(agent_keys.AgentKey).order_by(agent_keys.AgentKey.id.desc()).all(),
+            "agent_actions": agent_keys.recent_actions(db)}
+
+
+def _assistant_owner(request: Request, db: Session) -> User:
+    user = get_current_user(request, db)
+    if user.role != "owner":
+        raise HTTPException(403, "Only the owner can manage assistant keys.")
+    if not agent_keys.enabled():
+        raise HTTPException(404, "Not found")
+    return user
+
+
+@app.post("/settings/users/assistant-keys/create", response_class=HTMLResponse)
+async def create_assistant_key(request: Request, db: Session = Depends(get_db)):
+    owner = _assistant_owner(request, db)
+    form = await request.form()
+    try:
+        days = int(form.get("days", agent_keys.DEFAULT_EXPIRY_DAYS))
+        key, raw = agent_keys.issue(db, owner.id, str(form.get("name", "")), form.getlist("scopes"), days)
+    except ValueError as exc:
+        return _settings(request, db, owner, agent_error=str(exc))
+    logging.getLogger("uvicorn.error").info("assistant_key_issued id=%s prefix=%s by_user=%s", key.id, key.key_prefix, owner.id)
+    # The plain key is in this one response only. It is never stored, logged or put in a link.
+    response = _settings(request, db, owner, agent_new_key=raw, agent_new_name=key.name)
+    response.headers.update(PRIVATE_PAGE)
+    return response
+
+
+@app.post("/settings/users/assistant-keys/{key_id}/revoke")
+def revoke_assistant_key(key_id: int, request: Request, db: Session = Depends(get_db)):
+    owner = _assistant_owner(request, db)
+    if agent_keys.revoke(db, key_id, owner.id):
+        logging.getLogger("uvicorn.error").info("assistant_key_revoked id=%s by_user=%s", key_id, owner.id)
+    return RedirectResponse("/settings#assistant-keys", status_code=303)
 
 
 @app.get("/settings", response_class=HTMLResponse)

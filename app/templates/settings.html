@@ -127,6 +127,81 @@
     </form>
   </div>
   {% endif %}
+
+  {% if agent_api_on %}
+  <div class="card" id="assistant-keys">
+    <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-2">Assistant Access (Claude)</h3>
+    <p class="text-sm text-stone-400 mb-4">A key lets your assistant add customers, vehicles, estimate lines and tentative appointments when you ask. It cannot see finance, invoices or logins, and it never texts customers. Every change it makes is listed below. Revoke a key any time.</p>
+
+    {% if agent_error %}
+    <div class="bg-red-900 border border-red-700 text-red-200 text-sm rounded px-3 py-2 mb-4">{{ agent_error }}</div>
+    {% endif %}
+    {% if agent_new_key %}
+    <div class="bg-green-900 border border-green-700 text-green-200 text-sm rounded px-3 py-3 mb-4">
+      <p class="mb-2"><strong>Key for {{ agent_new_name }} created.</strong> Copy it now. It is shown only this once.</p>
+      <input type="text" readonly value="{{ agent_new_key }}" class="form-input" style="font-family: monospace;" autocomplete="off" />
+      <p class="mt-2">Put it only in the assistant's secure settings, never in a text or chat.</p>
+    </div>
+    {% endif %}
+
+    {% if agent_keys %}
+    <div class="table-wrap mb-6">
+      <table>
+        <thead><tr><th>Name</th><th>Key</th><th>Can</th><th>Last used</th><th>Expires</th><th></th></tr></thead>
+        <tbody>
+          {% for k in agent_keys %}
+          <tr>
+            <td>{{ k.name }}</td>
+            <td style="font-family: monospace;">{{ k.key_prefix }}…</td>
+            <td class="text-sm">{{ k.scope_list|join(', ') }}</td>
+            <td class="text-sm">{{ k.last_used_at.strftime('%b %d %H:%M UTC') if k.last_used_at else 'Never' }}</td>
+            <td class="text-sm">{{ k.expires_at.strftime('%b %d, %Y') }}</td>
+            <td>
+              {% if k.status == 'active' %}
+              <form method="post" action="/settings/users/assistant-keys/{{ k.id }}/revoke" style="display:inline;">
+                <button type="submit" class="btn-danger">Revoke</button>
+              </form>
+              {% else %}<span class="text-stone-400 text-sm">{{ k.status|capitalize }}</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    <h4 class="text-xs text-stone-400 uppercase tracking-wide mb-3">New Key</h4>
+    <form method="post" action="/settings/users/assistant-keys/create" class="space-y-4 max-w-md">
+      <div>
+        <label class="form-label">Name</label>
+        <input type="text" name="name" value="Claude" maxlength="64" class="form-input" />
+      </div>
+      <div>
+        <label class="form-label">It may</label>
+        {% for scope, label in agent_scopes.items() %}
+        <label class="flex items-center gap-2 text-sm mb-1"><input type="checkbox" name="scopes" value="{{ scope }}" checked /> {{ label }}</label>
+        {% endfor %}
+      </div>
+      <div>
+        <label class="form-label">Expires after</label>
+        <select name="days" class="form-select">
+          {% for d in agent_expiry_days %}<option value="{{ d }}" {% if d == agent_default_days %}selected{% endif %}>{{ d }} days</option>{% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn-primary">Create Key</button>
+    </form>
+
+    {% if agent_actions %}
+    <div class="divider"></div>
+    <h4 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Recent Assistant Changes</h4>
+    <ul class="text-sm space-y-1">
+      {% for a in agent_actions %}
+      <li>{{ a.created_at.strftime('%b %d %H:%M UTC') }} · {{ a.action }}{% if a.target_id %} #{{ a.target_id }}{% endif %}{% if a.summary %} · {{ a.summary }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+  {% endif %}
 </div>
 
 {% endblock %}

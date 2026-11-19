@@ -660,17 +660,87 @@ class QueueWorkflowTests(unittest.TestCase):
             row.status = status or row.status
             db.commit()
 
-    def test_urgent_item_repeats_every_half_hour_until_handled(self):
+    def urgent_due(self, now):
+        return [m for m in self.alert(now) if m["key"].startswith(("urgent", "nudges", "later"))]
+
+    def send_due(self, now):
+        due = self.urgent_due(now)
+        for m in due:
+            self.mark_sent(m["key"])
+        return due
+
+    def test_urgent_item_reminds_twice_with_growing_gaps_then_stops(self):
         self.post("m1", "2013 Ford Fusion fuel leak")
         self.mark_sent(self.alert()[0]["key"])
         self.set_updated(datetime(2026, 11, 3, 12, 0, tzinfo=AZ))
-        due = lambda now: [m for m in self.alert(now) if m["key"].startswith("urgent")]
-        self.assertEqual(due(datetime(2026, 11, 3, 12, 10, tzinfo=AZ)), [])
-        first = due(datetime(2026, 11, 3, 12, 25, tzinfo=AZ))
-        self.assertIn("waiting", first[0]["text"])
-        self.mark_sent(first[0]["key"])
-        self.assertEqual(due(datetime(2026, 11, 3, 12, 29, tzinfo=AZ)), [])
-        self.assertEqual(len(due(datetime(2026, 11, 3, 12, 31, tzinfo=AZ))), 1)
+        at = lambda h, m: datetime(2026, 11, 3, h, m, tzinfo=AZ)
+        self.assertEqual(self.send_due(at(12, 20)), [])
+        first = self.send_due(at(12, 31))
+        self.assertEqual(len(first), 1)
+        self.assertIn("waiting 31m", first[0]["text"])
+        self.assertNotIn("last reminder", first[0]["text"])
+        for minute in (40, 59):  # no half-hourly repeat
+            self.assertEqual(self.send_due(at(13, minute)), [])
+        second = self.send_due(at(14, 0))
+        self.assertEqual(len(second), 1)
+        self.assertIn("(last reminder today)", second[0]["text"])
+        # Nothing more that day, through the urgent window and the afternoon digests.
+        for hour in (14, 15, 16, 17, 18):
+            for minute in (0, 30):
+                self.assertEqual(self.send_due(at(hour, minute)), [], f"{hour}:{minute}")
+
+    def test_the_nov_17_pattern_sends_two_reminders_not_seven(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        self.mark_sent(self.alert()[0]["key"])
+        self.set_updated(datetime(2026, 11, 17, 14, 39, tzinfo=AZ))
+        sent = []
+        when = datetime(2026, 11, 17, 14, 45, tzinfo=AZ)
+        while when < datetime(2026, 11, 17, 19, 0, tzinfo=AZ):  # every 5 minutes, like the tick
+            sent += self.send_due(when)
+            when += timedelta(minutes=5)
+        self.assertEqual(len(sent), 2)
+
+    def test_overdue_steps_collapse_into_one_text(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        self.mark_sent(self.alert()[0]["key"])
+        self.set_updated(datetime(2026, 11, 3, 10, 0, tzinfo=AZ))  # before follow-up hours
+        due = self.send_due(datetime(2026, 11, 3, 12, 5, tzinfo=AZ))
+        self.assertEqual(len(due), 1)
+        self.assertIn("last reminder", due[0]["text"])
+        self.assertEqual(self.send_due(datetime(2026, 11, 3, 12, 35, tzinfo=AZ)), [])
+
+    def test_urgent_item_gets_one_reminder_the_next_day(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        self.mark_sent(self.alert()[0]["key"])
+        self.set_updated(datetime(2026, 11, 3, 12, 0, tzinfo=AZ))
+        self.send_due(datetime(2026, 11, 3, 12, 31, tzinfo=AZ))
+        self.send_due(datetime(2026, 11, 3, 14, 1, tzinfo=AZ))
+        self.assertEqual(self.send_due(datetime(2026, 11, 4, 11, 0, tzinfo=AZ)), [])  # waits for a digest hour
+        next_day = self.send_due(datetime(2026, 11, 4, 13, 0, tzinfo=AZ))
+        self.assertEqual(len(next_day), 1)
+        self.assertTrue(next_day[0]["key"].startswith("nudges:"))
+        self.assertEqual(self.send_due(datetime(2026, 11, 4, 15, 0, tzinfo=AZ)), [])
+
+    def test_a_new_customer_message_starts_the_reminders_over(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        self.mark_sent(self.alert()[0]["key"])
+        self.set_updated(datetime(2026, 11, 3, 12, 0, tzinfo=AZ))
+        self.send_due(datetime(2026, 11, 3, 12, 31, tzinfo=AZ))
+        self.send_due(datetime(2026, 11, 3, 14, 1, tzinfo=AZ))
+        with self.Session() as db:
+            row = db.query(DispatchItem).one()
+            row.last_message_id = "m2"
+            row.updated_at = datetime(2026, 11, 3, 15, 0, tzinfo=AZ).astimezone(timezone.utc)
+            db.commit()
+        self.assertEqual(len(self.send_due(datetime(2026, 11, 3, 15, 31, tzinfo=AZ))), 1)
+
+    def test_failed_reminder_is_offered_again(self):
+        self.post("m1", "2013 Ford Fusion fuel leak")
+        self.mark_sent(self.alert()[0]["key"])
+        self.set_updated(datetime(2026, 11, 3, 12, 0, tzinfo=AZ))
+        key = self.urgent_due(datetime(2026, 11, 3, 12, 31, tzinfo=AZ))[0]["key"]
+        self.client.post("/internal/dispatch/outbound", headers=HEADERS, json={"key": key, "status": "failed"})
+        self.assertEqual([m["key"] for m in self.urgent_due(datetime(2026, 11, 3, 12, 36, tzinfo=AZ))], [key])
 
     def test_normal_items_come_as_one_digest(self):
         self.post("m1", "How much for brakes on a 2011 Ford Focus?", "CN1")
@@ -722,9 +792,14 @@ class QueueWorkflowTests(unittest.TestCase):
             row.detail = (now + timedelta(hours=2)).isoformat()
             row.created_at = now.astimezone(timezone.utc)
             db.commit()
-        due = lambda when: [m for m in self.alert(when) if m["key"].startswith(("urgent", "nudges"))]
+        due = lambda when: [m for m in self.alert(when) if m["key"].startswith(("urgent", "nudges", "later"))]
         self.assertEqual(due(now + timedelta(minutes=30)), [])
-        self.assertEqual(len(due(now + timedelta(hours=3))), 1)
+        back = due(now + timedelta(hours=3))
+        self.assertEqual(len(back), 1)
+        self.assertTrue(back[0]["key"].startswith("later:"))
+        self.mark_sent(back[0]["key"])
+        self.assertEqual(due(now + timedelta(hours=3, minutes=30)), [])  # LATER brings it back once
+        self.assertEqual(due(now + timedelta(hours=5)), [])
 
     def test_a_promise_comes_back_as_a_reminder(self):
         self.post("m1", "2013 Ford Fusion fuel leak")
