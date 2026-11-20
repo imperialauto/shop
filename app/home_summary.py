@@ -35,7 +35,7 @@ def summary(db: Session, user, now: datetime | None = None) -> dict:
             open_invoices = db.query(Invoice).filter(Invoice.status.in_(("draft", "sent"))).all()
             paid_on = {inv.id: sum(p.amount for p in db.query(Payment).filter(Payment.invoice_id == inv.id).all()) for inv in open_invoices}
             week = (start - timedelta(days=start.weekday())).astimezone(timezone.utc).replace(tzinfo=None)
-            money = {"owed": round(sum(max(inv.total - paid_on[inv.id], 0) for inv in open_invoices), 2),
+            money = {"owed": round(sum(max(inv.total - paid_on[inv.id] - (inv.waived_amount or 0), 0) for inv in open_invoices), 2),
                      "owed_count": len(open_invoices),
                      "paid_week": round(db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(Payment.paid_at >= week).scalar() or 0, 2),
                      "cycle": cycle_time.recent(db)}
