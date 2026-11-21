@@ -4,7 +4,8 @@ Mounted at /internal/agent/v1. Send the key as `Authorization: Bearer iak_...`
 (or `X-Agent-Key: iak_...`). The key never opens a staff page or a session.
 
 Deliberately limited:
-* customers, vehicles, jobs/estimate lines and tentative appointments only;
+* customers, vehicles, jobs/estimate lines and appointments only (confirming one
+  needs its own scope, for when the owner says yes);
 * never invoices, payments, finance, logins, settings or messaging;
 * nothing here texts or emails a customer, requests an approval, or changes a
   price that a customer has already been asked to approve or that is invoiced;
@@ -24,7 +25,7 @@ from app.appointment_model import Appointment
 from app.database import get_db
 from app.models import Customer, LineItem, RepairOrder, Vehicle
 from app.routes.account_security import client_key
-from app.routes.appointments import AppointmentInput, create_appointment
+from app.routes.appointments import AppointmentInput, confirm, create_appointment
 from app.security import limiter
 
 router = APIRouter()
@@ -148,6 +149,27 @@ class LineIn(BaseModel):
     taxable: bool = True
 
 
+class CustomerUpdate(BaseModel):
+    """Only the fields sent change. Phone numbers stay as they are: they link the customer to texts and calls."""
+    first_name: str | None = Field(default=None, min_length=1, max_length=64)
+    last_name: str | None = Field(default=None, min_length=1, max_length=64)
+    email: str | None = Field(default=None, max_length=128)
+    address: str | None = Field(default=None, max_length=256)
+    notes: str | None = Field(default=None, max_length=4000)
+    customer_type: str | None = Field(default=None, pattern="^(individual|fleet)$")
+    fleet_name: str | None = Field(default=None, max_length=128)
+
+    _clean = field_validator("first_name", "last_name", "email", "address", "notes", "fleet_name",
+                             mode="before")(_blank_to_none)
+
+
+class JobIn(BaseModel):
+    customer_id: int = Field(gt=0)
+    vehicle_id: int = Field(gt=0)
+    concern: str | None = Field(default=None, max_length=4000)
+    mileage_in: int | None = Field(default=None, ge=0, le=5_000_000)
+
+
 class EstimateIn(BaseModel):
     customer_id: int = Field(gt=0)
     vehicle_id: int = Field(gt=0)
@@ -208,6 +230,31 @@ def create_customer(payload: CustomerIn, db: Session = Depends(get_db),
     return {"existing": False, "customer": customer_json(customer, detail=True)}
 
 
+@router.patch("/customers/{customer_id}")
+def update_customer(customer_id: int, payload: CustomerUpdate, db: Session = Depends(get_db),
+                    key: AgentKey = Depends(agent("customers:write"))):
+    """Fill in or correct a customer's name and details, e.g. a record still named "Unknown (1234)"."""
+    customer = db.get(Customer, customer_id)
+    if customer is None:
+        raise HTTPException(404, "Customer not found.")
+    changes = payload.model_dump(exclude_unset=True)
+    for field in ("first_name", "last_name", "customer_type"):
+        if field in changes and changes[field] is None:
+            changes.pop(field)  # required columns: blank means leave as is
+    changed = []
+    for field, value in changes.items():
+        if getattr(customer, field) != value:
+            changed.append(f"{field}: {getattr(customer, field)!s:.40} -> {value!s:.40}")
+            setattr(customer, field, value)
+    if not changed:
+        return {"changed": False, "customer": customer_json(customer, detail=True)}
+    if "first_name" in changes or "last_name" in changes:
+        customer.name_source = "staff"
+    agent_keys.record(db, key, "customer.update", "customer", customer.id, "; ".join(changed))
+    db.commit()
+    return {"changed": True, "customer": customer_json(customer, detail=True)}
+
+
 @router.post("/customers/{customer_id}/vehicles", status_code=201)
 def add_vehicle(customer_id: int, payload: VehicleIn, db: Session = Depends(get_db),
                 key: AgentKey = Depends(agent("customers:write"))):
@@ -234,19 +281,34 @@ def get_job(ro_id: int, db: Session = Depends(get_db), key: AgentKey = Depends(a
     return job_json(ro)
 
 
+def _new_job(db, customer_id, vehicle_id, concern, mileage_in):
+    vehicle = db.get(Vehicle, vehicle_id)
+    if db.get(Customer, customer_id) is None or vehicle is None:
+        raise HTTPException(404, "Customer or vehicle not found.")
+    if vehicle.customer_id != customer_id:
+        raise HTTPException(422, "That vehicle belongs to another customer.")
+    ro = RepairOrder(customer_id=customer_id, vehicle_id=vehicle_id, concern=concern,
+                     mileage_in=mileage_in, public_token=secrets.token_urlsafe(32))
+    db.add(ro)
+    db.flush()
+    return ro
+
+
+@router.post("/jobs", status_code=201)
+def open_job(payload: JobIn, db: Session = Depends(get_db), key: AgentKey = Depends(agent("estimates:write"))):
+    """Open a job (repair order) with no lines, e.g. so an appointment can be booked for it."""
+    ro = _new_job(db, payload.customer_id, payload.vehicle_id, payload.concern, payload.mileage_in)
+    agent_keys.record(db, key, "job.open", "repair_order", ro.id, (payload.concern or "")[:200])
+    db.commit()
+    db.refresh(ro)
+    return job_json(ro)
+
+
 @router.post("/estimates", status_code=201)
 def create_estimate(payload: EstimateIn, db: Session = Depends(get_db),
                     key: AgentKey = Depends(agent("estimates:write"))):
     """Start a job with draft estimate lines. Nothing is sent; staff send it for approval."""
-    vehicle = db.get(Vehicle, payload.vehicle_id)
-    if db.get(Customer, payload.customer_id) is None or vehicle is None:
-        raise HTTPException(404, "Customer or vehicle not found.")
-    if vehicle.customer_id != payload.customer_id:
-        raise HTTPException(422, "That vehicle belongs to another customer.")
-    ro = RepairOrder(customer_id=payload.customer_id, vehicle_id=payload.vehicle_id, concern=payload.concern,
-                     mileage_in=payload.mileage_in, public_token=secrets.token_urlsafe(32))
-    db.add(ro)
-    db.flush()
+    ro = _new_job(db, payload.customer_id, payload.vehicle_id, payload.concern, payload.mileage_in)
     for line in payload.lines:
         db.add(LineItem(repair_order_id=ro.id, **line.model_dump()))
     agent_keys.record(db, key, "estimate.create", "repair_order", ro.id,
@@ -291,3 +353,14 @@ def book_appointment(payload: AppointmentInput, db: Session = Depends(get_db),
     return create_appointment(db, payload, before_commit=lambda item: agent_keys.record(
         db, key, "appointment.create", "appointment", item.id,
         f"job {item.repair_order_id} at {item.starts_at.isoformat()} ({item.resource_id})"))
+
+
+@router.post("/appointments/{appointment_id}/confirm")
+def confirm_appointment(appointment_id: int, db: Session = Depends(get_db),
+                        key: AgentKey = Depends(agent("appointments:confirm"))):
+    """Only when the owner has said yes. Same checks as the calendar's Confirm button,
+    and it adds the owner's reminder task. Nothing is sent to the customer."""
+    return confirm(db, appointment_id, f"agent:{key.id}", f"assistant:{key.key_prefix}",
+                   before_commit=lambda item: agent_keys.record(
+                       db, key, "appointment.confirm", "appointment", item.id,
+                       f"job {item.repair_order_id} at {item.starts_at.isoformat()}"))

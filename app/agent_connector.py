@@ -325,6 +325,20 @@ class _Empty(BaseModel):
     pass
 
 
+class _CustomerUpdate(agent_api.CustomerUpdate):
+    customer_id: int = Field(gt=0)
+
+
+class _Appointment(BaseModel):
+    appointment_id: int = Field(gt=0)
+
+
+def _call_update_customer(db, key, a: _CustomerUpdate):
+    data = a.model_dump(exclude_unset=True)
+    customer_id = data.pop("customer_id")
+    return agent_api.update_customer(customer_id, agent_api.CustomerUpdate(**data), db, key)
+
+
 def _call_search(db, key, a: _Search):
     return agent_api.search_customers(a.query, db, key)
 
@@ -342,18 +356,28 @@ TOOLS = {
                      lambda db, key, a: agent_api.get_customer(a.customer_id, db, key), True),
     "add_customer": ("customers:write", "Add a customer. If the phone number is already on file, returns that customer instead.",
                      agent_api.CustomerIn, lambda db, key, a: agent_api.create_customer(a, db, key), False),
+    "update_customer": ("customers:write", "Rename or fill in a customer (name, email, address, notes, fleet). "
+                        "Only the fields sent change; the phone number is never changed.",
+                        _CustomerUpdate, _call_update_customer, False),
     "add_vehicle": ("customers:write", "Add a vehicle to a customer. A VIN already on that customer returns the existing vehicle.",
                     _Vehicle, _call_vehicle, False),
     "get_job": ("estimates:read", "One job (repair order) with its estimate lines.", _Job,
                 lambda db, key, a: agent_api.get_job(a.job_id, db, key), True),
     "start_estimate": ("estimates:write", "Start a job with draft estimate lines. Nothing is sent to the customer.",
                        agent_api.EstimateIn, lambda db, key, a: agent_api.create_estimate(a, db, key), False),
+    "open_job": ("estimates:write", "Open a job (repair order) for a customer's vehicle with no lines yet, "
+                 "so an appointment can be booked for it. Add the vehicle first if needed; make and model may be blank.",
+                 agent_api.JobIn, lambda db, key, a: agent_api.open_job(a, db, key), False),
     "add_estimate_lines": ("estimates:write", "Add draft lines to an open job that has no invoice.", _Lines,
                            lambda db, key, a: agent_api.add_lines(a.job_id, a.lines, db, key), False),
     "list_appointments": ("appointments:read", "The appointment calendar.", _Empty,
                           lambda db, key, a: agent_api.list_appointments(db, key), True),
-    "book_appointment": ("appointments:write", "Book a tentative appointment for a job, within shop hours and without double-booking.",
+    "book_appointment": ("appointments:write", "Book a tentative appointment for a job (open_job first if there is none), "
+                         "within shop hours and without double-booking.",
                          AppointmentInput, lambda db, key, a: agent_api.book_appointment(a, db, key), False),
+    "confirm_appointment": ("appointments:confirm", "Confirm a tentative appointment, only after the owner has said yes. "
+                            "It then shows on his calendar feed and adds his reminder task. Nothing is sent to the customer.",
+                            _Appointment, lambda db, key, a: agent_api.confirm_appointment(a.appointment_id, db, key), False),
 }
 
 
