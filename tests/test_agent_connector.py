@@ -107,6 +107,15 @@ class ConsentTests(_Flow):
         self.assertEqual(page.status_code, 200)
         self.assertIn("Allow", page.text)
 
+    def test_allow_page_lets_the_browser_return_to_claude(self):
+        client_id = self.register().json()["client_id"]
+        _, challenge = pkce()
+        page = self.sign_in().get("/connect/authorize?" + urlencode(self.auth_params(client_id, challenge)))
+        policy = page.headers["content-security-policy"]
+        form_action = next(p for p in policy.split(";") if p.strip().startswith("form-action"))
+        self.assertIn("https://claude.ai", form_action)
+        self.assertIn("frame-ancestors 'none'", policy)
+
     def test_only_the_owner_can_allow(self):
         client_id = self.register().json()["client_id"]
         _, challenge = pkce()
