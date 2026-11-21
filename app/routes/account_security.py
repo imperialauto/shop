@@ -65,8 +65,8 @@ def verify_submit(request: Request, code: str = Form(...), db: Session = Depends
         return templates.TemplateResponse("login_verify.html", wrong, status_code=401)
     db.commit()
     limiter.clear(*keys)
-    request.session.pop("pending_mfa", None)
-    login_user(request, user)
+    remember = bool((request.session.pop("pending_mfa", None) or {}).get("remember"))
+    login_user(request, user, remember=remember)
     return RedirectResponse(after_login(request, "/my-day" if user.role == "tech" else "/dashboard"), status_code=303)
 
 

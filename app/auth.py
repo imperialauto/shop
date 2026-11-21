@@ -15,6 +15,15 @@ def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
 
 
+# "Keep me signed in": that device stays signed in this long, even if the
+# Security & Privacy sign-out time is shorter. Signing out ends it at once.
+REMEMBER_DAYS = 30
+
+
+def wants_remember(value) -> bool:
+    return str(value or "").strip().lower() in ("on", "true", "1", "yes")
+
+
 def _owner_session_tag(user: User) -> str:
     """Bind an owner session to the current password hash without disclosing it."""
     material = f"{user.id}:{user.password_hash}".encode("utf-8")
@@ -65,12 +74,15 @@ def session_too_old(request: Request, now: float | None = None) -> bool:
         hours = security_controls.value("session_hours")
     except Exception:
         hours = 168
+    if request.session.get("remember") is True:  # "Keep me signed in" on this device
+        hours = max(hours, REMEMBER_DAYS * 24)
     return moment - started > hours * 3600
 
 
-def login_user(request: Request, user: User):
+def login_user(request: Request, user: User, remember: bool = False):
     import time
     request.session["login_at"] = time.time()
+    request.session["remember"] = bool(remember)
     request.session["user_id"] = user.id
     request.session["username"] = user.username
     if user.role == "owner":
