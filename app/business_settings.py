@@ -30,6 +30,8 @@ KEYS = {
     "security_controls": "SECURITY_CONTROLS_JSON",
     "payment_methods": "PAYMENT_METHODS",
     "legal_review": "LEGAL_REVIEW_JSON",
+    # Hash of the owner's private calendar-feed address (app/appointment_feed.py). Set in Settings only.
+    "appointment_feed": "APPOINTMENT_FEED_SETTING",
 }
 CACHE_SECONDS = 15
 _cache: dict = {"at": 0.0, "values": None}

@@ -13,7 +13,7 @@ from app.auth import hash_password, verify_password, login_user, logout_user, ge
 from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, my_day, business_settings_page, dispatch, imperial_tasks, dev_work, live, finance, owner_setup, public_site, staff
 from app.routes import account_security, local_node, security_center, ro_evidence, ask, agent_api
 import app.assist_model  # noqa: F401  registers Ask Imperial tables
-from app import agent_keys, agent_connector
+from app import agent_keys, agent_connector, appointment_feed
 from app.scheduler import start_scheduler
 
 import os
@@ -61,6 +61,8 @@ app.include_router(owner_setup.router, tags=["owner_setup"])
 app.include_router(account_security.router, tags=["security"])
 app.include_router(staff.router, tags=["staff"])
 app.include_router(business_settings_page.router, tags=["settings"])
+app.include_router(appointment_feed.public_router, tags=["calendar_feed"])
+app.include_router(appointment_feed.owner_router, tags=["calendar_feed"])
 app.include_router(security_center.router, tags=["settings"])
 app.include_router(alert_center.router, tags=["alerts"])
 app.include_router(my_day.router, tags=["my_day"])
@@ -567,7 +569,28 @@ def _settings(request: Request, db: Session, user: User, **extra):
         "request": request, "user": user, "roles": ROLES,
         "users": db.query(User).order_by(User.id).all() if user.role == "owner" else None,
         "user_success": staff.MESSAGES.get(query.get("user_saved")), "user_error": staff.ERRORS.get(query.get("user_error")),
-        "must_change": bool(user.must_change_password), **_assistant_keys(db, user), **extra})
+        "must_change": bool(user.must_change_password), **_assistant_keys(db, user), **_calendar_feed(user), **extra})
+
+
+def _calendar_feed(user: User) -> dict:
+    """Owner-only Settings card for the private appointment calendar address."""
+    if user.role != "owner" or not appointment_feed.enabled():
+        return {}
+    return {"feed_on": True, "feed_status": appointment_feed.status()}
+
+
+@app.post("/settings/users/calendar-feed/new", response_class=HTMLResponse)
+def new_calendar_feed(request: Request, db: Session = Depends(get_db)):
+    owner = appointment_feed._owner(request, db)
+    token = appointment_feed.issue(db, owner.username)
+    db.commit()
+    logging.getLogger("uvicorn.error").info("appointment_feed_issued by_user=%s", owner.id)
+    url = appointment_feed.feed_url(request, token)
+    # The full address is in this one response only. It is never stored, logged or put in a link elsewhere.
+    response = _settings(request, db, owner, feed_new_url=url,
+                         feed_webcal_url="webcal://" + url.split("://", 1)[1])
+    response.headers.update(PRIVATE_PAGE)
+    return response
 
 
 def _assistant_keys(db: Session, user: User) -> dict:

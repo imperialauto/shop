@@ -13,7 +13,7 @@ PostgreSQL lock the staff booking API uses. Confirmation appears on screen only.
 """
 import logging
 
-from app import business_settings, calendar_feed, estimate_prefill, lead_lifecycle, website_alerts
+from app import appointment_followup, business_settings, calendar_feed, estimate_prefill, lead_lifecycle, website_alerts
 import os
 import re
 import secrets
@@ -634,6 +634,7 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
                                     vehicle_text=" ".join(str(p) for p in (vehicle_details["year"], vehicle_details["make"], vehicle_details["model"]) if p),
                                     review=service.price_type == "starting")
         lead_lifecycle.intake_from_website(db, order, item, appointment)
+        appointment_followup.add_reminder(db, appointment, "website")
         db.commit()
     except FormError as exc:
         db.rollback()

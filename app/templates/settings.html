@@ -202,6 +202,28 @@
     {% endif %}
   </div>
   {% endif %}
+
+  {% if feed_on %}
+  <div class="card" id="calendar-feed">
+    <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-2">Appointments on Your Phone Calendar</h3>
+    <p class="text-sm text-stone-400 mb-4">A private address your iPhone's Calendar can subscribe to. Booked appointments show up there by themselves, with an alert an hour before. Each one shows only the customer's first name, the vehicle and the job number. Anyone with the address can see that, so keep it to yourself.</p>
+    {% if feed_new_url %}
+    <div class="bg-green-900 border border-green-700 text-green-200 text-sm rounded px-3 py-3 mb-4">
+      <p class="mb-2"><strong>Your calendar address is ready.</strong> It is shown only this once.</p>
+      <p class="mb-2"><a href="{{ feed_webcal_url }}" class="btn-primary" style="display:inline-block">Subscribe on this iPhone</a></p>
+      <p class="mb-1">Or copy it into Calendar &gt; Add Calendar &gt; Add Subscription Calendar:</p>
+      <input type="text" readonly value="{{ feed_new_url }}" class="form-input" style="font-family: monospace;" autocomplete="off" />
+    </div>
+    {% endif %}
+    {% if feed_status.on %}
+    <p class="text-sm mb-3">On{% if feed_status.created_at %} since {{ feed_status.created_at[:10] }}{% endif %}. Lost the address? Make a new one; the old one stops working.</p>
+    <form method="post" action="/settings/users/calendar-feed/new" style="display:inline;"><button type="submit" class="btn-secondary">New Address</button></form>
+    <form method="post" action="/settings/users/calendar-feed/off" style="display:inline;"><button type="submit" class="btn-danger">Turn Off</button></form>
+    {% else %}
+    <form method="post" action="/settings/users/calendar-feed/new"><button type="submit" class="btn-primary">Make My Calendar Address</button></form>
+    {% endif %}
+  </div>
+  {% endif %}
 </div>
 
 {% endblock %}

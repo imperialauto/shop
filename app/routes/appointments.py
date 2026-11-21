@@ -14,7 +14,7 @@ from app.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from app import business_settings, lead_lifecycle, website_alerts
+from app import appointment_followup, business_settings, lead_lifecycle, website_alerts
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import RepairOrder
@@ -178,6 +178,13 @@ def create_appointment(db: Session, payload: AppointmentInput, before_commit=Non
 @router.post("/{appointment_id}/confirm")
 def confirm_appointment(appointment_id: int, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
+    return confirm(db, appointment_id, f"user:{user.id}", user.username)
+
+
+def confirm(db: Session, appointment_id: int, actor: str, closed_by: str, before_commit=None):
+    """Tentative -> confirmed. Shared by the calendar page and the assistant API.
+
+    A confirmed appointment stays on the calendar and gets the owner's reminder task."""
     try:
         if db.bind.dialect.name != "postgresql":
             raise HTTPException(503, "Concurrent booking requires PostgreSQL.")
@@ -191,10 +198,13 @@ def confirm_appointment(appointment_id: int, request: Request, db: Session = Dep
         if conflict:
             raise HTTPException(409, "Resource has a conflicting appointment.")
         appointment.status = "confirmed"
-        lead_lifecycle.confirm_website_lead_for_order(db, appointment, f"user:{user.id}")
+        lead_lifecycle.confirm_website_lead_for_order(db, appointment, actor)
         order = db.get(RepairOrder, appointment.repair_order_id)
         if order is not None:
-            website_alerts.close_for_job(db, order, user.username, "appointment confirmed")
+            website_alerts.close_for_job(db, order, closed_by, "appointment confirmed")
+        appointment_followup.add_reminder(db, appointment, actor)
+        if before_commit is not None:
+            before_commit(appointment)
         db.commit()
         return {"id": appointment.id, "status": appointment.status}
     except Exception:
@@ -211,6 +221,7 @@ def cancel_appointment(appointment_id: int, request: Request, db: Session = Depe
     if appointment.status in ("completed", "cancelled"):
         raise HTTPException(409, "Appointment cannot be cancelled from its current state.")
     appointment.status = "cancelled"
+    appointment_followup.close_reminder(db, appointment, f"user:{user.id}", "cancelled")
     if lead_lifecycle.enabled():
         lead_lifecycle.reopen_cancelled_booking(db, appointment.id, f"user:{user.id}")
     db.commit()
@@ -219,13 +230,14 @@ def cancel_appointment(appointment_id: int, request: Request, db: Session = Depe
 
 @router.post("/{appointment_id}/complete")
 def complete_appointment(appointment_id: int, request: Request, db: Session = Depends(get_db)):
-    get_current_user(request, db)
+    user = get_current_user(request, db)
     appointment = db.query(Appointment).filter(Appointment.id == appointment_id).with_for_update().first()
     if appointment is None:
         raise HTTPException(404, "Appointment not found.")
     if appointment.status != "confirmed":
         raise HTTPException(409, "Only confirmed appointments can be completed.")
     appointment.status = "completed"
+    appointment_followup.close_reminder(db, appointment, f"user:{user.id}", "completed")
     db.commit()
     return {"id": appointment.id, "status": appointment.status}
 
@@ -243,6 +255,7 @@ def missed_appointment(appointment_id: int, request: Request, db: Session = Depe
         raise HTTPException(409, "Only a past confirmed appointment can be marked missed.")
     appointment.status = "cancelled"
     db.add(DispatchAudit(actor=user.username, action="followup_missed_visit", detail=str(appointment.id)))
+    appointment_followup.close_reminder(db, appointment, f"user:{user.id}", "missed")
     if lead_lifecycle.enabled():
         lead_lifecycle.reopen_cancelled_booking(db, appointment.id, f"user:{user.id}")
     db.commit()

@@ -50,12 +50,17 @@ from app.routes import agent_api
 from app.routes.account_security import client_key
 from app.routes.appointments import AppointmentInput
 from app.security import limiter
+from app.security_controls import CSP
 
 log = logging.getLogger("uvicorn.error")
 
 CONNECTOR_NAME = "Claude connector"
 MCP_PATH = "/internal/agent/mcp"
 # Claude's own OAuth callback addresses. A code is only ever sent to one of these.
+# The consent form must be allowed to hand the browser back to Claude; the site-wide
+# policy only lets forms post to this dashboard, so Allow did nothing (Nov 21).
+CONSENT_CSP = CSP.replace("form-action 'self'", "form-action 'self' https://claude.ai https://claude.com") + "; frame-ancestors 'none'"
+
 ALLOWED_REDIRECTS = (
     "https://claude.ai/api/mcp/auth_callback",
     "https://claude.com/api/mcp/auth_callback",
@@ -224,7 +229,8 @@ def authorize_page(request: Request, db: Session = Depends(get_db)):
         '<button name="decision" value="allow" style="min-height:48px;padding:0 28px;font-size:16px;font-weight:700;background:#d4a853;border:0;border-radius:10px">Allow</button> '
         '<button name="decision" value="deny" style="min-height:48px;padding:0 20px;font-size:16px;background:#27272a;color:#e4e4e7;border:0;border-radius:10px">Deny</button>'
         '</form>')
-    return HTMLResponse(PAGE.format(body=body), headers={"Cache-Control": "no-store", "X-Frame-Options": "DENY"})
+    return HTMLResponse(PAGE.format(body=body), headers={"Cache-Control": "no-store", "X-Frame-Options": "DENY",
+                                                         "Content-Security-Policy": CONSENT_CSP})
 
 
 @staff_router.post("/connect/authorize")
@@ -319,6 +325,20 @@ class _Empty(BaseModel):
     pass
 
 
+class _CustomerUpdate(agent_api.CustomerUpdate):
+    customer_id: int = Field(gt=0)
+
+
+class _Appointment(BaseModel):
+    appointment_id: int = Field(gt=0)
+
+
+def _call_update_customer(db, key, a: _CustomerUpdate):
+    data = a.model_dump(exclude_unset=True)
+    customer_id = data.pop("customer_id")
+    return agent_api.update_customer(customer_id, agent_api.CustomerUpdate(**data), db, key)
+
+
 def _call_search(db, key, a: _Search):
     return agent_api.search_customers(a.query, db, key)
 
@@ -336,18 +356,28 @@ TOOLS = {
                      lambda db, key, a: agent_api.get_customer(a.customer_id, db, key), True),
     "add_customer": ("customers:write", "Add a customer. If the phone number is already on file, returns that customer instead.",
                      agent_api.CustomerIn, lambda db, key, a: agent_api.create_customer(a, db, key), False),
+    "update_customer": ("customers:write", "Rename or fill in a customer (name, email, address, notes, fleet). "
+                        "Only the fields sent change; the phone number is never changed.",
+                        _CustomerUpdate, _call_update_customer, False),
     "add_vehicle": ("customers:write", "Add a vehicle to a customer. A VIN already on that customer returns the existing vehicle.",
                     _Vehicle, _call_vehicle, False),
     "get_job": ("estimates:read", "One job (repair order) with its estimate lines.", _Job,
                 lambda db, key, a: agent_api.get_job(a.job_id, db, key), True),
     "start_estimate": ("estimates:write", "Start a job with draft estimate lines. Nothing is sent to the customer.",
                        agent_api.EstimateIn, lambda db, key, a: agent_api.create_estimate(a, db, key), False),
+    "open_job": ("estimates:write", "Open a job (repair order) for a customer's vehicle with no lines yet, "
+                 "so an appointment can be booked for it. Add the vehicle first if needed; make and model may be blank.",
+                 agent_api.JobIn, lambda db, key, a: agent_api.open_job(a, db, key), False),
     "add_estimate_lines": ("estimates:write", "Add draft lines to an open job that has no invoice.", _Lines,
                            lambda db, key, a: agent_api.add_lines(a.job_id, a.lines, db, key), False),
     "list_appointments": ("appointments:read", "The appointment calendar.", _Empty,
                           lambda db, key, a: agent_api.list_appointments(db, key), True),
-    "book_appointment": ("appointments:write", "Book a tentative appointment for a job, within shop hours and without double-booking.",
+    "book_appointment": ("appointments:write", "Book a tentative appointment for a job (open_job first if there is none), "
+                         "within shop hours and without double-booking.",
                          AppointmentInput, lambda db, key, a: agent_api.book_appointment(a, db, key), False),
+    "confirm_appointment": ("appointments:confirm", "Confirm a tentative appointment, only after the owner has said yes. "
+                            "It then shows on his calendar feed and adds his reminder task. Nothing is sent to the customer.",
+                            _Appointment, lambda db, key, a: agent_api.confirm_appointment(a.appointment_id, db, key), False),
 }
 
 
