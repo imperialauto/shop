@@ -145,7 +145,7 @@ def dashboard_snapshot(db: Session, role: str) -> dict:
     if not capture_enabled():
         return {"enabled": False, "jobs": [], "error": None}
     try:
-        jobs = db.query(DevWorkJob).filter(DevWorkJob.status.in_(_ACTIVE)).order_by(
+        jobs = db.query(DevWorkJob).filter(DevWorkJob.status.in_((*_ACTIVE, "review_needed", "failed"))).order_by(
             DevWorkJob.id.desc()
         ).limit(8).all()
     except Exception:
