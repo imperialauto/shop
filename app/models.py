@@ -118,6 +118,10 @@ class LineItem(Base):
     taxable = Column(Boolean, default=True)
     approval = Column(String(12))  # None: not sent for approval. pending, approved, declined
     decided_at = Column(DateTime(timezone=True))
+    # How a yes or no was recorded: None or "link" when the customer used their approval link,
+    # "in_person" or "phone" when shop staff recorded it, with the staff login that did.
+    approval_source = Column(String(16))
+    approval_recorded_by = Column(String(64))
     created_at = Column(DateTime, default=datetime.utcnow)
     # Technician completion. Separate from customer approval, invoicing and payment.
     completed_at = Column(DateTime(timezone=True))
@@ -197,10 +201,24 @@ class Invoice(Base):
     customer_signature = Column(Text, nullable=True)  # base64 PNG data URL
     customer_approved_by = Column(String(128), nullable=True)
     customer_signed_at = Column(DateTime, nullable=True)
+    # Balance the owner chose not to collect. Not a payment, so it never counts as money received.
+    waived_amount = Column(Float, nullable=False, default=0.0, server_default="0")
+    waived_reason = Column(Text)
+    waived_by = Column(String(64))
+    waived_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime, default=datetime.utcnow)
 
     repair_order = relationship("RepairOrder", back_populates="invoices")
     payments = relationship("Payment", back_populates="invoice")
+
+    @property
+    def paid_total(self):
+        return round(sum(p.amount or 0 for p in self.payments), 2)
+
+    @property
+    def balance(self):
+        """What the customer still owes: total less payments and any waived amount."""
+        return round((self.total or 0) - self.paid_total - (self.waived_amount or 0), 2)
 
 
 class Payment(Base):

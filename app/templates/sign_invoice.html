@@ -101,8 +101,9 @@
       {% endif %}
       <div class="total-final"><span>Invoice Total</span><span>${{ "%.2f"|format(invoice.total) }}</span></div>
       {% set paid = invoice.payments | sum(attribute="amount") %}
+      {% if invoice.waived_amount %}<div class="total-line"><span>Discount</span><span>-${{ "%.2f"|format(invoice.waived_amount) }}</span></div>{% endif %}
       <div class="total-line"><span>Paid</span><span>${{ "%.2f"|format(paid) }}</span></div>
-      <div class="total-line"><span>Balance</span><span>${{ "%.2f"|format([invoice.total - paid, 0]|max) }}</span></div>
+      <div class="total-line"><span>Balance</span><span>${{ "%.2f"|format([invoice.total - paid - (invoice.waived_amount or 0), 0]|max) }}</span></div>
     </div>
   </div>
   {% endif %}

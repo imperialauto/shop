@@ -12,6 +12,7 @@ from app import approval_links, customer_file, cycle_time, customer_followups, n
 from app.dispatch_model import DispatchAudit
 from app.routes import local_node
 import os, secrets
+from datetime import datetime, timezone
 
 router = APIRouter()
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "..", "templates"))
@@ -290,6 +291,49 @@ def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db)
             db.commit()
             link = f"queued{item.id}"
     return RedirectResponse(f"/ro/{ro_id}?asked={len(fresh)}&link={link}", status_code=302)
+
+
+IN_PERSON_SOURCES = {"in_person": "in person", "phone": "by phone"}
+
+
+@router.post("/{ro_id}/approve-in-person")
+async def approve_in_person(request: Request, ro_id: int, db: Session = Depends(get_db)):
+    """Records that the customer approved chosen lines face to face or on a call.
+    Texts nobody. The line keeps who recorded it and how, so it never reads as a link approval."""
+    user = require_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    if user.role not in ("owner", "admin", "office"):
+        raise HTTPException(403, "Office access required.")
+    ro = db.get(RepairOrder, ro_id)
+    if not ro:
+        raise HTTPException(status_code=404)
+    form = await request.form()
+    source = form.get("source", "")
+    if source not in IN_PERSON_SOURCES:
+        return RedirectResponse(f"/ro/{ro_id}?approve_error=how", status_code=303)
+    try:
+        wanted = {int(v) for v in form.getlist("line_ids")}
+    except ValueError:
+        return RedirectResponse(f"/ro/{ro_id}?approve_error=lines", status_code=303)
+    chosen = [li for li in ro.line_items if li.id in wanted and li.approval != "approved"]
+    if not chosen or len(chosen) != len(wanted):
+        return RedirectResponse(f"/ro/{ro_id}?approve_error=lines", status_code=303)
+    invoiced = any(inv.status != "void" for inv in ro.invoices)
+    if invoiced and any(li.approval is not None for li in chosen):
+        # The invoice was built without these lines; approving them now would leave it short.
+        return RedirectResponse(f"/ro/{ro_id}?approve_error=invoiced", status_code=303)
+    now = datetime.now(timezone.utc)
+    for li in chosen:
+        li.approval, li.decided_at = "approved", now
+        li.approval_source, li.approval_recorded_by = source, user.username[:64]
+    if not any(li.approval == "pending" for li in ro.line_items):
+        if ro.status == "waiting_approval":
+            ro.status = "approval_received"
+        # Nothing is left for the customer to answer, so the queued approval text must not go out.
+        approval_links.close_for(db, ro, actor=user.username, action="approved_in_person")
+    db.commit()
+    return RedirectResponse(f"/ro/{ro_id}?approved_in_person={len(chosen)}", status_code=303)
 
 
 @router.post("/{ro_id}/estimate-location")

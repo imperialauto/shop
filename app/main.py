@@ -13,7 +13,7 @@ from app.auth import hash_password, verify_password, login_user, logout_user, ge
 from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, my_day, business_settings_page, dispatch, imperial_tasks, dev_work, live, finance, owner_setup, public_site, staff
 from app.routes import account_security, local_node, security_center, ro_evidence, ask, agent_api
 import app.assist_model  # noqa: F401  registers Ask Imperial tables
-from app import agent_keys
+from app import agent_keys, agent_connector
 from app.scheduler import start_scheduler
 
 import os
@@ -76,6 +76,10 @@ app.include_router(sign.router, prefix="/sign", tags=["sign"])
 app.include_router(internal_messaging.router, prefix="/internal", tags=["internal"])
 # Assistant (Claude) API — owner-issued, scoped, revocable keys; never a staff session.
 app.include_router(agent_api.router, prefix="/internal/agent/v1", tags=["internal"])
+# Claude connector: sign-in (OAuth) and tools (MCP) on top of the same keys. See app/agent_connector.py.
+app.include_router(agent_connector.api_router, prefix="/internal/agent", tags=["internal"])
+app.include_router(agent_connector.public_router, tags=["internal"])
+app.include_router(agent_connector.staff_router, tags=["settings"])
 
 
 # Recovery startup is intentionally read-only: no schema mutation, default
@@ -165,7 +169,7 @@ async def preview_gate(request: Request):
     # The outbound workstation authenticates with its dedicated X-Local-Node-Key;
     # it cannot complete the browser-only preview access-code challenge.
     if (not code or request.url.path in ("/healthz", "/readyz")
-            or request.url.path.startswith(("/internal/local-node/", "/internal/agent/"))):
+            or request.url.path.startswith(("/internal/local-node/", "/internal/agent/", "/.well-known/oauth-"))):
         return None
     expected = hashlib.sha256(code.encode()).hexdigest()
     if hmac.compare_digest(request.cookies.get(PREVIEW_COOKIE, ""), expected):

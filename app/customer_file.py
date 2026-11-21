@@ -125,7 +125,9 @@ def build(db: Session, customer: Customer, fetch=None) -> dict:
                                   f"Signed by {ro.approved_by}" if ro.approved_by else "", link=f"/ro/{ro.id}"))
         decided = [li for li in ro.line_items if li.approval in ("approved", "declined") and li.decided_at]
         for li in decided:
-            entries.append(_entry("job", li.decided_at, f"Customer {li.approval} a repair on job #{ro.id}",
+            how = {"in_person": " in person", "phone": " by phone"}.get(li.approval_source or "", "")
+            who = f" (recorded by {li.approval_recorded_by})" if li.approval_recorded_by else ""
+            entries.append(_entry("job", li.decided_at, f"Customer {li.approval}{how} a repair on job #{ro.id}{who}",
                                   f"{li.description} · {_money(li.total)}", link=f"/ro/{ro.id}"))
         waiting = [li for li in ro.line_items if li.approval == "pending"]
         if waiting:
@@ -135,7 +137,7 @@ def build(db: Session, customer: Customer, fetch=None) -> dict:
                                   f"{_money(sum(li.total for li in waiting))}", link=f"/ro/{ro.id}"))
         for inv in ro.invoices:
             if inv.status != "void":
-                billed += float(inv.total or 0)
+                billed += float(inv.total or 0) - float(inv.waived_amount or 0)
             entries.append(_entry("money", inv.created_at, f"Invoice #{inv.id} · {_money(inv.total)}",
                                   f"Job #{ro.id}, {inv.status}", link=f"/invoices/{inv.id}"))
             for p in inv.payments:
