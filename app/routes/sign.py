@@ -73,6 +73,7 @@ async def sign_ro_submit(request: Request, token: str, db: Session = Depends(get
     now = datetime.now(timezone.utc)
     for li in pending:
         li.approval, li.decided_at = decisions[li.id], now
+        li.approval_source, li.approval_recorded_by = "link", None
     ro.signature_data = signature_data
     ro.approved_by = (approved_by or "Customer")[:128]
     ro.signed_at = datetime.utcnow()

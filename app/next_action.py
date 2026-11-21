@@ -36,8 +36,7 @@ def for_job(db: Session, ro: RepairOrder, role: str) -> dict | None:
     # An invoice may be issued or paid before repair work is finished.
     # Payment alone never means the vehicle is ready to be released.
     if invoice is not None and ro.status == "complete":
-        paid = sum(p.amount for p in invoice.payments)
-        due = round((invoice.total or 0) - paid, 2)
+        due = invoice.balance
         if due > 0.009:
             return {"who": "Office", "title": f"Collect ${due:,.2f}", "detail": f"Invoice #{invoice.id} is {invoice.status}.",
                     "href": f"/invoices/{invoice.id}", "button": "Record payment"} if office else None

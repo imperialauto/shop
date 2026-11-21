@@ -61,6 +61,8 @@
     <p class="text-stone-400 text-sm">Tax ({{ "%.1f"|format(invoice.tax_rate * 100) }}%): <span class="text-stone-200">${{ "%.2f"|format(invoice.tax_amount) }}</span></p>
     <p class="text-gold-300 font-bold text-lg">Total: ${{ "%.2f"|format(invoice.total) }}</p>
     <p class="text-stone-400 text-sm">Paid: <span class="text-green-400">${{ "%.2f"|format(total_paid) }}</span></p>
+    {% if invoice.waived_amount %}<p class="text-stone-400 text-sm">Waived: <span class="text-stone-200">${{ "%.2f"|format(invoice.waived_amount) }}</span>{% if invoice.waived_by %} <span class="text-xs">by {{ invoice.waived_by }}{% if invoice.waived_at %} {{ invoice.waived_at.strftime('%m/%d/%y') }}{% endif %}{% if invoice.waived_reason %} · {{ invoice.waived_reason }}{% endif %}</span>{% endif %}</p>
+    {% if can_waive and invoice.status != 'void' %}<form method="post" action="/invoices/{{ invoice.id }}/waive/undo" class="inline"><button type="submit" class="text-stone-400 underline text-xs" style="min-height:44px">Undo waive</button></form>{% endif %}{% endif %}
     <p class="text-stone-400 text-sm">Balance: <span class="{% if balance > 0 %}text-red-400{% else %}text-green-400{% endif %} font-semibold">${{ "%.2f"|format(balance) }}</span></p>
   </div>
 </div>
@@ -94,6 +96,10 @@
         {% for value, label in methods %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
       </select>
     </div>
+    <div>
+      <label class="form-label">Date paid</label>
+      <input type="date" name="paid_on" value="{{ today }}" max="{{ today }}" class="form-input" />
+    </div>
     <div class="flex-1">
       <label class="form-label">Reference</label>
       <input type="text" name="reference" class="form-input" placeholder="Zelle/Apple Cash name, check #, last 4…" />
@@ -104,6 +110,26 @@
     <button type="submit" class="btn-primary">Record Payment</button>
   </form>
 </div>
+{% if can_waive and invoice.status != 'void' %}
+<div class="card mt-4">
+  <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Waive the rest</h3>
+  <p class="text-stone-500 text-xs mb-2">For a balance you won't collect. It isn't counted as money received.</p>
+  <form method="post" action="/invoices/{{ invoice.id }}/waive" class="flex flex-wrap gap-3 items-end">
+    <div>
+      <label class="form-label">Amount</label>
+      <input type="number" name="amount" step="0.01" value="{{ "%.2f"|format(balance) }}" class="form-input w-32" required />
+    </div>
+    <div class="flex-1">
+      <label class="form-label">Reason (optional)</label>
+      <input type="text" name="reason" maxlength="500" class="form-input" placeholder="e.g. customer discount" />
+    </div>
+    {% if invoice.repair_order and invoice.repair_order.status == 'complete' %}
+    <label class="flex items-center gap-2" style="min-height:44px"><input type="checkbox" name="picked_up"> Customer has picked up (closes the job when paid in full)</label>
+    {% endif %}
+    <button type="submit" class="btn-secondary" style="min-height:44px">Waive</button>
+  </form>
+</div>
+{% endif %}
 {% endif %}
 
 {% endblock %}

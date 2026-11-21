@@ -201,7 +201,7 @@
     <tbody>
       {% for li in ro.line_items %}
       <tr>
-        <td>{{ li.description }}{% if li.approval == 'pending' %} <span class="text-yellow-400 text-xs">Waiting on customer</span>{% elif li.approval == 'approved' %} <span class="text-green-400 text-xs">Approved</span>{% elif li.approval == 'declined' %} <span class="text-red-400 text-xs">Declined, not billed</span>{% endif %}</td>
+        <td>{{ li.description }}{% if li.approval == 'pending' %} <span class="text-yellow-400 text-xs">Waiting on customer</span>{% elif li.approval == 'approved' %} <span class="text-green-400 text-xs">{% if li.approval_source == 'in_person' %}Approved in person{% elif li.approval_source == 'phone' %}Approved by phone{% else %}Approved{% endif %}{% if li.approval_recorded_by %} · recorded by {{ li.approval_recorded_by }}{% endif %}</span>{% elif li.approval == 'declined' %} <span class="text-red-400 text-xs">Declined, not billed</span>{% endif %}</td>
         <td class="text-stone-400">{{ li.item_type }}</td>
         <td class="text-right text-stone-400">{{ li.quantity }}</td>
         <td class="text-right text-stone-400">${{ "%.2f"|format(li.unit_price) }}</td>
@@ -246,6 +246,28 @@
   {% elif link == 'unavailable' %}<p class="text-sm text-amber-300 mt-2">Couldn't check their text thread in Quo, so no text was queued. Try again in a minute.</p>
   {% elif request.query_params.get('asked') %}<p class="text-sm text-green-400 mt-2">Items are marked as waiting on the customer. Nothing was sent.</p>{% endif %}
   {% set pending = ro.line_items|selectattr('approval', 'equalto', 'pending')|list %}
+  {% set approve_error = request.query_params.get('approve_error', '') %}
+  {% if request.query_params.get('approved_in_person') %}<p class="text-sm text-green-400 mt-2">Marked {{ request.query_params.get('approved_in_person') }} item{{ 's' if request.query_params.get('approved_in_person') != '1' }} approved. Nothing was sent to the customer.</p>
+  {% elif approve_error == 'how' %}<p role="alert" class="text-sm text-amber-300 mt-2">Choose whether they approved in person or by phone.</p>
+  {% elif approve_error == 'lines' %}<p role="alert" class="text-sm text-amber-300 mt-2">Tick at least one item that isn't approved yet.</p>
+  {% elif approve_error == 'invoiced' %}<p role="alert" class="text-sm text-amber-300 mt-2">This job already has an invoice without those items. Void the invoice first, then mark them approved.</p>{% endif %}
+  {% set open_to_approve = ro.line_items|rejectattr('approval', 'equalto', 'approved')|list %}
+  {% if open_to_approve %}
+  <details class="mt-3" {% if approve_error %}open{% endif %}>
+    <summary class="text-sm text-stone-300 cursor-pointer" style="min-height:44px;display:flex;align-items:center;justify-content:flex-end">Customer already said yes in person or by phone?</summary>
+    <form method="post" action="/ro/{{ ro.id }}/approve-in-person" class="mt-2 space-y-2">
+      {% for li in open_to_approve %}
+      <label class="flex items-center gap-2 text-sm" style="min-height:44px"><input type="checkbox" name="line_ids" value="{{ li.id }}" checked> {{ li.description }} · ${{ "%.2f"|format(li.total) }}{% if li.approval == 'declined' %} <span class="text-red-400 text-xs">(declined before)</span>{% endif %}</label>
+      {% endfor %}
+      <div class="flex flex-wrap gap-4 text-sm">
+        <label class="flex items-center gap-2" style="min-height:44px"><input type="radio" name="source" value="in_person" checked> In person</label>
+        <label class="flex items-center gap-2" style="min-height:44px"><input type="radio" name="source" value="phone"> By phone</label>
+      </div>
+      <p class="text-stone-500 text-xs">Records your name and the time on each item. No text goes to the customer.</p>
+      <div class="text-right"><button type="submit" class="btn-primary" style="min-height:44px">Mark approved</button></div>
+    </form>
+  </details>
+  {% endif %}
   {% if undecided %}
   <form method="post" action="/ro/{{ ro.id }}/request-approval" class="mt-3 text-right">
     <button type="submit" class="btn-secondary" style="min-height:44px">Ask customer to approve {{ undecided|length }} item{{ 's' if undecided|length != 1 }}</button>

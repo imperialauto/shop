@@ -83,10 +83,10 @@ def queue(db: Session, ro: RepairOrder, newest_message_id: str, actor: str) -> D
     return item
 
 
-def close_for(db: Session, ro: RepairOrder) -> None:
+def close_for(db: Session, ro: RepairOrder, actor: str = "customer", action: str = "approval_link_answered") -> None:
     """The customer answered, so the link item is finished whether or not the owner sent it."""
     rows = db.query(DispatchItem).filter(DispatchItem.quo_conversation_id == conversation_key(ro.id),
                                          DispatchItem.status.in_(OPEN_STATUSES + ("approved",))).all()
     for item in rows:
         item.status, item.updated_at = "closed", datetime.now().astimezone()
-        db.add(DispatchAudit(item_id=item.id, actor="customer", action="approval_link_answered", detail=f"job {ro.id}"))
+        db.add(DispatchAudit(item_id=item.id, actor=actor, action=action, detail=f"job {ro.id}"))
