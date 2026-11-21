@@ -50,12 +50,17 @@ from app.routes import agent_api
 from app.routes.account_security import client_key
 from app.routes.appointments import AppointmentInput
 from app.security import limiter
+from app.security_controls import CSP
 
 log = logging.getLogger("uvicorn.error")
 
 CONNECTOR_NAME = "Claude connector"
 MCP_PATH = "/internal/agent/mcp"
 # Claude's own OAuth callback addresses. A code is only ever sent to one of these.
+# The consent form must be allowed to hand the browser back to Claude; the site-wide
+# policy only lets forms post to this dashboard, so Allow did nothing (Nov 21).
+CONSENT_CSP = CSP.replace("form-action 'self'", "form-action 'self' https://claude.ai https://claude.com") + "; frame-ancestors 'none'"
+
 ALLOWED_REDIRECTS = (
     "https://claude.ai/api/mcp/auth_callback",
     "https://claude.com/api/mcp/auth_callback",
@@ -224,7 +229,8 @@ def authorize_page(request: Request, db: Session = Depends(get_db)):
         '<button name="decision" value="allow" style="min-height:48px;padding:0 28px;font-size:16px;font-weight:700;background:#d4a853;border:0;border-radius:10px">Allow</button> '
         '<button name="decision" value="deny" style="min-height:48px;padding:0 20px;font-size:16px;background:#27272a;color:#e4e4e7;border:0;border-radius:10px">Deny</button>'
         '</form>')
-    return HTMLResponse(PAGE.format(body=body), headers={"Cache-Control": "no-store", "X-Frame-Options": "DENY"})
+    return HTMLResponse(PAGE.format(body=body), headers={"Cache-Control": "no-store", "X-Frame-Options": "DENY",
+                                                         "Content-Security-Policy": CONSENT_CSP})
 
 
 @staff_router.post("/connect/authorize")
