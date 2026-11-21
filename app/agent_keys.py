@@ -30,6 +30,7 @@ SCOPES = {
     "estimates:write": "Start jobs and add estimate lines (drafts only, nothing sent to customers)",
     "appointments:read": "See the appointment calendar",
     "appointments:write": "Book tentative appointments",
+    "appointments:confirm": "Confirm an appointment when you say so (adds it to your calendar and reminders)",
 }
 EXPIRY_DAYS = (30, 90, 180, 365)
 DEFAULT_EXPIRY_DAYS = 90

@@ -76,6 +76,48 @@ class PostgreSQLWorkflow(unittest.TestCase):
         self.assertEqual(self.client.get('/appointments/').json()[0]['status'], 'completed')
         self.assertEqual(self.book().status_code, 201)
 
+    def test_confirm_adds_reminder_task_and_cancel_closes_it(self):
+        from app.imperial_task_model import ImperialTask
+        with patch.dict(os.environ, {'IMPERIAL_TASKS_ENABLED': 'true'}):
+            done = self.book().json()['id']
+            self.assertEqual(self.client.post(f'/appointments/{done}/confirm').status_code, 200)
+            self.assertEqual(self.client.post(f'/appointments/{done}/complete').status_code, 200)
+            start = datetime.fromisoformat(self.payload['starts_at']) + timedelta(hours=3)
+            later = self.book(starts_at=start.isoformat(), ends_at=(start + timedelta(hours=1)).isoformat()).json()['id']
+            self.assertEqual(self.client.post(f'/appointments/{later}/confirm').status_code, 200)
+            with SessionLocal() as db:
+                task = db.query(ImperialTask).filter_by(source='appointment', external_id=str(later)).one()
+                self.assertEqual(task.status, 'open')
+                self.assertEqual(task.due_at, start.astimezone(timezone.utc))
+                self.assertIn(f'job #{self.ro_id}', task.title)
+            self.assertEqual(self.client.post(f'/appointments/{later}/cancel').status_code, 200)
+            with SessionLocal() as db:
+                states = {t.external_id: t.status for t in db.query(ImperialTask).filter_by(source='appointment')
+                          if t.external_id in (str(done), str(later))}
+            self.assertEqual(states, {str(done): 'done_verified', str(later): 'cancelled'})
+
+    def test_assistant_confirms_only_with_its_scope_and_it_is_logged(self):
+        from app import agent_keys
+        from app.agent_keys import AgentAction
+        from app.imperial_task_model import ImperialTask
+        with patch.dict(os.environ, {'IMPERIAL_TASKS_ENABLED': 'true', 'AGENT_API_ENABLED': 'true'}):
+            with SessionLocal() as db:
+                owner_id = db.query(User).filter_by(username='fixture').one().id
+                for old in agent_keys.active_keys(db):
+                    agent_keys.revoke(db, old.id, owner_id)
+                _, raw = agent_keys.issue(db, owner_id, 'Claude', list(agent_keys.SCOPES))
+            headers = {'Authorization': f'Bearer {raw}'}
+            booked = self.client.post('/internal/agent/v1/appointments', headers=headers, json=self.payload)
+            self.assertEqual(booked.status_code, 201, booked.text)
+            ident = booked.json()['id']
+            got = self.client.post(f'/internal/agent/v1/appointments/{ident}/confirm', headers=headers)
+            self.assertEqual(got.json(), {'id': ident, 'status': 'confirmed'})
+            self.assertEqual(self.client.post(f'/internal/agent/v1/appointments/{ident}/confirm',
+                                              headers=headers).status_code, 409)
+            with SessionLocal() as db:
+                self.assertEqual(db.query(ImperialTask).filter_by(source='appointment', external_id=str(ident)).count(), 1)
+                self.assertTrue(db.query(AgentAction).filter_by(action='appointment.confirm', target_id=ident).count())
+
     def test_cancellation_releases_resource(self):
         ident = self.book().json()['id']
         self.assertEqual(self.client.post(f'/appointments/{ident}/cancel').json()['status'], 'cancelled')
