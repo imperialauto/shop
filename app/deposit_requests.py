@@ -2,7 +2,7 @@
 
 When a customer approves lines on their approval link, and the owner has switched
 "Text the deposit request when a customer approves" on in Settings, one text goes to
-the customer asking for a 50% deposit by Zelle or cash, and offering Snap Finance.
+the customer asking for a 50% deposit by Zelle or cash, and, on jobs over $750, offering Snap Finance.
 The Snap link itself is never sent from here: the customer has to ask for it.
 
 The text goes through the same path as an owner-approved dashboard reply, so the
@@ -23,6 +23,7 @@ from app.models import RepairOrder
 SETTING = "automatic_deposit_text"
 CATEGORY = "deposit_request"
 DEPOSIT_SHARE = 0.5  # owner's rule, Nov 2026: half down on every job
+SNAP_OVER = 750.0  # owner's rule, Nov 2026: mention Snap Finance only on jobs over $750
 DASHBOARD_REPLY = "dashboard_reply"  # the owner-approved reply queue the messaging service sends from
 
 
@@ -55,7 +56,8 @@ def message_for(ro: RepairOrder, lines) -> str:
     return (f"Hi {approval_links.greeting_for(ro)}, thanks for approving {work}. "
             f"To order parts and get you on the schedule, I'll need a ${deposit:,.2f} deposit, "
             f"half of the ${total:,.2f} total, by Zelle to {zelle_to()} or cash. "
-            "We also offer Snap Finance if you'd like to make payments. Just ask and I'll send the link. Jae")
+            + ("We also offer Snap Finance if you'd like to make payments. Just ask and I'll send the link. "
+               if total > SNAP_OVER else "") + "Jae")
 
 
 def queue(db: Session, ro: RepairOrder, approved_lines, fetch=None) -> DispatchItem | None:
