@@ -128,6 +128,17 @@ class OneLinkTests(unittest.TestCase):
         self.assertIn("link=nothing", self.text_now().headers["location"])
         self.assertEqual(self.outbound(), [])
 
+    def test_deleting_the_job_right_after_cancels_the_waiting_link_text(self):
+        from app import ro_delete
+        self.text_now()
+        self.client().post("/ro/5/inspection", data={"cond_0": "good"})
+        with self.Session() as db:
+            ro_delete.delete_repair_order(db, db.get(RepairOrder, 5), "owner")
+        self.assertEqual([s for _, s, _ in self.outbound()], ["skipped"])
+        with self.Session() as db:
+            self.assertEqual(db.query(RoInspectionItem).count(), 0)
+            self.assertEqual(db.query(DispatchItem).one().status, "closed")
+
     def test_owner_sees_the_button_office_does_not(self):
         self.assertIn("/ro/5/text-link-now", self.client("owner").get("/ro/5").text)
         self.assertNotIn("/ro/5/text-link-now", self.client("office").get("/ro/5").text)
