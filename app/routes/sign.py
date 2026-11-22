@@ -6,7 +6,7 @@ from app.database import get_db
 from app.models import RepairOrder, Invoice
 from datetime import datetime, timezone
 
-from app import approval_links, website_alerts
+from app import approval_links, deposit_requests, website_alerts
 import os
 import secrets
 from app.security_controls import link_expired
@@ -84,6 +84,11 @@ async def sign_ro_submit(request: Request, token: str, db: Session = Depends(get
             ro.status = "approval_received"
         website_alerts.queue_decision(db, ro, pending)
         approval_links.close_for(db, ro)
+        try:  # owner's setting: text the 50% deposit request for what they just approved
+            with db.begin_nested():
+                deposit_requests.queue(db, ro, [li for li in pending if li.approval == "approved"])
+        except Exception as exc:  # a deposit text must never stop the customer's approval from saving
+            print(f"deposit_text_unavailable job={ro.id} {type(exc).__name__}")
     # A signature records authorization; starting repair work is a separate staff decision.
     db.commit()
 

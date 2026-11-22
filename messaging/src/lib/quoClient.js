@@ -155,6 +155,28 @@ async function createCallWebhook({ url, phoneNumberId }) {
   });
 }
 
+// Workspace-wide: Quo sends contact events for every contact, so no resourceIds.
+async function createContactWebhook({ url }) {
+  return quoFetch("/webhooks", {
+    method: "POST",
+    headers: { "Quo-Api-Version": "2026-03-30" },
+    body: JSON.stringify({ url, label: "Imperial Operations contacts", events: ["contact.updated"] }),
+  });
+}
+
+// v1 returns the contact with its phone numbers; the newer API may not list them.
+async function getContact(contactId) {
+  const id = encodeURIComponent(contactId);
+  try {
+    const { data } = await quoFetch(`/v1/contacts/${id}`);
+    return data;
+  } catch (err) {
+    if (err.status === 404) return null;
+    const { data } = await quoFetch(`/contacts/${id}`, { headers: { "Quo-Api-Version": "2026-03-30" } });
+    return data;
+  }
+}
+
 async function getVoicemail(callId) {
   const { data } = await quoFetch(`/v1/call-voicemails/${callId}`);
   return data;
@@ -209,6 +231,8 @@ async function completeTask(taskId) {
 }
 
 module.exports = {
+  createContactWebhook,
+  getContact,
   listTasks,
   completeTask,
   sendMessage,
