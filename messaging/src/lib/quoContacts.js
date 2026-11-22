@@ -9,6 +9,20 @@ const REFRESH_MS = 60 * 60 * 1000;
 const MAX_PAGES = 40;
 const PLACEHOLDER = "New Lead";
 const OWN_PREFIX = "imperial-ops:";
+const RECENT_MS = 5 * 60 * 1000;
+// Numbers this code wrote to Quo lately. Quo fires contact.updated for our own
+// writes, and contactEvents.js drops those so they never bounce back.
+const recentWrites = new Map();
+
+function noteWrite(phone, now = Date.now()) {
+  recentWrites.set(String(phone || "").replace(/\D/g, "").slice(-10), now);
+  if (recentWrites.size > 500) recentWrites.delete(recentWrites.keys().next().value);
+}
+
+function recentlyWritten(phone, now = Date.now()) {
+  const at = recentWrites.get(String(phone || "").replace(/\D/g, "").slice(-10));
+  return Boolean(at) && now - at < RECENT_MS;
+}
 
 function digits(phone) {
   return String(phone || "").replace(/\D/g, "").slice(-10);
@@ -89,6 +103,7 @@ function createContactLookup({ quo, now = Date.now, skipNumbers = [], pageDelayM
       const lastName = vehicleText ? titleCase(category === "general" ? "" : category) : key.slice(-4);
       const existing = contacts.get(key);
       if (!existing) {
+        noteWrite(key);
         const created = await quo.createContact({ firstName, lastName, phone, externalId: OWN_PREFIX + key });
         remember(key, created);
         return "created";
@@ -96,6 +111,7 @@ function createContactLookup({ quo, now = Date.now, skipNumbers = [], pageDelayM
       const fields = existing.defaultFields || {};
       const ours = String(existing.externalId || "").startsWith(OWN_PREFIX);
       if (ours && fields.firstName === PLACEHOLDER && vehicleText) {
+        noteWrite(key);
         const updated = await quo.updateContact(existing.id, { ...fields, firstName, lastName });
         remember(key, updated);
         return "updated";
@@ -109,4 +125,4 @@ function createContactLookup({ quo, now = Date.now, skipNumbers = [], pageDelayM
   return { nameFor, syncContact };
 }
 
-module.exports = { createContactLookup };
+module.exports = { createContactLookup, recentlyWritten, noteWrite };

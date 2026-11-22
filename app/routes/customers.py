@@ -274,6 +274,8 @@ def update_customer(
 
     customer.customer_type = customer_type
     customer.fleet_name = fleet_name or None
+    if (first_name, last_name) != (customer.first_name, customer.last_name):
+        customer.name_source = "staff"  # a name typed here is never replaced from Quo
     customer.first_name = first_name
     customer.last_name = last_name
     customer.email = email or None
