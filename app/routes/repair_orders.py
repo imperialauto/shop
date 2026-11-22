@@ -7,8 +7,7 @@ from sqlalchemy import func
 from app.database import get_db
 from app.models import RepairOrder, Customer, Vehicle, User, LineItem, Communication, PartsOrder
 from app.auth import get_current_user
-from app.config import GOOGLE_REVIEW_LINK
-from app import approval_links, customer_file, cycle_time, customer_followups, next_action, ro_status_policy, website_alerts
+from app import approval_links, customer_file, cycle_time, customer_followups, next_action, review_requests, ro_status_policy, website_alerts
 from app.dispatch_model import DispatchAudit
 from app.routes import local_node
 import os, secrets
@@ -204,14 +203,14 @@ def _evidence():
     return ro_evidence
 
 
-async def _send_review_request(phone: str, first_name: str):
-    """Background task: send Google review request after delivery."""
-    from app.routes.webhooks import send_sms
-    msg = (
-        f"Hi {first_name}! Thanks for choosing Imperial Auto Care — we really appreciate your business. "
-        f"If you have 30 seconds, a Google review helps us out more than you know: {GOOGLE_REVIEW_LINK} 🙏"
-    )
-    await send_sms(phone, msg)
+def _schedule_review(db: Session, ro: RepairOrder):
+    """Owner's setting: the Google review text goes out the day after pickup (app/review_requests.py)."""
+    try:
+        if review_requests.schedule(db, ro):
+            db.commit()
+    except Exception as exc:  # a review text must never stop the job from being marked picked up
+        db.rollback()
+        print(f"review_schedule_unavailable job={ro.id} {type(exc).__name__}")
 
 
 @router.post("/{ro_id}/update-status")
@@ -241,15 +240,8 @@ def update_status(
         website_alerts.close_for_job(db, ro, user.username, f"job moved to {status}")
     db.commit()
 
-    # Auto-send review request when marked delivered (only once)
-    if status == "delivered" and prev_status != "delivered" and os.getenv("REVIEW_REQUESTS_ENABLED") == "true":
-        if ro.customer and ro.customer.phone and GOOGLE_REVIEW_LINK:
-            background_tasks.add_task(
-                _send_review_request,
-                ro.customer.phone,
-                ro.customer.first_name or "there",
-            )
-            print(f"[Review] Queued review request to {ro.customer.phone} for RO #{ro_id}")
+    if status == "delivered" and prev_status != "delivered":
+        _schedule_review(db, ro)
 
     back = request.query_params.get("back")
     return RedirectResponse("/my-day" if back == "my-day" else f"/ro/{ro_id}", status_code=302)

@@ -179,15 +179,30 @@ def view_invoice(request: Request, invoice_id: int, db: Session = Depends(get_db
 
 
 def _settle(invoice, picked_up=False):
-    """Paid in full (payments plus any waived amount) closes the invoice; anything owed reopens it."""
+    """Paid in full (payments plus any waived amount) closes the invoice; anything owed reopens it.
+    Returns the job when this call marked it picked up."""
     if _balance(invoice) <= 0:
         invoice.status = "paid"
         # Paid in full at the counter: one tap also closes the job, but only once the work is complete.
         ro = invoice.repair_order
         if picked_up and ro is not None and ro.status == "complete":
             ro.status = "delivered"
+            return ro
     elif invoice.status == "paid" or invoice.payments:
         invoice.status = "sent"
+    return None
+
+
+def _schedule_review(db, ro):
+    """Owner's setting: the Google review text goes out the day after pickup (app/review_requests.py)."""
+    if ro is None:
+        return
+    from app import review_requests
+    try:
+        with db.begin_nested():
+            review_requests.schedule(db, ro)
+    except Exception as exc:  # a review text must never stop a payment from saving
+        print(f"review_schedule_unavailable job={ro.id} {type(exc).__name__}")
 
 
 @router.post("/{invoice_id}/add-payment")
@@ -220,7 +235,7 @@ def add_payment(
     if paid_at is not None:
         payment.paid_at = paid_at
     invoice.payments.append(payment)
-    _settle(invoice, picked_up == "on")
+    _schedule_review(db, _settle(invoice, picked_up == "on"))
     db.commit()
     return RedirectResponse(f"/invoices/{invoice_id}", status_code=302)
 
@@ -253,7 +268,7 @@ def waive_balance(
     invoice.waived_reason = reason.strip()[:500] or None
     invoice.waived_by = user.username[:64]
     invoice.waived_at = datetime.now(timezone.utc)
-    _settle(invoice, picked_up == "on")
+    _schedule_review(db, _settle(invoice, picked_up == "on"))
     db.commit()
     return RedirectResponse(f"/invoices/{invoice_id}", status_code=302)
 
