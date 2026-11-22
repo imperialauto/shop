@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Shop TV board — Imperial Auto Care{% endblock %}
+{% block content %}
+<style>
+  .sb-wrap { max-width: 640px; }
+  .sb-row { display:flex; align-items:center; gap:10px; padding:12px 0; border-bottom:1px solid var(--imp-line); overflow-wrap:anywhere; }
+  .sb-row:last-child { border-bottom:0; }
+  .sb-row .sb-title { flex:1; font-size:17px; font-weight:600; }
+  .sb-row.done .sb-title { text-decoration:line-through; color:var(--imp-muted); font-weight:500; }
+  .sb-urgent { color:#FF8A80; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; margin-right:6px; }
+  .sb-add { display:flex; gap:8px; }
+  .sb-add input[type=text] { flex:1; min-width:0; font-size:17px; }
+  .sb-check { min-width:72px; }
+  .sb-note { color:var(--imp-muted); font-size:13px; }
+  .sb-flash { padding:10px 12px; border-radius:10px; margin-bottom:12px; font-weight:600; }
+  .sb-flash.ok { background:rgba(123,224,160,.12); color:#7BE0A0; }
+  .sb-flash.err { background:rgba(255,138,128,.12); color:#FF8A80; }
+</style>
+<div class="sb-wrap">
+  <h1>Shop TV board</h1>
+  <p class="sb-note mb-3">Whatever you add or tick here shows on the shop TV within about 20 seconds.
+    <a href="/board" target="_blank" rel="noopener">Open the TV view</a></p>
+
+  {% if error %}<div class="sb-flash err" role="alert">{{ error }}</div>
+  {% elif saved == 'added' %}<div class="sb-flash ok" role="status">Added to the board.</div>
+  {% elif saved == 'done' %}<div class="sb-flash ok" role="status">Ticked off.</div>
+  {% elif saved == 'undo' %}<div class="sb-flash ok" role="status">Back on the list.</div>
+  {% elif saved == 'goal' %}<div class="sb-flash ok" role="status">Daily goal saved.</div>{% endif %}
+
+  <section id="todo" class="card mb-4" aria-labelledby="sb-todo-heading">
+    <h2 class="font-bold mb-2" id="sb-todo-heading">To-do on the TV</h2>
+    {% if not board.todos_on %}
+    <p class="sb-note">The to-do list isn't turned on yet.</p>
+    {% else %}
+      {% if not read_only %}
+      <form method="post" action="/board/todos" class="mb-2" aria-label="Add a to-do to the shop board">
+        <div class="sb-add">
+          <input name="title" class="form-input" type="text" aria-label="New to-do" placeholder="Add a to-do" required minlength="2" maxlength="200" autocomplete="off">
+          <button class="btn-primary">Add</button>
+        </div>
+        <label class="sb-note" style="display:inline-flex;gap:6px;align-items:center;margin-top:8px">
+          <input type="checkbox" name="urgent" value="1"> Urgent (shows in red at the top)
+        </label>
+      </form>
+      {% endif %}
+      {% if board.todos is none %}
+      <p role="alert">The to-do list couldn't load.</p>
+      {% else %}
+        {% for item in board.todos.open %}
+        <div class="sb-row">
+          <span class="sb-title">{% if item.urgent %}<span class="sb-urgent">Urgent</span>{% endif %}{{ item.title }}</span>
+          {% if not read_only %}
+          <form method="post" action="/board/todos/{{ item.id }}"><button class="btn-primary sb-check" name="operation" value="done">Done</button></form>
+          {% endif %}
+        </div>
+        {% else %}
+        <p class="sb-note my-2">Nothing on the list.</p>
+        {% endfor %}
+        {% if board.todos.done %}
+        <h3 class="font-bold text-sm mt-3">Ticked off today</h3>
+        {% for item in board.todos.done %}
+        <div class="sb-row done">
+          <span class="sb-title">{{ item.title }}</span>
+          {% if not read_only %}
+          <form method="post" action="/board/todos/{{ item.id }}"><button class="btn-secondary sb-check" name="operation" value="undo">Undo</button></form>
+          {% endif %}
+        </div>
+        {% endfor %}
+        {% endif %}
+      {% endif %}
+    {% endif %}
+  </section>
+
+  {% if user.role == 'owner' %}
+  <section id="goal" class="card mb-4" aria-labelledby="sb-goal-heading">
+    <h2 class="font-bold mb-2" id="sb-goal-heading">Daily sales goal</h2>
+    {% if board.sales %}<p class="sb-note mb-2">Today so far: ${{ '{:,.2f}'.format(board.sales.total) }} from {{ board.sales.count }} payment{{ '' if board.sales.count == 1 else 's' }} recorded.</p>{% endif %}
+    {% if not read_only %}
+    <form method="post" action="/board/goal" class="sb-add">
+      <input name="goal" class="form-input" type="text" inputmode="decimal" aria-label="Daily goal in dollars" value="{{ goal }}" required>
+      <button class="btn-secondary">Save</button>
+    </form>
+    {% endif %}
+    <p class="sb-note mt-2">Counts payments recorded on invoices today, Phoenix time. Only shows on a screen signed in as the owner.</p>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}
