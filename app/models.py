@@ -159,6 +159,18 @@ class RoAttachment(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
+class RoInspectionItem(Base):
+    """One checked area of the vehicle (tires, brakes...). Shown on the customer's private status page."""
+    __tablename__ = "ro_inspection_items"
+    id = Column(Integer, primary_key=True)
+    repair_order_id = Column(Integer, ForeignKey("repair_orders.id"), nullable=False, index=True)
+    area = Column(String(80), nullable=False)
+    condition = Column(String(12), nullable=False)  # good, watch, now
+    note = Column(Text)
+    recorded_by = Column(String(64), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
 class PartsOrder(Base):
     __tablename__ = "parts_orders"
     id = Column(Integer, primary_key=True)
