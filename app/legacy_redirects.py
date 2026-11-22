@@ -15,6 +15,13 @@ LEGACY_PATHS = {
     "/ford-dps6-clutch-replacement-phoenix": "/site/services/dps6-transmission",
     "/store": "/site/services",
     "/store/p/mobile-auto-heavy-duty-diesel-roadside": "/site/services/mobile-roadside",
+    # Top-level Squarespace nav pages that were not in its sitemap (added Nov 22, 2026).
+    "/pricing": "/site/pricing",
+    "/faq": "/site/faq",
+    "/services": "/site/services",
+    "/shop-transport": "/site/services/towing",
+    # Rentals is hidden on the new site for now, so its old link goes to the home page.
+    "/rentals": "/site/",
 }
 
 router = APIRouter(include_in_schema=False)
