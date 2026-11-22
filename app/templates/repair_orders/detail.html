@@ -445,4 +445,25 @@
   {% endif %}
 </div>
 
+{% if user.role == 'owner' %}
+<details class="card mt-4 border border-red-900/60">
+  <summary class="cursor-pointer text-sm text-red-300">Delete this job (owner only)</summary>
+  <div class="mt-3 text-sm text-stone-300 flex flex-col gap-3">
+    <p>For jobs entered by mistake or for testing. This removes job #{{ ro.id }}, its line items, photos and appointments. The customer and vehicle stay, texts stay on the customer's file, and nothing is sent to anyone. It can't be undone.</p>
+    {% if delete_blockers %}
+    <ul class="list-disc pl-5 text-amber-300">
+      {% for reason in delete_blockers %}<li>{{ reason }}</li>{% endfor %}
+    </ul>
+    {% else %}
+    <form method="post" action="/ro/{{ ro.id }}/delete" class="flex flex-wrap gap-2 items-center">
+      <label for="delete-confirm">Type <strong>{{ ro.id }}</strong> to confirm</label>
+      <input id="delete-confirm" name="confirm" inputmode="numeric" autocomplete="off" required
+             class="form-input w-24" aria-label="Type the job number to confirm">
+      <button type="submit" class="btn bg-red-700 hover:bg-red-600 text-white px-3 py-1 rounded">Delete job #{{ ro.id }}</button>
+    </form>
+    {% endif %}
+  </div>
+</details>
+{% endif %}
+
 {% endblock %}
