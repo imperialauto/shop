@@ -71,6 +71,7 @@ class PlanMathTests(unittest.TestCase):
                  FinanceBill(name="Later", scope="business", amount_cents=1000, due_date=date(2027, 1, 4), status="open", repeats="once", category="other"),
                  FinanceBill(name="Phone", scope="personal", amount_cents=7110, due_date=date(2026, 11, 25), status="open", repeats="once", category="phone")]
         incoming = [FinanceIncoming(source="Pat", scope="business", amount_cents=30200, expected_date=date(2026, 11, 24), status="expected"),
+                    FinanceIncoming(source="Late", scope="business", amount_cents=50000, expected_date=date(2026, 10, 27), status="expected"),
                     FinanceIncoming(source="No date", scope="business", amount_cents=99900, expected_date=None, status="expected")]
         sums = plan.totals(accounts, bills, incoming, TODAY, 14)
         shop = sums["business"]

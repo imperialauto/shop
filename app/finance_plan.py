@@ -120,7 +120,8 @@ def totals(accounts, bills, incoming, today: date, window_days: int) -> dict:
             continue
         t = out[item.scope]
         t.incoming.append(item)
-        if item.expected_date is not None and item.expected_date <= end:
+        # Late money isn't counted on: it shows as late until the owner gives it a new date.
+        if item.expected_date is not None and today <= item.expected_date <= end:
             t.expected_in += item.amount_cents
     return {"end": end, "days_open": working_days(today, end), **out}
 

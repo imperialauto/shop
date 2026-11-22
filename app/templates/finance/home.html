@@ -115,7 +115,7 @@
     <div class="card fin-stat">
       <div class="name">Counting on coming in</div>
       <div class="value">{{ usd(business.expected_in) }}</div>
-      <div class="hint">Money owed to the shop with a date by {{ end.strftime('%b %-d') }}.</div>
+      <div class="hint">Money owed to the shop, expected between today and {{ end.strftime('%b %-d') }}.</div>
     </div>
     <div class="card fin-stat {{ 'short' if business.short else 'covered' }}">
       <div class="name">{{ 'Short by' if business.short else 'Bills covered' }}</div>
@@ -158,10 +158,10 @@
 
       <section class="card fin-card" aria-labelledby="fin-owed-h">
         <h2 id="fin-owed-h">Money owed to the shop</h2>
-        <p class="cap">Tap "Got it" when it lands. Use it only for money that isn't recorded on a job, so it's counted once.</p>
+        <p class="cap">Tap "Got it" when it lands. Use it only for money that isn't recorded on a job, so it's counted once. To count a late one again, add it with a new date.</p>
         {% for i in business.incoming %}
         <div class="fin-row">
-          <div class="fin-row-main"><h3>{{ i.source }}</h3><p>{% if i.expected_date %}{% if i.expected_date < today %}Expected {{ i.expected_date.strftime('%b %-d') }}, not in yet{% else %}Expected by {{ i.expected_date.strftime('%a %b %-d') }}{% endif %}{% else %}No date yet, so not counted above{% endif %}</p></div>
+          <div class="fin-row-main"><h3>{{ i.source }}</h3><p>{% if i.expected_date %}{% if i.expected_date < today %}Was expected {{ i.expected_date.strftime('%b %-d') }}, late, so not counted above{% else %}Expected by {{ i.expected_date.strftime('%a %b %-d') }}{% endif %}{% else %}No date yet, so not counted above{% endif %}</p></div>
           <div class="fin-row-side"><div class="amount">{{ usd(i.amount_cents) }}</div>
             <div class="fin-actions">
               <form method="post" action="/finance/incoming/{{ i.id }}/got"><input type="hidden" name="window" value="{{ window }}"><button class="btn-secondary text-xs" type="submit">Got it</button></form>
