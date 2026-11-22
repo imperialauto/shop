@@ -199,7 +199,7 @@ BOOKABLE_SERVICES: tuple[BookableService, ...] = (
     # Owner asked for this special on 2026-11-22 (full synthetic, up to 5 qt, filter, inspection).
     # Hidden until its price is saved in Settings, so the site never shows it unpriced.
     BookableService("oil-change", "Full synthetic oil change", "Up to 5 quarts of full synthetic oil, a new oil filter and a free multi-point inspection. "
-                    "Vehicles that need more oil or a special filter are quoted before we start.", 30, needs_price=True),
+                    "Plus tax. Vehicles that need more oil or a special filter are quoted before we start.", 30, needs_price=True),
 )
 
 VEHICLE_CLASSES = {"sedan": "Sedan or compact", "suv": "SUV or crossover", "pickup": "Pickup or large SUV"}

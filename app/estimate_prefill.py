@@ -44,10 +44,12 @@ OIL_CHANGE_LINE = ("Full synthetic oil change special: up to 5 qt full synthetic
 
 def oil_change_line(db, order: RepairOrder, service) -> LineItem | None:
     """A booked oil change special starts its job with the one package line at the saved price.
-    The line is not sent for approval; the owner checks the oil capacity and filter first."""
+    The line is not sent for approval; the owner checks the oil capacity and filter first.
+    Tax goes on top of the price (owner's choice, Nov 22). The package is one flat price with no labor
+    listed separately, so it is taxed as a part, the whole line, like parts on any other job."""
     if service is None or service.slug != OIL_CHANGE or service.price is None:
         return None
-    line = LineItem(repair_order_id=order.id, item_type="labor", quantity=1, unit_price=service.price, taxable=False,
+    line = LineItem(repair_order_id=order.id, item_type="part", quantity=1, unit_price=service.price, taxable=True,
                     description=OIL_CHANGE_LINE)
     db.add(line)
     return line

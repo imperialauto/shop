@@ -64,6 +64,10 @@ class OilChangeSpecialTests(unittest.TestCase):
         self.assertEqual(lines[0].unit_price, 79.99)
         self.assertIsNone(lines[0].approval)  # not sent to the customer
         self.assertIn("up to 5 qt", lines[0].description)
+        # Tax on top: the flat package is taxed like a part, so $79.99 + 9.2% = $87.35.
+        self.assertEqual((lines[0].item_type, lines[0].taxable), ("part", True))
+        from app.routes.invoices import SHOP_TAX_RATE
+        self.assertEqual(round(79.99 + round(79.99 * SHOP_TAX_RATE, 2), 2), 87.35)
 
 
 if __name__ == "__main__":
