@@ -301,7 +301,7 @@ SENDERS = ("owner", "admin")
 
 
 @router.post("/{ro_id}/text-link-now")
-def text_link_now(request: Request, ro_id: int, db: Session = Depends(get_db)):
+def text_link_now(request: Request, ro_id: int, db: Session = Depends(get_db), offer_snap: str = Form(default="")):
     """The owner's own button: texts the customer their one approval link from the shop line.
 
     Pressing it is the owner's yes, so there is no second YES text. It goes out through the same
@@ -345,7 +345,7 @@ def text_link_now(request: Request, ro_id: int, db: Session = Depends(get_db)):
     if already is not None:
         # Same link, and nothing has happened in their thread since it went out: never text it twice.
         return back(f"already{already.id}")
-    item = approval_links.queue(db, ro, newest, user.username)
+    item = approval_links.queue(db, ro, newest, user.username, offer_snap=snap_offer.checked(offer_snap))
     now = datetime.now().astimezone()
     item.status, item.decided_by, item.decided_at, item.updated_at = "approved", user.id, now, now
     db.add(DispatchAudit(item_id=item.id, actor=user.username[:64], action="owner_approve", detail=f"text link now, job {ro.id}"))
