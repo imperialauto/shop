@@ -56,6 +56,7 @@
     <label for="reply-text" class="text-xs text-stone-400">Text {{ customer.first_name if customer.first_name and not customer.first_name.lower().startswith('unknown') else 'this customer' }}</label>
     <textarea id="reply-text" name="reply_text" rows="3" maxlength="1500" required class="form-input" placeholder="Write a text…">{{ item.draft_reply if item and item.draft_reply else '' }}</textarea>
     <p class="text-xs text-stone-500">{% if item and item.draft_reply %}Imperial's draft. Edit it, then send. {% endif %}{% if not file.newest_message_id %}Texts couldn't be checked right now, so sending is off. Refresh, or reply in Quo.{% elif sending_paused %}Texting is stopped. Resume it on the dashboard to send.{% else %}It won't send if a newer text or call comes in first.{% endif %}</p>
+    <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" name="offer_snap" value="1"> Offer Snap Finance</label>
     <div><button class="btn-primary"{% if not file.newest_message_id or sending_paused %} disabled{% endif %}>Send text</button></div>
   </form>
   {% endif %}

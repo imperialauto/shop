@@ -92,6 +92,15 @@ class OneLinkTests(unittest.TestCase):
         self.assertIn(f"link=sending{item.id}", r.headers["location"])
         self.assertEqual(self.outbound(), [("dashboard_reply", "queued", item.id)])
 
+    def test_offer_snap_box_adds_the_snap_line_and_no_link(self):
+        from app import snap_offer
+        with patch.object(customer_file, "_bridge", thread):
+            self.client().post("/ro/5/text-link-now", data={"offer_snap": "1"})
+        with self.Session() as db:
+            text = db.query(DispatchItem).one().draft_reply
+        self.assertIn(snap_offer.LINE + " - Imperial Auto Care", text)
+        self.assertEqual(text.count("http"), 1)  # only the approval link, never a Snap link
+
     def test_second_press_before_anything_changes_does_not_text_twice(self):
         self.text_now()
         r = self.text_now()

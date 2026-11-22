@@ -101,6 +101,21 @@ def _check_deploys(db: Session, now: datetime) -> dict | None:
     return {"name": "App deploys", "ok": True, "detail": "Railway reports every app running."}
 
 
+def _check_contacts(db: Session, now: datetime) -> dict | None:
+    """Fed by the messaging service's hourly Quo contact catch-up. Hidden until it has run once."""
+    row = db.get(DispatchSync, "quo_contacts")
+    if row is None:
+        return None
+    last = row.last_success_at
+    if last is not None and last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    if (row.consecutive_failures or 0) > 0 or last is None or now - last > timedelta(hours=3):
+        return {"name": "Quo contact names", "ok": False,
+                "detail": "Names from Quo haven't synced in over 3 hours.",
+                "fix": "Check the shop service's logs in Railway for \"Quo contact\"."}
+    return {"name": "Quo contact names", "ok": True, "detail": row.last_detail or "Synced with Quo."}
+
+
 def _check_names(db: Session) -> dict | None:
     left = name_finder.progress(db)
     if not left["unnamed"]:
@@ -127,6 +142,12 @@ def report(db: Session, now: datetime | None = None) -> dict:
         db.rollback()
         checks.append({"name": "App deploys", "ok": False, "detail": "This check couldn't run.",
                        "fix": "Review the health-check and database logs before trusting the status."})
+    try:
+        contacts = _check_contacts(db, now)
+        if contacts:
+            checks.append(contacts)
+    except Exception:
+        db.rollback()
     try:
         names = _check_names(db)
         if names:

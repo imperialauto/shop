@@ -7,7 +7,7 @@ from sqlalchemy import func
 from app.database import get_db
 from app.models import RepairOrder, Customer, Vehicle, User, LineItem, Communication, PartsOrder
 from app.auth import get_current_user
-from app import approval_links, customer_file, ro_delete, cycle_time, customer_followups, next_action, review_requests, ro_status_policy, website_alerts
+from app import approval_links, customer_file, ro_delete, cycle_time, customer_followups, job_events, next_action, ro_status_policy, snap_offer, website_alerts
 from app.dispatch_model import DispatchAudit, DispatchItem, DispatchOutbound
 from app.sending_pause import DASHBOARD_REPLY, is_paused
 from app.routes import local_node
@@ -209,16 +209,6 @@ def _evidence():
     return ro_evidence
 
 
-def _schedule_review(db: Session, ro: RepairOrder):
-    """Owner's setting: the Google review text goes out the day after pickup (app/review_requests.py)."""
-    try:
-        if review_requests.schedule(db, ro):
-            db.commit()
-    except Exception as exc:  # a review text must never stop the job from being marked picked up
-        db.rollback()
-        print(f"review_schedule_unavailable job={ro.id} {type(exc).__name__}")
-
-
 @router.post("/{ro_id}/update-status")
 def update_status(
     request: Request,
@@ -245,16 +235,17 @@ def update_status(
     if status != "intake":
         website_alerts.close_for_job(db, ro, user.username, f"job moved to {status}")
     db.commit()
-
-    if status == "delivered" and prev_status != "delivered":
-        _schedule_review(db, ro)
+    if status != prev_status:
+        job_events.fire(db, ro, status)
+        db.commit()
 
     back = request.query_params.get("back")
     return RedirectResponse("/my-day" if back == "my-day" else f"/ro/{ro_id}", status_code=302)
 
 
 @router.post("/{ro_id}/request-approval")
-def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db)):
+def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db),
+                     offer_snap: str = Form(default="")):
     """Marks undecided lines as waiting on the customer and queues the approval
     text for the owner's YES. Nothing is sent from here."""
     user = require_user(request, db)
@@ -281,7 +272,8 @@ def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db)
         else:
             messages = thread.get("messages") or []
             newest = messages[-1].get("id") if messages else "none"
-            item = approval_links.queue(db, ro, newest or "none", user.username)
+            item = approval_links.queue(db, ro, newest or "none", user.username,
+                                       offer_snap=snap_offer.checked(offer_snap))
             db.commit()
             link = f"queued{item.id}"
     return RedirectResponse(f"/ro/{ro_id}?asked={len(fresh)}&link={link}", status_code=302)
@@ -291,7 +283,7 @@ SENDERS = ("owner", "admin")
 
 
 @router.post("/{ro_id}/text-link-now")
-def text_link_now(request: Request, ro_id: int, db: Session = Depends(get_db)):
+def text_link_now(request: Request, ro_id: int, db: Session = Depends(get_db), offer_snap: str = Form(default="")):
     """The owner's own button: texts the customer their one approval link from the shop line.
 
     Pressing it is the owner's yes, so there is no second YES text. It goes out through the same
@@ -335,7 +327,7 @@ def text_link_now(request: Request, ro_id: int, db: Session = Depends(get_db)):
     if already is not None:
         # Same link, and nothing has happened in their thread since it went out: never text it twice.
         return back(f"already{already.id}")
-    item = approval_links.queue(db, ro, newest, user.username)
+    item = approval_links.queue(db, ro, newest, user.username, offer_snap=snap_offer.checked(offer_snap))
     now = datetime.now().astimezone()
     item.status, item.decided_by, item.decided_at, item.updated_at = "approved", user.id, now, now
     db.add(DispatchAudit(item_id=item.id, actor=user.username[:64], action="owner_approve", detail=f"text link now, job {ro.id}"))
