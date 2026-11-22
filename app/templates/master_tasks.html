@@ -126,7 +126,7 @@
       <input type="hidden" name="next" value="/dashboard/tasks?tab={{ tab }}&amp;scope={{ scope }}&amp;sort={{ sort }}">
       <textarea name="reply_text" maxlength="1500" placeholder="Write a reply…" aria-label="Reply to {{ card.name or card.phone }}">{{ item.draft_reply or '' }}</textarea>
       <span class="hint">{% if item.draft_reply %}Imperial's draft. Edit it, then send.{% else %}No draft yet. Write your own.{% endif %}{% if sending_paused %} Texting is stopped, so sending won't work until you resume it.{% endif %} Nothing goes out until you press Send.</span>
-      <div class="mt-actions"><button class="send" name="decision" value="approve">Send</button></div>
+      <div class="mt-actions"><label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" name="offer_snap" value="1"> Offer Snap Finance</label><button class="send" name="decision" value="approve">Send</button></div>
     </form>
     {% endif %}
 

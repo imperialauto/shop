@@ -7,6 +7,7 @@ import json
 import os
 import re
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from pydantic import AwareDatetime, BaseModel, Field
@@ -20,7 +21,7 @@ from app.database import get_db
 from app.config import OWNER_PHONE
 from app.dispatch import AUTO_POLICIES, LOCKED_POLICIES, MAKES, POLICIES, PROMISE, apply_policies, assess, auto_reply, is_reaction, parse_owner_command, propose
 from app.appointment_model import Appointment
-from app import alert_rules, business_settings, approval_links, name_finder, next_action, quo_import, website_alerts
+from app import alert_rules, business_settings, approval_links, dispatch_anchor, name_finder, next_action, quo_import, snap_offer, website_alerts
 from app.sending_pause import is_paused, pause, resume
 from app import quick_replies
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync, OPEN_STATUSES
@@ -520,6 +521,11 @@ def intake(message: IntakeMessage, db: Session = Depends(get_db), _auth: bool = 
     for attempt in (1, 2):  # a concurrent delivery can win the unique index once
         try:
             item = _record(db, message, result)
+            if message.kind == "message" and not is_paused(db):
+                from app import snap_link
+                if snap_link.maybe_queue(db, item, message.body, result, message.recovery):
+                    return {"recorded": True, "itemId": item.id, "status": item.status,
+                            "vehicleText": item.vehicle_text, "category": item.category, "autoReply": None}
             return {"recorded": True, "itemId": item.id, "status": item.status,
                     "vehicleText": item.vehicle_text, "category": item.category,
                     "autoReply": None if is_paused(db) else _auto_reply_for(db, item, message, result)}
@@ -703,7 +709,9 @@ def due_owner_messages(db: Session, now: datetime) -> list[dict]:
 def queued_replies(db: Session) -> list[dict]:
     """Replies approved on the dashboard. Each is handed over once and never retried."""
     replies = []
-    rows = db.query(DispatchOutbound).filter(DispatchOutbound.kind == DASHBOARD_REPLY, DispatchOutbound.status == "queued").all()
+    rows = (db.query(DispatchOutbound)
+            .filter_by(kind=DASHBOARD_REPLY, status="queued")
+            .with_for_update(skip_locked=True).all())
     for row in rows:
         item = db.get(DispatchItem, row.item_id)
         row.status = "reserved"
@@ -748,6 +756,23 @@ def tick(request: Request, background: BackgroundTasks, owner_texts: bool = True
         except (SQLAlchemyError, HTTPException, ValueError) as exc:
             db.rollback()
             print(f"customer_followups_unavailable {type(exc).__name__}")
+    if (not followups and not request.app.state.read_only and not replies
+            and not db.query(DispatchOutbound.id).filter_by(kind=DASHBOARD_REPLY, status="queued").first()):
+        from app import oil_reminders
+        try:
+            oil_reminders.queue_next(db, now)  # sent as a queued reply on the next tick
+        except (SQLAlchemyError, HTTPException, ValueError) as exc:
+            db.rollback()
+            print(f"oil_reminders_unavailable {type(exc).__name__}")
+    if not request.app.state.read_only:
+        from app import quote_followups
+        try:
+            quote_followups.queue_next(db, now)  # a draft for the owner's Send; nothing goes out here
+            from app import diag_credit
+            diag_credit.queue_next(db, now)  # same: a draft only
+        except (SQLAlchemyError, HTTPException, ValueError) as exc:
+            db.rollback()
+            print(f"declined_followup_unavailable {type(exc).__name__}")
     return {"ownerPhone": OWNER_PHONE or None, "messages": messages,
             "customerReplies": replies, "customerFollowups": followups}
 
@@ -1289,6 +1314,7 @@ def decide(
     proposed_action: str = Form(default=""),
     reply_text: str = Form(default=""),
     next_page: str = Form(default="/dashboard", alias="next"),
+    offer_snap: str = Form(default=""),
     db: Session = Depends(get_db),
 ):
     user = get_current_user(request, db)
@@ -1305,6 +1331,10 @@ def decide(
         raise HTTPException(409, "Website requests must be contacted manually.")
     if item.last_message_id != expected_message_id:
         raise HTTPException(409, "A newer customer message arrived. Review it before deciding.")
+    if decision == "approve" and reply_text.strip() and dispatch_anchor.needs_anchor(item):
+        problem = dispatch_anchor.anchor(item)
+        if problem:
+            raise HTTPException(409, problem)
     if proposed_action.strip():
         item.proposed_action = proposed_action.strip()[:2000]
     item.status = "approved" if decision == "approve" else "declined"
@@ -1312,17 +1342,28 @@ def decide(
     item.decided_at = datetime.now().astimezone()
     item.updated_at = item.decided_at
     audit(db, item.id, user.username, f"owner_{decision}")
-    text = reply_text.strip()[:1500]
+    text = snap_offer.add(reply_text.strip(), snap_offer.checked(offer_snap))[:1500]
     if decision == "approve" and text:
         item.draft_reply = text  # the messaging service sends it on its next tick
         db.add(DispatchOutbound(dedupe_key=f"dashboard:{item.id}:{item.last_message_id}", kind=DASHBOARD_REPLY, item_id=item.id, status="queued"))
         if PROMISE.search(text):
             audit(db, item.id, "system", "follow_up_due", (item.decided_at + PROMISE_AFTER).isoformat())
+    _commit_send(db)
+    return RedirectResponse(back_to(next_page), status_code=303)
+
+
+def _commit_send(db):
+    """Commit a decision and its queued reply. The only failure that may pass quietly is the
+    same reply already being queued (a double tap: unique dedupe key). Anything else rolls
+    back and tells the owner nothing was sent, instead of looking like it worked."""
     try:
         db.commit()
-    except IntegrityError:
+    except IntegrityError as error:
         db.rollback()
-    return RedirectResponse(back_to(next_page), status_code=303)
+        if "dedupe_key" in str(getattr(error, "orig", error)):
+            return
+        raise HTTPException(503, "That reply couldn't be queued, so nothing was sent and the item is still open. "
+                                 "Try again, or reply in Quo.") from error
 
 
 def back_to(path: str) -> str:
@@ -1343,6 +1384,7 @@ def compose(
     reply_text: str = Form(...),
     newest_message_id: str = Form(default=""),
     next_page: str = Form(default="/dashboard", alias="next"),
+    offer_snap: str = Form(default=""),
     db: Session = Depends(get_db),
 ):
     """Owner writes a text from any page that shows the conversation (customer file, tasks).
@@ -1356,9 +1398,9 @@ def compose(
     user = get_current_user(request, db)
     if user.role not in COMPOSE_ROLES:
         raise HTTPException(403, "Your login can't text customers.")
-    text = reply_text.strip()[:1500]
-    if not text:
+    if not reply_text.strip():
         raise HTTPException(422, "Write a message first.")
+    text = snap_offer.add(reply_text.strip(), snap_offer.checked(offer_snap))[:1500]
     if is_paused(db):
         raise HTTPException(409, "Texting is stopped. Resume it before sending.")
     tail = "".join(c for c in _normalize_phone(phone) if c.isdigit())[-10:]
@@ -1368,6 +1410,11 @@ def compose(
     newest_message_id = newest_message_id.strip()[:128]
     if not newest_message_id:
         raise HTTPException(409, "The latest messages couldn't be checked. Refresh the page, or reply in Quo.")
+    # Concurrent submissions of the same text from the same thread state share one queue key.
+    fingerprint = json.dumps([number, newest_message_id, text], ensure_ascii=False)
+    dedupe_key = f"compose:{sha256(fingerprint.encode()).hexdigest()}"
+    if db.query(DispatchOutbound.id).filter_by(dedupe_key=dedupe_key).first():
+        return RedirectResponse(back_to(next_page), status_code=303)
     recent = [row for row in db.query(DispatchItem).order_by(DispatchItem.updated_at.desc()).limit(500)
               if "".join(c for c in (row.customer_phone or "") if c.isdigit())[-10:] == tail]
     if any(website_alerts.is_website(row) and row.status in OPEN_STATUSES for row in recent):
@@ -1390,11 +1437,11 @@ def compose(
     item.draft_reply = text
     item.thread_message_id = newest_message_id
     audit(db, item.id, user.username, "owner_compose" if open_item is None else "owner_approve")
-    db.add(DispatchOutbound(dedupe_key=f"compose:{item.id}:{uuid4().hex}", kind=DASHBOARD_REPLY,
+    db.add(DispatchOutbound(dedupe_key=dedupe_key, kind=DASHBOARD_REPLY,
                             item_id=item.id, status="queued"))
     if PROMISE.search(text):
         audit(db, item.id, "system", "follow_up_due", (now + PROMISE_AFTER).isoformat())
-    db.commit()
+    _commit_send(db)
     return RedirectResponse(back_to(next_page), status_code=303)
 
 
@@ -1606,3 +1653,41 @@ def dashboard_context(db: Session, view: str = "open") -> dict:
             {"key": key, "label": label, "mode": modes.get(key, "auto")} for key, label in AUTO_POLICIES.items()
         ],
     }
+
+
+class QuoContact(BaseModel):
+    id: str = Field(default="", max_length=64)
+    firstName: str = Field(default="", max_length=120)
+    lastName: str = Field(default="", max_length=120)
+    company: str = Field(default="", max_length=120)
+    externalId: str = Field(default="", max_length=120)
+    emails: list[str] = Field(default_factory=list, max_length=10)
+    phones: list[str] = Field(default_factory=list, max_length=10)
+
+
+@internal_router.post("/contact")
+def quo_contact_changed(contact: QuoContact, db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
+    """A Quo contact was saved or renamed: rename the matching customer. Never creates, deletes or texts."""
+    from app import quo_contact_names
+    result = quo_contact_names.apply(db, contact.model_dump())
+    db.commit()
+    return result
+
+
+class QuoContactBatch(BaseModel):
+    contacts: list[QuoContact] = Field(default_factory=list, max_length=5000)
+
+
+@internal_router.post("/contacts")
+def quo_contacts_catch_up(batch: QuoContactBatch, db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
+    """The hourly catch-up of every Quo contact, and the Home health line for it."""
+    from app import quo_contact_names
+    result = quo_contact_names.apply_all(db, [c.model_dump() for c in batch.contacts])
+    row = db.get(DispatchSync, "quo_contacts")
+    if row is None:
+        row = DispatchSync(source="quo_contacts", consecutive_failures=0)
+        db.add(row)
+    row.last_success_at, row.consecutive_failures = datetime.now(timezone.utc), 0
+    row.last_detail = f"Checked {result['contacts']} Quo contacts; renamed {result['renamed']}."[:255]
+    db.commit()
+    return result
