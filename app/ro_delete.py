@@ -12,7 +12,7 @@ from sqlalchemy import bindparam, inspect, text
 from sqlalchemy.orm import Session
 
 from app import approval_links
-from app.dispatch_model import OPEN_STATUSES, DispatchAudit, DispatchItem
+from app.dispatch_model import OPEN_STATUSES, DispatchAudit, DispatchItem, DispatchOutbound
 from app.models import RepairOrder
 
 log = logging.getLogger(__name__)
@@ -98,7 +98,11 @@ def delete_repair_order(db: Session, ro: RepairOrder, actor: str) -> dict:
         now = datetime.now().astimezone()
         for item in db.query(DispatchItem).filter(
                 DispatchItem.quo_conversation_id == approval_links.conversation_key(ro_id),
-                DispatchItem.status.in_(OPEN_STATUSES)).all():
+                DispatchItem.status.in_(OPEN_STATUSES + ("approved",))).all():
+            # Includes a link the owner just tapped to send that hasn't gone out yet.
+            for row in db.query(DispatchOutbound).filter(DispatchOutbound.item_id == item.id,
+                                                         DispatchOutbound.status == "queued").all():
+                row.status = "skipped"
             item.status = "closed"
             item.updated_at = now
             db.add(DispatchAudit(item_id=item.id, actor=actor, action="job_deleted",
