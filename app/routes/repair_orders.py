@@ -8,7 +8,7 @@ from app.database import get_db
 from app.models import RepairOrder, Customer, Vehicle, User, LineItem, Communication, PartsOrder
 from app.auth import get_current_user
 from app.config import GOOGLE_REVIEW_LINK
-from app import approval_links, customer_file, cycle_time, customer_followups, next_action, ro_status_policy, snap_offer, website_alerts
+from app import approval_links, customer_file, ro_delete, cycle_time, customer_followups, next_action, ro_status_policy, snap_offer, website_alerts
 from app.dispatch_model import DispatchAudit
 from app.routes import local_node
 import os, secrets
@@ -196,6 +196,7 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         "attachments": _evidence().attachments_for(db, ro.id),
         "progress": _evidence().progress(ro),
         "offsite_estimate": customer_followups.offsite_estimate_at(db, ro.id) is not None,
+        "delete_blockers": ro_delete.blockers(ro) if user.role == "owner" else None,
     })
 
 
@@ -531,3 +532,22 @@ def get_vehicles_for_customer(request: Request, ro_id: int, customer_id: int, db
         f'</div>'
     )
 
+
+@router.post("/{ro_id}/delete")
+def delete_ro(request: Request, ro_id: int, db: Session = Depends(get_db), confirm: str = Form("")):
+    """Owner only. The owner types the job number to confirm. Sends nothing."""
+    user = require_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    if user.role != "owner":
+        raise HTTPException(403, "Only the owner can delete a job.")
+    ro = db.query(RepairOrder).filter(RepairOrder.id == ro_id).first()
+    if not ro:
+        raise HTTPException(404, "Job not found.")
+    if confirm.strip().lstrip("#") != str(ro_id):
+        raise HTTPException(422, f"Type the job number ({ro_id}) to confirm.")
+    try:
+        ro_delete.delete_repair_order(db, ro, actor=f"user:{user.id}")
+    except ro_delete.DeleteRefused as refused:
+        raise HTTPException(409, f"Job #{ro_id} was not deleted. {refused}")
+    return RedirectResponse(f"/ro/?deleted={ro_id}", status_code=302)
