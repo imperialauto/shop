@@ -12,7 +12,7 @@ from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import LineItem, RepairOrder, RoAttachment
+from app.models import LineItem, RepairOrder, RoAttachment, RoInspectionItem
 from app.routes.repair_orders import require_user
 
 router = APIRouter()
@@ -200,3 +200,43 @@ def attachments_for(db: Session, ro_id: int, customer_only: bool = False):
     if customer_only:
         query = query.filter(RoAttachment.visibility == "customer")
     return query.order_by(RoAttachment.created_at.asc(), RoAttachment.id.asc()).all()
+
+
+# Inspection checklist. The customer sees it on their private status page, next to the photos and estimate.
+INSPECTION_AREAS = ("Tires and tread", "Brakes", "Fluids and leaks", "Belts and hoses", "Battery and charging",
+                    "Lights and wipers", "Steering and suspension", "Filters", "Exhaust", "Warning lights")
+CONDITIONS = {"good": "Looks good", "watch": "Keep an eye on it", "now": "Needs attention"}
+
+
+def inspection_for(db: Session, ro_id: int) -> list[RoInspectionItem]:
+    """Worst first, so the customer reads what needs attention before what is fine."""
+    rank = {"now": 0, "watch": 1, "good": 2}
+    rows = db.query(RoInspectionItem).filter(RoInspectionItem.repair_order_id == ro_id).order_by(RoInspectionItem.id).all()
+    return sorted(rows, key=lambda r: rank.get(r.condition, 3))
+
+
+@router.post("/{ro_id}/inspection")
+async def save_inspection(request: Request, ro_id: int, db: Session = Depends(get_db)):
+    """Saves the whole checklist at once. Areas left blank are not shown. Texts nobody."""
+    user = _staff(request, db)
+    if user is None:
+        return RedirectResponse("/login", status_code=302)
+    _ro(db, ro_id)
+    form = await request.form()
+    rows = []
+    for i, area in enumerate(INSPECTION_AREAS):
+        rows.append((area, form.get(f"cond_{i}", ""), form.get(f"note_{i}", "")))
+    rows.append(((form.get("extra_area") or "").strip()[:80], form.get("extra_cond", ""), form.get("extra_note", "")))
+    keep = []
+    for area, condition, note in rows:
+        if not area or not condition:
+            continue
+        if condition not in CONDITIONS:
+            raise HTTPException(422, "Pick good, keep an eye on it, or needs attention.")
+        keep.append(RoInspectionItem(repair_order_id=ro_id, area=area, condition=condition,
+                                     note=(str(note).strip()[:500] or None), recorded_by=user.username[:64]))
+    db.query(RoInspectionItem).filter(RoInspectionItem.repair_order_id == ro_id).delete()
+    db.add_all(keep)
+    db.commit()
+    query = f"?inspection={len(keep)}"
+    return RedirectResponse(f"/ro/{ro_id}{query}#inspection", status_code=303)
