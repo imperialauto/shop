@@ -2,7 +2,9 @@
 
 Off unless TEXT_YES_APPROVES=true. It only acts when every check below holds, and texts nobody:
 - the inbound text is a short, plain yes with no question and no "no", "wait", "but" and the like;
-- the shop's last text to that customer, within the past 7 days, quoted a price (has a $ amount);
+- the shop's last text to that customer, within the past 7 days, was a quote: it names a price, or is the
+  estimate-link text or a quote follow-up. Deposit, pickup, diagnostic-credit, oil and Snap texts never count,
+  even with a $ amount, because a "yes" or "ok" to those isn't a yes to new work;
 - the customer has exactly one open job with lines still waiting on a decision.
 Then those lines are marked approved by text, the job moves to approval_received, any queued
 approval-link text is closed, and the owner gets one task to look it over. When the yes fits but
@@ -34,6 +36,20 @@ BLOCKERS = re.compile(
     r"\b(no|nah|not|dont|cant|wont|wait|hold|later|but|cancel|stop|how|what|why|when|which|maybe|"
     r"think|cheaper|discount|lower|instead|only|except|first|tomorrow|next)\b")
 PRICE = re.compile(r"\$\s?\d")
+# The shop's own texts that are not quotes, by wording only they use (see deposit_requests, pickup_texts,
+# diag_credit, oil_reminders and snap_link). A reply to one of these never approves work.
+NOT_A_QUOTE = re.compile(
+    r"thanks for approving|deposit, half of the|ready for pickup|balance due|you're all paid up|storage of \$|"
+    r"from the diagnostic on your|since the last oil change|link to apply for snap finance", re.I)
+# The shop's own texts that are quotes even without a $ amount: the estimate link and the quote follow-up.
+QUOTE_WITHOUT_PRICE = re.compile(r"your estimate for the .* is ready|we quoted for your", re.I)
+
+
+def is_quote(body: str) -> bool:
+    text = body or ""
+    if NOT_A_QUOTE.search(text):
+        return False
+    return bool(PRICE.search(text) or QUOTE_WITHOUT_PRICE.search(text))
 
 
 def enabled() -> bool:
@@ -67,7 +83,7 @@ def _last_quote_before(db: Session, customer_id: int, inbound: Communication) ->
             .filter(Communication.customer_id == customer_id, Communication.direction == "outbound",
                     Communication.id != inbound.id, Communication.created_at <= when)
             .order_by(Communication.created_at.desc(), Communication.id.desc()).first())
-    if not last or not PRICE.search(last.body or ""):
+    if not last or not is_quote(last.body):
         return None
     if when - (_naive_utc(last.created_at) or when) > QUOTE_WINDOW:
         return None

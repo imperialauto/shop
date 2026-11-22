@@ -117,6 +117,30 @@ class TextYesTests(unittest.TestCase):
         self.assertNotIn("textApproval", self.text("Yes"))
         self.assertEqual(self.lines()[0], "waiting_approval")
 
+    def test_yes_to_deposit_pickup_or_reminder_texts_changes_nothing(self):
+        # The shop's own non-quote texts name prices too; an "ok" to them is not a yes to new work.
+        for body in (
+            "Hi Pat, thanks for approving the work on your 2015 Ford Edge. To order parts and get you on the "
+            "schedule, I'll need a $270.00 deposit, half of the $540.00 total, by Zelle to shop or cash. Jae",
+            "Hi Pat, your 2015 Ford Edge is done and ready for pickup. The balance due is $270.00, by Zelle to "
+            "shop or cash. Jae",
+            "Hi Pat, just a reminder that the $75 from the diagnostic on your 2015 Ford Edge still goes toward "
+            "the repair if you'd like us to take care of it. Just reply here and I'll get you on the schedule. Jae",
+        ):
+            with self.subTest(body=body[:30]):
+                self.quote(body=body, days_ago=0)
+                self.assertNotIn("textApproval", self.text("Ok", ext=f"quo-{hash(body)}"))
+                self.assertEqual(self.lines(), ("waiting_approval", [("pending", None), ("pending", None)]))
+
+    def test_yes_to_estimate_link_or_follow_up_approves(self):
+        from app import text_approval
+        self.assertTrue(text_approval.is_quote(
+            "Hi Pat, your estimate for the 2015 Ford Edge is ready. Open your vehicle status and tap Review & Approve"))
+        self.assertTrue(text_approval.is_quote(
+            "Hi Pat, I wanted to check back on the water pump we quoted for your 2015 Ford Edge."))
+        self.assertTrue(text_approval.is_quote("Brakes all around come to $480. 50% deposit to order parts."))
+        self.assertFalse(text_approval.is_quote("Here's the link to apply for Snap Finance: x Jae"))
+
     def test_old_quote_no_change(self):
         self.quote(days_ago=10)
         self.assertNotIn("textApproval", self.text("Yes"))
