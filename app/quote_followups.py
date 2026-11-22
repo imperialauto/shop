@@ -65,8 +65,10 @@ def _items_text(lines) -> str:
 def message_for(ro: RepairOrder, lines) -> str:
     v = ro.vehicle
     car = " ".join(str(x) for x in (v.year, v.make, v.model) if x) if v else ""
+    from app import diag_credit  # the declined-work text carries the diag credit, so the customer gets one text
+    credit = f" The ${diag_credit.CREDIT} from your diagnostic still goes toward it." if diag_credit.has_diag(ro) else ""
     return (f"Hi {approval_links.greeting_for(ro)}, I wanted to check back on the {_items_text(lines)} we quoted for "
-            f"your {car or 'vehicle'}. If you'd like to take care of it, or want to "
+            f"your {car or 'vehicle'}.{credit} If you'd like to take care of it, or want to "
             f"talk through options, just reply here. Jae")
 
 
