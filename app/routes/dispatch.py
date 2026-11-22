@@ -1606,3 +1606,20 @@ def dashboard_context(db: Session, view: str = "open") -> dict:
             {"key": key, "label": label, "mode": modes.get(key, "auto")} for key, label in AUTO_POLICIES.items()
         ],
     }
+
+
+class QuoContact(BaseModel):
+    id: str = Field(default="", max_length=64)
+    firstName: str = Field(default="", max_length=120)
+    lastName: str = Field(default="", max_length=120)
+    company: str = Field(default="", max_length=120)
+    phones: list[str] = Field(default_factory=list, max_length=10)
+
+
+@internal_router.post("/contact")
+def quo_contact_changed(contact: QuoContact, db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
+    """A Quo contact was saved or renamed: rename the matching customer. Never creates, deletes or texts."""
+    from app import quo_contact_names
+    result = quo_contact_names.apply(db, contact.model_dump())
+    db.commit()
+    return result
