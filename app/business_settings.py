@@ -25,6 +25,7 @@ KEYS = {
     "task_followup_days": "TASK_FOLLOWUP_DAYS",
     "automatic_customer_followups": "AUTOMATIC_CUSTOMER_FOLLOWUPS",
     "automatic_deposit_text": "AUTOMATIC_DEPOSIT_TEXT",
+    "automatic_pickup_text": "AUTOMATIC_PICKUP_TEXT",
     "alert_rules": "ALERT_RULES_JSON",
     "labor_rates": "LABOR_RATES_JSON",
     "booking_auto_times": "PUBLIC_AUTO_TIMES",

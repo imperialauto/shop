@@ -96,6 +96,12 @@
     <label><input type="checkbox" name="automatic_deposit_text" {% if settings.automatic_deposit_text %}checked{% endif %}> Text the deposit request when a customer approves on their link</label>
     <p class="text-sm text-stone-400 mt-2">Asks for 50% of what they approved (tax on parts included) by Zelle or cash. It offers Snap Finance only if you ticked Offer Snap Finance on the approval text, and the Snap link is only sent if they ask. Skipped if a payment is already recorded on the job. If their texts can't be checked, the draft waits for your YES instead. Approvals you record in person don't send it.</p>
   </section>
+  <section class="card">
+    <h2 class="font-bold mb-2">Pickup text</h2>
+    <input type="hidden" name="automatic_pickup_text_shown" value="1">
+    <label><input type="checkbox" name="automatic_pickup_text" {% if settings.automatic_pickup_text %}checked{% endif %}> Text the customer when you mark a job Complete</label>
+    <p class="text-sm text-stone-400 mt-2">Says the car is ready and gives the balance left on the invoice, by Zelle or cash. Adds the storage line only when your terms show where customers sign. One text per job, even if the job moves back and forth. With no invoice yet, or texts it can't check, the draft waits for your YES instead.</p>
+  </section>
   <section class="card" aria-labelledby="payment-methods">
     <h2 id="payment-methods" class="font-bold mb-1">Payment methods</h2>
     <p class="text-sm text-stone-400 mb-3">What staff can pick when marking a job paid at pickup.</p>

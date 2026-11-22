@@ -8,7 +8,7 @@ from app.database import get_db
 from app.models import RepairOrder, Customer, Vehicle, User, LineItem, Communication, PartsOrder
 from app.auth import get_current_user
 from app.config import GOOGLE_REVIEW_LINK
-from app import approval_links, customer_file, ro_delete, cycle_time, customer_followups, next_action, ro_status_policy, snap_offer, website_alerts
+from app import approval_links, customer_file, ro_delete, cycle_time, customer_followups, job_events, next_action, ro_status_policy, snap_offer, website_alerts
 from app.dispatch_model import DispatchAudit
 from app.routes import local_node
 import os, secrets
@@ -241,6 +241,9 @@ def update_status(
     if status != "intake":
         website_alerts.close_for_job(db, ro, user.username, f"job moved to {status}")
     db.commit()
+    if status != prev_status:
+        job_events.fire(db, ro, status)
+        db.commit()
 
     # Auto-send review request when marked delivered (only once)
     if status == "delivered" and prev_status != "delivered" and os.getenv("REVIEW_REQUESTS_ENABLED") == "true":
