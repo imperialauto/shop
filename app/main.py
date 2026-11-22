@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.config import SECRET_KEY
 from app.database import get_db, init_db
 from app.models import User
-from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user, after_login
+from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user, after_login, REMEMBER_DAYS, wants_remember
 from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, my_day, business_settings_page, dispatch, imperial_tasks, dev_work, live, finance, owner_setup, public_site, staff
 from app.routes import account_security, local_node, security_center, ro_evidence, ask, agent_api
 import app.assist_model  # noqa: F401  registers Ask Imperial tables
@@ -28,7 +28,9 @@ import hmac
 
 app = FastAPI(title="Imperial Auto Care", dependencies=[Depends(role_gate)])
 
-SESSION_DAYS = 7
+# The cookie may live as long as "Keep me signed in"; each sign-in's own limit
+# (Security & Privacy "Sign staff out after", or 30 days when kept) is checked in app.auth.
+SESSION_DAYS = REMEMBER_DAYS
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, max_age=86400 * SESSION_DAYS, same_site="lax",
                    https_only=bool(os.getenv("RAILWAY_ENVIRONMENT")))
 
@@ -337,7 +339,8 @@ def login_page(request: Request):
 
 
 @app.post("/login")
-def login_submit(request: Request, username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+def login_submit(request: Request, username: str = Form(...), password: str = Form(...), remember: str = Form(""),
+                 db: Session = Depends(get_db)):
     keys = (f"user:{username.strip().lower()}", account_security.client_key(request))
     if limiter.locked(*keys):
         return templates.TemplateResponse("login.html", {"request": request, "error": "Too many tries. Wait a few minutes, then try again."}, status_code=429)
@@ -349,11 +352,11 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
     if account_security.confirmed_mfa(db, user.id):
         wanted = request.session.get("next")
         request.session.clear()
-        request.session["pending_mfa"] = {"user": user.id, "at": time.time()}
+        request.session["pending_mfa"] = {"user": user.id, "at": time.time(), "remember": wants_remember(remember)}
         if wanted:
             request.session["next"] = wanted  # still go there after the code
         return RedirectResponse("/login/verify", status_code=303)
-    login_user(request, user)
+    login_user(request, user, remember=wants_remember(remember))
     return RedirectResponse(after_login(request, "/my-day" if user.role == "tech" else "/dashboard"), status_code=302)
 
 
@@ -662,7 +665,7 @@ def change_password(
         return _settings(request, db, user, error=staff.ERRORS["password"])
     user.password_hash, user.must_change_password = hash_password(new_password), False
     db.commit()
-    login_user(request, user)  # owner sessions are tied to the password
+    login_user(request, user, remember=request.session.get("remember") is True)  # owner sessions are tied to the password
     return _settings(request, db, user, success="Password updated!")
 
 
@@ -697,6 +700,7 @@ def public_status(request: Request, token: str, db: Session = Depends(get_db)):
         "visit": visit, "visit_label": phoenix_label(visit.starts_at) if visit else "",
         "status_url": str(request.url_for("public_status", token=token)),
         "shared_files": ro_evidence.attachments_for(db, ro.id, customer_only=True),
+        "inspection": ro_evidence.inspection_for(db, ro.id),
     }, headers=PRIVATE_PAGE)
 
 

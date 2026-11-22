@@ -586,3 +586,21 @@ async def openphone_webhook(
         await send_sms(from_number, reply)
 
     return JSONResponse({"status": "ok"})
+
+
+# Railway deploy and crash alerts. Shows on Home and My Day; never texts anyone.
+
+@router.post("/railway/{token}")
+async def railway_deploy_webhook(token: str, request: Request, db: Session = Depends(get_db)):
+    from app import deploy_alerts
+    if not deploy_alerts.token_ok(token):
+        raise HTTPException(status_code=404, detail="Not found")
+    try:
+        payload = json.loads(await request.body() or b"{}")
+    except ValueError:
+        return JSONResponse({"status": "ignored", "reason": "not json"})
+    event = deploy_alerts.record(db, payload)
+    if event is None:
+        return JSONResponse({"status": "ignored"})
+    db.commit()
+    return JSONResponse({"status": "ok", "service": event["service"], "state": event["state"]})
