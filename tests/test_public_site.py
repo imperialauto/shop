@@ -274,6 +274,24 @@ class PublicPages(unittest.TestCase):
             self.assertEqual(order.customer.phone, "(602) 555-0142")
             self.assertGreaterEqual(len(order.public_token), 32)
 
+    def test_referral_code_on_the_estimate_form(self):
+        from app import referrals
+        from app.referral_model import Referral, ReferralCode
+        with self.open_forms():
+            self.assertNotIn("referral_code", self.client.get("/site/estimate").text)  # off by default
+        with self.Session() as db:
+            db.add(Customer(id=50, first_name="Pat", last_name="Friend", phone="6025550199"))
+            db.add(ReferralCode(customer_id=50, code="PAT1234", created_by="office"))
+            db.commit()
+        with self.open_forms(), patch.object(referrals, "enabled", lambda: True):
+            self.assertIn("referral_code", self.client.get("/site/estimate").text)
+            response = self.client.post("/site/estimate", data={**self.estimate(), "referral_code": "pat1234"}, follow_redirects=False)
+        self.assertEqual(response.status_code, 303, response.text)
+        with self.Session() as db:
+            order = db.query(RepairOrder).one()
+            self.assertIn("Referral code given: PAT1234.", order.concern)
+            self.assertEqual(db.query(Referral).one().referrer_customer_id, 50)
+
     def test_returning_customer_keeps_one_record(self):
         with self.open_forms():
             self.client.post("/site/estimate", data=self.estimate())

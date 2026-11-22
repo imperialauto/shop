@@ -90,6 +90,30 @@ def record(db: Session, friend: Customer, code: str, actor: str) -> tuple[Referr
     return referral, None
 
 
+def from_website(db: Session, customer: Customer, code: str | None) -> str:
+    """A code typed on the website's booking or estimate form. Records the referral when it's valid
+    and returns a note for the job. The website never says whether a code worked."""
+    if not enabled() or not clean(code or ""):
+        return ""
+    given = clean(code)[:16]
+    with db.begin_nested():
+        referral, problem = record(db, customer, given, "website")
+    if referral is None:
+        return f"Referral code given: {given}. Not applied: {problem}"
+    return f"Referral code given: {given}. $25 off comes off automatically on a first job over $200."
+
+
+def share_line(db: Session, invoice: Invoice) -> str | None:
+    """What a paid receipt says about sharing. Never tied to a review."""
+    if not enabled() or invoice is None or invoice.status != "paid" or invoice.repair_order is None:
+        return None
+    row = db.get(ReferralCode, invoice.repair_order.customer_id)
+    if row is None:
+        return None
+    return (f"Know someone who needs a mechanic? Share your code {row.code}. They get $25 off their first job "
+            f"over $200, and you get $25 credit once they pay.")
+
+
 def _job_amount(ro: RepairOrder) -> float:
     return round(sum(li.total for li in ro.line_items if li.billable and li.item_type != DISCOUNT), 2)
 
@@ -134,9 +158,13 @@ def apply_to_job(db: Session, ro: RepairOrder, actor: str = "system") -> list[st
 
 
 def on_paid(db: Session, invoice: Invoice) -> CustomerCredit | None:
-    """When the friend's discounted job is paid in full, the referrer earns their credit, once."""
+    """When a job is paid in full, its customer gets a sharing code for the receipt. When it's the friend's
+    discounted job, the referrer also earns their credit, once."""
     if not enabled() or invoice is None or invoice.status != "paid" or invoice.paid_total <= 0:
         return None
+    ro = invoice.repair_order
+    if ro is not None and ro.customer is not None:
+        code_for(db, ro.customer, "system")
     referral = db.query(Referral).filter_by(friend_ro_id=invoice.repair_order_id, status="pending").first()
     if referral is None or referral.discount_line_id is None:
         return None

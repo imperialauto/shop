@@ -112,6 +112,31 @@ class ReferralTests(unittest.TestCase):
             self.assertEqual(referrals.apply_to_job(self.db, self.job(1, ("labor", 300)), "office"), [])
 
 
+class SharingTests(ReferralTests):
+    def test_paid_job_gets_a_code_and_the_receipt_line(self):
+        inv, _ = self.invoice(self.job(1, ("labor", 120)))
+        code = self.db.get(referrals.ReferralCode, 1).code
+        line = referrals.share_line(self.db, inv)
+        self.assertIn(code, line)
+        self.assertIn("$25 off their first job over $200", line)
+        self.assertNotIn("review", line.lower())
+        unpaid, _ = self.invoice(self.job(2, ("labor", 120)), pay=False)
+        self.assertIsNone(referrals.share_line(self.db, unpaid))
+        self.assertIsNone(self.db.get(referrals.ReferralCode, 2))
+
+    def test_code_typed_on_the_website(self):
+        code = referrals.code_for(self.db, self.pat, "office")
+        self.assertEqual(referrals.from_website(self.db, self.lee, ""), "")
+        bad = referrals.from_website(self.db, self.lee, "nope1234")
+        self.assertIn("Not applied", bad)
+        good = referrals.from_website(self.db, self.lee, code.lower())
+        self.assertIn("$25 off comes off automatically", good)
+        self.assertEqual(self.db.query(Referral).one().friend_customer_id, 2)
+        self.assertIn("already referred", referrals.from_website(self.db, self.lee, code))
+        with patch.object(referrals, "enabled", lambda: False):
+            self.assertEqual(referrals.from_website(self.db, self.lee, code), "")
+
+
 class ReferralPageTests(unittest.TestCase):
     def setUp(self):
         from fastapi.testclient import TestClient
