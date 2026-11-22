@@ -11,6 +11,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app import snap_offer
 from app.dispatch_model import OPEN_STATUSES, DispatchAudit, DispatchItem
 from app.models import RepairOrder
 
@@ -41,16 +42,18 @@ def greeting_for(ro: RepairOrder) -> str:
     return first
 
 
-def message_for(ro: RepairOrder) -> str:
+def message_for(ro: RepairOrder, offer_snap: bool = False) -> str:
     v = ro.vehicle
     car = " ".join(str(x) for x in (v.year, v.make, v.model) if x) if v else "vehicle"
     first = greeting_for(ro)
-    return (f"Hi {first}, your estimate for the {car} is ready. Open your vehicle status and tap Review & Approve: "
+    text = (f"Hi {first}, your estimate for the {car} is ready. Open your vehicle status and tap Review & Approve: "
             f"{base_url()}/status/{ro.public_token} Review the itemized charges and any applicable tax before approving. "
             "Reply here with any questions. - Imperial Auto Care")
+    return snap_offer.add(text, offer_snap)
 
 
-def queue(db: Session, ro: RepairOrder, newest_message_id: str, actor: str) -> DispatchItem:
+def queue(db: Session, ro: RepairOrder, newest_message_id: str, actor: str,
+          offer_snap: bool = False) -> DispatchItem:
     """Creates or refreshes the owner's approval item for this job. Sends nothing."""
     phone = mobile(ro.customer.phone)
     if phone is None:
@@ -65,7 +68,7 @@ def queue(db: Session, ro: RepairOrder, newest_message_id: str, actor: str) -> D
     now = datetime.now().astimezone()
     # Everything is worked out before the item joins the session, so no early save sees it half-filled.
     fields = dict(customer_phone=phone, customer_id=ro.customer_id, vehicle_id=ro.vehicle_id,
-                  summary=summary, draft_reply=message_for(ro),
+                  summary=summary, draft_reply=message_for(ro, offer_snap),
                   proposed_action=f"Text the approval link for job #{ro.id}",
                   # The send is refused later if the customer's thread has moved past this message.
                   last_message_id=newest_message_id or "none", thread_message_id=None, updated_at=now)

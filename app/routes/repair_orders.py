@@ -8,7 +8,7 @@ from app.database import get_db
 from app.models import RepairOrder, Customer, Vehicle, User, LineItem, Communication, PartsOrder
 from app.auth import get_current_user
 from app.config import GOOGLE_REVIEW_LINK
-from app import approval_links, customer_file, cycle_time, customer_followups, next_action, ro_status_policy, website_alerts
+from app import approval_links, customer_file, cycle_time, customer_followups, next_action, ro_status_policy, snap_offer, website_alerts
 from app.dispatch_model import DispatchAudit
 from app.routes import local_node
 import os, secrets
@@ -256,7 +256,8 @@ def update_status(
 
 
 @router.post("/{ro_id}/request-approval")
-def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db)):
+def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db),
+                     offer_snap: str = Form(default="")):
     """Marks undecided lines as waiting on the customer and queues the approval
     text for the owner's YES. Nothing is sent from here."""
     user = require_user(request, db)
@@ -283,7 +284,8 @@ def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db)
         else:
             messages = thread.get("messages") or []
             newest = messages[-1].get("id") if messages else "none"
-            item = approval_links.queue(db, ro, newest or "none", user.username)
+            item = approval_links.queue(db, ro, newest or "none", user.username,
+                                       offer_snap=snap_offer.checked(offer_snap))
             db.commit()
             link = f"queued{item.id}"
     return RedirectResponse(f"/ro/{ro_id}?asked={len(fresh)}&link={link}", status_code=302)

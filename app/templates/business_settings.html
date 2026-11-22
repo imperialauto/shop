@@ -94,7 +94,7 @@
     <h2 class="font-bold mb-2">Deposit text</h2>
     <input type="hidden" name="automatic_deposit_text_shown" value="1">
     <label><input type="checkbox" name="automatic_deposit_text" {% if settings.automatic_deposit_text %}checked{% endif %}> Text the deposit request when a customer approves on their link</label>
-    <p class="text-sm text-stone-400 mt-2">Asks for 50% of what they approved (tax on parts included) by Zelle or cash, and mentions Snap Finance on jobs over $750. The Snap link is only sent if they ask. Skipped if a payment is already recorded on the job. If their texts can't be checked, the draft waits for your YES instead. Approvals you record in person don't send it.</p>
+    <p class="text-sm text-stone-400 mt-2">Asks for 50% of what they approved (tax on parts included) by Zelle or cash. It offers Snap Finance only if you ticked Offer Snap Finance on the approval text, and the Snap link is only sent if they ask. Skipped if a payment is already recorded on the job. If their texts can't be checked, the draft waits for your YES instead. Approvals you record in person don't send it.</p>
   </section>
   <section class="card" aria-labelledby="payment-methods">
     <h2 id="payment-methods" class="font-bold mb-1">Payment methods</h2>

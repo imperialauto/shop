@@ -20,7 +20,7 @@ from app.database import get_db
 from app.config import OWNER_PHONE
 from app.dispatch import AUTO_POLICIES, LOCKED_POLICIES, MAKES, POLICIES, PROMISE, apply_policies, assess, auto_reply, is_reaction, parse_owner_command, propose
 from app.appointment_model import Appointment
-from app import alert_rules, business_settings, approval_links, name_finder, next_action, quo_import, website_alerts
+from app import alert_rules, business_settings, approval_links, name_finder, next_action, quo_import, snap_offer, website_alerts
 from app.sending_pause import is_paused, pause, resume
 from app import quick_replies
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync, OPEN_STATUSES
@@ -1289,6 +1289,7 @@ def decide(
     proposed_action: str = Form(default=""),
     reply_text: str = Form(default=""),
     next_page: str = Form(default="/dashboard", alias="next"),
+    offer_snap: str = Form(default=""),
     db: Session = Depends(get_db),
 ):
     user = get_current_user(request, db)
@@ -1312,7 +1313,7 @@ def decide(
     item.decided_at = datetime.now().astimezone()
     item.updated_at = item.decided_at
     audit(db, item.id, user.username, f"owner_{decision}")
-    text = reply_text.strip()[:1500]
+    text = snap_offer.add(reply_text.strip(), snap_offer.checked(offer_snap))[:1500]
     if decision == "approve" and text:
         item.draft_reply = text  # the messaging service sends it on its next tick
         db.add(DispatchOutbound(dedupe_key=f"dashboard:{item.id}:{item.last_message_id}", kind=DASHBOARD_REPLY, item_id=item.id, status="queued"))
@@ -1343,6 +1344,7 @@ def compose(
     reply_text: str = Form(...),
     newest_message_id: str = Form(default=""),
     next_page: str = Form(default="/dashboard", alias="next"),
+    offer_snap: str = Form(default=""),
     db: Session = Depends(get_db),
 ):
     """Owner writes a text from any page that shows the conversation (customer file, tasks).
@@ -1356,9 +1358,9 @@ def compose(
     user = get_current_user(request, db)
     if user.role not in COMPOSE_ROLES:
         raise HTTPException(403, "Your login can't text customers.")
-    text = reply_text.strip()[:1500]
-    if not text:
+    if not reply_text.strip():
         raise HTTPException(422, "Write a message first.")
+    text = snap_offer.add(reply_text.strip(), snap_offer.checked(offer_snap))[:1500]
     if is_paused(db):
         raise HTTPException(409, "Texting is stopped. Resume it before sending.")
     tail = "".join(c for c in _normalize_phone(phone) if c.isdigit())[-10:]

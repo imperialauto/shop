@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import customer_file, deposit_requests
+from app import approval_links, customer_file, deposit_requests, snap_offer
 from app.database import Base, get_db
 from app.dispatch_model import DispatchItem, DispatchOutbound
 from app.main import app
@@ -79,7 +79,7 @@ class DepositTextTests(unittest.TestCase):
         # $449 + 9.2% tax on the $100 part = $458.20, half is $229.10
         self.assertIn("Hi Pat, thanks for approving the work on your 2016 Ford Focus.", text)
         self.assertIn("$229.10 deposit, half of the $458.20 total, by Zelle to jaelan@imperialautocarellc.com or cash", text)
-        self.assertNotIn("Snap", text)  # $458.20 is under $750
+        self.assertNotIn("Snap", text)  # the approval text didn't offer it
         self.assertNotIn("http", text)  # no Snap link unless they ask
         self.assertTrue(text.endswith("Jae"))
         with self.Session() as db:
@@ -92,16 +92,32 @@ class DepositTextTests(unittest.TestCase):
         self.sign("approved", "declined")
         [(_, text, _)] = self.deposits()
         self.assertIn("$174.50 deposit, half of the $349.00 total", text)
-        self.assertNotIn("Snap", text)  # Snap Finance is only offered on jobs over $750
 
-    def test_snap_offered_only_over_750(self):
+    def approval_text(self, text):
         with self.Session() as db:
-            db.get(LineItem, self.lines[0]).unit_price = 700  # $700 labor + $100 part + $9.20 tax = $809.20
+            db.add(DispatchItem(quo_conversation_id=approval_links.conversation_key(5), customer_phone="+16025550100",
+                                category="approval_link", status="approved", draft_reply=text, last_message_id="AC1"))
             db.commit()
+
+    def test_snap_follows_the_checkbox_on_the_approval_text(self):
+        self.approval_text(approval_links.message_for(self.ro(), offer_snap=True))
         self.sign("approved", "approved")
         [(_, text, _)] = self.deposits()
-        self.assertIn("$404.60 deposit, half of the $809.20 total", text)
-        self.assertIn("Snap Finance", text)
+        self.assertIn(snap_offer.LINE + " Jae", text)
+        self.assertNotIn("http", text.split("Zelle")[1])  # the Snap link only goes out when they ask
+
+    def test_no_snap_when_the_approval_text_left_it_off(self):
+        self.approval_text(approval_links.message_for(self.ro()))
+        self.sign("approved", "approved")
+        [(_, text, _)] = self.deposits()
+        self.assertNotIn("Snap", text)
+
+    def ro(self):
+        with self.Session() as db:
+            ro = db.get(RepairOrder, 5)
+            ro.vehicle, ro.customer  # load before the session closes
+            db.expunge(ro)
+            return ro
 
     def test_all_declined_sends_nothing(self):
         self.sign("declined", "declined")

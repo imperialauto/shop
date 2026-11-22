@@ -15,7 +15,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app import approval_links, business_settings, customer_file
+from app import approval_links, business_settings, customer_file, snap_offer
 from app.config import OWNER_PHONE
 from app.dispatch_model import DispatchAudit, DispatchItem, DispatchOutbound, OPEN_STATUSES
 from app.models import RepairOrder
@@ -23,7 +23,6 @@ from app.models import RepairOrder
 SETTING = "automatic_deposit_text"
 CATEGORY = "deposit_request"
 DEPOSIT_SHARE = 0.5  # owner's rule, Nov 2026: half down on every job
-SNAP_OVER = 750.0  # owner's rule, Nov 2026: mention Snap Finance only on jobs over $750
 DASHBOARD_REPLY = "dashboard_reply"  # the owner-approved reply queue the messaging service sends from
 
 
@@ -48,7 +47,15 @@ def amounts(lines) -> tuple[float, float]:
     return total, round(total * DEPOSIT_SHARE, 2)
 
 
-def message_for(ro: RepairOrder, lines) -> str:
+def snap_offered(db: Session, ro: RepairOrder) -> bool:
+    """True when the approval text the owner queued for this job offered Snap Finance."""
+    item = (db.query(DispatchItem)
+            .filter(DispatchItem.quo_conversation_id == approval_links.conversation_key(ro.id))
+            .order_by(DispatchItem.id.desc()).first())
+    return item is not None and snap_offer.mentioned(item.draft_reply)
+
+
+def message_for(ro: RepairOrder, lines, offer_snap: bool = False) -> str:
     total, deposit = amounts(lines)
     v = ro.vehicle
     car = " ".join(str(x) for x in (v.year, v.make, v.model) if x) if v else ""
@@ -56,8 +63,7 @@ def message_for(ro: RepairOrder, lines) -> str:
     return (f"Hi {approval_links.greeting_for(ro)}, thanks for approving {work}. "
             f"To order parts and get you on the schedule, I'll need a ${deposit:,.2f} deposit, "
             f"half of the ${total:,.2f} total, by Zelle to {zelle_to()} or cash. "
-            + ("We also offer Snap Finance if you'd like to make payments. Just ask and I'll send the link. "
-               if total > SNAP_OVER else "") + "Jae")
+            + (snap_offer.LINE + " " if offer_snap else "") + "Jae")
 
 
 def queue(db: Session, ro: RepairOrder, approved_lines, fetch=None) -> DispatchItem | None:
@@ -78,7 +84,7 @@ def queue(db: Session, ro: RepairOrder, approved_lines, fetch=None) -> DispatchI
     now = datetime.now().astimezone()
     # Sent on its own only when the thread could be read; otherwise it waits for the owner's YES.
     automatic = problem is None and bool(newest)
-    text = message_for(ro, approved_lines)
+    text = message_for(ro, approved_lines, snap_offered(db, ro))
     fields = dict(customer_phone=phone, customer_id=ro.customer_id, vehicle_id=ro.vehicle_id, category=CATEGORY,
                   urgency="normal", summary=f"Job #{ro.id}: approved ${total:,.2f}, deposit ${deposit:,.2f} requested.",
                   proposed_action=f"Text the 50% deposit request for job #{ro.id}", draft_reply=text,
