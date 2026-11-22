@@ -697,6 +697,7 @@ def public_status(request: Request, token: str, db: Session = Depends(get_db)):
         "visit": visit, "visit_label": phoenix_label(visit.starts_at) if visit else "",
         "status_url": str(request.url_for("public_status", token=token)),
         "shared_files": ro_evidence.attachments_for(db, ro.id, customer_only=True),
+        "inspection": ro_evidence.inspection_for(db, ro.id),
     }, headers=PRIVATE_PAGE)
 
 
