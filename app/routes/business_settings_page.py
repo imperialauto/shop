@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app import business_settings as store
 from app.auth import get_current_user
 from app.database import get_db
-from app import pricing
+from app import pricing, review_requests
 from app.public_site import BOOKABLE_SERVICES, VEHICLE_CLASSES
 from app.routes.invoices import METHOD_LABELS, enabled_methods
 
@@ -60,6 +60,8 @@ def current() -> dict:
         "task_followup_days": store.task_followup_days(),
         "task_followup_max": store.TASK_FOLLOWUP_MAX,
         "automatic_customer_followups": (store.raw("automatic_customer_followups") or "").strip().lower() == "true",
+        "automatic_review_text": (store.raw("automatic_review_text") or "").strip().lower() == "true",
+        "google_review_link": (store.raw("google_review_link") or "").strip() or review_requests.DEFAULT_LINK,
         "buffer": store.raw("shop_buffer_minutes") or "60",
         "lead": store.raw("booking_lead_minutes") or "120",
         "payment_methods": [{"key": k, "label": label, "on": k in enabled_methods()} for k, label in METHOD_LABELS.items()],
@@ -135,6 +137,12 @@ def parse(form) -> dict:
         ))
     if "automatic_customer_followups_shown" in form:
         alerts["automatic_customer_followups"] = str(form.get("automatic_customer_followups") == "on").lower()
+    if "automatic_review_text_shown" in form:
+        link = form.get("google_review_link", "").strip()
+        if link and not review_requests.valid_link(link):
+            raise Invalid("Google review link: paste the link from Ask for reviews on your Google Business Profile. It starts with https://g.page/r/")
+        alerts["automatic_review_text"] = str(form.get("automatic_review_text") == "on").lower()
+        alerts["google_review_link"] = link
     if any(k.startswith("pay_") for k in form.keys()) or form.get("payment_methods_shown") == "1":
         methods = [k for k in METHOD_LABELS if form.get(f"pay_{k}") == "on"]
         if not methods:

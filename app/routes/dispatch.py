@@ -739,6 +739,13 @@ def tick(request: Request, background: BackgroundTasks, owner_texts: bool = True
         return {"ownerPhone": OWNER_PHONE or None, "messages": [], "customerReplies": [], "paused": True}
     now = datetime.now(timezone.utc)
     messages = due_owner_messages(db, now) if owner_texts else []
+    if owner_texts and not request.app.state.read_only:
+        from app import review_requests
+        try:  # owner's setting: the day-after-pickup review text joins the reply queue below
+            review_requests.due(db, now)
+        except (SQLAlchemyError, HTTPException, ValueError) as exc:
+            db.rollback()
+            print(f"review_requests_unavailable {type(exc).__name__}")
     replies = queued_replies(db) if owner_texts else []
     followups = []
     if (not request.app.state.read_only and not replies and customer_followups.enabled()
