@@ -258,7 +258,7 @@ def not_found(request: Request, exc):
     return HTMLResponse('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Not found</title>'
                         '<body style="background:#09090b;color:#e4e4e7;font-family:-apple-system,sans-serif;text-align:center;padding:64px 20px">'
                         '<h1 style="font-size:20px">That page could not be found</h1><p style="color:#a1a1aa">It may have moved or been removed.</p>'
-                        '<a href="/" style="color:#d4a853">Back to Imperial Operations</a></body>', status_code=404)
+                        '<a href="/" style="color:#d4a853">Back to the home page</a></body>', status_code=404)
 
 
 def _legal_review_titles() -> list[str]:
