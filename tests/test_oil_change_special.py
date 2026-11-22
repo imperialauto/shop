@@ -8,7 +8,7 @@ import fixture_environment  # noqa: F401
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app import business_settings, estimate_prefill, public_site
+from app import business_settings, estimate_prefill, oil_reminders, public_site
 from app.database import Base
 from app.models import Customer, LineItem, RepairOrder, Vehicle
 
@@ -57,6 +57,9 @@ class OilChangeSpecialTests(unittest.TestCase):
                 self.assertIsNone(estimate_prefill.oil_change_line(db, ro, public_site.bookable_service("diagnostic")))
             db.commit()
             lines = db.query(LineItem).filter_by(repair_order_id=ro.id).all()
+            db.refresh(ro)
+            # The oil change due reminder counts the special, so these customers get the reminder too.
+            self.assertTrue(oil_reminders.is_oil_change(ro))
         self.assertEqual(len(lines), 1)
         self.assertEqual(lines[0].unit_price, 79.99)
         self.assertIsNone(lines[0].approval)  # not sent to the customer
