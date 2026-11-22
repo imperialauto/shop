@@ -4,6 +4,7 @@ from app.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Invoice, RepairOrder, Payment
+from app import referrals
 from app.auth import get_current_user
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -135,9 +136,10 @@ def create_invoice(request: Request, ro_id: int, db: Session = Depends(get_db)):
     existing = db.query(Invoice).filter(Invoice.repair_order_id == ro_id, Invoice.status != "void").first()
     if existing:
         return RedirectResponse(f"/invoices/{existing.id}", status_code=303)
-    billable = [li for li in ro.line_items if li.billable]
-    if not billable:
+    if not any(li.billable for li in ro.line_items):
         return RedirectResponse(f"/ro/{ro_id}", status_code=303)
+    referrals.apply_to_job(db, ro, user.username)  # $25 referral discount and store credit, when on
+    billable = [li for li in ro.line_items if li.billable]
 
     subtotal = sum(li.total for li in billable)
     tax_rate = SHOP_TAX_RATE
@@ -221,6 +223,7 @@ def add_payment(
         payment.paid_at = paid_at
     invoice.payments.append(payment)
     _settle(invoice, picked_up == "on")
+    referrals.on_paid(db, invoice)  # the referrer earns $25 credit when the friend's job is paid
     db.commit()
     return RedirectResponse(f"/invoices/{invoice_id}", status_code=302)
 
@@ -254,6 +257,7 @@ def waive_balance(
     invoice.waived_by = user.username[:64]
     invoice.waived_at = datetime.now(timezone.utc)
     _settle(invoice, picked_up == "on")
+    referrals.on_paid(db, invoice)  # the referrer earns $25 credit when the friend's job is paid
     db.commit()
     return RedirectResponse(f"/invoices/{invoice_id}", status_code=302)
 
