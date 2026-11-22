@@ -5,6 +5,7 @@ Business and personal money never mix: every total here is for one scope.
 import calendar
 import re
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from datetime import date, timedelta
 
 from app.finance_model import BILL_CATEGORIES, REPEATS, SCOPES
@@ -80,6 +81,12 @@ class ScopeTotals:
     incoming: list = field(default_factory=list)
 
     @property
+    def main_account_id(self):
+        """The account a bill most likely comes out of: the one with the most money that isn't held for anyone."""
+        best = max(self.accounts, key=lambda a: a.balance_cents - a.held_cents, default=None)
+        return best.id if best else None
+
+    @property
     def owed(self) -> int:
         return self.overdue + self.due_in_window
 
@@ -99,6 +106,7 @@ def totals(accounts, bills, incoming, today: date, window_days: int) -> dict:
         t.accounts.append(account)
         t.cash += account.balance_cents - account.held_cents
         t.held += account.held_cents
+    entered = {(b.name.lower(), b.due_date) for b in bills if b.status == "open"}
     for bill in sorted(bills, key=lambda b: (b.due_date, b.name)):
         if bill.status != "open":
             continue
@@ -115,6 +123,18 @@ def totals(accounts, bills, incoming, today: date, window_days: int) -> dict:
             t.monthly_costs += bill.amount_cents
         elif bill.repeats == "weekly":
             t.monthly_costs += round(bill.amount_cents * 52 / 12)
+        # A repeating bill comes due again inside a long window (rent in the 30-day view): count those too.
+        following = next_due(bill.due_date, bill.repeats)
+        while following is not None and following <= end:
+            if following >= today and (bill.name.lower(), following) not in entered:
+                t.due_in_window += bill.amount_cents
+                t.window_bills.append(SimpleNamespace(
+                    id=None, name=bill.name, scope=bill.scope, category=bill.category, amount_cents=bill.amount_cents,
+                    due_date=following, repeats=bill.repeats, projected=True))
+                entered.add((bill.name.lower(), following))
+            following = next_due(following, bill.repeats)
+    for t in out.values():
+        t.window_bills.sort(key=lambda b: (b.due_date, b.name))
     for item in sorted(incoming, key=lambda i: (i.expected_date is None, i.expected_date or today, i.source)):
         if item.status != "expected":
             continue

@@ -87,6 +87,18 @@ class PlanMathTests(unittest.TestCase):
         self.assertEqual(plan.per_day(shop.short, sums["days_open"]), -(-shop.short // 12))
 
 
+    def test_repeating_bills_come_due_again_in_a_long_window(self):
+        rent = FinanceBill(name="Rent", scope="business", amount_cents=187900, due_date=date(2026, 11, 17), status="open", repeats="monthly", category="rent")
+        sums = plan.totals([], [rent], [], TODAY, 30)  # through Dec 20
+        shop = sums["business"]
+        self.assertEqual((shop.overdue, shop.due_in_window), (187900, 187900))
+        self.assertEqual([(b.due_date, getattr(b, "projected", False)) for b in shop.window_bills], [(date(2026, 12, 17), True)])
+        entered = FinanceBill(name="rent", scope="business", amount_cents=187900, due_date=date(2026, 12, 17), status="open", repeats="monthly", category="rent")
+        shop = plan.totals([], [rent, entered], [], TODAY, 30)["business"]
+        self.assertEqual(shop.due_in_window, 187900)  # the entered one, not counted twice
+        self.assertEqual(plan.totals([], [rent], [], TODAY, 14)["business"].due_in_window, 0)
+
+
 class FinancePageTests(unittest.TestCase):
     def setUp(self):
         self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
@@ -190,6 +202,27 @@ class FinancePageTests(unittest.TestCase):
         page = owner.get("/finance/").text
         self.assertIn("Nothing expected from Nobody", owner.post("/finance/paste", data={"figures": "got | Nobody"}).headers["location"].replace("+", " "))
         self.assertIn("$302.00", page)  # today's money in
+
+    def test_paid_and_got_it_move_money_through_an_account(self):
+        owner = self.sign_in()
+        owner.post("/finance/paste", data={"figures": "balance | Shop checking | 500\nbalance | Mine | 50 | personal\n"
+                                                      "bill | Power | 120 | 11/25 | utilities\nowed | Pat Sample | 300 | 11/24"})
+        with self.Session() as db:
+            shop = db.query(FinanceAccount).filter_by(name="Shop checking").one().id
+            mine = db.query(FinanceAccount).filter_by(name="Mine").one().id
+            bill = db.query(FinanceBill).one().id
+            item = db.query(FinanceIncoming).one().id
+        self.assertIn('<option value="%d" selected>Shop checking' % shop, owner.get("/finance/").text)
+        paid = owner.post(f"/finance/bills/{bill}/paid", data={"account": str(mine)})  # personal account: ignored
+        self.assertNotIn("from", paid.headers["location"])
+        owner.post("/finance/paste", data={"figures": "bill | Power 2 | 80 | 11/26 | utilities"})
+        with self.Session() as db:
+            bill2 = db.query(FinanceBill).filter_by(name="Power 2").one().id
+        self.assertIn("from+Shop+checking", owner.post(f"/finance/bills/{bill2}/paid", data={"account": str(shop)}).headers["location"])
+        owner.post(f"/finance/incoming/{item}/got", data={"account": str(shop)})
+        with self.Session() as db:
+            self.assertEqual(db.get(FinanceAccount, shop).balance_cents, 50000 - 8000 + 30000)
+            self.assertEqual(db.get(FinanceAccount, mine).balance_cents, 5000)
 
     def test_add_form_and_goal(self):
         owner = self.sign_in()

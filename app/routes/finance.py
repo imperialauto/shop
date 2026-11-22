@@ -200,6 +200,20 @@ def _roll_forward(db: Session, bill: FinanceBill):
                            due_date=following, repeats=bill.repeats, note=bill.note))
 
 
+def _move(db: Session, account_id, scope: str, delta_cents: int, actor: str):
+    """Moves a paid bill or a received payment through one account of the same scope, so cash stays current."""
+    try:
+        account = db.get(FinanceAccount, int(account_id))
+    except (TypeError, ValueError):
+        return None
+    if account is None or account.scope != scope or not account.active:
+        return None
+    account.balance_cents += delta_cents
+    account.updated_at = datetime.now(timezone.utc)
+    _log(db, actor, "balance_moved", f"{account.name} {plan.dollars(delta_cents)}")
+    return account
+
+
 def _mark_paid(db: Session, bill: FinanceBill, today: date, actor: str):
     bill.status, bill.paid_on = "paid", today
     _roll_forward(db, bill)
@@ -285,7 +299,8 @@ async def bill_action(bill_id: int, action: str, request: Request, db: Session =
             return "", ["That bill was already closed."]
         if action == "paid":
             _mark_paid(db, bill, today, user.username)
-            return f"Marked {bill.name} paid.", []
+            account = _move(db, form.get("account"), bill.scope, -bill.amount_cents, user.username)
+            return f"Marked {bill.name} paid{f' from {account.name}' if account else ''}.", []
         bill.status = "skipped"
         _roll_forward(db, bill)
         _log(db, user.username, "bill_removed", f"{bill.name} due {bill.due_date}")
@@ -305,7 +320,10 @@ async def incoming_action(item_id: int, action: str, request: Request, db: Sessi
         item.status = "received" if action == "got" else "dropped"
         item.received_on = today if action == "got" else None
         _log(db, user.username, item.status, f"{item.source} {plan.dollars(item.amount_cents)}")
-        return (f"Got {item.source}'s payment." if action == "got" else f"Took {item.source} off the list."), []
+        if action == "got":
+            account = _move(db, form.get("account"), item.scope, item.amount_cents, user.username)
+            return f"Got {item.source}'s payment{f' into {account.name}' if account else ''}.", []
+        return f"Took {item.source} off the list.", []
     return await _save(request, db, work)
 
 
