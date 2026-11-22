@@ -33,6 +33,7 @@ import logging
 import secrets
 import threading
 import time
+from datetime import datetime
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -329,6 +330,12 @@ class _CustomerUpdate(agent_api.CustomerUpdate):
     customer_id: int = Field(gt=0)
 
 
+class _Decisions(BaseModel):
+    since: datetime | None = Field(default=None, description="ISO time to look back to, e.g. 2026-11-22T14:00:00-07:00. "
+                                   "Blank means the last 24 hours; at most 14 days back.")
+    include_staff: bool = Field(default=False, description="Also list yes/no recorded by shop staff in person or by phone.")
+
+
 class _Appointment(BaseModel):
     appointment_id: int = Field(gt=0)
 
@@ -370,6 +377,10 @@ TOOLS = {
                  agent_api.JobIn, lambda db, key, a: agent_api.open_job(a, db, key), False),
     "add_estimate_lines": ("estimates:write", "Add draft lines to an open job that has no invoice.", _Lines,
                            lambda db, key, a: agent_api.add_lines(a.job_id, a.lines, db, key), False),
+    "list_recent_decisions": ("estimates:read", "Jobs whose estimate lines a customer approved or declined recently "
+                              "(approval link or text yes), newest first, with customer, vehicle, the lines and totals. "
+                              "Read only; nothing is sent to anyone.", _Decisions,
+                              lambda db, key, a: agent_api.recent_decisions(db, a.since, a.include_staff), True),
     "list_appointments": ("appointments:read", "The appointment calendar.", _Empty,
                           lambda db, key, a: agent_api.list_appointments(db, key), True),
     "book_appointment": ("appointments:write", "Book a tentative appointment for a job (open_job first if there is none), "
