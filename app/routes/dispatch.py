@@ -20,7 +20,7 @@ from app.database import get_db
 from app.config import OWNER_PHONE
 from app.dispatch import AUTO_POLICIES, LOCKED_POLICIES, MAKES, POLICIES, PROMISE, apply_policies, assess, auto_reply, is_reaction, parse_owner_command, propose
 from app.appointment_model import Appointment
-from app import alert_rules, business_settings, approval_links, name_finder, next_action, quo_import, snap_offer, website_alerts
+from app import alert_rules, business_settings, approval_links, dispatch_anchor, name_finder, next_action, quo_import, snap_offer, website_alerts
 from app.sending_pause import is_paused, pause, resume
 from app import quick_replies
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync, OPEN_STATUSES
@@ -1314,6 +1314,10 @@ def decide(
         raise HTTPException(409, "Website requests must be contacted manually.")
     if item.last_message_id != expected_message_id:
         raise HTTPException(409, "A newer customer message arrived. Review it before deciding.")
+    if decision == "approve" and reply_text.strip() and dispatch_anchor.needs_anchor(item):
+        problem = dispatch_anchor.anchor(item)
+        if problem:
+            raise HTTPException(409, problem)
     if proposed_action.strip():
         item.proposed_action = proposed_action.strip()[:2000]
     item.status = "approved" if decision == "approve" else "declined"
