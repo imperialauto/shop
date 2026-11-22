@@ -29,6 +29,7 @@ KEYS = {
     "automatic_oil_reminders": "AUTOMATIC_OIL_REMINDERS",
     "oil_reminder_months": "OIL_REMINDER_MONTHS",
     "automatic_declined_followup": "AUTOMATIC_DECLINED_FOLLOWUP",
+    "automatic_diag_credit_reminder": "AUTOMATIC_DIAG_CREDIT_REMINDER",
     "alert_rules": "ALERT_RULES_JSON",
     "labor_rates": "LABOR_RATES_JSON",
     "booking_auto_times": "PUBLIC_AUTO_TIMES",
