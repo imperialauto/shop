@@ -7,8 +7,9 @@ from sqlalchemy import func
 from app.database import get_db
 from app.models import RepairOrder, Customer, Vehicle, User, LineItem, Communication, PartsOrder
 from app.auth import get_current_user
-from app import approval_links, customer_file, cycle_time, customer_followups, next_action, review_requests, ro_status_policy, website_alerts
-from app.dispatch_model import DispatchAudit
+from app import approval_links, customer_file, ro_delete, cycle_time, customer_followups, next_action, review_requests, ro_status_policy, website_alerts
+from app.dispatch_model import DispatchAudit, DispatchItem, DispatchOutbound
+from app.sending_pause import DASHBOARD_REPLY, is_paused
 from app.routes import local_node
 import os, secrets
 from datetime import datetime, timezone
@@ -193,8 +194,13 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         "open_invoice": next((i for i in ro.invoices if i.status != "void"), None),
         "ai_review": local_node.job_panel(db, ro),
         "attachments": _evidence().attachments_for(db, ro.id),
+        "inspection": _evidence().inspection_for(db, ro.id),
+        "inspection_areas": _evidence().INSPECTION_AREAS,
+        "conditions": _evidence().CONDITIONS,
+        "can_text_link": user.role in SENDERS,
         "progress": _evidence().progress(ro),
         "offsite_estimate": customer_followups.offsite_estimate_at(db, ro.id) is not None,
+        "delete_blockers": ro_delete.blockers(ro) if user.role == "owner" else None,
     })
 
 
@@ -279,6 +285,64 @@ def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db)
             db.commit()
             link = f"queued{item.id}"
     return RedirectResponse(f"/ro/{ro_id}?asked={len(fresh)}&link={link}", status_code=302)
+
+
+SENDERS = ("owner", "admin")
+
+
+@router.post("/{ro_id}/text-link-now")
+def text_link_now(request: Request, ro_id: int, db: Session = Depends(get_db)):
+    """The owner's own button: texts the customer their one approval link from the shop line.
+
+    Pressing it is the owner's yes, so there is no second YES text. It goes out through the same
+    send path as a reply approved on the dashboard, which still refuses if the customer has
+    texted since the button was pressed.
+    """
+    user = require_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    if user.role not in SENDERS:
+        raise HTTPException(403, "Only the owner can text the customer from here.")
+    ro = db.get(RepairOrder, ro_id)
+    if not ro:
+        raise HTTPException(status_code=404)
+
+    def back(state: str):
+        return RedirectResponse(f"/ro/{ro_id}?link={state}#line-items", status_code=303)
+
+    if is_paused(db):
+        return back("paused")
+    if approval_links.mobile(ro.customer.phone) is None:
+        return back("no_phone")
+    fresh = [li for li in ro.line_items if li.approval is None]
+    for li in fresh:
+        li.approval = "pending"
+    if fresh:
+        ro.status = "waiting_approval"
+        website_alerts.close_for_job(db, ro, user.username, "approval link texted")
+    if not any(li.approval == "pending" for li in ro.line_items):
+        db.commit()
+        return back("nothing")
+    db.commit()
+    thread, problem = customer_file._bridge("/conversation", approval_links.mobile(ro.customer.phone)[-10:])
+    if problem:
+        return back("unavailable")
+    messages = thread.get("messages") or []
+    newest = (messages[-1].get("id") if messages else None) or "none"
+    key = approval_links.conversation_key(ro.id)
+    already = (db.query(DispatchItem).filter(DispatchItem.quo_conversation_id == key, DispatchItem.status == "approved",
+                                             DispatchItem.last_message_id == newest).first())
+    if already is not None:
+        # Same link, and nothing has happened in their thread since it went out: never text it twice.
+        return back(f"already{already.id}")
+    item = approval_links.queue(db, ro, newest, user.username)
+    now = datetime.now().astimezone()
+    item.status, item.decided_by, item.decided_at, item.updated_at = "approved", user.id, now, now
+    db.add(DispatchAudit(item_id=item.id, actor=user.username[:64], action="owner_approve", detail=f"text link now, job {ro.id}"))
+    db.add(DispatchOutbound(dedupe_key=f"dashboard:{item.id}:{item.last_message_id}", kind=DASHBOARD_REPLY,
+                            item_id=item.id, status="queued"))
+    db.commit()
+    return back(f"sending{item.id}")
 
 
 IN_PERSON_SOURCES = {"in_person": "in person", "phone": "by phone"}
@@ -521,3 +585,22 @@ def get_vehicles_for_customer(request: Request, ro_id: int, customer_id: int, db
         f'</div>'
     )
 
+
+@router.post("/{ro_id}/delete")
+def delete_ro(request: Request, ro_id: int, db: Session = Depends(get_db), confirm: str = Form("")):
+    """Owner only. The owner types the job number to confirm. Sends nothing."""
+    user = require_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    if user.role != "owner":
+        raise HTTPException(403, "Only the owner can delete a job.")
+    ro = db.query(RepairOrder).filter(RepairOrder.id == ro_id).first()
+    if not ro:
+        raise HTTPException(404, "Job not found.")
+    if confirm.strip().lstrip("#") != str(ro_id):
+        raise HTTPException(422, f"Type the job number ({ro_id}) to confirm.")
+    try:
+        ro_delete.delete_repair_order(db, ro, actor=f"user:{user.id}")
+    except ro_delete.DeleteRefused as refused:
+        raise HTTPException(409, f"Job #{ro_id} was not deleted. {refused}")
+    return RedirectResponse(f"/ro/?deleted={ro_id}", status_code=302)

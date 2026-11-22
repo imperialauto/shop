@@ -7,6 +7,11 @@
   <a href="/ro/new" class="btn-primary">+ New RO</a>
 </div>
 
+{% set deleted_job = request.query_params.get('deleted', '') %}
+{% if deleted_job and deleted_job.isdigit() %}
+<div class="card mb-4 text-sm text-green-300" role="status">Job #{{ deleted_job }} was deleted.</div>
+{% endif %}
+
 <!-- Filters -->
 <div class="card mb-4">
   <form method="get" class="flex gap-3 items-end">
