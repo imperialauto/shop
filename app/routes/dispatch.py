@@ -756,6 +756,13 @@ def tick(request: Request, background: BackgroundTasks, owner_texts: bool = True
         except (SQLAlchemyError, HTTPException, ValueError) as exc:
             db.rollback()
             print(f"oil_reminders_unavailable {type(exc).__name__}")
+    if not request.app.state.read_only:
+        from app import quote_followups
+        try:
+            quote_followups.queue_next(db, now)  # a draft for the owner's Send; nothing goes out here
+        except (SQLAlchemyError, HTTPException, ValueError) as exc:
+            db.rollback()
+            print(f"declined_followup_unavailable {type(exc).__name__}")
     return {"ownerPhone": OWNER_PHONE or None, "messages": messages,
             "customerReplies": replies, "customerFollowups": followups}
 

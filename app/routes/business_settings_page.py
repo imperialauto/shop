@@ -64,6 +64,7 @@ def current() -> dict:
         "automatic_pickup_text": (store.raw("automatic_pickup_text") or "").strip().lower() == "true",
         "automatic_oil_reminders": (store.raw("automatic_oil_reminders") or "").strip().lower() == "true",
         "oil_reminder_months": oil_reminders.months(),
+        "automatic_declined_followup": (store.raw("automatic_declined_followup") or "").strip().lower() == "true",
         "buffer": store.raw("shop_buffer_minutes") or "60",
         "lead": store.raw("booking_lead_minutes") or "120",
         "payment_methods": [{"key": k, "label": label, "on": k in enabled_methods()} for k, label in METHOD_LABELS.items()],
@@ -147,6 +148,8 @@ def parse(form) -> dict:
         alerts["automatic_oil_reminders"] = str(form.get("automatic_oil_reminders") == "on").lower()
         alerts["oil_reminder_months"] = str(_number(form.get("oil_reminder_months", "").strip(),
                                                     "Oil reminder months", 1, 24))
+    if "automatic_declined_followup_shown" in form:
+        alerts["automatic_declined_followup"] = str(form.get("automatic_declined_followup") == "on").lower()
     if any(k.startswith("pay_") for k in form.keys()) or form.get("payment_methods_shown") == "1":
         methods = [k for k in METHOD_LABELS if form.get(f"pay_{k}") == "on"]
         if not methods:
