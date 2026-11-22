@@ -102,6 +102,13 @@
     <label><input type="checkbox" name="automatic_pickup_text" {% if settings.automatic_pickup_text %}checked{% endif %}> Text the customer when you mark a job Complete</label>
     <p class="text-sm text-stone-400 mt-2">Says the car is ready and gives the balance left on the invoice, by Zelle or cash. Adds the storage line only when your terms show where customers sign. One text per job, even if the job moves back and forth. With no invoice yet, or texts it can't check, the draft waits for your YES instead.</p>
   </section>
+  <section class="card">
+    <h2 class="font-bold mb-2">Oil change reminder</h2>
+    <input type="hidden" name="automatic_oil_reminders_shown" value="1">
+    <label><input type="checkbox" name="automatic_oil_reminders" {% if settings.automatic_oil_reminders %}checked{% endif %}> Text customers when their oil change is coming due</label>
+    <label class="block mt-2">Months after their last oil change here <input type="number" name="oil_reminder_months" min="1" max="24" value="{{ settings.oil_reminder_months }}" class="form-input" style="width:5rem;display:inline-block"></label>
+    <p class="text-sm text-stone-400 mt-2">One text per oil change, during shop hours, asking if they want to get on the schedule. Only oil changes from the last couple of months past due count, so turning it on never texts customers from years ago. Skipped for anyone who opted out, has a job open or booked, or got a text from the shop in the last week.</p>
+  </section>
   <section class="card" aria-labelledby="payment-methods">
     <h2 id="payment-methods" class="font-bold mb-1">Payment methods</h2>
     <p class="text-sm text-stone-400 mb-3">What staff can pick when marking a job paid at pickup.</p>

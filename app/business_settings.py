@@ -26,6 +26,8 @@ KEYS = {
     "automatic_customer_followups": "AUTOMATIC_CUSTOMER_FOLLOWUPS",
     "automatic_deposit_text": "AUTOMATIC_DEPOSIT_TEXT",
     "automatic_pickup_text": "AUTOMATIC_PICKUP_TEXT",
+    "automatic_oil_reminders": "AUTOMATIC_OIL_REMINDERS",
+    "oil_reminder_months": "OIL_REMINDER_MONTHS",
     "alert_rules": "ALERT_RULES_JSON",
     "labor_rates": "LABOR_RATES_JSON",
     "booking_auto_times": "PUBLIC_AUTO_TIMES",

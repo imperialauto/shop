@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app import business_settings as store
 from app.auth import get_current_user
 from app.database import get_db
-from app import pricing
+from app import oil_reminders, pricing
 from app.public_site import BOOKABLE_SERVICES, VEHICLE_CLASSES
 from app.routes.invoices import METHOD_LABELS, enabled_methods
 
@@ -62,6 +62,8 @@ def current() -> dict:
         "automatic_customer_followups": (store.raw("automatic_customer_followups") or "").strip().lower() == "true",
         "automatic_deposit_text": (store.raw("automatic_deposit_text") or "").strip().lower() == "true",
         "automatic_pickup_text": (store.raw("automatic_pickup_text") or "").strip().lower() == "true",
+        "automatic_oil_reminders": (store.raw("automatic_oil_reminders") or "").strip().lower() == "true",
+        "oil_reminder_months": oil_reminders.months(),
         "buffer": store.raw("shop_buffer_minutes") or "60",
         "lead": store.raw("booking_lead_minutes") or "120",
         "payment_methods": [{"key": k, "label": label, "on": k in enabled_methods()} for k, label in METHOD_LABELS.items()],
@@ -141,6 +143,10 @@ def parse(form) -> dict:
         alerts["automatic_deposit_text"] = str(form.get("automatic_deposit_text") == "on").lower()
     if "automatic_pickup_text_shown" in form:
         alerts["automatic_pickup_text"] = str(form.get("automatic_pickup_text") == "on").lower()
+    if "automatic_oil_reminders_shown" in form:
+        alerts["automatic_oil_reminders"] = str(form.get("automatic_oil_reminders") == "on").lower()
+        alerts["oil_reminder_months"] = str(_number(form.get("oil_reminder_months", "").strip(),
+                                                    "Oil reminder months", 1, 24))
     if any(k.startswith("pay_") for k in form.keys()) or form.get("payment_methods_shown") == "1":
         methods = [k for k in METHOD_LABELS if form.get(f"pay_{k}") == "on"]
         if not methods:

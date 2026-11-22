@@ -748,6 +748,14 @@ def tick(request: Request, background: BackgroundTasks, owner_texts: bool = True
         except (SQLAlchemyError, HTTPException, ValueError) as exc:
             db.rollback()
             print(f"customer_followups_unavailable {type(exc).__name__}")
+    if (not followups and not request.app.state.read_only and not replies
+            and not db.query(DispatchOutbound.id).filter_by(kind=DASHBOARD_REPLY, status="queued").first()):
+        from app import oil_reminders
+        try:
+            oil_reminders.queue_next(db, now)  # sent as a queued reply on the next tick
+        except (SQLAlchemyError, HTTPException, ValueError) as exc:
+            db.rollback()
+            print(f"oil_reminders_unavailable {type(exc).__name__}")
     return {"ownerPhone": OWNER_PHONE or None, "messages": messages,
             "customerReplies": replies, "customerFollowups": followups}
 
