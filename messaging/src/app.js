@@ -40,6 +40,15 @@ function mountMessagingRoutes(app) {
     events.handle(req.body).catch((err) => console.error("Call event failed:", err.message));
   });
 
+  // Quo contact events: only a hint to read the contact back from Quo.
+  app.post("/webhooks/quo-contacts/:token", express.json({ limit: "256kb" }), (req, res) => {
+    const events = req.app.get("contactEvents");
+    if (!events || !tokenMatches(req.params.token, process.env.CONTACT_HOOK_TOKEN)) return res.status(404).end();
+    res.status(200).json({ received: true });
+    events.handle(req.body, req.get("webhook-id"))
+      .catch((err) => console.error("Contact event failed:", err.message));
+  });
+
   // 1. Webhook — raw body, no auth (Quo signs the request instead).
   app.use("/webhooks/quo", quoWebhookRouter);
 
