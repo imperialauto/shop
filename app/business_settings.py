@@ -24,6 +24,7 @@ KEYS = {
     "owner_alert_batch_limit": "OWNER_ALERT_BATCH_LIMIT",
     "task_followup_days": "TASK_FOLLOWUP_DAYS",
     "automatic_customer_followups": "AUTOMATIC_CUSTOMER_FOLLOWUPS",
+    "next_visit_offer": "NEXT_VISIT_OFFER",
     "alert_rules": "ALERT_RULES_JSON",
     "labor_rates": "LABOR_RATES_JSON",
     "booking_auto_times": "PUBLIC_AUTO_TIMES",

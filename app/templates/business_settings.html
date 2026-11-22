@@ -90,6 +90,12 @@
            value="{{ settings.task_followup_days }}" class="form-input" style="width:90px" required>
     <p class="text-sm text-stone-400 mt-2">This field controls when conversations appear in the task board. Confirmed off-site estimates appear after two days.</p>
   </section>
+  <section class="card">
+    <h2 class="font-bold mb-2">Next-visit offer</h2>
+    <input type="hidden" name="next_visit_offer_shown" value="1">
+    <label><input type="checkbox" name="next_visit_offer" {% if settings.next_visit_offer %}checked{% endif %}> 10% off labor on the next visit</label>
+    <p class="text-sm text-stone-400 mt-2">Every job paid in full prints the offer on the customer's receipt: 10% off labor, up to $50, on their next job over $200 within 90 days. It comes off automatically when that job's invoice is made. One offer per job, so it doesn't stack with the referral's $25 off, and a job that used it doesn't earn another. Never tied to a review.</p>
+  </section>
   {% if referral_report %}
   <section class="card">
     <h2 class="font-bold mb-2">Referrals: $25 + $25</h2>
