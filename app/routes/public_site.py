@@ -624,6 +624,7 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
             f"Mileage given: {vehicle_details['mileage']:,}" if vehicle_details["mileage"] else "",
         ])
         order = new_repair_order(db, customer, vehicle, concern, vehicle_details["mileage"])
+        estimate_prefill.oil_change_line(db, order, service)
         appointment = Appointment(repair_order_id=order.id, resource_id=slot.resource_id, starts_at=starts_at, ends_at=candidate.ends_at,
                            status="confirmed", booked_value=total or 0, location="mobile" if zone else "shop",
                            travel_before_minutes=candidate.travel_before_minutes, buffer_after_minutes=candidate.buffer_after_minutes)

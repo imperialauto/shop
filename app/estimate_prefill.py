@@ -35,3 +35,19 @@ def prefill(db, order: RepairOrder, line_slug: str, where: str) -> str:
         notes.append(f"Mobile service call ${pricing.rates()['service_call']:,.0f} plus travel (travel not set; confirm).")
     notes.append("Check the VIN, ALLDATA labor time and current parts prices before sending.")
     return " ".join(notes)
+
+
+OIL_CHANGE = "oil-change"
+OIL_CHANGE_LINE = ("Full synthetic oil change special: up to 5 qt full synthetic oil, oil filter and multi-point inspection. "
+                   "Extra quarts or a special filter are quoted before work.")
+
+
+def oil_change_line(db, order: RepairOrder, service) -> LineItem | None:
+    """A booked oil change special starts its job with the one package line at the saved price.
+    The line is not sent for approval; the owner checks the oil capacity and filter first."""
+    if service is None or service.slug != OIL_CHANGE or service.price is None:
+        return None
+    line = LineItem(repair_order_id=order.id, item_type="labor", quantity=1, unit_price=service.price, taxable=False,
+                    description=OIL_CHANGE_LINE)
+    db.add(line)
+    return line
