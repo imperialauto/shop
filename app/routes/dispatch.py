@@ -520,6 +520,11 @@ def intake(message: IntakeMessage, db: Session = Depends(get_db), _auth: bool = 
     for attempt in (1, 2):  # a concurrent delivery can win the unique index once
         try:
             item = _record(db, message, result)
+            if message.kind == "message" and not is_paused(db):
+                from app import snap_link
+                if snap_link.maybe_queue(db, item, message.body, result, message.recovery):
+                    return {"recorded": True, "itemId": item.id, "status": item.status,
+                            "vehicleText": item.vehicle_text, "category": item.category, "autoReply": None}
             return {"recorded": True, "itemId": item.id, "status": item.status,
                     "vehicleText": item.vehicle_text, "category": item.category,
                     "autoReply": None if is_paused(db) else _auto_reply_for(db, item, message, result)}

@@ -121,6 +121,12 @@
     <label><input type="checkbox" name="automatic_diag_credit_reminder" {% if settings.automatic_diag_credit_reminder %}checked{% endif %}> Draft a reminder 2 days after a diagnostic-only visit that the $75 still goes toward the repair</label>
     <p class="text-sm text-stone-400 mt-2">Never sends on its own. The draft waits on the dashboard for your Send. One per job. Skipped for anyone who came back since, opted out, has a job open or booked, or got a text in the last 3 days. If they declined work on their link, the declined-work draft mentions the credit instead, so they only get one text.</p>
   </section>
+  <section class="card">
+    <h2 class="font-bold mb-2">Snap Finance link</h2>
+    <input type="hidden" name="automatic_snap_link_shown" value="1">
+    <label><input type="checkbox" name="automatic_snap_link" {% if settings.automatic_snap_link %}checked{% endif %}> Text the Snap Finance apply link when a customer asks for it</label>
+    <p class="text-sm text-stone-400 mt-2">Only a short text that clearly asks, like "send the Snap link" or "can I finance it", gets the link on its own. If the text also asks a price or anything else, or an earlier message is still waiting on you, it comes to you instead. Once a week per customer at most.</p>
+  </section>
   <section class="card" aria-labelledby="payment-methods">
     <h2 id="payment-methods" class="font-bold mb-1">Payment methods</h2>
     <p class="text-sm text-stone-400 mb-3">What staff can pick when marking a job paid at pickup.</p>
