@@ -125,7 +125,7 @@ def build(db: Session, customer: Customer, fetch=None) -> dict:
                                   f"Signed by {ro.approved_by}" if ro.approved_by else "", link=f"/ro/{ro.id}"))
         decided = [li for li in ro.line_items if li.approval in ("approved", "declined") and li.decided_at]
         for li in decided:
-            how = {"in_person": " in person", "phone": " by phone"}.get(li.approval_source or "", "")
+            how = {"in_person": " in person", "phone": " by phone", "text": " by text"}.get(li.approval_source or "", "")
             who = f" (recorded by {li.approval_recorded_by})" if li.approval_recorded_by else ""
             entries.append(_entry("job", li.decided_at, f"Customer {li.approval}{how} a repair on job #{ro.id}{who}",
                                   f"{li.description} · {_money(li.total)}", link=f"/ro/{ro.id}"))
