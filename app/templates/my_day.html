@@ -98,6 +98,15 @@
   })();
 </script>
 {% endif %}
+{% if owner.bills %}
+<h2 class="font-bold mb-2">Bills due soon</h2>
+<div class="card mb-4 text-sm">
+  {% for b in owner.bills %}<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;overflow-wrap:anywhere">
+    <span>{{ b.name }}{% if b.personal %} <span class="text-stone-400">(personal)</span>{% endif %} <span style="color:{{ 'var(--imp-danger)' if b.late else 'var(--imp-muted)' }}">· {{ b.when }}</span></span>
+    <strong style="white-space:nowrap;font-variant-numeric:tabular-nums">${{ '{:,.2f}'.format(b.amount) }}</strong></div>{% endfor %}
+  <a href="/finance/" style="display:inline-block;margin-top:6px;color:var(--imp-link)">Open Money</a>
+</div>
+{% endif %}
 {% if owner.calendar is not none %}
 <h2 class="font-bold mb-2">Your calendar today</h2>
 <div class="card mb-4 text-sm">

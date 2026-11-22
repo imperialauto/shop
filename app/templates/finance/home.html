@@ -57,7 +57,7 @@
   .fin-acct { font-size:12px; max-width:150px; padding:3px 4px; border:1px solid var(--imp-line); border-radius:6px; background:transparent; color:var(--imp-ink); }
   .fin-actions .btn-secondary { min-height:36px; }
   .fin-link { background:none; border:0; color:var(--imp-muted); font-size:12px; text-decoration:underline; cursor:pointer; padding:8px 2px; min-height:36px; }
-  .fin-in { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+  .fin-in { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
   .fin-in > div { min-width:0; }
   .fin-in .lbl { font-size:12px; color:var(--imp-muted); }
   .fin-in .num { font-size:19px; font-weight:700; color:var(--imp-ink); font-variant-numeric:tabular-nums; }
@@ -77,6 +77,26 @@
   .fin-tabs label { position:relative; border:1px solid var(--imp-line); border-radius:999px; padding:8px 12px; font-size:13px; color:var(--imp-ink); cursor:pointer; min-height:36px; }
   .fin-tabs input { position:absolute; opacity:0; pointer-events:none; }
   .fin-tabs label:has(input:checked) { background:var(--imp-purple-soft); border-color:var(--imp-gold-dark); color:var(--imp-gold-text); font-weight:650; }
+  .fin-today .num { font-size:clamp(26px,4vw,34px); font-weight:750; color:var(--imp-ink); font-variant-numeric:tabular-nums; }
+  .fin-today .num span { font-size:14px; font-weight:500; color:var(--imp-muted); }
+  .fin-bar.big { height:12px; margin:8px 0; }
+  .fin-in { margin-top:10px; padding-top:10px; border-top:1px solid var(--imp-line); }
+  .fin-sub-h { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--imp-muted); margin:10px 0 0; font-weight:600; }
+  .fin-row h3 a { color:var(--imp-link); text-decoration:none; }
+  .fin-line { margin-bottom:14px; }
+  .fin-line .neg { color:var(--imp-danger); }
+  .fin-chart svg { width:100%; height:auto; display:block; }
+  .fin-chart rect.pos { fill:var(--imp-gold-dark); }
+  .fin-chart rect.neg { fill:var(--imp-danger); opacity:.75; }
+  .fin-chart rect.low { opacity:1; stroke:var(--imp-ink); stroke-width:1; }
+  .fin-chart line.zero { stroke:var(--imp-muted); stroke-width:1; }
+  .fin-chart text.lbl { fill:var(--imp-muted); font-size:12px; }
+  .fin-week { width:100%; border-collapse:collapse; font-size:13px; font-variant-numeric:tabular-nums; }
+  .fin-week th, .fin-week td { padding:6px 4px; text-align:right; border-bottom:1px solid var(--imp-line); }
+  .fin-week th:first-child { text-align:left; color:var(--imp-muted); font-weight:500; }
+  .fin-week thead th { color:var(--imp-muted); font-weight:500; font-size:12px; }
+  .fin-week tr.left td, .fin-week tr.left th { font-weight:700; color:var(--imp-ink); border-bottom:0; }
+  .fin-week td.neg { color:var(--imp-danger); }
   @media (max-width: 900px) {
     .fin-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
     .fin-grid { grid-template-columns:1fr; }
@@ -127,16 +147,42 @@
     </div>
   </div>
 
+
+  {% if line and (business.accounts or business.owed) %}
+  {% set lo = [0, lowest.cents]|min %}{% set hi = [0, line|map(attribute='cents')|max]|max %}{% set span = (hi - lo) or 1 %}
+  {% set w = 600 %}{% set h = 120 %}{% set bw = w / line|length %}{% set zero = (hi * h / span) %}
+  <section class="card fin-card fin-line" aria-labelledby="fin-line-h">
+    <h2 id="fin-line-h">Cash day by day</h2>
+    <p class="cap">{% if lowest.cents < 0 %}Lowest: <strong class="neg">{{ usd(lowest.cents) }}</strong> on {{ lowest.day.strftime('%a %b %-d') }}.{% if first_below %} Shop accounts go below zero {{ 'today' if first_below.day == today else first_below.day.strftime('%a %b %-d') }}.{% endif %}{% else %}Lowest: {{ usd(lowest.cents) }} on {{ lowest.day.strftime('%a %b %-d') }}. Stays above zero.{% endif %}
+      Bills land on their due date, past due ones today. Job invoices aren't on the line until they're paid.</p>
+    <div class="fin-chart">
+      <svg viewBox="0 0 {{ w }} {{ h + 18 }}" role="img" aria-label="Shop cash at the end of each day, lowest {{ usd(lowest.cents) }} on {{ lowest.day.strftime('%b %-d') }}">
+        {% for d in line %}{% set y = ((hi - [d.cents, 0]|max) * h / span) %}{% set bh = ((d.cents|abs) * h / span) %}
+        <rect x="{{ (loop.index0 * bw + 1)|round(1) }}" y="{{ (zero if d.cents < 0 else y)|round(1) }}" width="{{ (bw - 2)|round(1) }}" height="{{ [bh, 1]|max|round(1) }}" class="{{ 'neg' if d.cents < 0 else 'pos' }}{{ ' low' if d.day == lowest.day }}"><title>{{ d.day.strftime('%a %b %-d') }}: {{ usd(d.cents) }}{% if d.change %} ({{ '+' if d.change > 0 }}{{ usd(d.change) }}){% endif %}</title></rect>
+        {% endfor %}
+        <line x1="0" x2="{{ w }}" y1="{{ zero|round(1) }}" y2="{{ zero|round(1) }}" class="zero"></line>
+        <text x="0" y="{{ h + 14 }}" class="lbl">{{ line[0].day.strftime('%b %-d') }}</text>
+        <text x="{{ w }}" y="{{ h + 14 }}" class="lbl" text-anchor="end">{{ line[-1].day.strftime('%b %-d') }}</text>
+      </svg>
+    </div>
+  </section>
+  {% endif %}
+
   <div class="fin-grid">
     <div class="fin-col">
       <section class="card fin-card" aria-labelledby="fin-in-h">
-        <h2 id="fin-in-h">Money in</h2>
-        <p class="cap">Payments recorded on jobs, plus money marked "Got it" below. Daily goal {{ usdf(goal) }}.</p>
+        <h2 id="fin-in-h">Today</h2>
+        <div class="fin-today">
+          <div class="num">{{ usdf(money_in.today) }} <span>of {{ usdf(goal) }} goal</span></div>
+          <div class="fin-bar big" aria-hidden="true"><span style="width:{{ [100, (money_in.today * 100 / goal)|round|int]|min }}%"></span></div>
+          <p class="cap">{% if to_go_today > 0 %}{{ usdf(to_go_today) }} to go today.{% else %}Goal hit today.{% endif %}
+            {% if business.short %}Bills through {{ end.strftime('%b %-d') }} need {{ usdf(need_per_day) }} a day after parts.{% endif %}</p>
+        </div>
+        <p class="cap">Total sales, parts included: payments recorded on jobs, plus money marked "Got it" below.</p>
         <div class="fin-in">
-          <div><div class="lbl">Today</div><div class="num">{{ usdf(money_in.today) }}</div>
-            <div class="fin-bar" aria-hidden="true"><span style="width:{{ [100, (money_in.today * 100 / goal)|round|int]|min }}%"></span></div></div>
           <div><div class="lbl">This week</div><div class="num">{{ usdf(money_in.week) }}</div>
-            <div class="fin-bar" aria-hidden="true"><span style="width:{{ ([100, (money_in.week * 100 / week_goal)|round|int]|min) if week_goal else 0 }}%"></span></div></div>
+            <div class="fin-bar" aria-hidden="true"><span style="width:{{ ([100, (money_in.week * 100 / week_goal)|round|int]|min) if week_goal else 0 }}%"></span></div>
+            <div class="lbl">of {{ usdf(week_goal) }} so far</div></div>
           <div><div class="lbl">{{ month_label }}</div><div class="num">{{ usdf(money_in.month) }}</div></div>
         </div>
       </section>
@@ -161,7 +207,16 @@
 
       <section class="card fin-card" aria-labelledby="fin-owed-h">
         <h2 id="fin-owed-h">Money owed to the shop</h2>
-        <p class="cap">Tap "Got it" when it lands. Use it only for money that isn't recorded on a job, so it's counted once. To count a late one again, add it with a new date.</p>
+        <p class="cap">Job invoices fill in by themselves. Add other money here and tap "Got it" when it lands. To count a late one again, add it with a new date.</p>
+        {% if business.jobs_due %}<h3 class="fin-sub-h">From jobs</h3>{% endif %}
+        {% for j in business.jobs_due %}
+        <div class="fin-row{% if j.late(today) %} late{% endif %}">
+          <div class="fin-row-main"><h3>{% if j.ro_id %}<a href="/ro/{{ j.ro_id }}">{{ j.label }}</a>{% else %}{{ j.label }}{% endif %}</h3>
+            <p>Invoice sent {{ j.sent_on.strftime('%b %-d') }}{% if j.late(today) %}, over {{ job_late_days }} days, so not counted above{% endif %} · record its payment on the job</p></div>
+          <div class="fin-row-side"><div class="amount">{{ usd(j.amount_cents) }}</div></div>
+        </div>
+        {% endfor %}
+        {% if business.jobs_due and business.incoming %}<h3 class="fin-sub-h">Other money</h3>{% endif %}
         {% for i in business.incoming %}
         <div class="fin-row">
           <div class="fin-row-main"><h3>{{ i.source }}</h3><p>{% if i.expected_date %}{% if i.expected_date < today %}Was expected {{ i.expected_date.strftime('%b %-d') }}, late, so not counted above{% else %}Expected by {{ i.expected_date.strftime('%a %b %-d') }}{% endif %}{% else %}No date yet, so not counted above{% endif %}</p></div>
@@ -171,12 +226,24 @@
               <form method="post" action="/finance/incoming/{{ i.id }}/drop" data-confirm="Take {{ i.source }} off the list?"><input type="hidden" name="window" value="{{ window }}"><button class="fin-link" type="submit">Remove</button></form>
             </div></div>
         </div>
-        {% else %}<p class="cap">Nothing listed yet.</p>{% endfor %}
-        {% if sent_invoice_count %}<p class="cap" style="margin-top:10px;">Also {{ sent_invoice_count }} job invoice{{ 's' if sent_invoice_count != 1 }} marked sent, {{ usdf(sent_invoice_amount) }} total.</p>{% endif %}
+        {% else %}{% if not business.jobs_due %}<p class="cap">Nothing listed yet.</p>{% endif %}{% endfor %}
       </section>
     </div>
 
     <div class="fin-col">
+      <section class="card fin-card" aria-labelledby="fin-week-h">
+        <h2 id="fin-week-h">Week against last week</h2>
+        <p class="cap">In is total sales. Out is shop bills marked paid here, parts included.</p>
+        <table class="fin-week">
+          <thead><tr><th></th>{% for wk in weeks %}<th>{{ wk.label }}</th>{% endfor %}</tr></thead>
+          <tbody>
+            <tr><th>In</th>{% for wk in weeks %}<td>{{ usd(wk.in) }}</td>{% endfor %}</tr>
+            <tr><th>Out</th>{% for wk in weeks %}<td>{{ usd(wk.out) }}</td>{% endfor %}</tr>
+            <tr class="left"><th>Left</th>{% for wk in weeks %}<td class="{{ 'neg' if wk.left < 0 }}">{{ usd(wk.left) }}</td>{% endfor %}</tr>
+          </tbody>
+        </table>
+      </section>
+
       <section class="card fin-card" aria-labelledby="fin-where-h">
         <h2 id="fin-where-h">Where it goes in {{ month_label }}</h2>
         <p class="cap">Shop bills due this month, paid or not.</p>
@@ -225,6 +292,17 @@
           <div data-for="held"><label class="form-label" for="fin-held">Held for customers</label><input id="fin-held" class="form-input" name="held" inputmode="decimal" placeholder="0.00"></div>
           <div class="full"><button class="btn-primary" type="submit">Save</button></div>
         </form>
+
+        <details class="fin-more" style="margin-top:10px;"><summary>Update from a bank statement file</summary>
+          <p class="cap">Download your account's activity as a CSV file from your bank's site, then pick it here. It sets the balance and points out bills that look paid. The file isn't saved.</p>
+          <form method="post" action="/finance/statement" enctype="multipart/form-data" class="fin-form">
+            <input type="hidden" name="window" value="{{ window }}">
+            <div class="full"><label class="form-label" for="fin-stmt-acct">Account</label>
+              <select id="fin-stmt-acct" class="form-select" name="account" required>{% for a in accounts_all %}<option value="{{ a.id }}">{{ a.name }}{{ ' (personal)' if a.scope == 'personal' }}</option>{% endfor %}</select></div>
+            <div class="full"><label class="form-label" for="fin-stmt">CSV file</label><input id="fin-stmt" class="form-input" type="file" name="file" accept=".csv,text/csv" required></div>
+            <div class="full"><button class="btn-primary" type="submit">Read file</button></div>
+          </form>
+        </details>
 
         <details class="fin-more" style="margin-top:10px;"><summary>Paste several figures at once</summary>
           <p class="cap">One per line. Using the same name updates what's there.</p>

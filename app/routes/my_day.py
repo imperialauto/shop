@@ -76,7 +76,7 @@ def _owner_day(db, user, now):
     from app.routes.imperial_tasks import enabled
     day = {
         "plan": {"next": [], "overdue": [], "later": [], "backlog": []},
-        "calendar": None, "tasks_on": enabled(), "load_error": False,
+        "calendar": None, "tasks_on": enabled(), "load_error": False, "bills": [],
     }
     if day["tasks_on"]:
         try:
@@ -84,6 +84,7 @@ def _owner_day(db, user, now):
         except Exception:
             db.rollback()
             day["load_error"] = True
+    day["bills"] = bills_due_soon(db, now.date())
     try:
         events = calendar_feed.upcoming(now, days=1)
         if events is not None:
@@ -91,3 +92,27 @@ def _owner_day(db, user, now):
     except Exception:
         day["calendar"] = None
     return day
+
+
+BILL_HEADS_UP_DAYS = 3
+
+
+def bills_due_soon(db, today):
+    """Open bills past due or due within three days, shop first. Empty when the money tables aren't set up."""
+    from sqlalchemy.exc import SQLAlchemyError
+    from app.finance_model import FinanceBill
+    try:
+        rows = (db.query(FinanceBill).filter(FinanceBill.status == "open",
+                                             FinanceBill.due_date <= today + timedelta(days=BILL_HEADS_UP_DAYS))
+                .order_by(FinanceBill.due_date, FinanceBill.name).all())
+    except SQLAlchemyError:
+        db.rollback()
+        return []
+    out = []
+    for bill in sorted(rows, key=lambda b: (b.scope != "business", b.due_date, b.name)):
+        days = (bill.due_date - today).days
+        when = (f"{-days} day{'s' if days != -1 else ''} late" if days < 0 else
+                "due today" if days == 0 else "due tomorrow" if days == 1 else f"due {bill.due_date.strftime('%a %b %-d')}")
+        out.append({"name": bill.name, "amount": bill.amount_cents / 100, "when": when, "late": days < 0,
+                    "personal": bill.scope == "personal"})
+    return out

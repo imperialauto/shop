@@ -15,7 +15,7 @@ from app.auth import hash_password
 from app.database import Base, get_db
 from app.finance_model import FinanceAccount, FinanceBill, FinanceChange, FinanceIncoming
 from app.main import app
-from app.models import User
+from app.models import Customer, Invoice, Payment, RepairOrder, User, Vehicle
 from app.routes import finance
 from app.routes.finance import month_boundaries
 
@@ -98,6 +98,37 @@ class PlanMathTests(unittest.TestCase):
         self.assertEqual(shop.due_in_window, 187900)  # the entered one, not counted twice
         self.assertEqual(plan.totals([], [rent], [], TODAY, 14)["business"].due_in_window, 0)
 
+
+    def test_job_invoices_count_unless_a_month_old(self):
+        jobs = [plan.JobDue("Pat · RO #4", 98000, date(2026, 11, 18), 4), plan.JobDue("Old · RO #1", 5000, date(2026, 10, 1), 1)]
+        shop = plan.totals([], [], [], TODAY, 14, jobs)["business"]
+        self.assertEqual((shop.expected_in, shop.jobs_in, len(shop.jobs_due)), (98000, 98000, 2))
+        self.assertTrue(jobs[1].late(TODAY))
+
+    def test_cash_line_lands_each_bill_and_payment_on_its_day(self):
+        account = FinanceAccount(name="Shop", scope="business", balance_cents=10000, held_cents=0, as_of=TODAY, active=True)
+        bills = [FinanceBill(name="Late", scope="business", amount_cents=3000, due_date=date(2026, 11, 18), status="open", repeats="once", category="other"),
+                 FinanceBill(name="Soon", scope="business", amount_cents=20000, due_date=date(2026, 11, 23), status="open", repeats="once", category="other")]
+        incoming = [FinanceIncoming(source="Pat", scope="business", amount_cents=15000, expected_date=date(2026, 11, 24), status="expected")]
+        sums = plan.totals([account], bills, incoming, TODAY, 7)
+        line = plan.cash_line(sums["business"], TODAY, sums["end"])
+        self.assertEqual([d["cents"] for d in line], [7000, 7000, -13000, 2000, 2000, 2000, 2000])
+
+    def test_bank_files_with_summary_lines_debits_and_newest_first(self):
+        bofa = ("Description,,Summary Amt.\nBeginning balance as of 11/01/2026,,\"500.00\"\n\n"
+                "Date,Description,Amount,Running Bal.\n11/01/2026,Beginning balance as of 11/01/2026,,\"500.00\"\n"
+                "11/18/2026,RENT PAYMENT,\"-1,879.00\",\"-1,379.00\"\n11/20/2026,ZELLE FROM PAT,302.00,\"-1,077.00\"\n")
+        rows, problems = plan.parse_statement(bofa, TODAY)
+        self.assertEqual(problems, [])
+        self.assertEqual([r.amount for r in rows], [-187900, 30200])
+        self.assertEqual(plan.statement_balance(rows), (-107700, date(2026, 11, 20)))
+        rent = FinanceBill(name="Rent", scope="business", amount_cents=187900, due_date=date(2026, 11, 17), status="open", repeats="monthly", category="rent")
+        self.assertEqual([b.name for b, _ in plan.bills_that_look_paid(rows, [rent])], ["Rent"])
+        other = "Posted Date,Payee,Debit,Credit,Balance\n11/20/2026,Shop,(25.00),,975.00\n11/19/2026,Pay,,100.00,1000.00\n"
+        rows, _ = plan.parse_statement(other, TODAY)
+        self.assertEqual([r.amount for r in rows], [-2500, 10000])
+        self.assertEqual(plan.statement_balance(rows), (97500, date(2026, 11, 20)))
+        self.assertEqual(plan.parse_statement("just,words\n1,2", TODAY)[0], [])
 
 class FinancePageTests(unittest.TestCase):
     def setUp(self):
@@ -223,6 +254,52 @@ class FinancePageTests(unittest.TestCase):
         with self.Session() as db:
             self.assertEqual(db.get(FinanceAccount, shop).balance_cents, 50000 - 8000 + 30000)
             self.assertEqual(db.get(FinanceAccount, mine).balance_cents, 5000)
+
+    def test_jobs_weeks_and_bank_file_on_the_page(self):
+        owner = self.sign_in()
+        with self.Session() as db:
+            customer = Customer(first_name="Pat", last_name="Sample"); db.add(customer); db.flush()
+            vehicle = Vehicle(customer_id=customer.id); db.add(vehicle); db.flush()
+            ro = RepairOrder(customer_id=customer.id, vehicle_id=vehicle.id); db.add(ro); db.flush()
+            invoice = Invoice(repair_order_id=ro.id, total=1000.0, status="sent", created_at=datetime(2026, 11, 19, 18)); db.add(invoice); db.flush()
+            db.add(Payment(invoice_id=invoice.id, amount=500.0, method="zelle", paid_at=datetime(2026, 11, 20, 18)))
+            db.add(Payment(invoice_id=invoice.id, amount=120.0, method="cash", paid_at=datetime(2026, 11, 12, 18)))  # last week
+            db.commit()
+        owner.post("/finance/paste", data={"figures": "balance | Shop checking | 100\nbill | Power | 80 | 11/20 | utilities"})
+        with self.Session() as db:
+            account = db.query(FinanceAccount).one().id
+            bill = db.query(FinanceBill).one().id
+        owner.post(f"/finance/bills/{bill}/paid", data={"account": ""})
+        page = owner.get("/finance/").text
+        self.assertIn("Pat Sample · RO #1 · deposit in", page)
+        self.assertIn("$380.00", page)                    # 1,000 less 500 and 120 paid
+        self.assertIn("Week against last week", page)
+        self.assertIn("$420.00", page)                     # this week: 500 in, 80 out
+        self.assertIn("$120.00", page)                     # last week in
+        self.assertIn("Cash day by day", page)
+        self.assertIn("$500.00 to go today", page)        # nothing paid today
+        csv_text = "Date,Description,Amount,Running Bal.\n11/20/2026,ZELLE FROM PAT,500.00,\"612.40\"\n11/20/2026,POWER CO,-80.00,\"532.40\"\n"
+        done = owner.post("/finance/statement", data={"account": str(account), "window": "14"},
+                          files={"file": ("activity.csv", csv_text.encode(), "text/csv")})
+        where = done.headers["location"].replace("+", " ")
+        self.assertIn("Read 2 transactions", where)
+        with self.Session() as db:
+            row = db.get(FinanceAccount, account)
+            self.assertEqual((row.balance_cents, row.as_of), (53240, date(2026, 11, 20)))
+        tech = self.sign_in("tech")
+        self.assertEqual(tech.post("/finance/statement", data={"account": str(account)},
+                                   files={"file": ("a.csv", b"x", "text/csv")}).status_code, 403)
+
+    def test_my_day_warns_about_bills_due_soon(self):
+        owner = self.sign_in()
+        owner.post("/finance/paste", data={"figures": "bill | Power | 80 | 11/20\nbill | Rent | 1879 | 11/23\nbill | Later | 5 | 12/20"})
+        with patch("app.routes.my_day.datetime") as clock:
+            clock.now.return_value = datetime(2026, 11, 21, 9, tzinfo=finance.PHOENIX)
+            page = owner.get("/my-day").text
+        self.assertIn("Bills due soon", page)
+        self.assertIn("1 day late", page)
+        self.assertIn("Rent", page)
+        self.assertNotIn("Later", page)
 
     def test_add_form_and_goal(self):
         owner = self.sign_in()

@@ -3,14 +3,16 @@ shop needs to make each day to cover it.
 
 Balances, bills and expected money are typed or pasted in by the owner (app/finance_model.py).
 Money in comes from payments recorded on jobs plus expected money marked as received here.
-Nothing on this page imports bank data, changes invoices or payments, or sends anything.
+Unpaid balances on sent job invoices count as money coming in. A bank's CSV download can update an
+account's balance; the file itself is read once and not kept. Nothing here changes invoices or
+payments, or sends anything.
 """
 import re
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
@@ -80,6 +82,34 @@ def _received(incoming, start: date, end_exclusive: date) -> int:
                if i.status == "received" and i.scope == "business" and i.received_on and start <= i.received_on < end_exclusive)
 
 
+def _local_day(value: datetime | None) -> date | None:
+    if value is None:
+        return None
+    value = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return value.astimezone(PHOENIX).date()
+
+
+def jobs_due(db: Session) -> list:
+    """Unpaid balances on job invoices marked sent: total less payments and anything waived."""
+    invoices = (db.query(Invoice)
+                .options(joinedload(Invoice.payments), joinedload(Invoice.repair_order).joinedload(RepairOrder.customer))
+                .filter(Invoice.status == "sent").all())
+    due = []
+    for invoice in invoices:
+        left = (invoice.total or 0) - sum(p.amount or 0 for p in invoice.payments) - (invoice.waived_amount or 0)
+        cents_left = round(left * 100)
+        if cents_left <= 0:
+            continue
+        ro = invoice.repair_order
+        customer = ro.customer if ro else None
+        name = f"{customer.first_name or ''} {customer.last_name or ''}".strip() if customer else "Customer not linked"
+        paid = sum(p.amount or 0 for p in invoice.payments)
+        label = f"{name} · RO #{ro.id}" if ro else name
+        due.append(plan.JobDue(label=label + (" · deposit in" if paid else ""), amount_cents=cents_left,
+                               sent_on=_local_day(invoice.created_at) or phoenix_today(), ro_id=ro.id if ro else None))
+    return due
+
+
 def _recent_payments(db: Session, start: date):
     payments = (db.query(Payment)
                 .options(joinedload(Payment.invoice).joinedload(Invoice.repair_order).joinedload(RepairOrder.customer))
@@ -123,7 +153,7 @@ def finance_home(request: Request, window: int = 14, db: Session = Depends(get_d
         db.rollback()
         ready, accounts, bills, incoming = False, [], [], []
 
-    sums = plan.totals(accounts, bills, incoming, today, window)
+    sums = plan.totals(accounts, bills, incoming, today, window, jobs_due(db))
     business, personal = sums["business"], sums["personal"]
     goal = daily_goal()
     money_in = {
@@ -132,8 +162,15 @@ def finance_home(request: Request, window: int = 14, db: Session = Depends(get_d
         "month": _shop_payments(db, month_start, tomorrow) + plan.dollars(_received(incoming, month_start, tomorrow)),
     }
     days_so_far = plan.working_days(week_start, today)
-    unpaid_total, unpaid_count = (db.query(func.coalesce(func.sum(Invoice.total), 0), func.count(Invoice.id))
-                                  .filter(Invoice.status == "sent").one())
+    this_monday, last_monday, _ = plan.week_bounds(today)
+    weeks = []
+    for label, start, stop in (("This week", this_monday, tomorrow), ("Last week", last_monday, this_monday)):
+        came_in = round(_shop_payments(db, start, stop) * 100) + _received(incoming, start, stop)
+        went_out = plan.paid_out(bills, "business", start, stop)
+        weeks.append({"label": label, "in": came_in, "out": went_out, "left": came_in - went_out})
+    line = plan.cash_line(business, today, sums["end"])
+    lowest = min(line, key=lambda d: (d["cents"], d["day"])) if line else None
+    need_per_day = plan.dollars(plan.per_day(business.short, sums["days_open"]))
     last_updated = max((a.as_of for a in accounts), default=None)
     paid_recently = sorted((b for b in bills if b.status == "paid" and b.paid_on and b.paid_on >= today - timedelta(days=14)),
                            key=lambda b: b.paid_on, reverse=True)
@@ -149,17 +186,22 @@ def finance_home(request: Request, window: int = 14, db: Session = Depends(get_d
         "days_open": sums["days_open"],
         "business": business,
         "personal": personal,
-        "need_per_day": plan.dollars(plan.per_day(business.short, sums["days_open"])),
+        "need_per_day": need_per_day,
+        "to_go_today": max(goal - money_in["today"], 0),
+        "weeks": weeks,
+        "line": line,
+        "lowest": lowest,
+        "first_below": next((d for d in line if d["cents"] < 0), None),
+        "accounts_all": accounts,
         "goal": goal,
         "week_goal": goal * days_so_far,
         "money_in": money_in,
+        "job_late_days": plan.JOB_LATE_DAYS,
         "spending": plan.spending_by_category(bills, "business", month_start),
         "personal_spending": plan.spending_by_category(bills, "personal", month_start),
         "month_label": today.strftime("%B"),
         "paid_recently": paid_recently[:6],
         "activity": _recent_payments(db, today - timedelta(days=30)),
-        "sent_invoice_amount": float(unpaid_total or 0),
-        "sent_invoice_count": int(unpaid_count or 0),
         "last_updated": last_updated,
         "categories": BILL_CATEGORIES,
         "repeats": REPEATS,
@@ -359,3 +401,46 @@ async def goal(request: Request, db: Session = Depends(get_db)):
         settings_store.clear_cache()
         return f"Daily goal set to ${value:,}.", []
     return await _save(request, db, work)
+
+
+MAX_STATEMENT_BYTES = 2_000_000
+
+
+@router.post("/statement")
+async def statement(request: Request, account: str = Form(""), window: str = Form("14"),
+                    file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Reads a bank's CSV download for one account. Sets the balance when the file has a running
+    balance, and points out open bills whose amount went out. The file isn't saved."""
+    user = _owner(request, db)
+    raw = await file.read(MAX_STATEMENT_BYTES + 1)
+    if len(raw) > MAX_STATEMENT_BYTES:
+        return _back(window, "", ["That file is too big. Download a shorter date range, a month or two."])
+    text = raw.decode("utf-8-sig", errors="replace")
+    today = phoenix_today()
+    rows, problems = plan.parse_statement(text, today)
+    if not rows:
+        return _back(window, "", problems or ["No transactions found in that file."])
+    try:
+        target = db.get(FinanceAccount, int(account)) if account.strip() else None
+        notes = []
+        found = plan.statement_balance(rows)
+        if target is not None and found is not None:
+            balance, through = found
+            target.balance_cents, target.as_of = balance, through
+            target.updated_at = datetime.now(timezone.utc)
+            _log(db, user.username, "statement_balance", f"{target.name} {plan.dollars(balance)} through {through}")
+            notes.append(f"{target.name} is now {'-' if balance < 0 else ''}${abs(balance) / 100:,.2f}, as of {through.strftime('%b %-d')}.")
+        elif target is not None:
+            notes.append("That file has no running balance, so the balance wasn't changed. Type it in below.")
+        open_bills = db.query(FinanceBill).filter(FinanceBill.status == "open").all()
+        if target is not None:
+            open_bills = [b for b in open_bills if b.scope == target.scope]
+        matches = plan.bills_that_look_paid(rows, open_bills)
+        for bill, row in matches[:5]:
+            notes.append(f"{bill.name} looks paid: ${bill.amount_cents / 100:,.2f} went out {row.day.strftime('%b %-d')}. Tap Paid if so.")
+        notes.insert(0, f"Read {len(rows)} transaction{'s' if len(rows) != 1 else ''}.")
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return _back(window, "", [NOT_SET_UP])
+    return _back(window, " ".join(notes), problems)
