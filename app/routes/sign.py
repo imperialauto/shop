@@ -6,7 +6,7 @@ from app.database import get_db
 from app.models import RepairOrder, Invoice
 from datetime import datetime, timezone
 
-from app import approval_links, website_alerts
+from app import approval_links, referrals, website_alerts
 import os
 import secrets
 from app.security_controls import link_expired
@@ -108,6 +108,7 @@ def sign_invoice_page(request: Request, invoice_id: int, token: str = "", db: Se
         raise HTTPException(status_code=404, detail="Not found")
     return templates.TemplateResponse("sign_invoice.html", {
         "request": request, "invoice": invoice, "ro": invoice.repair_order,
+        "share": referrals.share_line(db, invoice),
     }, headers=PRIVATE_PAGE)
 
 

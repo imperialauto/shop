@@ -39,6 +39,7 @@
       </fieldset>
       {% set require_make = false %}
       {% include "site/_person_vehicle.html" %}
+      {% if referral_box %}{% include "site/_referral_code.html" %}{% endif %}
       <p class="hint">Make and model are required unless you enter a VIN. Complex repairs need an estimate and your approval. Nothing is booked until we contact you.</p>
       {% include "site/_legal_note.html" %}
       <button class="btn btn-purple" type="submit">Send estimate request</button>

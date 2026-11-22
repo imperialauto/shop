@@ -13,7 +13,7 @@ PostgreSQL lock the staff booking API uses. Confirmation appears on screen only.
 """
 import logging
 
-from app import appointment_followup, business_settings, calendar_feed, estimate_prefill, lead_lifecycle, website_alerts
+from app import appointment_followup, business_settings, referrals, calendar_feed, estimate_prefill, lead_lifecycle, website_alerts
 import os
 import re
 import secrets
@@ -143,6 +143,7 @@ def render(request: Request, name: str, status_code: int = 200, form_page: bool 
         "canonical_url": canonical_url(request.url.path) if can_index else None,
         "forms_open": forms_enabled(request.app.state.read_only),
         "year": datetime.now(PHOENIX).year,
+        "referral_box": referrals.enabled(),
     }
     return templates.TemplateResponse(name, {**base, **context}, status_code=status_code,
                                       headers=page_headers(form_page))
@@ -609,6 +610,7 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
             raise FormError(taken)
         customer, matched = find_or_create_customer(db, person)
         vehicle = find_or_create_vehicle(db, customer, matched, vehicle_details)
+        referral_note = referrals.from_website(db, customer, form.get("referral_code"))
         label = phoenix_label(starts_at)
         total = total_price(service, zone, vehicle_class, axles)
         package = ""
@@ -622,6 +624,7 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
             f"Price shown: {service.price_label}." + (f" {'Starting total' if service.price_type == 'starting' else 'Total'} shown: ${total:,.2f}." if total is not None else " No final price yet."),
             f"Customer notes: {notes}" if notes else "",
             f"Mileage given: {vehicle_details['mileage']:,}" if vehicle_details["mileage"] else "",
+            referral_note,
         ])
         order = new_repair_order(db, customer, vehicle, concern, vehicle_details["mileage"])
         appointment = Appointment(repair_order_id=order.id, resource_id=slot.resource_id, starts_at=starts_at, ends_at=candidate.ends_at,
@@ -709,11 +712,12 @@ async def estimate_submit(request: Request, db: Session = Depends(get_db)):
         log.info("site_form_rejected form=estimate reason=%s", str(exc)[:60])
         return estimate_page(request, 422, str(exc), values)
     return save_request(request, db, person, details, line, where, location, description,
-                        retry=lambda code, message: estimate_page(request, code, message, values))
+                        retry=lambda code, message: estimate_page(request, code, message, values),
+                        referral_code=form.get("referral_code"))
 
 
 def save_request(request: Request, db: Session, person: dict, details: dict, line, where: str, location: str,
-                 description: str, retry, heading: str = "Estimate request from the website."):
+                 description: str, retry, heading: str = "Estimate request from the website.", referral_code: str | None = None):
     """One request makes one customer, vehicle, job, lead and owner item, with the estimate started
     from approved prices. Shared by estimate and roadside requests."""
     resend = fingerprint("estimate", person["phone"], " ".join(description.split()))
@@ -730,6 +734,7 @@ def save_request(request: Request, db: Session, person: dict, details: dict, lin
             f"Where: {WHERE_OPTIONS[where]}{' — ' + location if location else ''}.",
             f"Mileage given: {details['mileage']:,}" if details["mileage"] else "",
             f"Details: {description}",
+            referrals.from_website(db, customer, referral_code),
         ])
         order = new_repair_order(db, customer, vehicle, concern, details["mileage"])
         started = estimate_prefill.prefill(db, order, line.slug if line else "", where)
