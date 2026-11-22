@@ -121,6 +121,23 @@ async function dispatchHandled({ conversationId, at, phone, byCall = false }) {
   }
 }
 
+// A Quo contact was saved or renamed. The dashboard renames the matching customer
+// only when the label reads as a name and nobody typed one in the dashboard.
+async function quoContactChanged(contact) {
+  if (!configured()) return { updated: 0, reason: "not_configured" };
+  try {
+    return await request("/internal/dispatch/contact", { method: "POST", body: JSON.stringify(contact) });
+  } catch (err) {
+    console.error("shopClient.quoContactChanged failed:", err.message);
+    return { updated: 0, reason: "error" };
+  }
+}
+
+// The hourly catch-up: every Quo contact in one call. Throws, so the caller logs it.
+async function quoContactsCatchUp(contacts) {
+  return request("/internal/dispatch/contacts", { method: "POST", body: JSON.stringify({ contacts }), signal: AbortSignal.timeout(60000) });
+}
+
 async function dispatchSync({ source, ok, detail }) {
   if (!configured()) return { recorded: false, reason: "not_configured" };
   try {
@@ -246,6 +263,8 @@ async function dispatchOutbound({ key, status }) {
 }
 
 module.exports = {
+  quoContactsCatchUp,
+  quoContactChanged,
   configured, getContext, getContextStrict, getSigningLink, logCommunication,
   dispatchIntake, dispatchOwnerAction, dispatchHandled, dispatchSync, dispatchTick, dispatchOutbound, dispatchDraft, checkCustomerFollowup,
   captureOwnerTask, readOwnerTask, changeOwnerTask, openOwnerTasks, syncQuoTasks, ackQuoTasks, submitDevelopmentWork, listDevelopmentWork,

@@ -80,6 +80,7 @@
         {% endif %}
         <label class="sr-only" for="reply-{{ item.id }}">Reply to customer</label>
         <textarea id="reply-{{ item.id }}" name="reply_text" rows="3" maxlength="1500" class="form-input" style="display:block; margin:0 0 8px;" placeholder="Tap a quick reply or type your own">{{ item.draft_reply or '' }}</textarea>
+        <label style="margin:0 0 8px;display:inline-flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" name="offer_snap" value="1"> Offer Snap Finance</label>
         {% endif %}
         <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
           <button class="btn-primary" name="decision" value="approve">{{ 'Send' if not (item.quo_conversation_id or '').startswith('WEB') else 'Mark handled' }}</button>
