@@ -1641,6 +1641,7 @@ class QuoContact(BaseModel):
     firstName: str = Field(default="", max_length=120)
     lastName: str = Field(default="", max_length=120)
     company: str = Field(default="", max_length=120)
+    externalId: str = Field(default="", max_length=120)
     emails: list[str] = Field(default_factory=list, max_length=10)
     phones: list[str] = Field(default_factory=list, max_length=10)
 
