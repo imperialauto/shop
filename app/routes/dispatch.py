@@ -1613,6 +1613,7 @@ class QuoContact(BaseModel):
     firstName: str = Field(default="", max_length=120)
     lastName: str = Field(default="", max_length=120)
     company: str = Field(default="", max_length=120)
+    emails: list[str] = Field(default_factory=list, max_length=10)
     phones: list[str] = Field(default_factory=list, max_length=10)
 
 
@@ -1621,5 +1622,24 @@ def quo_contact_changed(contact: QuoContact, db: Session = Depends(get_db), _aut
     """A Quo contact was saved or renamed: rename the matching customer. Never creates, deletes or texts."""
     from app import quo_contact_names
     result = quo_contact_names.apply(db, contact.model_dump())
+    db.commit()
+    return result
+
+
+class QuoContactBatch(BaseModel):
+    contacts: list[QuoContact] = Field(default_factory=list, max_length=5000)
+
+
+@internal_router.post("/contacts")
+def quo_contacts_catch_up(batch: QuoContactBatch, db: Session = Depends(get_db), _auth: bool = Depends(require_internal_key)):
+    """The hourly catch-up of every Quo contact, and the Home health line for it."""
+    from app import quo_contact_names
+    result = quo_contact_names.apply_all(db, [c.model_dump() for c in batch.contacts])
+    row = db.get(DispatchSync, "quo_contacts")
+    if row is None:
+        row = DispatchSync(source="quo_contacts", consecutive_failures=0)
+        db.add(row)
+    row.last_success_at, row.consecutive_failures = datetime.now(timezone.utc), 0
+    row.last_detail = f"Checked {result['contacts']} Quo contacts; renamed {result['renamed']}."[:255]
     db.commit()
     return result

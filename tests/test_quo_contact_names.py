@@ -63,7 +63,7 @@ class QuoContactNameTests(unittest.TestCase):
         self.assertEqual(self.customer(1)[0], "Unknown")
 
     def test_a_real_name_renames_the_customer(self):
-        self.assertEqual(self.post("Dana", "Sample").json(), {"updated": 1, "reason": None})
+        self.assertEqual(self.post("Dana", "Sample").json(), {"updated": 1, "emails": 0, "reason": None})
         self.assertEqual(self.customer(1), ("Dana", "Sample", "quo_contact"))
 
     def test_a_job_label_replaces_an_old_job_label_never(self):
@@ -100,6 +100,41 @@ class QuoContactNameTests(unittest.TestCase):
         owner.post("/customers/1/edit", data={"first_name": "Jordan", "last_name": "Sample", "phone": "+16025550111"})
         self.assertEqual(self.customer(1), ("Jordan", "Sample", "staff"))
         self.assertEqual(self.post("Dana", "Sample").json()["reason"], "typed_in_dashboard")
+
+    def test_an_empty_email_is_filled_and_a_typed_one_kept(self):
+        self.client.post("/internal/dispatch/contact", headers=HEADERS,
+                         json={"id": "CT1", "firstName": "Dana", "lastName": "Sample", "emails": ["dana@example.test"], "phones": ["+16025550111"]})
+        with self.Session() as db:
+            self.assertEqual(db.get(Customer, 1).email, "dana@example.test")
+            db.get(Customer, 3).email = "robin@example.test"
+            db.commit()
+        self.client.post("/internal/dispatch/contact", headers=HEADERS,
+                         json={"id": "CT3", "firstName": "Robin", "emails": ["other@example.test"], "phones": ["6025550133"]})
+        with self.Session() as db:
+            self.assertEqual(db.get(Customer, 3).email, "robin@example.test")
+
+    def test_hourly_catch_up_renames_and_shows_on_home_health(self):
+        from app import system_health
+        from app.dispatch_model import DispatchSync
+        with self.Session() as db:
+            self.assertNotIn("Quo contact names", [c["name"] for c in system_health.report(db)["checks"]])
+        r = self.client.post("/internal/dispatch/contacts", headers=HEADERS, json={"contacts": [
+            {"id": "A", "firstName": "Dana", "lastName": "Sample", "phones": ["+16025550111"]},
+            {"id": "B", "firstName": "Toyota", "lastName": "Camry", "phones": ["+16025550122"]},
+            {"id": "C", "firstName": "Nobody", "phones": ["+16025550199"]}]})
+        self.assertEqual(r.json(), {"contacts": 3, "renamed": 1, "emails": 0})
+        self.assertEqual(self.customer(1), ("Dana", "Sample", "quo_contact"))
+        with self.Session() as db:
+            line = [c for c in system_health.report(db)["checks"] if c["name"] == "Quo contact names"][0]
+            self.assertTrue(line["ok"])
+            self.assertIn("renamed 1", line["detail"])
+            from datetime import datetime, timedelta, timezone
+            db.get(DispatchSync, "quo_contacts").last_success_at = datetime.now(timezone.utc) - timedelta(hours=4)
+            db.commit()
+            line = [c for c in system_health.report(db)["checks"] if c["name"] == "Quo contact names"][0]
+            self.assertFalse(line["ok"])
+        self.assertEqual(self.client.post("/internal/dispatch/contacts", headers={"X-Internal-Key": "wrong"},
+                                          json={"contacts": []}).status_code, 401)
 
 
 if __name__ == "__main__":

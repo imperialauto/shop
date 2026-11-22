@@ -26,10 +26,13 @@ function namesOf(contact) {
     firstName: String(fields.firstName || "").slice(0, 120),
     lastName: String(fields.lastName || "").slice(0, 120),
     company: String(fields.company || "").slice(0, 120),
+    emails: (fields.emails || contact?.emails || []).map((e) => String(e?.value || e || "").slice(0, 120)).filter(Boolean).slice(0, 10),
   };
 }
 
-function createContactEvents({ quo, shopClient, skip = new Set(), wroteRecently = recentlyWritten }) {
+const MAX_PAGES = 40;
+
+function createContactEvents({ quo, shopClient, skip = new Set(), wroteRecently = recentlyWritten, pageDelayMs = 250 }) {
   const seen = new Set();
 
   async function handle(body, eventId) {
@@ -50,7 +53,26 @@ function createContactEvents({ quo, shopClient, skip = new Set(), wroteRecently 
     return result?.updated ? "renamed" : result?.reason || "unchanged";
   }
 
-  return { handle };
+  // Every contact once an hour: catches a missed webhook, and contacts renamed
+  // before this existed. Reports to the Home health line through the dashboard.
+  async function catchUp() {
+    const contacts = [];
+    let pageToken;
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      const { data = [], nextPageToken } = await quo.listContacts({ pageToken });
+      for (const contact of data) {
+        const phones = phonesOf(contact).filter((p) => !skip.has(p.replace(/\D/g, "").slice(-10)));
+        if (!phones.length || phones.some((p) => wroteRecently(p))) continue;
+        contacts.push({ id: String(contact.id || ""), ...namesOf(contact), phones: phones.slice(0, 10) });
+      }
+      if (!nextPageToken) break;
+      pageToken = nextPageToken;
+      await new Promise((resolve) => setTimeout(resolve, pageDelayMs)); // stay under Quo's rate limit
+    }
+    return shopClient.quoContactsCatchUp(contacts);
+  }
+
+  return { handle, catchUp };
 }
 
 async function ensureContactWebhook({ quo, url }) {

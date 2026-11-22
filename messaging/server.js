@@ -52,12 +52,19 @@ if (process.env.DISPATCH_RECOVERY_ENABLED === "true") {
 }
 
 // Off until CONTACT_HOOK_TOKEN is set. A contact renamed in Quo renames the
-// matching dashboard customer. Never texts anyone and never writes to Quo.
+// matching dashboard customer, live by webhook and again in an hourly catch-up.
+// Never texts anyone and never writes to Quo.
 if (process.env.CONTACT_HOOK_TOKEN && process.env.PUBLIC_URL) {
   const quo = require("./src/lib/quoClient");
   const { createContactEvents, ensureContactWebhook } = require("./src/lib/contactEvents");
   const skip = new Set((process.env.CONTACT_SYNC_SKIP || "").split(",").filter(Boolean).map((n) => n.replace(/\D/g, "").slice(-10)));
-  app.set("contactEvents", createContactEvents({ quo, shopClient: require("./src/lib/shopClient"), skip }));
+  const contactEvents = createContactEvents({ quo, shopClient: require("./src/lib/shopClient"), skip });
+  app.set("contactEvents", contactEvents);
+  const catchUp = () => contactEvents.catchUp()
+    .then((r) => console.log(`Quo contact catch-up: ${r.contacts} checked, ${r.renamed} renamed`))
+    .catch((err) => console.error("Quo contact catch-up failed:", err.message));
+  setTimeout(catchUp, 60 * 1000);
+  setInterval(catchUp, 60 * 60 * 1000);
   ensureContactWebhook({ quo, url: `${process.env.PUBLIC_URL}/webhooks/quo-contacts/${process.env.CONTACT_HOOK_TOKEN}` })
     .then((state) => console.log(`Quo contact webhook ${state}`))
     .catch((err) => console.error(`Quo contact webhook setup failed: ${err.status || ""} ${err.code || ""} ${err.message || ""}`.trim()));

@@ -10,6 +10,9 @@ Quo (nothing in the webhook body is trusted) and posts it here. Rules:
     read as a person's or business's name is ignored, so a job label never
     becomes a customer's name. That is also the loop guard: nothing here
     writes back to Quo, and the labels our sync writes are always refused.
+An empty email on the customer is filled from Quo; an email already there stays.
+The messaging service also sends every Quo contact once an hour (apply_all), so
+a missed webhook or a contact renamed before this existed still catches up.
 Never contacts a customer. The caller commits.
 """
 import re
@@ -50,19 +53,38 @@ def person_name(first: str, last: str, company: str) -> tuple[str, str] | None:
     return first[:64], last[:64]
 
 
-def apply(db: Session, contact: dict) -> dict:
-    """contact: {id, firstName, lastName, company, phones: [..]}. Returns what changed."""
-    name = person_name(contact.get("firstName"), contact.get("lastName"), contact.get("company"))
-    if name is None:
-        return {"updated": 0, "reason": "not_a_name"}
+EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,120}\.[A-Za-z]{2,}$")
+
+
+def _index(db: Session) -> dict:
+    out = {}
+    for customer in db.query(Customer).filter(Customer.phone.isnot(None)).all():
+        out.setdefault(digits(customer.phone), []).append(customer)
+    return out
+
+
+def apply(db: Session, contact: dict, index: dict | None = None) -> dict:
+    """contact: {id, firstName, lastName, company, emails, phones}. Returns what changed."""
+    index = _index(db) if index is None else index
     phones = {digits(p) for p in contact.get("phones") or [] if len(digits(p)) == 10}
+    customers = [c for p in phones for c in index.get(p, [])]
     if not phones:
         return {"updated": 0, "reason": "no_phone"}
+    email = next((e.strip() for e in contact.get("emails") or [] if EMAIL.match((e or "").strip())), None)
+    emailed = 0
+    for customer in customers:
+        if email and not (customer.email or "").strip():
+            customer.email = email[:128]
+            emailed += 1
+    name = person_name(contact.get("firstName"), contact.get("lastName"), contact.get("company"))
+    if name is None:
+        db.flush()
+        return {"updated": 0, "emails": emailed, "reason": "not_a_name"}
+    if not customers:
+        return {"updated": 0, "reason": "no_customer"}
     first, last = name
     updated, skipped = 0, []
-    for customer in db.query(Customer).filter(Customer.phone.isnot(None)).all():
-        if digits(customer.phone) not in phones:
-            continue
+    for customer in customers:
         if customer.name_source == "staff":
             skipped.append("typed_in_dashboard")
             continue
@@ -78,4 +100,15 @@ def apply(db: Session, contact: dict) -> dict:
                              detail=f"customer {customer.id} from Quo contact {str(contact.get('id') or '')[:40]}"))
         updated += 1
     db.flush()
-    return {"updated": updated, "reason": None if updated else (skipped[0] if skipped else "no_customer")}
+    return {"updated": updated, "emails": emailed, "reason": None if updated else (skipped[0] if skipped else "no_customer")}
+
+
+def apply_all(db: Session, contacts: list[dict]) -> dict:
+    """The hourly catch-up: every Quo contact at once, one customer lookup."""
+    index = _index(db)
+    renamed = emails = 0
+    for contact in contacts:
+        result = apply(db, contact, index)
+        renamed += result.get("updated", 0)
+        emails += result.get("emails", 0)
+    return {"contacts": len(contacts), "renamed": renamed, "emails": emails}

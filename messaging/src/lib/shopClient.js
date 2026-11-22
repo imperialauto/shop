@@ -133,6 +133,11 @@ async function quoContactChanged(contact) {
   }
 }
 
+// The hourly catch-up: every Quo contact in one call. Throws, so the caller logs it.
+async function quoContactsCatchUp(contacts) {
+  return request("/internal/dispatch/contacts", { method: "POST", body: JSON.stringify({ contacts }), signal: AbortSignal.timeout(60000) });
+}
+
 async function dispatchSync({ source, ok, detail }) {
   if (!configured()) return { recorded: false, reason: "not_configured" };
   try {
@@ -258,6 +263,7 @@ async function dispatchOutbound({ key, status }) {
 }
 
 module.exports = {
+  quoContactsCatchUp,
   quoContactChanged,
   configured, getContext, getContextStrict, getSigningLink, logCommunication,
   dispatchIntake, dispatchOwnerAction, dispatchHandled, dispatchSync, dispatchTick, dispatchOutbound, dispatchDraft, checkCustomerFollowup,

@@ -22,7 +22,7 @@ const event = (id = "EV1", type = "contact.updated") => ({ id, type, data: { res
 test("a renamed contact is read back from Quo and sent to the dashboard", async () => {
   const { events, sent } = fixture();
   assert.equal(await events.handle(event()), "renamed");
-  assert.deepEqual(sent, [{ id: "CT1", firstName: "Dana", lastName: "Sample", company: "", phones: ["+16025550111"] }]);
+  assert.deepEqual(sent, [{ id: "CT1", firstName: "Dana", lastName: "Sample", company: "", emails: [], phones: ["+16025550111"] }]);
 });
 
 test("the request body is never trusted for the name or number", async () => {
@@ -71,4 +71,20 @@ test("the contact webhook is made once", async () => {
   const quo = { listWebhooks: async () => made.map((m) => ({ url: m.url })), createContactWebhook: async (h) => made.push(h) };
   assert.equal(await ensureContactWebhook({ quo, url: "https://example.test/webhooks/quo-contacts/t" }), "created");
   assert.equal(await ensureContactWebhook({ quo, url: "https://example.test/webhooks/quo-contacts/t" }), "exists");
+});
+
+test("hourly catch-up sends every contact with a number, minus skipped and our own writes", async () => {
+  const pages = [
+    { data: [{ id: "A", defaultFields: { firstName: "Dana", lastName: "Sample", emails: [{ value: "dana@example.test" }], phoneNumbers: [{ value: "+16025550111" }] } },
+             { id: "B", defaultFields: { firstName: "No", lastName: "Phone", phoneNumbers: [] } }], nextPageToken: "p2" },
+    { data: [{ id: "C", defaultFields: { firstName: "Skip", phoneNumbers: [{ value: "+16025550122" }] } },
+             { id: "D", defaultFields: { firstName: "Ours", phoneNumbers: [{ value: "+16025550133" }] } }] },
+  ];
+  let sent;
+  const quo = { listContacts: async ({ pageToken }) => pages[pageToken ? 1 : 0] };
+  const shopClient = { quoContactsCatchUp: async (c) => { sent = c; return { contacts: c.length, renamed: 1 }; } };
+  const events = createContactEvents({ quo, shopClient, skip: new Set(["6025550122"]), wroteRecently: (p) => p.endsWith("0133"), pageDelayMs: 0 });
+  const result = await events.catchUp();
+  assert.deepEqual(sent, [{ id: "A", firstName: "Dana", lastName: "Sample", company: "", emails: ["dana@example.test"], phones: ["+16025550111"] }]);
+  assert.equal(result.renamed, 1);
 });
