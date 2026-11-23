@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Finishing bank sign-in — Imperial Auto Care{% endblock %}
+{% block content %}
+<div class="card" style="max-width:520px;margin:40px auto;padding:20px;text-align:center;">
+  <h1 style="font-size:18px;margin:0 0 8px;">Finishing your bank sign-in</h1>
+  <p id="bank-status" style="color:var(--imp-muted);font-size:14px;">One moment while Plaid finishes up.</p>
+  <p style="margin-top:14px;"><a href="/finance/">Back to Money</a></p>
+</div>
+<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+<script src="/static/bank-link.js"></script>
+<script>window.imperialBankResume();</script>
+{% endblock %}

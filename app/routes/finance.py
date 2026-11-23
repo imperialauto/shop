@@ -1,7 +1,8 @@
 """Owner-only money overview: what's on hand, what's owed and when, what's coming in, and what the
 shop needs to make each day to cover it.
 
-Balances, bills and expected money are typed or pasted in by the owner (app/finance_model.py).
+Balances, bills and expected money are typed or pasted in by the owner (app/finance_model.py), or
+come in from linked banks through Plaid (app/bank_feed.py, routes in app/routes/finance_bank.py).
 Money in comes from payments recorded on jobs plus expected money marked as received here.
 Unpaid balances on sent job invoices count as money coming in. A bank's CSV download can update an
 account's balance; the file itself is read once and not kept. Nothing here changes invoices or
@@ -175,7 +176,10 @@ def finance_home(request: Request, window: int = 14, db: Session = Depends(get_d
     paid_recently = sorted((b for b in bills if b.status == "paid" and b.paid_on and b.paid_on >= today - timedelta(days=14)),
                            key=lambda b: b.paid_on, reverse=True)
 
-    return templates.TemplateResponse("finance/home.html", {
+    from app.routes.finance_bank import PLAID_CSP, page_context
+    bank = page_context(db)
+    response = templates.TemplateResponse("finance/home.html", {
+        **bank,
         "request": request,
         "user": user,
         "ready": ready,
@@ -211,6 +215,9 @@ def finance_home(request: Request, window: int = 14, db: Session = Depends(get_d
         "problems": [p[:200] for p in request.query_params.getlist("problem")[:10]],
         "money": plan.dollars,
     })
+    if bank["bank_enabled"]:
+        response.headers["Content-Security-Policy"] = PLAID_CSP
+    return response
 
 
 # ---- changes ------------------------------------------------------------------
