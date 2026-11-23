@@ -11,8 +11,12 @@ from sqlalchemy import Boolean, Column, Date, DateTime, Index, Integer, String, 
 from app.database import Base
 
 SCOPES = ("business", "personal")
-BILL_CATEGORIES = ("rent", "utilities", "loan", "card", "software", "phone", "insurance", "vehicle", "parts", "taxes", "other")
+BILL_CATEGORIES = ("rent", "utilities", "loan", "card", "software", "phone", "insurance", "vehicle", "parts", "taxes", "fees", "other")
 REPEATS = ("once", "weekly", "monthly")
+# Bill notes that mean something to the page. Kept in the note column so no table changes are needed.
+NOTE_UNCONFIRMED = "Not confirmed yet"
+NOTE_PAID_GUESS = "Paid date not confirmed"
+MARKER_NOTES = (NOTE_UNCONFIRMED, NOTE_PAID_GUESS)
 
 
 def utc_now():
