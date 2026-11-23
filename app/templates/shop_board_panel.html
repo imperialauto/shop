@@ -1,0 +1,55 @@
+{% if board.show_money %}
+<section class="card sales {% if board.sales and board.sales.hit %}hit{% endif %}" aria-label="Money in today">
+  {% if board.sales %}{% set s = board.sales %}
+  <div>
+    <div class="label">Money in today</div>
+    <div class="big">${{ '{:,.0f}'.format(s.total) }} <small>of ${{ '{:,.0f}'.format(s.goal) }}</small></div>
+  </div>
+  <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ s.percent }}"><i style="width: {{ s.percent }}%"></i></div>
+  <div class="left">{% if s.hit %}Goal hit{% else %}${{ '{:,.0f}'.format(s.left) }} to go{% endif %}</div>
+  {% else %}
+  <div class="warn">Today's sales couldn't be loaded. The board will try again.</div>
+  {% endif %}
+</section>
+{% else %}<div></div>{% endif %}
+
+<div class="cols">
+  <section class="card" aria-label="Today's jobs">
+    <h2>Today's jobs{% if board.jobs %}<span>{{ board.jobs|length }} open</span>{% endif %}</h2>
+    {% if board.jobs is none %}
+    <p class="warn">Jobs couldn't be loaded. The board will try again.</p>
+    {% elif not board.jobs %}
+    <p class="empty">No open jobs or visits today.</p>
+    {% else %}
+    <ul class="jobs">
+      {% for job in board.jobs %}
+      <li class="job">
+        {% if job.time %}<span class="when">{{ job.time }}</span>{% else %}<span class="when none">In shop</span>{% endif %}
+        <span class="what">{{ job.vehicle }}{% if job.who or job.tech or job.mobile %}<br><span class="who">{{ job.who }}{% if job.who and (job.tech or job.mobile) %} · {% endif %}{% if job.mobile %}Mobile{% if job.tech %} · {% endif %}{% endif %}{% if job.tech %}{{ job.tech }}{% endif %}</span>{% endif %}</span>
+        <span class="stage {{ job.stage_key }}">{{ job.stage }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+
+  <section class="card" aria-label="To-do list">
+    <h2>To-do{% if board.todos and board.todos.open_count %}<span>{{ board.todos.open_count }} left</span>{% endif %}</h2>
+    {% if not board.todos_on %}
+    <p class="empty">The to-do list isn't turned on yet.</p>
+    {% elif board.todos is none %}
+    <p class="warn">The to-do list couldn't be loaded. The board will try again.</p>
+    {% else %}
+    {% set shown = board.todos.open[:12] %}
+    {% if not shown and not board.todos.done %}
+    <p class="empty">Nothing on the list. Add one from your phone at Shop TV board.</p>
+    {% endif %}
+    <ul class="todos">
+      {% for item in shown %}<li class="todo {% if item.urgent %}urgent{% endif %}">{{ item.title }}</li>{% endfor %}
+      {% for item in board.todos.done %}<li class="todo done">{{ item.title }}</li>{% endfor %}
+    </ul>
+    {% if board.todos.open_count > shown|length %}<p class="more">+ {{ board.todos.open_count - shown|length }} more on the list</p>{% endif %}
+    {% endif %}
+  </section>
+</div>
+<div class="foot">Updated {{ board.now.strftime('%-I:%M:%S %p') }}</div>

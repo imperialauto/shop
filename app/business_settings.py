@@ -40,6 +40,8 @@ KEYS = {
     "legal_review": "LEGAL_REVIEW_JSON",
     # Hash of the owner's private calendar-feed address (app/appointment_feed.py). Set in Settings only.
     "appointment_feed": "APPOINTMENT_FEED_SETTING",
+    # Shop TV board (app/shop_board.py): money to bring in each day. Set on /board/manage.
+    "daily_sales_goal": "DAILY_SALES_GOAL",
 }
 CACHE_SECONDS = 15
 _cache: dict = {"at": 0.0, "values": None}
