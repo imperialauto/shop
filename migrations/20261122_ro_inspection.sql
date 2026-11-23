@@ -1,6 +1,6 @@
 -- ADDITIVE ONLY: inspection checklist rows on a repair order, shown on the customer's status page.
--- Existing jobs, lines, photos and invoices are untouched. The app also creates this table on start
--- if it is missing. Run with owner approval, after a fresh backup. Safe to run twice.
+-- Existing jobs, lines, photos and invoices are untouched. The app does NOT create tables on start,
+-- so apply this before or right after deploy. Run with owner approval, after a fresh backup. Safe to run twice.
 BEGIN;
 CREATE TABLE IF NOT EXISTS ro_inspection_items (
     id SERIAL PRIMARY KEY,

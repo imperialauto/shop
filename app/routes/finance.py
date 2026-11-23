@@ -58,7 +58,7 @@ def phoenix_today() -> date:
 
 def daily_goal() -> int:
     try:
-        value = int(float(settings_store.raw("finance_daily_goal") or ""))
+        value = int(float(settings_store.raw("daily_sales_goal") or ""))
     except ValueError:
         return plan.DEFAULT_DAILY_GOAL
     return value if 0 < value <= 100000 else plan.DEFAULT_DAILY_GOAL
@@ -397,7 +397,7 @@ async def goal(request: Request, db: Session = Depends(get_db)):
             return "", ["The daily goal has to be a dollar amount."]
         if not 0 < value <= 100000:
             return "", ["The daily goal has to be between $1 and $100,000."]
-        settings_store.save(db, "finance_daily_goal", str(value), user.username)
+        settings_store.save(db, "daily_sales_goal", str(value), user.username)
         settings_store.clear_cache()
         return f"Daily goal set to ${value:,}.", []
     return await _save(request, db, work)
