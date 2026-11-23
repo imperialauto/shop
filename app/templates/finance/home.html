@@ -7,12 +7,12 @@
 <div class="fin-row{% if late %} late{% endif %}">
   <div class="fin-row-main">
     <h3>{{ b.name }}</h3>
-    <p>{% if b.projected %}Next one due {{ b.due_date.strftime('%a %b %-d') }}{% elif late %}Was due {{ b.due_date.strftime('%b %-d') }} · {{ (today - b.due_date).days }} day{{ '' if (today - b.due_date).days == 1 else 's' }} late{% else %}Due {{ b.due_date.strftime('%a %b %-d') }}{% endif %} · {{ b.category|capitalize }}{% if b.repeats != 'once' %} · {{ b.repeats }}{% endif %}</p>
+    <p>{% if b.projected %}Next one due {{ b.due_date.strftime('%a %b %-d') }}{% elif late %}Was due {{ b.due_date.strftime('%b %-d') }} · {{ (today - b.due_date).days }} day{{ '' if (today - b.due_date).days == 1 else 's' }} late{% else %}Due {{ b.due_date.strftime('%a %b %-d') }}{% endif %} · {{ b.category|capitalize }}{% if b.repeats != 'once' %} · {{ b.repeats }}{% endif %}{% if not b.projected and is_unconfirmed(b) %} · <span class="fin-flag">Not confirmed</span>{% endif %}</p>
   </div>
   <div class="fin-row-side">
     <div class="amount">{{ usd(b.amount_cents) }}</div>
     {% if not b.projected %}<div class="fin-actions">
-      <form method="post" action="/finance/bills/{{ b.id }}/paid"><input type="hidden" name="window" value="{{ window }}">{% if totals %}{{ account_pick(totals, 'Paid from') }}{% endif %}<button class="btn-secondary text-xs" type="submit">Paid</button></form>
+      <form method="post" action="/finance/bills/{{ b.id }}/paid"><input type="hidden" name="window" value="{{ window }}">{% if totals %}{{ account_pick(totals, 'Paid from') }}{% endif %}<input type="date" name="paid_on" class="fin-acct fin-day" value="{{ today.isoformat() }}" max="{{ today.isoformat() }}" aria-label="Paid on"><button class="btn-secondary text-xs" type="submit">Paid</button></form>
       <form method="post" action="/finance/bills/{{ b.id }}/skip" data-confirm="Take {{ b.name }} off the list?"><input type="hidden" name="window" value="{{ window }}"><button class="fin-link" type="submit">Remove</button></form>
     </div>{% endif %}
   </div>
@@ -56,6 +56,8 @@
   .fin-actions form { margin:0; display:flex; gap:6px; align-items:center; }
   .fin-acct { font-size:12px; max-width:150px; padding:3px 4px; border:1px solid var(--imp-line); border-radius:6px; background:transparent; color:var(--imp-ink); }
   .fin-actions .btn-secondary { min-height:36px; }
+  .fin-flag { color:var(--imp-danger); font-weight:600; }
+  .fin-day { max-width:140px; min-height:36px; }
   .fin-link { background:none; border:0; color:var(--imp-muted); font-size:12px; text-decoration:underline; cursor:pointer; padding:8px 2px; min-height:36px; }
   .fin-in { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
   .fin-in > div { min-width:0; }
@@ -200,7 +202,46 @@
         {% endif %}
         {% if paid_recently %}
         <details class="fin-more"><summary>Paid in the last 2 weeks</summary>
-          {% for b in paid_recently %}<div class="fin-row"><div class="fin-row-main"><h3>{{ b.name }}</h3><p>Paid {{ b.paid_on.strftime('%b %-d') }} · {{ 'Shop' if b.scope == 'business' else 'Personal' }}</p></div><div class="fin-row-side"><div class="amount">{{ usd(b.amount_cents) }}</div></div></div>{% endfor %}
+          {% for b in paid_recently %}<div class="fin-row"><div class="fin-row-main"><h3>{{ b.name }}</h3><p>Paid {{ b.paid_on.strftime('%b %-d') }}{% set dl = days_late(b) %}{% if dl %} · <span class="fin-flag">{{ dl }} day{{ '' if dl == 1 else 's' }} late</span>{% endif %} · {{ 'Shop' if b.scope == 'business' else 'Personal' }}</p></div><div class="fin-row-side"><div class="amount">{{ usd(b.amount_cents) }}</div></div></div>{% endfor %}
+        </details>
+        {% endif %}
+      </section>
+
+      <section class="card fin-card" aria-labelledby="fin-ontime-h" id="on-time">
+        <h2 id="fin-ontime-h">Paying on time</h2>
+        {% set ot = on_time %}
+        {% if ot.paid or ot.still_open or ot.fees or ot.unchecked %}
+        <p class="cap">Bills due in the last {{ ot.days }} days, shop and personal:
+          {% if ot.paid %}{{ ot.late }} of {{ ot.paid }} paid late{% if ot.late %}, {{ ot.average_late }} day{{ '' if ot.average_late == 1 else 's' }} late on average{% endif %}.{% endif %}
+          {% if ot.still_open %}{{ ot.still_open }} still unpaid past the due date.{% endif %}
+          {% if ot.fees %}Late and reconnect fees: <strong class="fin-flag">{{ usd(ot.fees) }}</strong>.{% endif %}
+          {% if ot.unchecked %}{{ ot.unchecked }} paid date{{ 's' if ot.unchecked != 1 }} below need{{ 's' if ot.unchecked == 1 }} checking before {{ 'it counts' if ot.unchecked == 1 else 'they count' }}.{% endif %}</p>
+        {% else %}<p class="cap">Once bills are marked paid with the day you paid them, this shows how many went late and what the late fees cost.</p>{% endif %}
+
+        {% if check_dates %}
+        <h3 class="fin-sub-h">Check these paid dates</h3>
+        <p class="cap">I guessed these from your email or bank. Fix the day if it's wrong, then tap Right.</p>
+        {% for b in check_dates %}
+        <div class="fin-row"><div class="fin-row-main"><h3>{{ b.name }}</h3><p>Due {{ b.due_date.strftime('%b %-d') }} · {{ usd(b.amount_cents) }} · {{ 'Shop' if b.scope == 'business' else 'Personal' }}</p></div>
+          <div class="fin-row-side"><form class="fin-actions" method="post" action="/finance/bills/{{ b.id }}/paiddate"><input type="hidden" name="window" value="{{ window }}"><input type="date" name="paid_on" class="fin-acct fin-day" value="{{ b.paid_on.isoformat() }}" max="{{ today.isoformat() }}" aria-label="Paid on"><button class="btn-secondary text-xs" type="submit">Right</button></form></div></div>
+        {% endfor %}
+        {% endif %}
+
+        {% if to_confirm %}
+        <h3 class="fin-sub-h">Bills I found, not confirmed</h3>
+        <p class="cap">These came from your email. Tap Mine if you pay it, or Not mine to drop it.</p>
+        {% for b in to_confirm %}
+        <div class="fin-row"><div class="fin-row-main"><h3>{{ b.name }}</h3><p>Due {{ b.due_date.strftime('%b %-d') }} · {{ b.category|capitalize }} · {{ 'Shop' if b.scope == 'business' else 'Personal' }}</p></div>
+          <div class="fin-row-side"><div class="amount">{{ usd(b.amount_cents) }}</div><div class="fin-actions">
+            <form method="post" action="/finance/bills/{{ b.id }}/confirm"><input type="hidden" name="window" value="{{ window }}"><button class="btn-secondary text-xs" type="submit">Mine</button></form>
+            <form method="post" action="/finance/bills/{{ b.id }}/skip" data-confirm="Drop {{ b.name }}?"><input type="hidden" name="window" value="{{ window }}"><button class="fin-link" type="submit">Not mine</button></form>
+          </div></div></div>
+        {% endfor %}
+        {% endif %}
+
+        {% if ot.late_bills %}
+        <details class="fin-more"><summary>Paid late lately</summary>
+          {% for b in ot.late_bills %}{% set dl = days_late(b) %}<div class="fin-row late"><div class="fin-row-main"><h3>{{ b.name }}</h3><p>Due {{ b.due_date.strftime('%b %-d') }} · paid {{ b.paid_on.strftime('%b %-d') }} · <span class="fin-flag">{{ dl }} day{{ '' if dl == 1 else 's' }} late</span></p></div><div class="fin-row-side"><div class="amount">{{ usd(b.amount_cents) }}</div></div></div>{% endfor %}
         </details>
         {% endif %}
       </section>
