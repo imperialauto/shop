@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app import agent_keys, next_action, ro_status_policy, website_alerts
+from app import agent_keys, estimate_pdf, next_action, ro_status_policy, website_alerts
 from app.agent_keys import AgentKey
 from app.appointment_model import Appointment
 from app.database import get_db
@@ -100,7 +100,8 @@ def line_json(li: LineItem) -> dict:
 def job_json(ro: RepairOrder) -> dict:
     return {"id": ro.id, "customer_id": ro.customer_id, "vehicle_id": ro.vehicle_id, "status": ro.status,
             "concern": ro.concern, "tech_notes": ro.tech_notes, "mileage_in": ro.mileage_in,
-            "invoiced": bool(ro.invoices), "lines": [line_json(li) for li in ro.line_items]}
+            "invoiced": bool(ro.invoices), "lines": [line_json(li) for li in ro.line_items],
+            "totals": estimate_pdf.totals(ro)}
 
 
 # ---------------------------------------------------------------- inputs
@@ -152,6 +153,17 @@ class LineIn(BaseModel):
     quantity: float = Field(default=1.0, gt=0, le=10_000)
     unit_price: float = Field(default=0.0, ge=0, le=1_000_000)
     taxable: bool = True
+
+
+class LineUpdate(BaseModel):
+    """Only the fields sent change."""
+    description: str | None = Field(default=None, min_length=1, max_length=2000)
+    item_type: str | None = Field(default=None, pattern="^(labor|part|sublet|misc)$")
+    quantity: float | None = Field(default=None, gt=0, le=10_000)
+    unit_price: float | None = Field(default=None, ge=0, le=1_000_000)
+    taxable: bool | None = None
+
+    _clean = field_validator("description", mode="before")(_blank_to_none)
 
 
 class CustomerUpdate(BaseModel):
@@ -465,6 +477,80 @@ def set_job_status(ro_id: int, payload: JobStatusIn, db: Session = Depends(get_d
     data = job_json(ro)
     data.update(previous_status=before, changed=target != before, next_step=_next_step(db, ro))
     return data
+
+
+def _editable_line(db: Session, ro_id: int, line_id: int) -> LineItem:
+    """Same rules as the job page's line editor: only lines the customer hasn't been asked about,
+    on a job with no invoice that isn't finished."""
+    li = db.get(LineItem, line_id)
+    if li is None or li.repair_order_id != ro_id:
+        raise HTTPException(404, "That line isn't on this job.")
+    ro = li.repair_order
+    if ro.invoices:
+        raise HTTPException(409, "This job already has an invoice. Staff must review charges.")
+    if ro.status in ("complete", "delivered"):
+        raise HTTPException(409, "This job is finished. Staff must review charges.")
+    if li.approval is not None:
+        raise HTTPException(409, f"The customer was already asked about this line ({li.approval}), so it can't "
+                                 "change. Add a revised line instead, and staff can ask for approval again.")
+    return li
+
+
+def _line_brief(li: LineItem) -> str:
+    return f"{li.description[:50]} {li.quantity:g} x ${li.unit_price:,.2f} ({li.item_type}{'' if li.taxable else ', no tax'})"
+
+
+@router.patch("/jobs/{ro_id}/lines/{line_id}")
+def update_line(ro_id: int, line_id: int, payload: LineUpdate, db: Session = Depends(get_db),
+                key: AgentKey = Depends(agent("estimates:write"))):
+    """Correct a draft estimate line. Totals come back recalculated. Nothing is sent to anyone."""
+    li = _editable_line(db, ro_id, line_id)
+    changes = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
+    if not changes:
+        raise HTTPException(422, "Send at least one of description, item_type, quantity, unit_price or taxable.")
+    before = _line_brief(li)
+    for field, value in changes.items():
+        setattr(li, field, value)
+    after = _line_brief(li)
+    changed = before != after
+    if changed:
+        agent_keys.record(db, key, "estimate.edit_line", "repair_order", ro_id, f"line {li.id}: {before} -> {after}"[:500])
+        db.commit()
+    db.refresh(li.repair_order)
+    data = job_json(li.repair_order)
+    data.update(changed=changed, line=line_json(li))
+    return data
+
+
+@router.delete("/jobs/{ro_id}/lines/{line_id}")
+def remove_line(ro_id: int, line_id: int, db: Session = Depends(get_db),
+                key: AgentKey = Depends(agent("estimates:write"))):
+    """Remove a draft estimate line. Totals come back recalculated. Nothing is sent to anyone."""
+    li = _editable_line(db, ro_id, line_id)
+    if li.completed_at:
+        raise HTTPException(409, "This line is marked done. Staff must reopen it before it can be removed.")
+    ro = li.repair_order
+    removed = line_json(li)
+    agent_keys.record(db, key, "estimate.remove_line", "repair_order", ro_id, f"line {li.id}: {_line_brief(li)}"[:500])
+    db.delete(li)
+    db.commit()
+    db.refresh(ro)
+    data = job_json(ro)
+    data.update(removed=removed)
+    return data
+
+
+@router.get("/jobs/{ro_id}/estimate.pdf")
+def estimate_pdf_file(ro_id: int, db: Session = Depends(get_db), key: AgentKey = Depends(agent("estimates:read"))):
+    """The job's estimate as a printable PDF. Read only."""
+    from fastapi.responses import Response
+
+    ro = db.get(RepairOrder, ro_id)
+    if ro is None:
+        raise HTTPException(404, "Job not found.")
+    return Response(estimate_pdf.build(ro), media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{estimate_pdf.filename(ro)}"',
+                             "Cache-Control": "no-store"})
 
 
 @router.get("/appointments")

@@ -67,6 +67,7 @@ ALLOWED_REDIRECTS = (
     "https://claude.com/api/mcp/auth_callback",
 )
 CODE_SECONDS = 300
+MCP_CONTENT = "__mcp_content__"  # a tool returning {MCP_CONTENT: [...]} sends those MCP content blocks as is
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 
 _clients = URLSafeSerializer(SECRET_KEY, salt="imperial-agent-oauth-client")
@@ -327,6 +328,16 @@ class _JobStatus(agent_api.JobStatusIn):
     job_id: int = Field(gt=0)
 
 
+class _LineEdit(agent_api.LineUpdate):
+    job_id: int = Field(gt=0)
+    line_id: int = Field(gt=0, description="The line's id from get_job.")
+
+
+class _LineRemove(BaseModel):
+    job_id: int = Field(gt=0)
+    line_id: int = Field(gt=0, description="The line's id from get_job.")
+
+
 class _Empty(BaseModel):
     pass
 
@@ -357,6 +368,33 @@ def _call_update_customer(db, key, a: _CustomerUpdate):
     data = a.model_dump(exclude_unset=True)
     customer_id = data.pop("customer_id")
     return agent_api.update_customer(customer_id, agent_api.CustomerUpdate(**data), db, key)
+
+
+def _call_edit_line(db, key, a: _LineEdit):
+    data = a.model_dump(exclude_unset=True)
+    job_id, line_id = data.pop("job_id"), data.pop("line_id")
+    return agent_api.update_line(job_id, line_id, agent_api.LineUpdate(**data), db, key)
+
+
+def _call_estimate_pdf(db, key, a: _Job):
+    """The PDF itself as an embedded file, plus the job page's print link for the owner's own browser."""
+    from app import approval_links, estimate_pdf
+    from app.models import RepairOrder
+
+    ro = db.get(RepairOrder, a.job_id)
+    if ro is None:
+        raise HTTPException(404, "Job not found.")
+    pdf = estimate_pdf.build(ro)
+    link = f"{approval_links.base_url()}/ro/{ro.id}/estimate.pdf"
+    info = {"job_id": ro.id, "filename": estimate_pdf.filename(ro), "bytes": len(pdf),
+            "print_link": link, "totals": estimate_pdf.totals(ro),
+            "note": "The print link opens the PDF on the dashboard (staff sign-in needed) to print from the browser. "
+                    "Nothing was sent to anyone."}
+    return {MCP_CONTENT: [
+        {"type": "text", "text": json.dumps(jsonable_encoder(info), default=str)},
+        {"type": "resource", "resource": {"uri": link, "mimeType": "application/pdf",
+                                          "blob": base64.b64encode(pdf).decode("ascii")}},
+    ]}
 
 
 def _call_search(db, key, a: _Search):
@@ -396,6 +434,18 @@ TOOLS = {
                        "Optional short note on why or the next step goes in the change log. Nothing is sent to anyone.",
                        _JobStatus, lambda db, key, a: agent_api.set_job_status(
                            a.job_id, agent_api.JobStatusIn(status=a.status, note=a.note), db, key), False),
+    "edit_estimate_line": ("estimates:write", "Correct a draft estimate line on a job: description, item_type, quantity, "
+                           "unit_price or taxable. Only the fields sent change; totals come back recalculated and the "
+                           "change is logged on the job. Only lines the customer hasn't been asked to approve yet, on a "
+                           "job with no invoice that isn't finished. Nothing is sent to anyone.", _LineEdit,
+                           _call_edit_line, False),
+    "remove_estimate_line": ("estimates:write", "Remove a draft estimate line from a job. Same limits as "
+                             "edit_estimate_line, and not a line marked done. Totals come back recalculated and the "
+                             "removal is logged on the job. Nothing is sent to anyone.", _LineRemove,
+                             lambda db, key, a: agent_api.remove_line(a.job_id, a.line_id, db, key), False),
+    "get_estimate_pdf": ("estimates:read", "A job's estimate as a printable PDF (recommended repair, optional add-ons, "
+                         "parts-only tax, 50% deposit, terms), returned as a file, plus the dashboard link that opens "
+                         "it for printing. Read only; nothing is sent to anyone.", _Job, _call_estimate_pdf, True),
     "list_recent_decisions": ("estimates:read", "Jobs whose estimate lines a customer approved or declined recently "
                               "(approval link or text yes), newest first, with customer, vehicle, the lines and totals. "
                               "Read only; nothing is sent to anyone.", _Decisions,
@@ -449,7 +499,10 @@ def _call_tool(db, key, params: dict) -> dict:
         return _text({"error": f"This connection is not allowed to {agent_keys.SCOPES[scope].lower()}."}, True)
     try:
         args = model.model_validate(params.get("arguments") or {})
-        return _text(run(db, key, args))
+        result = run(db, key, args)
+        if isinstance(result, dict) and MCP_CONTENT in result:
+            return {"content": result[MCP_CONTENT], "isError": False}
+        return _text(result)
     except ValidationError as exc:
         return _text({"error": "Check the details sent.", "problems": json.loads(exc.json(include_url=False))}, True)
     except HTTPException as exc:

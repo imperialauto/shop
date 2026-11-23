@@ -1,6 +1,6 @@
 from html import escape
 from fastapi import APIRouter, Request, Depends, Form, HTTPException, BackgroundTasks
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from app.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -8,7 +8,7 @@ from app.database import get_db
 from app.models import RepairOrder, Customer, Vehicle, User, LineItem, Communication, PartsOrder
 from app.auth import get_current_user
 from app.config import GOOGLE_REVIEW_LINK
-from app import tags, approval_links, customer_file, ro_delete, cycle_time, customer_followups, job_events, next_action, ro_status_policy, snap_offer, website_alerts
+from app import tags, approval_links, customer_file, ro_delete, cycle_time, customer_followups, estimate_pdf, job_events, next_action, ro_status_policy, snap_offer, website_alerts
 from app.dispatch_model import DispatchAudit, DispatchItem, DispatchOutbound
 from app.sending_pause import DASHBOARD_REPLY, is_paused
 from app.routes import local_node
@@ -268,6 +268,22 @@ def update_status(
 
     back = request.query_params.get("back")
     return RedirectResponse({"my-day": "/my-day", "home": "/dashboard"}.get(back, f"/ro/{ro_id}"), status_code=302)
+
+
+@router.get("/{ro_id}/estimate.pdf")
+def estimate_pdf_download(request: Request, ro_id: int, db: Session = Depends(get_db)):
+    """The job's estimate as a PDF, opened in the browser so it can be printed. Read only."""
+    user = require_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    if user.role not in ("owner", "admin", "office"):
+        raise HTTPException(403, "Office access required.")
+    ro = db.get(RepairOrder, ro_id)
+    if ro is None:
+        raise HTTPException(404)
+    return Response(estimate_pdf.build(ro), media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{estimate_pdf.filename(ro)}"',
+                             "Cache-Control": "no-store"})
 
 
 @router.post("/{ro_id}/request-approval")

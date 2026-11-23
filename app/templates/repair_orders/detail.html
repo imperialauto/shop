@@ -237,6 +237,9 @@
     </tbody>
   </table>
   <div class="text-right text-gold-300 font-bold">Subtotal: ${{ "%.2f"|format(subtotal) }}</div>
+  {% if user.role != 'tech' and ro.line_items %}
+  <div class="text-right mt-2"><a href="/ro/{{ ro.id }}/estimate.pdf" target="_blank" rel="noopener" class="btn-secondary inline-flex items-center" style="min-height:44px" id="print-estimate">Print estimate (PDF)</a></div>
+  {% endif %}
   {% if user.role != 'tech' %}
   <form method="post" action="/ro/{{ ro.id }}/estimate-location" class="mt-3 flex flex-wrap items-center gap-2">
     <input type="hidden" name="offsite" value="{{ 'no' if offsite_estimate else 'yes' }}">
