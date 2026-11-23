@@ -333,6 +333,50 @@ if __name__ == "__main__":
     unittest.main()
 
 
+    def test_pay_order_ranks_bills_and_he_can_move_one(self):
+        owner = self.sign_in()
+        owner.post("/finance/paste", data={"figures": (
+            "balance | Shop checking | 150\n"
+            "bill | Software | 30 | 11/23 | software\n"
+            "bill | Loan | 200 | 11/25 | loan\n"
+            "bill | Power | 100 | 11/10 | utilities\n")})
+        page = owner.get("/finance/").text
+        self.assertIn("Pay order", page)
+        self.assertLess(page.index("<h3>Power</h3>"), page.index("<h3>Loan</h3>"))
+        self.assertLess(page.index("<h3>Loan</h3>"), page.index("<h3>Software</h3>"))
+        self.assertIn("Keeps the doors open", page)
+        self.assertIn("Covered by cash on hand", page)
+        self.assertIn("Next money in goes to <strong>Loan</strong>: $150.00 more covers it", page)
+        moved = owner.post("/finance/order", data={"scope": "business", "name": "Software", "direction": "up"})
+        self.assertEqual(moved.status_code, 303)
+        page = owner.get("/finance/").text
+        self.assertLess(page.index("<h3>Software</h3>"), page.index("<h3>Loan</h3>"))
+        self.assertIn("moved up by you", page)
+        unknown = owner.post("/finance/order", data={"scope": "business", "name": "Nope", "direction": "up"})
+        self.assertIn("problem=", unknown.headers["location"])
+        owner.post("/finance/order", data={"scope": "business", "direction": "reset"})
+        page = owner.get("/finance/").text
+        self.assertLess(page.index("<h3>Loan</h3>"), page.index("<h3>Software</h3>"))
+        self.assertNotIn("moved up by you", page)
+
+    def test_profit_goal_adds_to_the_daily_target(self):
+        owner = self.sign_in()
+        owner.post("/finance/paste", data={"figures": "bill | Power | 100 | 11/30 | utilities"})
+        page = owner.get("/finance/").text
+        self.assertIn("What has to come in", page)
+        self.assertNotIn("Daily target with profit", page)
+        self.assertIn("Not set", page)
+        saved = owner.post("/finance/profit", data={"profit": "$2,500"})
+        self.assertIn("notice=", saved.headers["location"])
+        self.assertIn("Daily target with profit", owner.get("/finance/").text)
+        bad = owner.post("/finance/profit", data={"profit": "lots"})
+        self.assertIn("problem=", bad.headers["location"])
+        owner.post("/finance/profit", data={"profit": "0"})
+        self.assertNotIn("Daily target with profit", owner.get("/finance/").text)
+        tech = self.sign_in("tech")
+        self.assertEqual(tech.post("/finance/profit", data={"profit": "100"}).status_code, 403)
+        self.assertEqual(tech.post("/finance/order", data={"scope": "business", "name": "Power", "direction": "up"}).status_code, 403)
+
     def test_paid_with_a_day_shows_how_late(self):
         owner = self.sign_in()
         owner.post("/finance/paste", data={"figures": "bill | Power | 120 | 11/4 | utilities | monthly"})
@@ -439,3 +483,74 @@ class PaidDateTests(unittest.TestCase):
         self.assertEqual(out["unchecked"], 1)  # a guessed paid date doesn't count until he checks it
         self.assertEqual([b.name for b in out["late_bills"]], ["Phone", "Power"])
 
+
+
+class PayOrderTests(unittest.TestCase):
+    """Which bill gets the next dollar, on made-up bills."""
+
+    def bill(self, name, amount, due, category="other", note=""):
+        from types import SimpleNamespace
+        return SimpleNamespace(name=name, amount_cents=amount * 100, due_date=due, category=category, note=note)
+
+    def test_rent_and_shutoffs_first_then_late_fees_then_the_rest(self):
+        bills = [self.bill("Software", 30, date(2026, 11, 22)),
+                 self.bill("Loan", 200, date(2026, 11, 25), "loan"),
+                 self.bill("Rent", 1000, date(2026, 12, 1), "rent"),
+                 self.bill("Power", 100, date(2026, 11, 10), "utilities"),
+                 self.bill("Found", 5, date(2026, 11, 1), "other", plan.NOTE_UNCONFIRMED)]
+        order = plan.pay_order(bills, None, 0, TODAY)
+        self.assertEqual([r["bill"].name for r in order["rows"]], ["Power", "Rent", "Loan", "Software", "Found"])
+        self.assertEqual([r["tier"] for r in order["rows"]], [1, 1, 2, 3, 4])
+        self.assertTrue(order["rows"][0]["past_due"])
+        self.assertFalse(any(r["moved"] for r in order["rows"]))
+
+    def test_cash_on_hand_walks_down_the_list(self):
+        bills = [self.bill("Power", 100, date(2026, 11, 10), "utilities"),
+                 self.bill("Rent", 1000, date(2026, 12, 1), "rent"),
+                 self.bill("Loan", 200, date(2026, 11, 25), "loan")]
+        order = plan.pay_order(bills, None, 400 * 100, TODAY)
+        rows = order["rows"]
+        self.assertTrue(rows[0]["covered"])
+        self.assertFalse(rows[1]["covered"])
+        self.assertEqual(rows[1]["short"], 700 * 100)
+        self.assertEqual(rows[2]["short"], 200 * 100)
+        self.assertEqual(order["next_up"]["bill"].name, "Rent")
+        self.assertEqual(order["next_up"]["have"], 300 * 100)
+        self.assertEqual(order["next_up"]["need"], 700 * 100)
+        self.assertEqual(order["to_bring_in"], 900 * 100)
+        self.assertIsNone(plan.pay_order(bills[:1], None, 400 * 100, TODAY)["next_up"])
+
+    def test_negative_cash_covers_nothing(self):
+        order = plan.pay_order([self.bill("Power", 100, date(2026, 11, 10), "utilities")], None, -39 * 100, TODAY)
+        self.assertFalse(order["rows"][0]["covered"])
+        self.assertEqual(order["next_up"]["need"], 100 * 100)
+
+    def test_his_order_wins_and_new_bills_keep_their_place(self):
+        bills = [self.bill("Power", 100, date(2026, 11, 10), "utilities"),
+                 self.bill("Loan", 200, date(2026, 11, 25), "loan"),
+                 self.bill("Software", 30, date(2026, 11, 22)),
+                 self.bill("Software", 30, date(2026, 12, 22))]
+        names = plan.move(["power", "loan", "software", "gone"], "software", "up")
+        self.assertEqual(names, ["power", "software", "loan", "gone"])
+        order = plan.pay_order(bills, names, 0, TODAY)
+        self.assertEqual([r["bill"].name for r in order["rows"]], ["Power", "Software", "Software", "Loan"])
+        self.assertEqual(order["rows"][1]["bill"].due_date, date(2026, 11, 22))
+        self.assertTrue(order["rows"][1]["moved"])
+        self.assertFalse(order["rows"][3]["moved"])
+        self.assertNotIn("gone", order["names"])
+        bills.append(self.bill("Rent", 1000, date(2026, 12, 1), "rent"))
+        self.assertEqual([r["bill"].name for r in plan.pay_order(bills, names, 0, TODAY)["rows"]][:2], ["Power", "Rent"])
+
+    def test_move_stops_at_the_ends(self):
+        self.assertEqual(plan.move(["a", "b"], "a", "up"), ["a", "b"])
+        self.assertEqual(plan.move(["a", "b"], "b", "down"), ["a", "b"])
+        self.assertEqual(plan.move(["a", "b"], "c", "up"), ["a", "b"])
+
+    def test_profit_goal_spreads_over_the_month(self):
+        target = plan.profit_plan(1200 * 100, 12, 0, TODAY)
+        self.assertEqual(target["bills_per_day"], 100 * 100)
+        self.assertEqual(target["profit_per_day"], 0)
+        self.assertEqual(target["total_per_day"], 100 * 100)
+        target = plan.profit_plan(1200 * 100, 12, 2500, TODAY)
+        self.assertEqual(target["profit_per_day"], round(2500 * 100 / target["open_days_month"]))
+        self.assertEqual(target["total_per_day"], target["bills_per_day"] + target["profit_per_day"])
