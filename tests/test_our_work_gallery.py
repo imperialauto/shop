@@ -5,7 +5,7 @@ import unittest
 import fixture_environment  # noqa: F401
 from fastapi.testclient import TestClient
 
-from app.gallery import PHOTOS
+from app.gallery import HOME_PICKS, PHOTOS
 from app.legacy_redirects import LEGACY_PATHS
 from app.main import app
 
@@ -35,6 +35,17 @@ class OurWorkGallery(unittest.TestCase):
             for name in (photo.file, "thumb-" + photo.file):
                 with self.subTest(file=name), open(os.path.join(STATIC, name), "rb") as fh:
                     self.assertNotIn(b"Exif\x00\x00", fh.read())
+
+    def test_home_page_shows_real_work_strip(self):
+        res = self.client.get("/site/")
+        self.assertIn("Real work", res.text)
+        for name in HOME_PICKS:
+            self.assertIn(f'src="/static/gallery/thumb-{name}"', res.text)
+        self.assertEqual(len(HOME_PICKS), len({p.file for p in PHOTOS} & set(HOME_PICKS)))
+
+    def test_file_names_and_captions_are_unique(self):
+        self.assertEqual(len(PHOTOS), len({p.file for p in PHOTOS}))
+        self.assertEqual(len(PHOTOS), len({p.caption for p in PHOTOS}))
 
     def test_nav_links_the_gallery_and_old_link_lands_there(self):
         self.assertIn('href="/site/our-work"', self.client.get("/site/").text)
