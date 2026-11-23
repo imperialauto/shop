@@ -1,3 +1,21 @@
+{% if board.timers %}
+<section class="timers" aria-label="Timers">
+  {% for t in board.timers %}
+  <div class="tv-timer {% if t.up %}up{% endif %}" data-ends="{{ t.ends_ms }}" data-id="{{ t.id }}">
+    <div class="t-label">{{ t.label }}</div>
+    <div class="t-clock" aria-live="off">{% if t.up %}Time's up{% else %}{{ (t.left // 60) }}:{{ '%02d' % (t.left % 60) }}{% endif %}</div>
+    <div class="t-note">{% if t.up %}Ended {{ t.ends_at }}{% else %}Ends {{ t.ends_at }}{% endif %}</div>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+{% if board.pickup %}
+<section class="pickup" aria-label="Ready for pickup">
+  <span class="p-label">Ready for pickup</span>
+  {% for p in board.pickup %}<span class="p-car">{% if p.who %}{{ p.who }} · {% endif %}{{ p.vehicle }}</span>{% endfor %}
+</section>
+{% endif %}
+<div class="top">
 {% if board.show_money %}
 <section class="card sales {% if board.sales and board.sales.hit %}hit{% endif %}" aria-label="Money in today">
   {% if board.sales %}{% set s = board.sales %}
@@ -13,19 +31,30 @@
 </section>
 {% else %}<div></div>{% endif %}
 
+
+{% if board.waiting is not none %}{% set w = board.waiting %}
+<section class="card waiting {% if w.total %}on{% endif %}" aria-label="Waiting on you">
+  <div class="label">Waiting on you</div>
+  <div class="count">{{ w.total }}</div>
+  <div class="parts-of">{% if w.total %}{{ w.texts }} text{{ '' if w.texts == 1 else 's' }} · {{ w.calls }} missed call{{ '' if w.calls == 1 else 's' }} · {{ w.estimates }} estimate{{ '' if w.estimates == 1 else 's' }}{% else %}All clear{% endif %}</div>
+</section>
+{% endif %}
+</div>
+
 <div class="cols">
-  <section class="card" aria-label="Today's jobs">
-    <h2>Today's jobs{% if board.jobs %}<span>{{ board.jobs|length }} open</span>{% endif %}</h2>
+ <div class="stack">
+  <section class="card" aria-label="Cars here">
+    <h2>Cars here{% if board.jobs %}<span>{{ board.jobs|length }}<b class="page-no" aria-hidden="true"></b></span>{% endif %}</h2>
     {% if board.jobs is none %}
     <p class="warn">Jobs couldn't be loaded. The board will try again.</p>
     {% elif not board.jobs %}
-    <p class="empty">No open jobs or visits today.</p>
+    <p class="empty">No cars marked here. Mark them on your phone at Shop TV board.</p>
     {% else %}
-    <ul class="jobs">
+    <ul class="jobs" data-pages>
       {% for job in board.jobs %}
       <li class="job">
-        {% if job.time %}<span class="when">{{ job.time }}</span>{% else %}<span class="when none">In shop</span>{% endif %}
-        <span class="what">{{ job.vehicle }}{% if job.who or job.tech or job.mobile %}<br><span class="who">{{ job.who }}{% if job.who and (job.tech or job.mobile) %} · {% endif %}{% if job.mobile %}Mobile{% if job.tech %} · {% endif %}{% endif %}{% if job.tech %}{{ job.tech }}{% endif %}</span>{% endif %}</span>
+        <span class="when days">{% if job.days is none %}&nbsp;{% elif job.days == 0 %}Today{% else %}{{ job.days }} day{{ '' if job.days == 1 else 's' }}{% endif %}</span>
+        <span class="what">{{ job.vehicle }}{% set bits = [job.who, job.tech]|select|list %}{% if bits or job.book or job.clock_on %}<br><span class="who">{{ bits|join(' · ') }}{% if (job.book or job.clock_on) and bits %} · {% endif %}{% if job.book or job.clock_on %}<span class="hrs {% if job.over_book %}over{% elif job.clock_on %}on{% endif %}">{{ job.worked }}{% if job.book %} of {{ job.book }}{% endif %} hr{% if job.over_book %} · over book{% endif %}</span>{% endif %}</span>{% endif %}</span>
         <span class="stage {{ job.stage_key }}">{{ job.stage }}</span>
       </li>
       {% endfor %}
@@ -33,23 +62,85 @@
     {% endif %}
   </section>
 
-  <section class="card" aria-label="To-do list">
-    <h2>To-do{% if board.todos and board.todos.open_count %}<span>{{ board.todos.open_count }} left</span>{% endif %}</h2>
-    {% if not board.todos_on %}
-    <p class="empty">The to-do list isn't turned on yet.</p>
-    {% elif board.todos is none %}
-    <p class="warn">The to-do list couldn't be loaded. The board will try again.</p>
+  <section class="card" aria-label="Coming in">
+    <h2>Coming in{% if board.coming %}<span>{{ board.coming|length }}<b class="page-no" aria-hidden="true"></b></span>{% endif %}</h2>
+    {% if board.coming is none %}
+    <p class="warn">Appointments couldn't be loaded.</p>
+    {% elif not board.coming %}
+    <p class="empty">Nothing booked for today or tomorrow.</p>
     {% else %}
-    {% set shown = board.todos.open[:12] %}
-    {% if not shown and not board.todos.done %}
-    <p class="empty">Nothing on the list. Add one from your phone at Shop TV board.</p>
-    {% endif %}
-    <ul class="todos">
-      {% for item in shown %}<li class="todo {% if item.urgent %}urgent{% endif %}">{{ item.title }}</li>{% endfor %}
-      {% for item in board.todos.done %}<li class="todo done">{{ item.title }}</li>{% endfor %}
+    <ul class="jobs" data-pages>
+      {% for v in board.coming %}
+      <li class="job">
+        <span class="when">{{ v.time }}<br><span class="who">{{ v.day }}</span></span>
+        <span class="what">{{ v.vehicle }}{% if v.who %}<br><span class="who">{{ v.who }}</span>{% endif %}</span>
+        <span class="stage {% if v.mobile %}mobile{% endif %}">{% if v.mobile %}Mobile{% else %}Drop-off{% endif %}{% if v.tentative %}?{% endif %}</span>
+      </li>
+      {% endfor %}
     </ul>
-    {% if board.todos.open_count > shown|length %}<p class="more">+ {{ board.todos.open_count - shown|length }} more on the list</p>{% endif %}
     {% endif %}
   </section>
+
+  {% if board.parts %}
+  <section class="card parts-card" aria-label="Parts on order">
+    <h2>Parts on order{% if board.parts %}<span>{{ board.parts|length }}<b class="page-no" aria-hidden="true"></b></span>{% endif %}</h2>
+    {% if board.parts is none %}
+    <p class="warn">Parts couldn't be loaded.</p>
+    {% elif not board.parts %}
+    <p class="empty">No parts waiting to arrive.</p>
+    {% else %}
+    <ul class="todos" data-pages>
+      {% for p in board.parts %}<li class="todo part">{{ p.part }}{% if p.vehicle or p.vendor %}<span class="who"> · {{ p.vehicle }}{% if p.vehicle and p.vendor %} · {% endif %}{{ p.vendor }}{% if p.ordered %} · ordered {{ p.ordered }}{% endif %}</span>{% endif %}</li>{% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+  {% endif %}
+ </div>
+
+ <div class="stack">
+  <section class="card todo-card" aria-label="To-do list">
+     <h2>To-do{% if board.todos and board.todos.open_count %}<span>{{ board.todos.open_count }} left<b class="page-no" aria-hidden="true"></b></span>{% endif %}</h2>
+     {% if not board.todos_on %}
+     <p class="empty">The to-do list isn't turned on yet.</p>
+     {% elif board.todos is none %}
+     <p class="warn">The to-do list couldn't be loaded. The board will try again.</p>
+     {% else %}
+     {% if not board.todos.open %}
+     <p class="empty">{% if board.todos.done %}All caught up.{% else %}Nothing on the list. Add one from your phone at Shop TV board.{% endif %}</p>
+     {% endif %}
+     <ul class="todos" data-pages>
+       {% for item in board.todos.open %}<li class="todo {% if item.urgent %}urgent{% endif %} {{ item.kind }}">{% if item.kind == 'alert' %}<em>New</em> {% endif %}{{ item.title }}</li>{% endfor %}
+     </ul>
+     {% if board.todos.open_count > board.todos.open|length %}<p class="more">+ {{ board.todos.open_count - board.todos.open|length }} more on your phone</p>{% endif %}
+     {% if board.todos.done %}
+     <div class="completed" aria-label="Completed today">
+       <h3>Completed today<span>{{ board.todos.done_count }}</span></h3>
+       <ul class="todos">
+         {% for item in board.todos.done[:3] %}<li class="todo done">{{ item.title }}</li>{% endfor %}
+       </ul>
+     </div>
+     {% endif %}
+     {% endif %}
+   </section>
+
+  <section class="card" aria-label="Waiting on the customer">
+    <h2>Waiting on customer{% if board.on_customer %}<span>{{ board.on_customer|length }}<b class="page-no" aria-hidden="true"></b></span>{% endif %}</h2>
+    {% if board.on_customer is none %}
+    <p class="warn">Jobs couldn't be loaded.</p>
+    {% elif not board.on_customer %}
+    <p class="empty">No jobs waiting on a customer's yes.</p>
+    {% else %}
+    <ul class="jobs" data-pages>
+      {% for w in board.on_customer %}
+      <li class="job">
+        <span class="when days {% if w.hours and w.hours >= 48 %}late{% endif %}">{{ w.wait }}</span>
+        <span class="what">{{ w.vehicle }}{% if w.who %}<br><span class="who">{{ w.who }}</span>{% endif %}</span>
+        <span class="stage waiting_approval">Approval</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+ </div>
 </div>
 <div class="foot">Updated {{ board.now.strftime('%-I:%M:%S %p') }}</div>
