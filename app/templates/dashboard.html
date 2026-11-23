@@ -87,6 +87,11 @@
   .h-todo.urgent { color: #FFD7D2; }
   .h-todo.urgent::before { border-color: var(--h-red); background: rgba(255,138,128,.2); }
   .h-empty { color: var(--imp-muted); font-size: 14px; margin: 0; }
+  .h-task { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 15px; font-weight: 600; line-height: 1.25; }
+  .h-task a { color: var(--imp-ink); text-decoration: none; overflow-wrap: anywhere; }
+  .h-task form { margin: 0; flex: none; }
+  .h-done { min-height: 44px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--imp-gold); background: transparent; color: var(--imp-gold); font-weight: 700; cursor: pointer; }
+  .h-pill { font-size: 12px; color: var(--h-amber); font-weight: 600; }
   .h-warn { color: var(--h-amber); font-size: 14px; margin: 0; }
 
   .h-foot { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; font-size: 13px; color: var(--imp-muted); }
@@ -274,8 +279,31 @@
         </ul>
         {% if board.todos.open_count > 6 %}<p class="h-sub">+ {{ board.todos.open_count - 6 }} more</p>{% endif %}
         {% endif %}
-        {% if imperial_task_snapshot.enabled and imperial_task_snapshot.tasks %}
-        <p class="h-sub" style="margin-top:10px;"><a href="/dashboard/tasks?scope=review" style="color:var(--imp-gold); text-decoration:none;">{{ imperial_task_snapshot.tasks|length }} saved task{{ 's' if imperial_task_snapshot.tasks|length != 1 }} to review →</a></p>
+      </section>
+      {% endif %}
+
+      {% if imperial_task_snapshot is defined and imperial_task_snapshot.enabled %}
+      <section class="h-card" aria-label="Saved Imperial tasks">
+        <h2>Saved tasks<a href="/dashboard/tasks?scope=review">Review →</a></h2>
+        {% if imperial_task_snapshot.error %}
+        <p class="h-warn">{{ imperial_task_snapshot.error }}</p>
+        {% elif imperial_task_snapshot.tasks %}
+        <ul class="h-todos">
+          {% for task in imperial_task_snapshot.tasks[:6] %}
+          <li class="h-task">
+            <a href="{{ '/my-day#todo-' ~ task.id if task.personal else '/dashboard/tasks?task=' ~ task.id }}">#{{ task.id }} {{ task.title }}{% if task.status == 'blocked' %} <span class="h-pill">waiting on them</span>{% endif %}</a>
+            {% if not read_only %}
+            <form method="post" action="/dashboard/tasks/{{ task.id }}">
+              <input type="hidden" name="next" value="/dashboard">
+              <button class="h-done" name="operation" value="complete" aria-label="Mark task {{ task.id }} done">Done</button>
+            </form>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% if imperial_task_snapshot.tasks|length > 6 %}<p class="h-sub">+ {{ imperial_task_snapshot.tasks|length - 6 }} more</p>{% endif %}
+        {% else %}
+        <p class="h-empty">No saved tasks.</p>
         {% endif %}
       </section>
       {% endif %}
