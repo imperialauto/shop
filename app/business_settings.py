@@ -42,6 +42,8 @@ KEYS = {
     "appointment_feed": "APPOINTMENT_FEED_SETTING",
     # Money to bring in each day: shared by the Shop TV board (/board/manage) and the Money page.
     "daily_sales_goal": "DAILY_SALES_GOAL",
+    # Shop TV board: which open jobs' cars are at the shop. Set on /board/manage.
+    "board_on_lot": "BOARD_ON_LOT_JSON",
 }
 CACHE_SECONDS = 15
 _cache: dict = {"at": 0.0, "values": None}

@@ -84,13 +84,14 @@ class ShopBoardTests(unittest.TestCase):
         client.post("/login", data={"username": name, "password": PASSWORD})
         return client
 
-    def test_jobs_put_todays_visits_first_and_show_no_full_names(self):
+    def test_cars_here_are_started_jobs_and_booked_cars_are_coming_in(self):
         with self.Session() as db:
             jobs = shop_board.jobs_today(db, NOW)
-        self.assertEqual([j["id"] for j in jobs], [self.visit_id, self.shop_id])
-        self.assertEqual((jobs[0]["time"], jobs[0]["who"], jobs[0]["vehicle"]), ("2:30 PM", "Pat S.", "2016 Ford Focus"))
-        self.assertEqual((jobs[1]["time"], jobs[1]["who"], jobs[1]["stage"], jobs[1]["tech"]),
-                         (None, "", "Working on it", "Mike"))
+            coming = shop_board.coming_in(db, NOW)
+        self.assertEqual([j["id"] for j in jobs], [self.shop_id])
+        self.assertEqual((jobs[0]["who"], jobs[0]["stage"], jobs[0]["tech"]), ("", "In progress", "Mike"))
+        self.assertEqual([(c["day"], c["time"], c["who"], c["vehicle"]) for c in coming],
+                         [("Today", "2:30 PM", "Pat S.", "2016 Ford Focus")])
 
     def test_money_in_today_uses_the_phoenix_day_and_the_goal(self):
         with self.Session() as db:
@@ -102,20 +103,20 @@ class ShopBoardTests(unittest.TestCase):
         client = self.client()
         page = client.get("/board")
         self.assertEqual(page.status_code, 200)
-        for text in ("Today's jobs", "Money in today", "$326", "of $500", "2016 Ford Focus", 'hx-get="/board/panel"'):
+        for text in ("Cars here", "Coming in", "Waiting on you", "Parts on order", "Money in today", "$326", "of $500", "2016 Ford Focus", 'hx-get="/board/panel"'):
             self.assertIn(text, page.text)
         self.assertNotIn("+16025550100", page.text)
         self.assertNotIn("Sample", page.text.replace("Pat S.", ""))
         panel = client.get("/board/panel")
         self.assertEqual(panel.status_code, 200)
         self.assertNotIn("<html", panel.text)
-        self.assertIn("Working on it", panel.text)
+        self.assertIn("In progress", panel.text)
 
     def test_money_only_shows_to_the_owner(self):
         page = self.client("office").get("/board")
         self.assertEqual(page.status_code, 200)
         self.assertNotIn("Money in today", page.text)
-        self.assertIn("Today's jobs", page.text)
+        self.assertIn("Cars here", page.text)
 
     def test_signed_out_screen_says_so_instead_of_going_blank(self):
         panel = TestClient(app).get("/board/panel")
