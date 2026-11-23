@@ -32,6 +32,7 @@ SCOPES = {
     "appointments:write": "Book tentative appointments",
     "appointments:confirm": "Confirm an appointment when you say so (adds it to your calendar and reminders)",
     "board": "See and update the shop TV to-do list",
+    "estimates:send": "Text a customer their estimate approval link from the shop line (logged on the job)",
 }
 EXPIRY_DAYS = (30, 90, 180, 365)
 DEFAULT_EXPIRY_DAYS = 90

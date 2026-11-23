@@ -7,8 +7,10 @@ Deliberately limited:
 * customers, vehicles, jobs/estimate lines and appointments only (confirming one
   needs its own scope, for when the owner says yes);
 * never invoices, payments, finance, logins, settings or messaging;
-* nothing here texts or emails a customer, requests an approval, or changes a
-  price that a customer has already been asked to approve or that is invoiced;
+* nothing here texts or emails a customer or changes a price that a customer has
+  already been asked to approve or that is invoiced, except one thing behind its own
+  scope (estimates:send): texting a job's approval link, through the same send as the
+  owner's Ask for approval button, so it is logged on the job and never sent twice;
 * every change is written to agent_actions in the same transaction.
 Read-only (recovery) mode still blocks every write, as for staff.
 """
@@ -430,3 +432,43 @@ def confirm_appointment(appointment_id: int, db: Session = Depends(get_db),
                    before_commit=lambda item: agent_keys.record(
                        db, key, "appointment.confirm", "appointment", item.id,
                        f"job {item.repair_order_id} at {item.starts_at.isoformat()}"))
+
+
+class SendApprovalIn(BaseModel):
+    offer_snap: bool = False
+    message: str | None = Field(default=None, max_length=1200)
+
+
+SEND_NOTES = {
+    "sending": "Handed to the shop line. It shows on the job once Quo sends it; the owner gets the usual Sent notice.",
+    "already": "Not sent: their link already went out from the dashboard and they haven't texted since.",
+    "texted": "Not sent: a text after their last message already has this job's link.",
+    "paused": "Not sent: texting is paused on the dashboard.",
+    "no_phone": "Not sent: the customer has no mobile number on file.",
+    "nothing": "Not sent: no estimate lines are waiting on the customer.",
+    "unavailable": "Not sent: couldn't read their text thread in Quo. Try again in a minute.",
+}
+
+
+@router.post("/jobs/{ro_id}/send-approval")
+def send_approval(ro_id: int, payload: SendApprovalIn, db: Session = Depends(get_db),
+                  key: AgentKey = Depends(agent("estimates:send"))):
+    """Text the customer their approval link now, as the owner's Ask for approval button does."""
+    from app import approval_links
+
+    ro = db.get(RepairOrder, ro_id)
+    if ro is None:
+        raise HTTPException(404, "Job not found.")
+    if ro.status == "delivered":
+        raise HTTPException(409, "This job is already picked up.")
+    actor = f"Claude connector {key.key_prefix}"[:64]
+    message = (payload.message or "").strip() or None
+    state, item = approval_links.send_now(db, ro, actor, key.created_by_user_id, offer_snap=payload.offer_snap,
+                                          text=message, audit_detail=f"Claude connector, job {ro.id}")
+    if state == "sending":
+        agent_keys.record(db, key, "approval.send", "repair_order", ro.id, f"approval text #{item.id}")
+        db.commit()
+    db.refresh(ro)
+    return {"state": state, "sent": state == "sending", "note": SEND_NOTES[state],
+            "queue_item": item.id if item is not None else None,
+            "text": item.draft_reply if state == "sending" else None, "job": job_json(ro)}
