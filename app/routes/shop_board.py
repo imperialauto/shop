@@ -1,6 +1,7 @@
 """Shop TV board (/board) and the phone page that runs its to-do list (/board/manage)."""
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app import shop_board
@@ -40,9 +41,17 @@ def manage(request: Request, saved: str = "", error: str = "", db: Session = Dep
     user = get_current_user(request, db)
     return templates.TemplateResponse("shop_board_manage.html", {
         "request": request, "user": user, "board": shop_board.snapshot(db, user),
-        "goal": shop_board.daily_goal(), "saved": saved, "error": error[:200],
+        "goal": shop_board.daily_goal(), "saved": saved, "error": error[:200], "lot": _lot(db),
         "read_only": request.app.state.read_only,
     })
+
+
+def _lot(db):
+    try:
+        return shop_board.lot_list(db)
+    except SQLAlchemyError:
+        db.rollback()
+        return None
 
 
 def _back(**query):
@@ -70,9 +79,26 @@ def change_todo(task_id: int, request: Request, operation: str = Form(...), db: 
         raise HTTPException(503, "Imperial task storage has not been activated.")
     if operation not in ("done", "undo"):
         raise HTTPException(422, "Unknown action.")
-    if not shop_board.set_done(db, user, task_id, operation == "done"):
+    try:
+        found = shop_board.set_done(db, user, task_id, operation == "done")
+    except ValueError as exc:
+        return _back(error=str(exc))
+    if not found:
         raise HTTPException(404, "That to-do isn't on the shop board.")
     return _back(saved=operation)
+
+
+@router.post("/board/lot/{ro_id}")
+def mark_lot(ro_id: int, request: Request, operation: str = Form(...), db: Session = Depends(get_db)):
+    """Here or gone: changes only which cars the TV lists, never the job itself."""
+    user = get_current_user(request, db)
+    if request.app.state.read_only:
+        raise HTTPException(503, "The dashboard is read-only right now.")
+    if operation not in ("here", "gone"):
+        raise HTTPException(422, "Unknown action.")
+    if not shop_board.set_here(db, user, ro_id, operation == "here"):
+        raise HTTPException(404, "That job isn't open.")
+    return RedirectResponse("/board/manage?saved=lot#lot", status_code=303)
 
 
 @router.post("/board/goal")

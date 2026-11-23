@@ -8,6 +8,7 @@
   .sb-row .sb-title { flex:1; font-size:17px; font-weight:600; }
   .sb-row.done .sb-title { text-decoration:line-through; color:var(--imp-muted); font-weight:500; }
   .sb-urgent { color:#FF8A80; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; margin-right:6px; }
+  .sb-new { color:#F5C542; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; margin-right:6px; }
   .sb-add { display:flex; gap:8px; }
   .sb-add input[type=text] { flex:1; min-width:0; font-size:17px; }
   .sb-check { min-width:72px; }
@@ -19,12 +20,14 @@
 <div class="sb-wrap">
   <h1>Shop TV board</h1>
   <p class="sb-note mb-3">Whatever you add or tick here shows on the shop TV within about 20 seconds.
+    Items marked New came from a customer; ticking one off also clears it from Needs attention.
     <a href="/board" target="_blank" rel="noopener">Open the TV view</a></p>
 
   {% if error %}<div class="sb-flash err" role="alert">{{ error }}</div>
   {% elif saved == 'added' %}<div class="sb-flash ok" role="status">Added to the board.</div>
   {% elif saved == 'done' %}<div class="sb-flash ok" role="status">Ticked off.</div>
   {% elif saved == 'undo' %}<div class="sb-flash ok" role="status">Back on the list.</div>
+  {% elif saved == 'lot' %}<div class="sb-flash ok" role="status">Cars here updated.</div>
   {% elif saved == 'goal' %}<div class="sb-flash ok" role="status">Daily goal saved.</div>{% endif %}
 
   <section id="todo" class="card mb-4" aria-labelledby="sb-todo-heading">
@@ -48,7 +51,7 @@
       {% else %}
         {% for item in board.todos.open %}
         <div class="sb-row">
-          <span class="sb-title">{% if item.urgent %}<span class="sb-urgent">Urgent</span>{% endif %}{{ item.title }}</span>
+          <span class="sb-title">{% if item.urgent %}<span class="sb-urgent">Urgent</span>{% endif %}{% if item.kind == 'alert' %}<span class="sb-new">New</span>{% endif %}{{ item.title }}</span>
           {% if not read_only %}
           <form method="post" action="/board/todos/{{ item.id }}"><button class="btn-primary sb-check" name="operation" value="done">Done</button></form>
           {% endif %}
@@ -57,17 +60,39 @@
         <p class="sb-note my-2">Nothing on the list.</p>
         {% endfor %}
         {% if board.todos.done %}
-        <h3 class="font-bold text-sm mt-3">Ticked off today</h3>
+        <h3 class="font-bold text-sm mt-3">Completed today ({{ board.todos.done_count }})</h3>
         {% for item in board.todos.done %}
         <div class="sb-row done">
           <span class="sb-title">{{ item.title }}</span>
-          {% if not read_only %}
+          {% if not read_only and item.kind != 'alert' %}
           <form method="post" action="/board/todos/{{ item.id }}"><button class="btn-secondary sb-check" name="operation" value="undo">Undo</button></form>
           {% endif %}
         </div>
         {% endfor %}
         {% endif %}
       {% endif %}
+    {% endif %}
+  </section>
+
+  <section id="lot" class="card mb-4" aria-labelledby="sb-lot-heading">
+    <h2 class="font-bold mb-2" id="sb-lot-heading">Cars here</h2>
+    <p class="sb-note mb-2">The TV lists only the cars marked here. This doesn't change the job.</p>
+    {% if lot is none %}
+    <p role="alert">Open jobs couldn't load.</p>
+    {% else %}
+      {% for job in lot %}
+      <div class="sb-row {% if not job.here %}done{% endif %}">
+        <span class="sb-title">#{{ job.id }} {{ job.vehicle }}{% if job.who %} · {{ job.who }}{% endif %}<br><span class="sb-note">{{ job.stage }}{% if job.here %} · here{% else %} · not here{% endif %}</span></span>
+        {% if not read_only %}
+        <form method="post" action="/board/lot/{{ job.id }}">
+          {% if job.here %}<button class="btn-secondary sb-check" name="operation" value="gone">Not here</button>
+          {% else %}<button class="btn-primary sb-check" name="operation" value="here">Here</button>{% endif %}
+        </form>
+        {% endif %}
+      </div>
+      {% else %}
+      <p class="sb-note">No open jobs.</p>
+      {% endfor %}
     {% endif %}
   </section>
 

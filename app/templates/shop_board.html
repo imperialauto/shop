@@ -36,7 +36,18 @@
     .full:hover { color: var(--gold); border-color: var(--gold); }
     :fullscreen .full { display: none; }
 
-    #board-panel { min-height: 0; display: grid; gap: var(--gap); grid-template-rows: auto 1fr; }
+    #board-panel { min-height: 0; display: grid; gap: var(--gap); grid-template-rows: auto 1fr auto; }
+    .top { display: grid; grid-template-columns: 1fr auto; gap: var(--gap); }
+    .stack { display: grid; grid-template-rows: 3fr 2fr; gap: var(--gap); min-height: 0; }
+    .waiting { display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; column-gap: .8em; align-items: center; }
+    .waiting .label { color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .1em; font-size: clamp(11px, 1vw, 24px); }
+    .waiting .count { grid-row: span 2; font-size: clamp(30px, 4.2vw, 108px); font-weight: 800; line-height: 1; color: var(--green); }
+    .waiting.on .count { color: var(--amber); }
+    .waiting .parts-of { font-size: clamp(12px, 1.15vw, 28px); font-weight: 600; }
+    .job .when.days { color: var(--muted); font-size: clamp(12px, 1.15vw, 28px); }
+    .stage.mobile { background: rgba(123,224,160,.10); color: var(--green); border-color: rgba(123,224,160,.35); }
+    .todo.part::before { border-style: dashed; }
+    .todo .who { color: var(--muted); font-weight: 500; font-size: .75em; }
     .card { background: rgba(30, 6, 49, 0.82); border: 1px solid var(--line); border-radius: clamp(10px, 1vw, 22px);
             padding: clamp(12px, 1.3vw, 30px); min-height: 0; overflow: hidden; }
     .card h2 { font-family: var(--serif); color: var(--gold); margin: 0 0 .45em; font-size: clamp(20px, 2.1vw, 52px); line-height: 1;
@@ -78,6 +89,13 @@
     .todo.urgent::before { border-color: var(--red); background: rgba(255,138,128,.2); }
     .todo.done { color: var(--muted); text-decoration: line-through; font-weight: 500; font-size: clamp(12px, 1.2vw, 30px); }
     .todo.done::before { background: var(--gold-dark); }
+    .card { display: flex; flex-direction: column; }
+    [data-pages] { flex: 1 1 auto; min-height: 0; overflow: hidden; align-content: start; }
+    .page-no { font-weight: 600; margin-left: .6em; }
+    .page-no:empty { display: none; }
+    .todo.alert em { font-style: normal; font-weight: 800; color: var(--gold); text-transform: uppercase; font-size: .7em; letter-spacing: .06em; margin-right: .2em; }
+    .completed { flex: none; border-top: 1px solid var(--line); margin-top: .6em; padding-top: .5em; }
+    .completed h3 { margin: 0 0 .3em; color: var(--muted); font-size: clamp(12px, 1.1vw, 26px); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; display: flex; justify-content: space-between; }
     .more { color: var(--muted); font-size: clamp(12px, 1.1vw, 26px); margin-top: .5em; }
     .empty { color: var(--muted); font-size: clamp(14px, 1.4vw, 34px); }
     .foot { color: var(--muted); font-size: clamp(10px, .75vw, 18px); text-align: right; opacity: .75; }
@@ -86,7 +104,9 @@
     @media (max-aspect-ratio: 1/1) {  /* a phone or a screen on its side */
       body { overflow: auto; }
       .tv { height: auto; }
-      .cols, .sales { grid-template-columns: 1fr; }
+      [data-pages] { overflow: visible; }
+      .cols, .sales, .top { grid-template-columns: 1fr; }
+      .stack { grid-template-rows: auto; }
       .sales .left { text-align: left; }
     }
   </style>
@@ -113,6 +133,39 @@
       // If the screen is left up overnight, start fresh each morning.
       var opened = dateFmt.format(new Date());
       setInterval(function () { if (dateFmt.format(new Date()) !== opened) location.reload(); }, 600000);
+    })();
+
+    // A list longer than its card turns pages every few seconds, so every item gets its turn on screen.
+    (function () {
+      var PAGE_SECONDS = 8, pageOf = {};
+      function pagesFor(list) {
+        var items = Array.prototype.slice.call(list.children);
+        items.forEach(function (li) { li.hidden = false; });
+        var room = list.clientHeight, pages = [], start = 0;
+        if (!items.length || list.scrollHeight <= room + 1) return [items];
+        var top = items[0].offsetTop;
+        items.forEach(function (li, i) {
+          if (li.offsetTop + li.offsetHeight - top > room && i > start) { pages.push(items.slice(start, i)); start = i; top = li.offsetTop; }
+        });
+        pages.push(items.slice(start));
+        return pages;
+      }
+      function show() {
+        document.querySelectorAll('[data-pages]').forEach(function (list, n) {
+          if (getComputedStyle(list).overflow === 'visible') return;  // phone layout scrolls instead
+          var pages = pagesFor(list), key = n + ':' + list.className, label = list.closest('.card').querySelector('.page-no');
+          var at = (pageOf[key] || 0) % pages.length;
+          pages.forEach(function (page, i) { page.forEach(function (li) { li.hidden = i !== at; }); });
+          if (label) label.textContent = pages.length > 1 ? '· page ' + (at + 1) + ' of ' + pages.length : '';
+        });
+      }
+      function turn() {
+        document.querySelectorAll('[data-pages]').forEach(function (list, n) { var key = n + ':' + list.className; pageOf[key] = (pageOf[key] || 0) + 1; });
+        show();
+      }
+      document.body.addEventListener('htmx:afterSwap', show);
+      window.addEventListener('resize', show);
+      show(); setInterval(turn, PAGE_SECONDS * 1000);
     })();
   </script>
 </body>
