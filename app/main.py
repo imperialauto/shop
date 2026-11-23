@@ -145,6 +145,8 @@ def read_only_exempt(request: Request) -> bool:
         return True  # owner configuration, audited, checks for the owner itself
     if request.url.path.startswith("/settings/users/"):
         return True  # logins only; these routes check for the owner themselves
+    if request.method == "POST" and request.url.path.startswith("/finance/"):
+        return True  # owner's own money figures only, audited; these routes check for the owner themselves
     # The one-time owner claim has its own strong Railway secret + CSRF
     # checks and only updates the sole user credential, not customer data.
     if (request.url.path == "/owner-setup"
