@@ -11,7 +11,7 @@ from app.database import get_db, init_db
 from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user, after_login, REMEMBER_DAYS, wants_remember
 from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, my_day, business_settings_page, dispatch, imperial_tasks, dev_work, live, finance, owner_setup, public_site, staff
-from app.routes import account_security, local_node, security_center, ro_evidence, ask, agent_api
+from app.routes import account_security, local_node, security_center, ro_evidence, ask, agent_api, shop_board
 import app.assist_model  # noqa: F401  registers Ask Imperial tables
 from app import agent_keys, agent_connector, appointment_feed
 from app.scheduler import start_scheduler
@@ -68,6 +68,7 @@ app.include_router(appointment_feed.owner_router, tags=["calendar_feed"])
 app.include_router(security_center.router, tags=["settings"])
 app.include_router(alert_center.router, tags=["alerts"])
 app.include_router(my_day.router, tags=["my_day"])
+app.include_router(shop_board.router, tags=["shop_board"])
 app.include_router(public_site.router, tags=["public_site"])
 app.include_router(legacy_redirects.router, tags=["public_site"])
 app.include_router(ai_assist.router, prefix="/ai", tags=["ai"])
