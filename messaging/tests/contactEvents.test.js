@@ -85,6 +85,22 @@ test("hourly catch-up sends every contact with a number, minus skipped and our o
   const shopClient = { quoContactsCatchUp: async (c) => { sent = c; return { contacts: c.length, renamed: 1 }; } };
   const events = createContactEvents({ quo, shopClient, skip: new Set(["6025550122"]), wroteRecently: (p) => p.endsWith("0133"), pageDelayMs: 0 });
   const result = await events.catchUp();
-  assert.deepEqual(sent, [{ id: "A", firstName: "Dana", lastName: "Sample", company: "", emails: ["dana@example.test"], phones: ["+16025550111"] }]);
+  assert.deepEqual(sent, [{ id: "A", firstName: "Dana", lastName: "Sample", company: "", emails: ["dana@example.test"], externalId: "", phones: ["+16025550111"] }]);
   assert.equal(result.renamed, 1);
+});
+
+test("dashboard names go onto our own placeholder contacts only when write-back is on", async () => {
+  const ours = { id: "A", externalId: "imperial-ops:6025550111", defaultFields: { firstName: "New Lead", lastName: "0111", phoneNumbers: [{ value: "+16025550111" }] } };
+  const handMade = { id: "B", defaultFields: { firstName: "Honda", lastName: "Accord", phoneNumbers: [{ value: "+16025550122" }] } };
+  const quo = { listContacts: async () => ({ data: [ours, handMade] }), updates: [], async updateContact(id, f) { this.updates.push([id, f]); return {}; } };
+  const offers = [{ id: "A", firstName: "Dana", lastName: "Sample" }, { id: "B", firstName: "Robin", lastName: "Typed" }];
+  const shopClient = { quoContactsCatchUp: async (c) => ({ contacts: c.length, renamed: 0, names_for_quo: offers }) };
+  const marked = [];
+  const off = createContactEvents({ quo, shopClient, pageDelayMs: 0, wroteRecently: () => false, markWritten: (p) => marked.push(p) });
+  assert.equal((await off.catchUp()).renamedInQuo, 0);
+  assert.equal(quo.updates.length, 0);
+  const on = createContactEvents({ quo, shopClient, pageDelayMs: 0, wroteRecently: () => false, writeBack: true, markWritten: (p) => marked.push(p) });
+  assert.equal((await on.catchUp()).renamedInQuo, 1);
+  assert.deepEqual(quo.updates, [["A", { firstName: "Dana", lastName: "Sample", phoneNumbers: [{ value: "+16025550111" }] }]]);
+  assert.deepEqual(marked, ["+16025550111"]);
 });

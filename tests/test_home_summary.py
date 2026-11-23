@@ -91,7 +91,9 @@ class HomeSummaryTests(unittest.TestCase):
                 self.assertIn('href="/ro/?status=approval_received"', page.text)
                 self.assertIn("Approval received", page.text)
                 self.assertIn("Work complete", page.text)
-                self.assertNotIn("Ready for pickup", page.text)
+                # The stage chip keeps saying "Work complete" (complete is not proof of pickup); the green
+                # pickup banner is the shop board's own, shown only for finished cars marked as still here.
+                self.assertIn(">Work complete<strong>", page.text)
                 self.assertEqual("paid this week" in page.text, money)
 
 

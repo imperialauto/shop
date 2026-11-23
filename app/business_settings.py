@@ -43,6 +43,14 @@ KEYS = {
     "legal_review": "LEGAL_REVIEW_JSON",
     # Hash of the owner's private calendar-feed address (app/appointment_feed.py). Set in Settings only.
     "appointment_feed": "APPOINTMENT_FEED_SETTING",
+    # Money to bring in each day: shared by the Shop TV board (/board/manage) and the Money page.
+    "daily_sales_goal": "DAILY_SALES_GOAL",
+    "finance_pay_order": "FINANCE_PAY_ORDER_JSON",
+    "monthly_profit_goal": "MONTHLY_PROFIT_GOAL",
+    # Shop TV board: which open jobs' cars are at the shop. Set on /board/manage.
+    "board_on_lot": "BOARD_ON_LOT_JSON",
+    "board_timers": "BOARD_TIMERS_JSON",
+    "board_job_clock": "BOARD_JOB_CLOCK_JSON",
 }
 CACHE_SECONDS = 15
 _cache: dict = {"at": 0.0, "values": None}

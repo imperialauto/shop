@@ -122,7 +122,7 @@ class QuoContactNameTests(unittest.TestCase):
             {"id": "A", "firstName": "Dana", "lastName": "Sample", "phones": ["+16025550111"]},
             {"id": "B", "firstName": "Toyota", "lastName": "Camry", "phones": ["+16025550122"]},
             {"id": "C", "firstName": "Nobody", "phones": ["+16025550199"]}]})
-        self.assertEqual(r.json(), {"contacts": 3, "renamed": 1, "emails": 0})
+        self.assertEqual(r.json(), {"contacts": 3, "renamed": 1, "emails": 0, "names_for_quo": []})
         self.assertEqual(self.customer(1), ("Dana", "Sample", "quo_contact"))
         with self.Session() as db:
             line = [c for c in system_health.report(db)["checks"] if c["name"] == "Quo contact names"][0]
@@ -135,6 +135,27 @@ class QuoContactNameTests(unittest.TestCase):
             self.assertFalse(line["ok"])
         self.assertEqual(self.client.post("/internal/dispatch/contacts", headers={"X-Internal-Key": "wrong"},
                                           json={"contacts": []}).status_code, 401)
+
+
+    def test_typed_names_are_offered_only_for_our_own_placeholder_contacts(self):
+        own = "imperial-ops:"
+        r = self.client.post("/internal/dispatch/contacts", headers=HEADERS, json={"contacts": [
+            {"id": "Q3", "firstName": "New Lead", "lastName": "0133", "externalId": own + "6025550133", "phones": ["6025550133"]},
+            {"id": "Q3b", "firstName": "New Lead", "lastName": "0133", "phones": ["6025550133"]},
+            {"id": "Q3c", "firstName": "Robbie", "lastName": "T", "externalId": own + "6025550133", "phones": ["6025550133"]},
+            {"id": "Q2", "firstName": "New Lead", "lastName": "0122", "externalId": own + "6025550122", "phones": ["6025550122"]}]})
+        offers = r.json()["names_for_quo"]
+        # Customer 3's name was typed in the dashboard; customer 2's came from a text, so it isn't offered.
+        self.assertEqual(offers, [{"id": "Q3", "firstName": "Robin", "lastName": "Typed", "customer": 3}])
+        self.assertEqual(self.customer(3), ("Robin", "Typed", "staff"))
+
+    def test_no_offer_when_two_customers_share_the_number(self):
+        with self.Session() as db:
+            db.add(Customer(id=4, first_name="Sam", last_name="Typed", phone="6025550133", name_source="staff"))
+            db.commit()
+        r = self.client.post("/internal/dispatch/contacts", headers=HEADERS, json={"contacts": [
+            {"id": "Q3", "firstName": "New Lead", "lastName": "0133", "externalId": "imperial-ops:6025550133", "phones": ["6025550133"]}]})
+        self.assertEqual(r.json()["names_for_quo"], [])
 
 
 if __name__ == "__main__":

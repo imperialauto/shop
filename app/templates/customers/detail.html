@@ -25,6 +25,9 @@
   </div>
 </div>
 
+{% set tag_kind, tag_target, tag_next = 'customer', customer.id, '/customers/' ~ customer.id %}
+{% include "_tags.html" %}
+
 {% if next_visit %}<p class="card mb-4 text-sm" role="status">Next-visit offer from job #{{ next_visit[0] }}: 10% off labor, up to $50, on a job over $200, good through {{ next_visit[1].astimezone(tz).strftime('%b %-d, %Y') }}. It comes off when the invoice is made.</p>{% endif %}
 {% if referral %}
 <section id="referrals" class="card mb-4" aria-label="Referrals" style="display:grid;gap:8px">

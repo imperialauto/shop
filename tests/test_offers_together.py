@@ -113,7 +113,7 @@ class OffersStory(unittest.TestCase):
             out["review rows after"] = [(r.dedupe_key, r.status) for r in db.query(DispatchOutbound).filter_by(kind="review_request")]
         self.assertEqual(out["pat job1"], (409.2, []))
         self.assertEqual(out["pat job1 status"], "delivered")
-        self.assertEqual(out["review rows"], [("review:1:1", "scheduled")])
+        self.assertEqual(out["review rows"], [("review:1:1", "queued")])
         self.assertEqual(out["receipt offer"][0], 200)
         self.assertTrue(out["receipt offer"][1])
         self.assertTrue(out["receipt shows code"])

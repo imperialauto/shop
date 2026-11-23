@@ -105,6 +105,15 @@ def for_job(db: Session, ro: RepairOrder, role: str) -> dict | None:
 
 
 STUCK_AFTER_HOURS = 48
+LATE_DAYS = 2  # anything waiting on the shop this long shows red on Home
+
+
+def days_since(when) -> int:
+    """Whole days since a time; naive times are UTC. 0 when unknown."""
+    if not when:
+        return 0
+    when = when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+    return max(int((datetime.now(timezone.utc) - when).total_seconds() // 86400), 0)
 
 
 def last_activity(ro: RepairOrder):
