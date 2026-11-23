@@ -7,6 +7,7 @@ Unpaid balances on sent job invoices count as money coming in. A bank's CSV down
 account's balance; the file itself is read once and not kept. Nothing here changes invoices or
 payments, or sends anything.
 """
+import json
 import re
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -63,6 +64,30 @@ def daily_goal() -> int:
     except ValueError:
         return plan.DEFAULT_DAILY_GOAL
     return value if 0 < value <= 100000 else plan.DEFAULT_DAILY_GOAL
+
+
+def saved_pay_order() -> dict:
+    """His own pay order, {scope: [lower-case bill names]}."""
+    try:
+        value = json.loads(settings_store.raw("finance_pay_order") or "{}")
+    except ValueError:
+        return {}
+    if not isinstance(value, dict):
+        return {}
+    return {scope: [str(n).lower()[:80] for n in value.get(scope, []) if isinstance(n, str)][:200] for scope in SCOPES}
+
+
+def profit_goal() -> int:
+    """Monthly profit goal in whole dollars, 0 when he hasn't set one."""
+    try:
+        value = int(float(settings_store.raw("monthly_profit_goal") or "0"))
+    except ValueError:
+        return 0
+    return value if 0 <= value <= 1_000_000 else 0
+
+
+def _pay_list(totals) -> list:
+    return list(totals.overdue_bills) + list(totals.window_bills)
 
 
 def _owner(request: Request, db: Session):
@@ -173,6 +198,9 @@ def finance_home(request: Request, window: int = 14, db: Session = Depends(get_d
     lowest = min(line, key=lambda d: (d["cents"], d["day"])) if line else None
     need_per_day = plan.dollars(plan.per_day(business.short, sums["days_open"]))
     last_updated = max((a.as_of for a in accounts), default=None)
+    order = saved_pay_order()
+    pay = {scope: plan.pay_order(_pay_list(sums[scope]), order.get(scope), sums[scope].cash, today) for scope in SCOPES}
+    goal_month = profit_goal()
     to_confirm = sorted((b for b in bills if b.status == "open" and plan.is_unconfirmed(b)), key=lambda b: b.due_date)
     check_dates = sorted((b for b in bills if b.status == "paid" and plan.paid_date_guessed(b)), key=lambda b: b.due_date)
     paid_recently = sorted((b for b in bills if b.status == "paid" and b.paid_on and b.paid_on >= today - timedelta(days=14)),
@@ -205,6 +233,8 @@ def finance_home(request: Request, window: int = 14, db: Session = Depends(get_d
         "month_label": today.strftime("%B"),
         "paid_recently": paid_recently[:6],
         "on_time": plan.on_time(bills, today),
+        "pay": pay,
+        "profit": plan.profit_plan(business.short, sums["days_open"], goal_month, today),
         "to_confirm": to_confirm,
         "check_dates": check_dates,
         "days_late": plan.days_late,
@@ -436,6 +466,51 @@ async def add(request: Request, db: Session = Depends(get_db)):
         lines, problems = plan.parse_paste(" | ".join(fields), today)
         done, more = apply_lines(db, lines, today, user.username)
         return ("Saved." if done else ""), [p.replace("Line 1: ", "") for p in problems + more]
+    return await _save(request, db, work)
+
+
+@router.post("/order")
+async def order(request: Request, db: Session = Depends(get_db)):
+    """Moves a bill up or down the pay order, or puts the order back to automatic."""
+    def work(form, user, today):
+        scope, name, direction = str(form.get("scope", "")), str(form.get("name", "")).strip().lower()[:80], str(form.get("direction", ""))
+        if scope not in SCOPES or direction not in ("up", "down", "reset"):
+            return "", ["That move didn't make sense."]
+        saved = saved_pay_order()
+        if direction == "reset":
+            saved[scope] = []
+            notice = "Pay order is back to automatic."
+        else:
+            bills = db.query(FinanceBill).all()
+            accounts = db.query(FinanceAccount).all()
+            incoming = db.query(FinanceIncoming).all()
+            window = int(form.get("window") or 14) if str(form.get("window") or "14").isdigit() else 14
+            sums = plan.totals(accounts, bills, incoming, today, window if window in plan.WINDOWS else 14)
+            current = plan.pay_order(_pay_list(sums[scope]), saved.get(scope), sums[scope].cash, today)["names"]
+            if name not in current:
+                return "", ["That bill isn't in the pay order."]
+            saved[scope] = plan.move(current, name, direction)
+            notice = ""
+        settings_store.save(db, "finance_pay_order", saved, user.username)
+        settings_store.clear_cache()
+        _log(db, user.username, "pay_order", f"{scope} {direction} {name}")
+        return notice, []
+    return await _save(request, db, work)
+
+
+@router.post("/profit")
+async def profit(request: Request, db: Session = Depends(get_db)):
+    def work(form, user, today):
+        text = str(form.get("profit", "")).strip()
+        try:
+            value = plan.cents(text or "0") // 100
+        except ValueError:
+            return "", ["The profit goal has to be a dollar amount."]
+        if not 0 <= value <= 1_000_000:
+            return "", ["The profit goal has to be between $0 and $1,000,000."]
+        settings_store.save(db, "monthly_profit_goal", str(value), user.username)
+        settings_store.clear_cache()
+        return (f"Monthly profit goal set to ${value:,}." if value else "Profit goal cleared."), []
     return await _save(request, db, work)
 
 

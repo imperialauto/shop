@@ -441,3 +441,73 @@ def parse_paste(text: str, today: date) -> tuple[list[PasteLine], list[str]]:
         except ValueError as exc:
             problems.append(f"Line {number}: {exc}.")
     return lines, problems
+
+
+# ---- pay order --------------------------------------------------------------
+# Which bill gets the next dollar. Bills that keep the doors open come first, then the
+# ones that pile on late fees or go into default, then the rest; oldest due first in
+# each group. A bill found in mail that he hasn't confirmed waits at the end.
+PAY_TIERS = {"rent": 1, "utilities": 1, "phone": 1,
+             "loan": 2, "card": 2, "insurance": 2, "taxes": 2, "fees": 2}
+TIER_LABELS = {1: "Keeps the doors open", 2: "Late fees or default", 3: "Everything else", 4: "Not confirmed yet"}
+
+
+def pay_tier(bill) -> int:
+    if is_unconfirmed(bill):
+        return 4
+    return PAY_TIERS.get(bill.category, 3)
+
+
+def pay_order(bills, saved_names, cash_cents: int, today: date) -> dict:
+    """Ranks the bills to pay (past due and due in the window) and walks cash on hand down the list.
+
+    saved_names is his own order (lower-case names) from moving bills up and down. A name he never
+    moved keeps its place from the automatic order. Bills with the same name stay together, oldest first.
+    """
+    auto = sorted(bills, key=lambda b: (pay_tier(b), b.due_date, b.name.lower()))
+    auto_names = list(dict.fromkeys(b.name.lower() for b in auto))
+    names = [n for n in dict.fromkeys(saved_names or []) if n in auto_names]
+    for index, name in enumerate(auto_names):
+        if name not in names:
+            names.insert(min(index, len(names)), name)
+    place = {name: i for i, name in enumerate(names)}
+    ranked = sorted(bills, key=lambda b: (place[b.name.lower()], b.due_date))
+    rows, running, next_up = [], 0, None
+    left = max(cash_cents, 0)
+    for rank, bill in enumerate(ranked, 1):
+        running += bill.amount_cents
+        covered = running <= cash_cents
+        short = max(running - max(cash_cents, 0), 0)
+        row = {"rank": rank, "bill": bill, "tier": pay_tier(bill), "tier_label": TIER_LABELS[pay_tier(bill)],
+               "running": running, "covered": covered, "short": min(short, bill.amount_cents),
+               "past_due": bill.due_date < today,
+               "moved": place[bill.name.lower()] < auto_names.index(bill.name.lower())}
+        if not covered and next_up is None:
+            next_up = {"bill": bill, "have": left, "need": bill.amount_cents - left}
+        left = max(left - bill.amount_cents, 0)
+        rows.append(row)
+    return {"rows": rows, "names": names, "total": running, "next_up": next_up,
+            "to_bring_in": max(running - max(cash_cents, 0), 0)}
+
+
+def move(names: list[str], name: str, direction: str) -> list[str]:
+    """Moves one name up or down a place."""
+    order = list(names)
+    if name not in order:
+        return order
+    i = order.index(name)
+    j = i - 1 if direction == "up" else i + 1
+    if 0 <= j < len(order):
+        order[i], order[j] = order[j], order[i]
+    return order
+
+
+def profit_plan(short_cents: int, days_open: int, profit_goal: int, today: date) -> dict:
+    """Daily target for the bills in the window plus a monthly profit goal spread over the month's open days."""
+    month_start = today.replace(day=1)
+    month_end = next_due(month_start, "monthly")
+    open_days = max(working_days(month_start, month_end - timedelta(days=1)), 1)
+    bills_per_day = per_day(short_cents, days_open)
+    profit_per_day = round(profit_goal * 100 / open_days) if profit_goal else 0
+    return {"bills_per_day": bills_per_day, "profit_per_day": profit_per_day,
+            "total_per_day": bills_per_day + profit_per_day, "open_days_month": open_days, "goal": profit_goal}

@@ -18,6 +18,32 @@
   </div>
 </div>
 {% endmacro %}
+{% macro pay_list(p, scope, totals, window, today) %}
+{% set ns = namespace(tier=0) %}
+{% for r in p.rows %}{% set b = r.bill %}
+{% if r.tier > ns.tier %}{% set ns.tier = r.tier %}<h3 class="fin-sub-h">{{ r.tier_label }}</h3>{% endif %}
+<div class="fin-row fin-pay{% if r.past_due %} late{% endif %}">
+  <div class="fin-rank" aria-label="Pay {{ r.rank }}{{ 'st' if r.rank == 1 else 'nd' if r.rank == 2 else 'rd' if r.rank == 3 else 'th' }}">{{ r.rank }}</div>
+  <div class="fin-row-main">
+    <h3>{{ b.name }}</h3>
+    <p>{% if b.projected %}Next one due {{ b.due_date.strftime('%a %b %-d') }}{% elif r.past_due %}Was due {{ b.due_date.strftime('%b %-d') }} · <span class="fin-flag">{{ (today - b.due_date).days }} day{{ '' if (today - b.due_date).days == 1 else 's' }} late</span>{% else %}Due {{ b.due_date.strftime('%a %b %-d') }}{% endif %}{% if r.moved %} · moved up by you{% endif %}</p>
+    <p class="fin-cover">{% if r.covered %}<span class="ok">Covered by cash on hand</span>{% else %}Needs {{ usd(r.short) }} more{% endif %}</p>
+  </div>
+  <div class="fin-row-side">
+    <div class="amount">{{ usd(b.amount_cents) }}</div>
+    <div class="fin-actions">
+      <form method="post" action="/finance/order"><input type="hidden" name="window" value="{{ window }}"><input type="hidden" name="scope" value="{{ scope }}"><input type="hidden" name="name" value="{{ b.name }}"><input type="hidden" name="direction" value="up"><button class="fin-link" type="submit" aria-label="Pay {{ b.name }} sooner"{% if loop.first %} disabled{% endif %}>Up</button></form>
+      <form method="post" action="/finance/order"><input type="hidden" name="window" value="{{ window }}"><input type="hidden" name="scope" value="{{ scope }}"><input type="hidden" name="name" value="{{ b.name }}"><input type="hidden" name="direction" value="down"><button class="fin-link" type="submit" aria-label="Pay {{ b.name }} later"{% if loop.last %} disabled{% endif %}>Down</button></form>
+    </div>
+    {% if not b.projected %}<div class="fin-actions">
+      <form method="post" action="/finance/bills/{{ b.id }}/paid"><input type="hidden" name="window" value="{{ window }}">{{ account_pick(totals, 'Paid from') }}<input type="date" name="paid_on" class="fin-acct fin-day" value="{{ today.isoformat() }}" max="{{ today.isoformat() }}" aria-label="Paid on"><button class="btn-secondary text-xs" type="submit">Paid</button></form>
+      <form method="post" action="/finance/bills/{{ b.id }}/skip" data-confirm="Take {{ b.name }} off the list?"><input type="hidden" name="window" value="{{ window }}"><button class="fin-link" type="submit">Remove</button></form>
+    </div>{% endif %}
+  </div>
+</div>
+{% endfor %}
+{% if p.rows and p.names %}<form method="post" action="/finance/order" style="margin-top:6px;"><input type="hidden" name="window" value="{{ window }}"><input type="hidden" name="scope" value="{{ scope }}"><input type="hidden" name="direction" value="reset"><button class="fin-link" type="submit">Put the order back to automatic</button></form>{% endif %}
+{% endmacro %}
 {% block content %}
 <style>
   .fin-wrap { max-width: 1100px; margin: 0 auto; }
@@ -56,6 +82,12 @@
   .fin-actions form { margin:0; display:flex; gap:6px; align-items:center; }
   .fin-acct { font-size:12px; max-width:150px; padding:3px 4px; border:1px solid var(--imp-line); border-radius:6px; background:transparent; color:var(--imp-ink); }
   .fin-actions .btn-secondary { min-height:36px; }
+  .fin-pay { align-items:flex-start; }
+  .fin-rank { flex:0 0 28px; height:28px; border-radius:50%; background:var(--imp-purple-soft); color:var(--imp-gold-text); font-weight:700; font-size:13px; display:flex; align-items:center; justify-content:center; margin-top:2px; }
+  .fin-pay .fin-row-main { flex:1; }
+  .fin-cover { font-size:12px; color:var(--imp-danger); margin-top:2px; }
+  .fin-cover .ok { color:var(--imp-ok); }
+  .fin-link[disabled] { opacity:.35; cursor:default; }
   .fin-flag { color:var(--imp-danger); font-weight:600; }
   .fin-day { max-width:140px; min-height:36px; }
   .fin-link { background:none; border:0; color:var(--imp-muted); font-size:12px; text-decoration:underline; cursor:pointer; padding:8px 2px; min-height:36px; }
@@ -190,11 +222,12 @@
       </section>
 
       <section class="card fin-card" aria-labelledby="fin-bills-h">
-        <h2 id="fin-bills-h">Bills to pay</h2>
-        <p class="cap">Past due first, then by due date through {{ end.strftime('%b %-d') }}.</p>
-        {% for b in business.overdue_bills %}{{ bill_row(b, today, window, True, business) }}{% endfor %}
-        {% for b in business.window_bills %}{{ bill_row(b, today, window, False, business) }}{% endfor %}
-        {% if not business.overdue_bills and not business.window_bills %}<p class="cap">No shop bills due in this stretch.</p>{% endif %}
+        <h2 id="fin-bills-h">Pay order</h2>
+        <p class="cap">Pay from the top down. Bills that keep the doors open come first, then the ones that add late fees or go into default, then the rest. Move one with Up or Down if it has to go sooner.</p>
+        {% set bp = pay.business %}
+        {% if bp.next_up %}<div class="fin-banner warn">Next money in goes to <strong>{{ bp.next_up.bill.name }}</strong>: {{ usd(bp.next_up.need) }} more covers it{% if bp.next_up.have %} ({{ usd(bp.next_up.have) }} already on hand){% endif %}.</div>{% elif bp.rows %}<div class="fin-banner ok">Cash on hand covers every bill through {{ end.strftime('%b %-d') }}.</div>{% endif %}
+        {{ pay_list(bp, 'business', business, window, today) }}
+        {% if not bp.rows %}<p class="cap">No shop bills due in this stretch.</p>{% endif %}
         {% if business.later_bills %}
         <details class="fin-more"><summary>{{ business.later_bills|length }} later bill{{ 's' if business.later_bills|length != 1 }}</summary>
           {% for b in business.later_bills %}{{ bill_row(b, today, window, False, business) }}{% endfor %}
@@ -205,6 +238,22 @@
           {% for b in paid_recently %}<div class="fin-row"><div class="fin-row-main"><h3>{{ b.name }}</h3><p>Paid {{ b.paid_on.strftime('%b %-d') }}{% set dl = days_late(b) %}{% if dl %} · <span class="fin-flag">{{ dl }} day{{ '' if dl == 1 else 's' }} late</span>{% endif %} · {{ 'Shop' if b.scope == 'business' else 'Personal' }}</p></div><div class="fin-row-side"><div class="amount">{{ usd(b.amount_cents) }}</div></div></div>{% endfor %}
         </details>
         {% endif %}
+      </section>
+
+      <section class="card fin-card" aria-labelledby="fin-target-h">
+        <h2 id="fin-target-h">What has to come in</h2>
+        <table class="fin-week">
+          <tr><td>Bills through {{ end.strftime('%b %-d') }}, after cash on hand</td><td class="r">{{ usd(business.short) }}</td></tr>
+          <tr><td>A day, over {{ days_open }} open day{{ 's' if days_open != 1 }}</td><td class="r">{{ usd(profit.bills_per_day) }}</td></tr>
+          {% if profit.goal %}<tr><td>Profit goal, ${{ '{:,}'.format(profit.goal) }} a month, a day</td><td class="r">{{ usd(profit.profit_per_day) }}</td></tr>
+          <tr><th>Daily target with profit</th><th class="r">{{ usd(profit.total_per_day) }}</th></tr>{% endif %}
+        </table>
+        <p class="cap">Sales after parts. The profit goal is spread over the {{ profit.open_days_month }} open days this month.</p>
+        <form method="post" action="/finance/profit" style="display:flex;gap:8px;align-items:flex-end;margin-top:8px;">
+          <input type="hidden" name="window" value="{{ window }}">
+          <div style="flex:1"><label class="form-label" for="fin-profit">Monthly profit goal</label><input id="fin-profit" class="form-input" name="profit" inputmode="numeric" value="{{ profit.goal or '' }}" placeholder="Not set" style="min-height:44px;width:100%;font-size:16px;"></div>
+          <button class="btn-secondary" type="submit" style="min-height:44px;">Save</button>
+        </form>
       </section>
 
       <section class="card fin-card" aria-labelledby="fin-ontime-h" id="on-time">
@@ -308,8 +357,7 @@
         <p class="cap">Never mixed into the shop numbers above.</p>
         <details class="fin-more"><summary>Cash {{ usd(personal.cash) }} · bills due {{ usd(personal.owed) }}</summary>
           {% for a in personal.accounts %}<div class="fin-row"><div class="fin-row-main"><h3>{{ a.name }}</h3><p>As of {{ a.as_of.strftime('%b %-d') }}</p></div><div class="fin-row-side"><div class="amount">{{ usd(a.balance_cents) }}</div></div></div>{% endfor %}
-          {% for b in personal.overdue_bills %}{{ bill_row(b, today, window, True, personal) }}{% endfor %}
-          {% for b in personal.window_bills %}{{ bill_row(b, today, window, False, personal) }}{% endfor %}
+          {{ pay_list(pay.personal, 'personal', personal, window, today) }}
           {% for b in personal.later_bills %}{{ bill_row(b, today, window, False, personal) }}{% endfor %}
           {% if personal.short %}<p class="cap" style="margin-top:8px;color:var(--imp-danger);">Short {{ usd(personal.short) }} on personal bills through {{ end.strftime('%b %-d') }}.</p>{% endif %}
         </details>
