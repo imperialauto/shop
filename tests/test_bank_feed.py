@@ -397,6 +397,7 @@ class BankRouteTests(DbCase):
         with self.Session() as db:
             self.assertEqual(db.get(FinanceAccount, cash_id).scope, "personal")
             self.assertEqual(db.get(BankAccount, account_id).scope, "personal")
+        self.assertIn("From the bank", owner.get("/finance/").text)  # personal accounts say where the figure came from too
         owner.post(f"/finance/bank/accounts/{account_id}", data={"scope": "personal", "tracked": "no"})
         with self.Session() as db:
             self.assertFalse(db.get(FinanceAccount, cash_id).active)

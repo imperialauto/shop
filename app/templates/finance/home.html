@@ -330,7 +330,7 @@
         <h2 id="fin-personal-h">Personal, kept separate</h2>
         <p class="cap">Never mixed into the shop numbers above.</p>
         <details class="fin-more"><summary>Cash {{ usd(personal.cash) }} · bills due {{ usd(personal.owed) }}</summary>
-          {% for a in personal.accounts %}<div class="fin-row"><div class="fin-row-main"><h3>{{ a.name }}</h3><p>As of {{ a.as_of.strftime('%b %-d') }}</p></div><div class="fin-row-side"><div class="amount">{{ usd(a.balance_cents) }}</div></div></div>{% endfor %}
+          {% for a in personal.accounts %}<div class="fin-row"><div class="fin-row-main"><h3>{{ a.name }}</h3><p>{% if a.id in bank_fed_ids %}From the bank, {% else %}As of {% endif %}{{ a.as_of.strftime('%b %-d') }}</p></div><div class="fin-row-side"><div class="amount">{{ usd(a.balance_cents) }}</div></div></div>{% endfor %}
           {% for b in personal.overdue_bills %}{{ bill_row(b, today, window, True, personal) }}{% endfor %}
           {% for b in personal.window_bills %}{{ bill_row(b, today, window, False, personal) }}{% endfor %}
           {% for b in personal.later_bills %}{{ bill_row(b, today, window, False, personal) }}{% endfor %}
