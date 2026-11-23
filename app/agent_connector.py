@@ -223,7 +223,8 @@ def authorize_page(request: Request, db: Session = Depends(get_db)):
                    for d in agent_keys.EXPIRY_DAYS)
     body = (
         '<p style="color:#a1a1aa">Claude will get its own key for this dashboard. It can only do what you tick here. '
-        'It can never invoice, take payments, see finances, change logins or settings, or text customers. '
+        'It can never invoice, take payments, see finances, or change logins or settings. It texts customers only '
+        'if you tick the approval link box, and then only a job\'s approval link, from the shop line. '
         'Every change it makes is listed in Settings, where you can turn it off any time.</p>'
         f'<form method="post" action="/connect/authorize">{hidden}{boxes}'
         f'<p>Key lasts <select name="days">{days}</select></p>'
@@ -336,6 +337,14 @@ class _Decisions(BaseModel):
     include_staff: bool = Field(default=False, description="Also list yes/no recorded by shop staff in person or by phone.")
 
 
+class _SendApproval(BaseModel):
+    job_id: int = Field(gt=0)
+    offer_snap: bool = Field(default=False, description="Add the line offering Snap Finance.")
+    message: str | None = Field(default=None, max_length=1200,
+                                description="Wording of the text, signed as the owner would. Blank uses the dashboard's "
+                                "standard approval text.")
+
+
 class _Appointment(BaseModel):
     appointment_id: int = Field(gt=0)
 
@@ -396,6 +405,14 @@ TOOLS = {
     "set_board_todo": ("board", "Tick a shop TV to-do off (it moves to Completed) or put it back, by todo_id or task_key. "
                        "Ticking off a customer alert also clears it from Needs attention; alerts can't be put back.",
                        board_agent.BoardSet, lambda db, key, a: board_agent.set_todo(db, key, a), False),
+    "send_approval_request": ("estimates:send", "Text the customer their approval link for a job from the shop line, "
+                              "the same as the owner pressing Ask for approval on the dashboard, so the text is logged on "
+                              "the job. Only when the owner has asked for it to go. Optional message is the text's wording; "
+                              "the job's link is added if it isn't in it. Won't send twice: refuses if their link already "
+                              "went out (from anywhere) and they haven't replied since, or if texting is paused.",
+                              _SendApproval, lambda db, key, a: agent_api.send_approval(
+                                  a.job_id, agent_api.SendApprovalIn(offer_snap=a.offer_snap, message=a.message), db, key),
+                              False),
     "confirm_appointment": ("appointments:confirm", "Confirm a tentative appointment, only after the owner has said yes. "
                             "It then shows on his calendar feed and adds his reminder task. Nothing is sent to the customer.",
                             _Appointment, lambda db, key, a: agent_api.confirm_appointment(a.appointment_id, db, key), False),

@@ -249,6 +249,7 @@
   {% elif link == 'no_phone' %}<p class="text-sm text-amber-300 mt-2">This customer has no mobile number, so no text was queued. <a class="underline" href="/customers/{{ ro.customer_id }}/edit">Add one</a>, then tap the button again. Their link: <span class="text-stone-200 break-all">{{ request.url.scheme }}://{{ request.url.netloc }}/sign/ro/{{ ro.public_token }}</span></p>
   {% elif link.startswith('sending') %}<p class="text-sm text-green-400 mt-2">Texting their link now from the shop line. It shows their estimate, photos and inspection in one place, where they approve or decline each item.</p>
   {% elif link.startswith('already') %}<p class="text-sm text-stone-300 mt-2">Their link already went out and they haven't texted since, so it wasn't sent again.</p>
+  {% elif link == 'texted' %}<p class="text-sm text-stone-300 mt-2">Their link was already texted from the shop line and they haven't replied since, so it wasn't sent again.</p>
   {% elif link == 'paused' %}<p class="text-sm text-amber-300 mt-2">Texting is stopped. Resume it on the dashboard, then tap Text link now again. Nothing was sent.</p>
   {% elif link == 'nothing' %}<p class="text-sm text-stone-300 mt-2">Nothing is waiting on the customer, so no link was sent.</p>
   {% elif link == 'unavailable' %}<p class="text-sm text-amber-300 mt-2">Couldn't check their text thread in Quo, so no text was queued. Try again in a minute.</p>
@@ -283,7 +284,9 @@
     <p class="text-stone-500 text-xs mt-1">Sends from the shop line to {{ ro.customer.phone or 'their number' }}. One link shows the estimate, photos and inspection, and they approve or decline each item there.</p>
   </form>
   {% endif %}
-  {% if undecided %}
+  {% if can_text_link %}
+  {# The owner's button above already texts the link; the queue buttons are for office staff. #}
+  {% elif undecided %}
   <form method="post" action="/ro/{{ ro.id }}/request-approval" class="mt-3 text-right">
     <label style="margin-right:10px;display:inline-flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" name="offer_snap" value="1"> Offer Snap Finance</label>
     <button type="submit" class="btn-secondary" style="min-height:44px">Ask customer to approve {{ undecided|length }} item{{ 's' if undecided|length != 1 }}</button>

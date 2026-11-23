@@ -319,6 +319,10 @@ class StaleDraftTests(AskImperialTests):
         refused = desk.post(f"/ask/requests/{request_id}/apply", data={"updated": row.updated_at.isoformat()})
         self.assertIn("error=", refused.headers["location"])
         self.assertEqual(desk.post("/ro/1/request-approval").status_code, 409)
+        # The owner's direct sends (Request approval, Text link now) are refused the same way
+        owner = self.staff("owner")
+        self.assertEqual(owner.post("/ro/1/request-approval").status_code, 409)
+        self.assertEqual(owner.post("/ro/1/text-link-now").status_code, 409)
         # Exactly one actionable advisor item
         self.assertEqual(len([t for t in self.advisor_tasks() if t.status == "open"]), 1)
         # Same screen: revise, labor verified, apply

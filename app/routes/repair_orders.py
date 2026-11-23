@@ -273,18 +273,22 @@ def update_status(
 @router.post("/{ro_id}/request-approval")
 def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db),
                      offer_snap: str = Form(default="")):
-    """Marks undecided lines as waiting on the customer and queues the approval
-    text for the owner's YES. Nothing is sent from here."""
+    """Ask for approval.
+
+    Owner or admin: texts the customer their approval link now from the shop line. The press is
+    the owner's yes, so there is no second YES text, and the text is logged on the job.
+    Office staff: marks undecided lines as waiting on the customer and queues the text for the
+    owner's YES. Nothing is sent from here for them.
+    """
     user = require_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=302)
     ro = db.get(RepairOrder, ro_id)
     if not ro:
         raise HTTPException(status_code=404)
-    from app import assist
-    blocked = assist.send_blocked(db, ro, user)
-    if blocked:
-        raise HTTPException(status_code=409, detail=blocked)
+    _refuse_stale_assist_draft(db, ro, user)
+    if user.role in SENDERS:
+        return _send_link(db, ro, user, offer_snap)
     fresh = [li for li in ro.line_items if li.approval is None]
     for li in fresh:
         li.approval = "pending"
@@ -313,6 +317,23 @@ def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db)
 SENDERS = ("owner", "admin")
 
 
+def _refuse_stale_assist_draft(db: Session, ro: RepairOrder, user):
+    """Ask Imperial: no approval text goes out (owner send, office queue or Text link now) while
+    this job's estimate draft is out of date. No-op when Ask Imperial is off."""
+    from app import assist
+    blocked = assist.send_blocked(db, ro, user)
+    if blocked:
+        raise HTTPException(status_code=409, detail=blocked)
+
+
+def _send_link(db: Session, ro: RepairOrder, user, offer_snap: str):
+    asked = sum(1 for li in ro.line_items if li.approval is None)
+    state, item = approval_links.send_now(db, ro, user.username, user.id, offer_snap=snap_offer.checked(offer_snap))
+    if state in ("sending", "already") and item is not None:
+        state = f"{state}{item.id}"
+    return RedirectResponse(f"/ro/{ro.id}?asked={asked}&link={state}#line-items", status_code=303)
+
+
 @router.post("/{ro_id}/text-link-now")
 def text_link_now(request: Request, ro_id: int, db: Session = Depends(get_db), offer_snap: str = Form(default="")):
     """The owner's own button: texts the customer their one approval link from the shop line.
@@ -329,43 +350,8 @@ def text_link_now(request: Request, ro_id: int, db: Session = Depends(get_db), o
     ro = db.get(RepairOrder, ro_id)
     if not ro:
         raise HTTPException(status_code=404)
-
-    def back(state: str):
-        return RedirectResponse(f"/ro/{ro_id}?link={state}#line-items", status_code=303)
-
-    if is_paused(db):
-        return back("paused")
-    if approval_links.mobile(ro.customer.phone) is None:
-        return back("no_phone")
-    fresh = [li for li in ro.line_items if li.approval is None]
-    for li in fresh:
-        li.approval = "pending"
-    if fresh:
-        ro.status = "waiting_approval"
-        website_alerts.close_for_job(db, ro, user.username, "approval link texted")
-    if not any(li.approval == "pending" for li in ro.line_items):
-        db.commit()
-        return back("nothing")
-    db.commit()
-    thread, problem = customer_file._bridge("/conversation", approval_links.mobile(ro.customer.phone)[-10:])
-    if problem:
-        return back("unavailable")
-    messages = thread.get("messages") or []
-    newest = (messages[-1].get("id") if messages else None) or "none"
-    key = approval_links.conversation_key(ro.id)
-    already = (db.query(DispatchItem).filter(DispatchItem.quo_conversation_id == key, DispatchItem.status == "approved",
-                                             DispatchItem.last_message_id == newest).first())
-    if already is not None:
-        # Same link, and nothing has happened in their thread since it went out: never text it twice.
-        return back(f"already{already.id}")
-    item = approval_links.queue(db, ro, newest, user.username, offer_snap=snap_offer.checked(offer_snap))
-    now = datetime.now().astimezone()
-    item.status, item.decided_by, item.decided_at, item.updated_at = "approved", user.id, now, now
-    db.add(DispatchAudit(item_id=item.id, actor=user.username[:64], action="owner_approve", detail=f"text link now, job {ro.id}"))
-    db.add(DispatchOutbound(dedupe_key=f"dashboard:{item.id}:{item.last_message_id}", kind=DASHBOARD_REPLY,
-                            item_id=item.id, status="queued"))
-    db.commit()
-    return back(f"sending{item.id}")
+    _refuse_stale_assist_draft(db, ro, user)
+    return _send_link(db, ro, user, offer_snap)
 
 
 IN_PERSON_SOURCES = {"in_person": "in person", "phone": "by phone"}

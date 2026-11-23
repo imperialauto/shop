@@ -148,6 +148,57 @@ class OneLinkTests(unittest.TestCase):
             self.assertEqual(db.query(RoInspectionItem).count(), 0)
             self.assertEqual(db.query(DispatchItem).one().status, "closed")
 
+    def test_owner_ask_for_approval_texts_the_link_straight_away(self):
+        # Ask for approval (home page, job page step) is the owner's yes too: no queue, no YES text.
+        with patch.object(customer_file, "_bridge", thread):
+            r = self.client().post("/ro/5/request-approval")
+        with self.Session() as db:
+            item = db.query(DispatchItem).one()
+            self.assertEqual(item.status, "approved")
+            self.assertEqual(db.get(RepairOrder, 5).status, "waiting_approval")
+        self.assertIn(f"link=sending{item.id}", r.headers["location"])
+        self.assertEqual(self.outbound(), [("dashboard_reply", "queued", item.id)])
+        with patch.object(customer_file, "_bridge", thread):
+            again = self.client().post("/ro/5/request-approval")
+        self.assertIn("link=already", again.headers["location"])
+        self.assertEqual(len(self.outbound()), 1)
+
+    def test_office_ask_for_approval_still_waits_for_the_owner(self):
+        with patch.object(customer_file, "_bridge", thread):
+            r = self.client("office").post("/ro/5/request-approval")
+        with self.Session() as db:
+            self.assertEqual(db.query(DispatchItem).one().status, "needs_owner")
+        self.assertIn("link=queued", r.headers["location"])
+        self.assertEqual(self.outbound(), [])
+
+    def test_link_already_texted_outside_the_dashboard_is_not_sent_again(self):
+        def texted(path, phone):
+            return {"messages": [{"id": "AC1", "direction": "INBOUND", "body": "how much?"},
+                                 {"id": "AC2", "direction": "OUTBOUND",
+                                  "body": "Your quote: https://example.test/sign/ro/made-up-token Jae"}]}, None
+
+        def replied(path, phone):
+            return {"messages": texted(path, phone)[0]["messages"] + [
+                {"id": "AC3", "direction": "INBOUND", "body": "can you resend?"}]}, None
+
+        r = self.text_now(fetch=texted)
+        self.assertIn("link=texted", r.headers["location"])
+        self.assertEqual(self.outbound(), [])
+        with self.Session() as db:
+            self.assertEqual(db.get(RepairOrder, 5).status, "waiting_approval")  # still marked as waiting on them
+        # Once they text back, a fresh link may go out.
+        self.assertIn("link=sending", self.text_now(fetch=replied).headers["location"])
+        self.assertEqual(len(self.outbound()), 1)
+
+    def test_a_failed_send_can_be_tried_again(self):
+        self.text_now()
+        with self.Session() as db:
+            db.query(DispatchOutbound).one().status = "failed"
+            db.query(DispatchItem).one().status = "closed"
+            db.commit()
+        self.assertIn("link=sending", self.text_now().headers["location"])
+        self.assertEqual([s for _, s, _ in self.outbound()], ["failed", "queued"])
+
     def test_owner_sees_the_button_office_does_not(self):
         self.assertIn("/ro/5/text-link-now", self.client("owner").get("/ro/5").text)
         self.assertNotIn("/ro/5/text-link-now", self.client("office").get("/ro/5").text)
