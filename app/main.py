@@ -12,6 +12,7 @@ from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user, after_login, REMEMBER_DAYS, wants_remember
 from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, my_day, business_settings_page, dispatch, imperial_tasks, dev_work, live, finance, owner_setup, public_site, staff
 from app.routes import account_security, local_node, security_center, ro_evidence, agent_api, shop_board
+from app.routes import tags as tag_routes
 from app import agent_keys, agent_connector, appointment_feed
 from app.scheduler import start_scheduler
 
@@ -21,6 +22,7 @@ import time
 from app.security import limiter
 from app.permissions import ROLES, role_gate
 from app import home_summary, legacy_redirects, next_action, preview_check, preview_seed, system_health
+from app import tags as tag_store
 from app.public_site import preview_code, indexable, visible_lines, hidden_slugs
 import hashlib
 import hmac
@@ -51,6 +53,7 @@ app.include_router(vehicles.router, prefix="/vehicles", tags=["vehicles"])
 app.include_router(local_node.staff_router, prefix="/ro", tags=["local_node"])
 app.include_router(ro_evidence.router, prefix="/ro", tags=["repair_orders"])
 app.include_router(repair_orders.router, prefix="/ro", tags=["repair_orders"])
+app.include_router(tag_routes.router, prefix="/tags", tags=["tags"])
 app.include_router(ro_evidence.public_router, tags=["public"])
 # Shop workstation (Imperial Local Node) — its own key, never INTERNAL_API_KEY.
 app.include_router(local_node.worker_router, prefix="/internal/local-node", tags=["internal"])
@@ -541,6 +544,9 @@ def dashboard(request: Request, view: str = "", db: Session = Depends(get_db)):
     from app import shop_board
     context = _home_context(request, db, user, "open")
     context["board"] = shop_board.snapshot(db, user)
+    if context["board"]["show_money"]:
+        from app.routes.finance import home_goal
+        context["goal_bar"] = home_goal(db)
     context["queue_total"] = len(context["dispatch_items"])
     context["dispatch_items"] = context["dispatch_items"][:HOME_QUEUE_ROWS]
     return templates.TemplateResponse("dashboard.html", context)
@@ -568,6 +574,16 @@ def _home_context(request: Request, db: Session, user: User, view: str) -> dict:
     from app.models import RepairOrder
     open_ros = db.query(RepairOrder).filter(RepairOrder.status != "delivered").order_by(RepairOrder.created_at.desc()).limit(HOME_JOB_ROWS).all()
     open_count = db.query(RepairOrder).filter(RepairOrder.status != "delivered").count()
+    queue = dispatch.dashboard_context(db, view)
+    for row in queue.get("dispatch_items", []):
+        # Days a conversation has waited on the shop; red on Home past LATE_DAYS.
+        row["days_waiting"] = 0 if row.get("last_from_us") else next_action.days_since(row["item"].created_at)
+    steps = {ro.id: next_action.for_job(db, ro, user.role) for ro in open_ros}
+    job_days = {}
+    for ro in open_ros:
+        step = steps.get(ro.id)
+        if step and step["who"] in ("Owner", "Office"):
+            job_days[ro.id] = next_action.days_since(next_action.last_activity(ro))
     return {
         "request": request,
         # Saved internal tasks share the attention list. Feature stays off until its migration is verified.
@@ -576,10 +592,14 @@ def _home_context(request: Request, db: Session, user: User, view: str) -> dict:
         "user": user,
         "open_ros": open_ros,
         # Same next step as the Jobs board and job page (one source), not the raw concern text.
-        "next_steps": {ro.id: next_action.for_job(db, ro, user.role) for ro in open_ros},
+        "next_steps": steps,
+        "job_tags": tag_store.names_for(db, "job", [ro.id for ro in open_ros]),
+        "job_days": job_days,  # days a job has sat on the shop's next step
+        "late_days": next_action.LATE_DAYS,
+        "can_text": user.role in ("owner", "admin", "office"),
         "open_count": open_count,
         "now": datetime.now(PHOENIX),
-        **dispatch.dashboard_context(db, view),
+        **queue,
         "home": home_summary.summary(db, user),
         "health": system_health.report(db) if user.role in ("owner", "admin") else None,
         "legal_review": _legal_review_titles() if user.role == "owner" else [],

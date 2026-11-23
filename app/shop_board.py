@@ -25,6 +25,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app import business_settings
+from app.next_action import days_since
 from app.appointment_model import Appointment
 from app.appointments import PHOENIX
 from app.imperial_task_model import BOARD_CATEGORY, ImperialTask, ImperialTaskAudit
@@ -276,7 +277,8 @@ def waiting_on_customer(db: Session, now: datetime) -> list[dict]:
         if since is not None and since.tzinfo is None:
             since = since.replace(tzinfo=timezone.utc)
         hours = int((now - since).total_seconds() // 3600) if since else None
-        out.append({"id": order.id, "who": _who(order.customer),
+        out.append({"id": order.id, "who": _who(order.customer), "customer_id": order.customer_id,
+                    "phone": bool(order.customer and order.customer.phone),
                     "vehicle": order.vehicle.label if order.vehicle else "", "hours": hours,
                     "wait": _wait_label(hours)})
     out.sort(key=lambda w: -(w["hours"] or 0))
@@ -426,6 +428,8 @@ def coming_in(db: Session, now: datetime) -> list[dict]:
         when = _local(visit.starts_at)
         out.append({"day": "Today" if when.date() == now.date() else "Tomorrow", "time": when.strftime("%-I:%M %p"),
                     "mobile": visit.location == "mobile", "who": _who(order.customer),
+                    "ro_id": order.id, "customer_id": order.customer_id,
+                    "phone": bool(order.customer and order.customer.phone),
                     "vehicle": order.vehicle.label if order.vehicle else "Vehicle not given yet",
                     "tentative": visit.status == "tentative"})
     return out
@@ -488,7 +492,8 @@ def todo_json(task: ImperialTask) -> dict:
     return {"id": task.id, "title": task.title, "urgent": task.priority == "urgent", "kind": _kind(task),
             "task_key": task.external_id if task.source == SOURCE_TASKS else None,
             "done": done, "done_at": _local(task.updated_at).isoformat() if done and task.updated_at else None,
-            "added_at": _local(task.created_at).isoformat() if task.created_at else None}
+            "added_at": _local(task.created_at).isoformat() if task.created_at else None,
+            "days_old": days_since(task.created_at) if not done else 0}
 
 
 def todos(db: Session, now: datetime) -> dict:

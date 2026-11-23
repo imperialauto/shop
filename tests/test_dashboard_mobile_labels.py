@@ -12,9 +12,10 @@ BASE = ROOT / "app/templates/base.html"
 
 class DashboardMobileROTests(unittest.TestCase):
     def test_job_rows_are_links_with_every_fact(self):
-        # Home's job list is board-style rows, not a table: each row is one link a keyboard or phone can open.
+        # Home's job list is board-style rows, not a table: each row opens the job and carries its next-step button.
         text = TEMPLATE.read_text(encoding="utf-8")
-        self.assertIn('<a class="h-row" href="/ro/{{ ro.id }}" aria-label="Open job {{ ro.id }}">', text)
+        self.assertIn('<a class="when" href="/ro/{{ ro.id }}" aria-label="Open job {{ ro.id }}">', text)
+        self.assertIn('data-confirm="{{ step.button }} for job #{{ ro.id }}?', text)  # one tap, one confirm
         for fact in ("ro.vehicle.label", "ro.customer.first_name", "Next step:", "ro.status.replace"):
             self.assertIn(fact, text)
         self.assertIn("@media (max-width: 900px)", text)  # columns stack on a phone

@@ -1,8 +1,8 @@
 {# One customer conversation in the Needs-you queue. Used on Home (first few) and on the full queue page. #}
-  <details style="border-bottom:1px solid var(--imp-line);"{% if item.urgency == 'safety' and not row.last_from_us %} open{% endif %}{% if row.last_from_us %} class="waiting-on-them"{% endif %}>
+  <details style="border-bottom:1px solid var(--imp-line);{% if (row.days_waiting or 0) >= 2 %} box-shadow: inset 3px 0 0 var(--imp-danger);{% endif %}"{% if item.urgency == 'safety' and not row.last_from_us %} open{% endif %}{% if row.last_from_us %} class="waiting-on-them"{% endif %}>
     <summary style="padding:12px 16px; cursor:pointer; color:var(--imp-ink); font-size:13px;">
       {% if row.last_from_us %}<span class="pill">You replied · waiting on them</span>{% elif item.urgency == 'safety' %}<strong style="color:var(--imp-danger);">Safety</strong> ·{% elif item.urgency == 'urgent' %}<strong style="color: var(--imp-heading);">Urgent</strong> ·{% endif %}
-      {{ row.customer_name or item.customer_phone }}{% if item.vehicle_text %} · {{ item.vehicle_text }}{% endif %} · {{ item.category|capitalize }}{% if item.status == 'needs_owner' %} · Your approval{% endif %}
+      {{ row.customer_name or item.customer_phone }}{% if item.vehicle_text %} · {{ item.vehicle_text }}{% endif %} · {{ item.category|capitalize }}{% if item.status == 'needs_owner' %} · Your approval{% endif %}{% if (row.days_waiting or 0) >= 2 %} · <strong style="color:var(--imp-danger);">{{ row.days_waiting }} days waiting</strong>{% endif %}
       {% if item.summary %}<span style="display:block; margin-top:3px; color:var(--imp-muted); font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">“{{ item.summary[:90] }}”</span>{% endif %}
     </summary>
     <div style="padding:0 16px 14px; font-size:13px; color:var(--imp-muted);">
