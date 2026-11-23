@@ -38,8 +38,8 @@
 
     #board-panel { min-height: 0; display: grid; gap: var(--gap); grid-template-rows: auto 1fr auto; }
     .top { display: grid; grid-template-columns: 1fr auto; gap: var(--gap); }
-    .stack { display: grid; grid-template-rows: 3fr 2fr; gap: var(--gap); min-height: 0; }
-    .waiting { display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; column-gap: .8em; align-items: center; }
+    .stack { display: grid; grid-template-rows: minmax(0, 3fr) minmax(0, 2fr); gap: var(--gap); min-height: 0; }
+    .waiting { display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; column-gap: .8em; align-items: center; align-content: center; }
     .waiting .label { color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .1em; font-size: clamp(11px, 1vw, 24px); }
     .waiting .count { grid-row: span 2; font-size: clamp(30px, 4.2vw, 108px); font-weight: 800; line-height: 1; color: var(--green); }
     .waiting.on .count { color: var(--amber); }
@@ -89,7 +89,8 @@
     .todo.urgent::before { border-color: var(--red); background: rgba(255,138,128,.2); }
     .todo.done { color: var(--muted); text-decoration: line-through; font-weight: 500; font-size: clamp(12px, 1.2vw, 30px); }
     .todo.done::before { background: var(--gold-dark); }
-    .card { display: flex; flex-direction: column; }
+    .cols .card { display: flex; flex-direction: column; }
+    [data-pages] > [hidden] { display: none !important; }
     [data-pages] { flex: 1 1 auto; min-height: 0; overflow: hidden; align-content: start; }
     .page-no { font-weight: 600; margin-left: .6em; }
     .page-no:empty { display: none; }
