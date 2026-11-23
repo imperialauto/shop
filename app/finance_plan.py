@@ -89,7 +89,7 @@ def paid_date_guessed(bill) -> bool:
 def on_time(bills, today: date, days: int = 90) -> dict:
     """How bills due in the last `days` days were paid: late count, average days late, fees, and the late ones."""
     since = today - timedelta(days=days)
-    paid, late, fees = [], [], 0
+    paid, late, fees, unchecked = [], [], 0, 0
     for bill in bills:
         if bill.status == "skipped" or bill.due_date < since or bill.due_date > today:
             continue
@@ -98,6 +98,9 @@ def on_time(bills, today: date, days: int = 90) -> dict:
             continue
         late_by = days_late(bill)
         if late_by is None:
+            continue
+        if paid_date_guessed(bill):
+            unchecked += 1
             continue
         paid.append(bill)
         if late_by > 0:
@@ -110,6 +113,7 @@ def on_time(bills, today: date, days: int = 90) -> dict:
         "average_late": round(sum(days_late(b) for b in late) / len(late)) if late else 0,
         "fees": fees,
         "still_open": len(open_late),
+        "unchecked": unchecked,
         "late_bills": sorted(late, key=lambda b: b.paid_on, reverse=True)[:8],
     }
 

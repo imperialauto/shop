@@ -358,6 +358,7 @@ if __name__ == "__main__":
             "paid | Late fee | 2026-10-20\n")})
         page = owner.get("/finance/").text
         self.assertIn("Check these paid dates", page)
+        self.assertIn("1 paid date below needs checking", page)
         self.assertIn("Bills I found, not confirmed", page)
         self.assertIn("Late and reconnect fees", page)
         self.assertIn("$25.00", page)
@@ -428,10 +429,13 @@ class PaidDateTests(unittest.TestCase):
             bill("Loan", date(2026, 11, 18)),
             bill("Old", date(2026, 5, 1), date(2026, 6, 1)),
             bill("Dropped", date(2026, 11, 2), status="skipped"),
+            FinanceBill(name="Guess", due_date=date(2026, 11, 1), paid_on=date(2026, 11, 20), category="other",
+                        amount_cents=100, status="paid", scope="personal", note="Paid date not confirmed"),
         ]
         out = plan.on_time(bills, TODAY)
         self.assertEqual((out["paid"], out["late"], out["average_late"]), (3, 2, 9))
         self.assertEqual(out["fees"], 6500)
         self.assertEqual(out["still_open"], 1)
+        self.assertEqual(out["unchecked"], 1)  # a guessed paid date doesn't count until he checks it
         self.assertEqual([b.name for b in out["late_bills"]], ["Phone", "Power"])
 

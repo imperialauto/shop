@@ -210,11 +210,12 @@
       <section class="card fin-card" aria-labelledby="fin-ontime-h" id="on-time">
         <h2 id="fin-ontime-h">Paying on time</h2>
         {% set ot = on_time %}
-        {% if ot.paid or ot.still_open or ot.fees %}
+        {% if ot.paid or ot.still_open or ot.fees or ot.unchecked %}
         <p class="cap">Bills due in the last {{ ot.days }} days, shop and personal:
           {% if ot.paid %}{{ ot.late }} of {{ ot.paid }} paid late{% if ot.late %}, {{ ot.average_late }} day{{ '' if ot.average_late == 1 else 's' }} late on average{% endif %}.{% endif %}
           {% if ot.still_open %}{{ ot.still_open }} still unpaid past the due date.{% endif %}
-          {% if ot.fees %}Late and reconnect fees: <strong class="fin-flag">{{ usd(ot.fees) }}</strong>.{% endif %}</p>
+          {% if ot.fees %}Late and reconnect fees: <strong class="fin-flag">{{ usd(ot.fees) }}</strong>.{% endif %}
+          {% if ot.unchecked %}{{ ot.unchecked }} paid date{{ 's' if ot.unchecked != 1 }} below need{{ 's' if ot.unchecked == 1 }} checking before {{ 'it counts' if ot.unchecked == 1 else 'they count' }}.{% endif %}</p>
         {% else %}<p class="cap">Once bills are marked paid with the day you paid them, this shows how many went late and what the late fees cost.</p>{% endif %}
 
         {% if check_dates %}
