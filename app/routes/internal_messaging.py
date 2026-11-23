@@ -16,6 +16,7 @@
 #   app.include_router(internal_messaging.router, prefix="/internal", tags=["internal"])
 # ─────────────────────────────────────────────────────────
 
+import logging
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -268,7 +269,17 @@ def log_communication(
                 return {"logged": True, "duplicate": True, "repairOrderId": existing.repair_order_id}
         raise
 
-    return {"logged": True, "repairOrderId": open_ro.id if open_ro else None}
+    result = {"logged": True, "repairOrderId": open_ro.id if open_ro else None}
+    if direction == "inbound":
+        try:
+            from app import text_approval
+            done = text_approval.handle_inbound(db, customer, comm)
+            if done:
+                result["textApproval"] = done
+        except Exception:  # never let this stop the text from being logged
+            db.rollback()
+            logging.getLogger(__name__).exception("text_yes_approval_failed")
+    return result
 
 
 @router.get("/messaging/owner-focus")

@@ -58,10 +58,10 @@ if (process.env.CONTACT_HOOK_TOKEN && process.env.PUBLIC_URL) {
   const quo = require("./src/lib/quoClient");
   const { createContactEvents, ensureContactWebhook } = require("./src/lib/contactEvents");
   const skip = new Set((process.env.CONTACT_SYNC_SKIP || "").split(",").filter(Boolean).map((n) => n.replace(/\D/g, "").slice(-10)));
-  const contactEvents = createContactEvents({ quo, shopClient: require("./src/lib/shopClient"), skip });
+  const contactEvents = createContactEvents({ quo, shopClient: require("./src/lib/shopClient"), skip, writeBack: process.env.QUO_NAME_WRITEBACK === "1" });
   app.set("contactEvents", contactEvents);
   const catchUp = () => contactEvents.catchUp()
-    .then((r) => console.log(`Quo contact catch-up: ${r.contacts} checked, ${r.renamed} renamed`))
+    .then((r) => console.log(`Quo contact catch-up: ${r.contacts} checked, ${r.renamed} renamed, ${r.renamedInQuo} renamed in Quo`))
     .catch((err) => console.error("Quo contact catch-up failed:", err.message));
   setTimeout(catchUp, 60 * 1000);
   setInterval(catchUp, 60 * 60 * 1000);

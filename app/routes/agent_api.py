@@ -13,6 +13,7 @@ Deliberately limited:
 Read-only (recovery) mode still blocks every write, as for staff.
 """
 import secrets
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
@@ -271,6 +272,71 @@ def add_vehicle(customer_id: int, payload: VehicleIn, db: Session = Depends(get_
                       " ".join(str(p) for p in (vehicle.year, vehicle.make, vehicle.model) if p))
     db.commit()
     return {"existing": False, "vehicle": vehicle_json(vehicle)}
+
+
+DECISIONS_DEFAULT_HOURS = 24
+DECISIONS_MAX_DAYS = 14
+CUSTOMER_SOURCES = (None, "link", "text")
+
+
+def _utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def recent_decisions(db: Session, since: datetime | None = None, include_staff: bool = False,
+                     now: datetime | None = None) -> dict:
+    """Approve/decline decisions recorded since `since` (default the last 24 hours, at most 14 days back).
+
+    Read only. By default only what customers decided themselves (approval link or text yes);
+    include_staff adds what shop staff recorded in person or by phone. Newest job first.
+    """
+    now = _utc(now or datetime.now(timezone.utc))
+    oldest = now - timedelta(days=DECISIONS_MAX_DAYS)
+    since = _utc(since) if since else now - timedelta(hours=DECISIONS_DEFAULT_HOURS)
+    since = max(since, oldest)
+    # SQLite keeps times without a zone, so compare in UTC and re-check in Python.
+    rows = (db.query(LineItem)
+            .filter(LineItem.approval.in_(("approved", "declined")), LineItem.decided_at.isnot(None),
+                    LineItem.decided_at >= since.replace(tzinfo=None) - timedelta(days=1))
+            .all())
+    jobs: dict[int, list[LineItem]] = {}
+    for li in rows:
+        if _utc(li.decided_at) < since:
+            continue
+        if not include_staff and li.approval_source not in CUSTOMER_SOURCES:
+            continue
+        jobs.setdefault(li.repair_order_id, []).append(li)
+    out = []
+    for ro_id, lines in jobs.items():
+        ro = db.get(RepairOrder, ro_id)
+        if ro is None:
+            continue
+        c, v = ro.customer, ro.vehicle
+        approved = [li for li in lines if li.approval == "approved"]
+        declined = [li for li in lines if li.approval == "declined"]
+
+        def brief(li):
+            return {"line_id": li.id, "description": li.description, "total": round(li.total, 2),
+                    "source": li.approval_source or "link", "decided_at": _utc(li.decided_at).isoformat()}
+
+        out.append({
+            "job_id": ro.id, "job_status": ro.status,
+            "customer": {"id": c.id, "name": " ".join(p for p in (c.first_name, c.last_name) if p), "phone": c.phone}
+            if c else None,
+            "vehicle": " ".join(str(p) for p in (v.year, v.make, v.model) if p) if v else None,
+            "decided_at": max(_utc(li.decided_at) for li in lines).isoformat(),
+            "approved": [brief(li) for li in approved], "declined": [brief(li) for li in declined],
+            "approved_total": round(sum(li.total for li in approved), 2),
+            "still_waiting": sum(1 for li in ro.line_items if li.approval == "pending"),
+        })
+    out.sort(key=lambda d: d["decided_at"], reverse=True)
+    return {"since": since.isoformat(), "until": now.isoformat(), "count": len(out), "decisions": out}
+
+
+@router.get("/decisions")
+def list_decisions(since: datetime | None = Query(default=None), include_staff: bool = False,
+                   db: Session = Depends(get_db), key: AgentKey = Depends(agent("estimates:read"))):
+    return recent_decisions(db, since, include_staff)
 
 
 @router.get("/jobs/{ro_id}")

@@ -1,3 +1,16 @@
+# Money page (Nov 22, 2026)
+
+`/finance/` is now the owner's day-to-day money page: cash you can use, bills due (past due first), money owed to the shop, how short the shop is over the next 7, 14 or 30 days, what that means per open day, money in today, this week and this month against a daily goal, and where this month's bills go. Personal money sits in its own section and never mixes into the shop numbers.
+
+- Figures are typed or pasted in by the owner (`app/finance_model.py`, four new tables). Nothing imports bank data, and nothing on the page changes invoices or payments or sends anything.
+- Money in = payments recorded on jobs + money owed marked "Got it" (for money not recorded on a job, so it is counted once).
+- Marking a monthly bill paid adds next month's copy.
+- Every save is owner-only and written to `finance_changes`.
+- Production needs `migrations/20261122_finance_tracker.sql` run after a backup (rollback: the `.down.sql`). Until then the page shows a "not set up yet" notice and saves nothing.
+- The repository is public: real balances and bills are entered on the page, never committed.
+
+The plan below is the longer-term ledger and reconciliation work; it still applies.
+
 # Imperial Financial Command Center — mobile integration
 
 ## Verified application architecture
