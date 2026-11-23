@@ -8,7 +8,7 @@ from app.database import get_db
 from app.models import RepairOrder, Customer, Vehicle, User, LineItem, Communication, PartsOrder
 from app.auth import get_current_user
 from app.config import GOOGLE_REVIEW_LINK
-from app import approval_links, customer_file, ro_delete, cycle_time, customer_followups, job_events, next_action, ro_status_policy, snap_offer, website_alerts
+from app import tags, approval_links, customer_file, ro_delete, cycle_time, customer_followups, job_events, next_action, ro_status_policy, snap_offer, website_alerts
 from app.dispatch_model import DispatchAudit, DispatchItem, DispatchOutbound
 from app.sending_pause import DASHBOARD_REPLY, is_paused
 from app.routes import local_node
@@ -105,15 +105,19 @@ def list_ros(request: Request, db: Session = Depends(get_db), status: str = "ope
     elif status in dict(RO_STATUSES):
         query = query.filter(RepairOrder.status == status)
     if search:
+        tagged = tags.matching(db, "job", search) | {
+            ro_id for (ro_id,) in db.query(RepairOrder.id).filter(
+                RepairOrder.customer_id.in_(tags.matching(db, "customer", search) or [0]))}
         query = query.join(Customer).filter(
             (Customer.first_name.ilike(f"%{search}%")) |
             (Customer.last_name.ilike(f"%{search}%")) |
-            (Customer.fleet_name.ilike(f"%{search}%"))
+            (Customer.fleet_name.ilike(f"%{search}%")) |
+            (RepairOrder.id.in_(tagged or [0]))
         )
 
     ros = query.order_by(RepairOrder.created_at.desc()).all()
     return templates.TemplateResponse("repair_orders/list.html", {
-        "request": request, "user": user, "ros": ros,
+        "request": request, "user": user, "ros": ros, "job_tags": tags.names_for(db, "job", [r.id for r in ros]),
         "status_filter": status, "search": search, "statuses": RO_STATUSES,
     })
 
@@ -191,6 +195,8 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         "statuses": ro_status_policy.manual_status_options(ro, user.role, RO_STATUSES), "subtotal": subtotal, "comms": comms,
         "sourced_parts": sourced_parts,
         "next_step": next_action.for_job(db, ro, user.role),
+        "tag_list": tags.names_for(db, "job", [ro.id]).get(ro.id, []), "tag_known": tags.known(db),
+        "customer_tag_list": tags.names_for(db, "customer", [ro.customer_id]).get(ro.customer_id, []),
         "timeline": cycle_time.for_job(db, ro) if user.role in ("owner", "admin") else None,
         "open_invoice": next((i for i in ro.invoices if i.status != "void"), None),
         "ai_review": local_node.job_panel(db, ro),
@@ -261,7 +267,7 @@ def update_status(
             print(f"[Review] Queued review request to {ro.customer.phone} for RO #{ro_id}")
 
     back = request.query_params.get("back")
-    return RedirectResponse("/my-day" if back == "my-day" else f"/ro/{ro_id}", status_code=302)
+    return RedirectResponse({"my-day": "/my-day", "home": "/dashboard"}.get(back, f"/ro/{ro_id}"), status_code=302)
 
 
 @router.post("/{ro_id}/request-approval")

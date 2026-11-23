@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Needs you — Imperial Auto Care{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title">Needs you</div>
+    <div style="font-size:12px; color:var(--imp-muted); margin-top:3px;">Every customer text and call waiting on the shop. Home shows the top few.</div>
+  </div>
+  <div style="display:flex; gap:8px; flex-wrap:wrap; margin-left:auto;">
+    <a href="/dashboard" class="btn-secondary">← Home</a>
+  </div>
+</div>
+<div class="page-body">
+  <div id="queue">
+  {% include "_dispatch.html" %}
+  </div>
+</div>
+{% endblock %}

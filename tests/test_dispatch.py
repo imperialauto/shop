@@ -342,10 +342,16 @@ class QueueWorkflowTests(unittest.TestCase):
         self.post("m1", "2013 Ford Fusion fuel leak")
         with patch("app.main.get_current_user", side_effect=lambda request, db: db.get(User, 1)):
             page = self.client.get("/dashboard")
+            inbox = self.client.get("/dashboard/inbox")
+            old_link = self.client.get("/dashboard?view=approval", follow_redirects=False)
         self.assertEqual(page.status_code, 200)
-        self.assertIn("TEST ONLY", page.text)
-        self.assertIn("Awaiting approval", page.text)
+        self.assertIn("TEST ONLY", page.text)  # Home shows the top of the queue, with its actions
         self.assertIn("Nothing priced yet", page.text)
+        self.assertEqual(inbox.status_code, 200)  # the whole queue, filters and rules on its own page
+        self.assertIn("TEST ONLY", inbox.text)
+        self.assertIn("Awaiting approval", inbox.text)
+        self.assertIn('href="/dashboard/inbox?view=approval"', inbox.text)
+        self.assertEqual(old_link.headers["location"], "/dashboard/inbox?view=approval")
 
     def test_hours_question_gets_one_reply_a_week(self):
         first = self.post_auto("m1", "what are your hours?").json()

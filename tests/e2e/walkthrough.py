@@ -325,13 +325,14 @@ def flows(page, device):
         before = page.locator("button[value=approve]").count()
         name = "Sample Contact 1" if device == "phone" else "Sample Contact 2"
         if device == "desktop":
-            page.goto(BASE + "/dashboard")
+            # Home shows only the top few; the full queue lives on the Needs you page.
+            page.goto(BASE + "/dashboard/inbox")
             before = page.locator("button[value=approve]").count()
         page.locator("details summary", has_text=name).first.click()
         page.locator("details[open] textarea[name=reply_text]").first.fill("Edited test reply")
         page.locator("details[open] button[value=approve]").first.click()
         page.wait_for_load_state("networkidle")
-        page.goto(BASE + ("/dashboard?view=urgent" if device == "phone" else "/dashboard"))
+        page.goto(BASE + ("/dashboard?view=urgent" if device == "phone" else "/dashboard/inbox"))
         assert page.locator("button[value=approve]").count() < before, "item still waiting after sending"
 
     def signature():

@@ -24,6 +24,9 @@
   </div>
 </div>
 
+{% set tag_kind, tag_target, tag_next = 'customer', customer.id, '/customers/' ~ customer.id %}
+{% include "_tags.html" %}
+
 {% set item = file.open_item %}
 {% set mv = file.mentioned_vehicle %}
 <section class="card mb-4" aria-label="Right now" style="display:grid;gap:10px;border-color:rgba(234,210,114,.45)">

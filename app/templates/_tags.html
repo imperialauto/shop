@@ -1,0 +1,33 @@
+{# Tag chips with remove buttons and an add box. Needs tag_kind, tag_target, tag_list, tag_known, tag_next. #}
+<section class="card mb-4" aria-label="Tags" style="display:grid; gap:8px;">
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+    <strong style="font-size:13.5px; color:var(--imp-ink);">Tags</strong>
+    <a href="/tags/" style="font-size:12px; color:var(--imp-muted);">All tags →</a>
+  </div>
+  {% set tag_error = request.query_params.get('tag_error', '') %}
+  {% if tag_error %}<p role="alert" style="margin:0; font-size:12.5px; color:var(--imp-danger);">{{ tag_error }}</p>{% endif %}
+  <div style="display:flex; flex-wrap:wrap; gap:6px;">
+    {% for name in tag_list %}
+    <form method="post" action="/tags/remove" style="margin:0;">
+      <input type="hidden" name="kind" value="{{ tag_kind }}"><input type="hidden" name="target_id" value="{{ tag_target }}">
+      <input type="hidden" name="name" value="{{ name }}"><input type="hidden" name="next" value="{{ tag_next }}">
+      <span class="tag-chip"><a href="/tags/?q={{ name|urlencode }}">#{{ name }}</a><button type="submit" aria-label="Remove tag {{ name }}">×</button></span>
+    </form>
+    {% else %}
+    <span style="font-size:12.5px; color:var(--imp-muted);">No tags yet.</span>
+    {% endfor %}
+  </div>
+  <form method="post" action="/tags/add" style="display:flex; gap:6px; margin:0;">
+    <input type="hidden" name="kind" value="{{ tag_kind }}"><input type="hidden" name="target_id" value="{{ tag_target }}">
+    <input type="hidden" name="next" value="{{ tag_next }}">
+    <label for="tag-name-{{ tag_kind }}" class="sr-only" style="position:absolute; left:-9999px;">Add a tag</label>
+    <input id="tag-name-{{ tag_kind }}" name="name" list="tag-known-{{ tag_kind }}" maxlength="80" class="form-input" placeholder="Add a tag, like fleet or comeback" style="flex:1; min-height:44px;">
+    <datalist id="tag-known-{{ tag_kind }}">{% for t in tag_known %}<option value="{{ t.name }}">{% endfor %}</datalist>
+    <button class="btn-secondary" type="submit" style="min-height:44px;">Add</button>
+  </form>
+</section>
+<style>
+  .tag-chip { display:inline-flex; align-items:center; gap:4px; padding:3px 4px 3px 10px; border-radius:999px; border:1px solid var(--imp-gold); font-size:12.5px; }
+  .tag-chip a { color:var(--imp-gold); text-decoration:none; font-weight:600; }
+  .tag-chip button { background:none; border:0; color:var(--imp-muted); cursor:pointer; min-width:28px; min-height:28px; font-size:15px; }
+</style>

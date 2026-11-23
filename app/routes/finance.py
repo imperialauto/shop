@@ -156,6 +156,27 @@ def _recent_payments(db: Session, start: date):
     return rows
 
 
+def home_goal(db: Session) -> dict | None:
+    """Home's goal bar: money in today against what the bills need a day, the same numbers as the Money page."""
+    today = phoenix_today()
+    tomorrow = today + timedelta(days=1)
+    try:
+        accounts = db.query(FinanceAccount).all()
+        bills = db.query(FinanceBill).all()
+        incoming = db.query(FinanceIncoming).all()
+        sums = plan.totals(accounts, bills, incoming, today, 14, jobs_due(db))
+        came_in = _shop_payments(db, today, tomorrow) + plan.dollars(_received(incoming, today, tomorrow))
+    except SQLAlchemyError:
+        db.rollback()
+        return None
+    need = plan.dollars(plan.per_day(sums["business"].short, sums["days_open"]))
+    goal = daily_goal()
+    target = need if need > 0 else goal
+    return {"in": round(came_in, 2), "need": need, "goal": goal, "target": target, "bills": need > 0,
+            "days_open": sums["days_open"], "left": round(max(target - came_in, 0), 2), "hit": came_in >= target,
+            "percent": max(0, min(100, int(came_in * 100 / target))) if target else 0}
+
+
 @router.get("/", response_class=HTMLResponse)
 def finance_home(request: Request, window: int = 14, db: Session = Depends(get_db)):
     try:
