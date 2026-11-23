@@ -15,6 +15,7 @@ from pydantic import AwareDatetime, BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.next_action import days_since
 from app.database import get_db
 from app.imperial_task_model import BACKLOG_CATEGORY, BOARD_CATEGORY, PERSONAL_CATEGORY, PROBLEM_CATEGORY, SHOP_CATEGORY, ImperialTask, ImperialTaskAudit
 from app.routes.internal_messaging import require_internal_key
@@ -110,7 +111,8 @@ def owner_dashboard_tasks(db: Session, role: str) -> dict:
     return {"enabled": True, "tasks": [
         {"id": row.id, "title": row.title, "status": row.status,
          "project_key": row.project_key, "priority": row.priority,
-         "personal": row.category in (PERSONAL_CATEGORY, BACKLOG_CATEGORY)}
+         "personal": row.category in (PERSONAL_CATEGORY, BACKLOG_CATEGORY),
+         "days_old": days_since(row.created_at)}
         for row in rows
     ], "error": None}
 

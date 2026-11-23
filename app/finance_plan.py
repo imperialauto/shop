@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 from datetime import date, timedelta
 
-from app.finance_model import BILL_CATEGORIES, REPEATS, SCOPES
+from app.finance_model import BILL_CATEGORIES, NOTE_PAID_GUESS, NOTE_UNCONFIRMED, REPEATS, SCOPES
 
 CLOSED_WEEKDAYS = {6}  # Sunday
 DEFAULT_DAILY_GOAL = 500
@@ -58,6 +58,64 @@ def parse_date(text: str, today: date) -> date:
         if (today - found).days > 120:
             found = date(today.year + 1, month, day)
     return found
+
+
+def parse_past_date(text: str, today: date) -> date:
+    """A day something already happened: like parse_date, but never in the future."""
+    found = parse_date(text, today)
+    has_year = "-" in text or text.count("/") == 2
+    if found > today and not has_year:
+        found = found.replace(year=found.year - 1)
+    if found > today:
+        raise ValueError(f"'{text}' is in the future")
+    return found
+
+
+def days_late(bill) -> int | None:
+    """How many days after its due date a paid bill was paid. None when it isn't paid or the day isn't known."""
+    if getattr(bill, "status", None) != "paid" or not getattr(bill, "paid_on", None):
+        return None
+    return max((bill.paid_on - bill.due_date).days, 0)
+
+
+def is_unconfirmed(bill) -> bool:
+    return getattr(bill, "note", None) == NOTE_UNCONFIRMED
+
+
+def paid_date_guessed(bill) -> bool:
+    return getattr(bill, "note", None) == NOTE_PAID_GUESS
+
+
+def on_time(bills, today: date, days: int = 90) -> dict:
+    """How bills due in the last `days` days were paid: late count, average days late, fees, and the late ones."""
+    since = today - timedelta(days=days)
+    paid, late, fees, unchecked = [], [], 0, 0
+    for bill in bills:
+        if bill.status == "skipped" or bill.due_date < since or bill.due_date > today:
+            continue
+        if bill.category == "fees":
+            fees += bill.amount_cents
+            continue
+        late_by = days_late(bill)
+        if late_by is None:
+            continue
+        if paid_date_guessed(bill):
+            unchecked += 1
+            continue
+        paid.append(bill)
+        if late_by > 0:
+            late.append(bill)
+    open_late = [b for b in bills if b.status == "open" and b.category != "fees" and since <= b.due_date < today]
+    return {
+        "days": days,
+        "paid": len(paid),
+        "late": len(late),
+        "average_late": round(sum(days_late(b) for b in late) / len(late)) if late else 0,
+        "fees": fees,
+        "still_open": len(open_late),
+        "unchecked": unchecked,
+        "late_bills": sorted(late, key=lambda b: b.paid_on, reverse=True)[:8],
+    }
 
 
 def next_due(due: date, repeats: str) -> date | None:
@@ -305,12 +363,14 @@ def bills_that_look_paid(rows: list[StatementRow], bills) -> list:
 # ---- pasted figures ----------------------------------------------------------
 
 PASTE_HELP = (
-    "balance | BofA business checking | 174.80 | business",
-    "balance | Apple Cash | 413.55 | business | held 413.55",
-    "bill | APS electric | 514.85 | 12/4 | business | utilities | monthly",
-    "owed | Steve Cardona | 1,977.39 | 11/30",
-    "paid | APS electric",
-    "got | Steve Cardona",
+    "balance | Shop checking | 250.00 | business",
+    "balance | Apple Cash | 100.00 | business | held 100.00",
+    "bill | Shop power | 300.00 | 12/4 | business | utilities | monthly",
+    "bill | Phone | 70.00 | 12/9 | personal | phone | monthly | unconfirmed",
+    "owed | Pat Sample | 500.00 | 11/30",
+    "paid | Shop power",
+    "paid | Shop power | 11/10 | guess",
+    "got | Pat Sample",
 )
 
 
@@ -324,6 +384,8 @@ class PasteLine:
     category: str = "other"
     repeats: str = "once"
     held: int = 0
+    unconfirmed: bool = False  # a bill found in mail that he hasn't confirmed
+    guess: bool = False  # a paid date we're not sure of
 
 
 def parse_paste(text: str, today: date) -> tuple[list[PasteLine], list[str]]:
@@ -336,7 +398,17 @@ def parse_paste(text: str, today: date) -> tuple[list[PasteLine], list[str]]:
         kind = parts[0].lower().rstrip(":")
         try:
             if kind in ("paid", "got") and len(parts) >= 2 and parts[1]:
-                lines.append(PasteLine(kind, parts[1][:80]))
+                line = PasteLine(kind, parts[1][:80])
+                for word in parts[2:]:
+                    if not word:
+                        continue
+                    if kind == "paid" and word.lower() == "guess":
+                        line.guess = True
+                    elif kind == "paid":
+                        line.when = parse_past_date(word, today)
+                    else:
+                        raise ValueError(f"didn't understand '{word}'")
+                lines.append(line)
                 continue
             if kind not in ("balance", "bill", "owed") or len(parts) < 3 or not parts[1]:
                 raise ValueError("start with balance, bill, owed, paid or got, then the name and amount")
@@ -357,6 +429,8 @@ def parse_paste(text: str, today: date) -> tuple[list[PasteLine], list[str]]:
                     line.category = low
                 elif kind == "bill" and low in REPEATS:
                     line.repeats = low
+                elif kind == "bill" and low == "unconfirmed":
+                    line.unconfirmed = True
                 elif kind == "balance" and low.startswith("held"):
                     line.held = cents(word[4:])
                 else:
@@ -367,3 +441,73 @@ def parse_paste(text: str, today: date) -> tuple[list[PasteLine], list[str]]:
         except ValueError as exc:
             problems.append(f"Line {number}: {exc}.")
     return lines, problems
+
+
+# ---- pay order --------------------------------------------------------------
+# Which bill gets the next dollar. Bills that keep the doors open come first, then the
+# ones that pile on late fees or go into default, then the rest; oldest due first in
+# each group. A bill found in mail that he hasn't confirmed waits at the end.
+PAY_TIERS = {"rent": 1, "utilities": 1, "phone": 1,
+             "loan": 2, "card": 2, "insurance": 2, "taxes": 2, "fees": 2}
+TIER_LABELS = {1: "Keeps the doors open", 2: "Late fees or default", 3: "Everything else", 4: "Not confirmed yet"}
+
+
+def pay_tier(bill) -> int:
+    if is_unconfirmed(bill):
+        return 4
+    return PAY_TIERS.get(bill.category, 3)
+
+
+def pay_order(bills, saved_names, cash_cents: int, today: date) -> dict:
+    """Ranks the bills to pay (past due and due in the window) and walks cash on hand down the list.
+
+    saved_names is his own order (lower-case names) from moving bills up and down. A name he never
+    moved keeps its place from the automatic order. Bills with the same name stay together, oldest first.
+    """
+    auto = sorted(bills, key=lambda b: (pay_tier(b), b.due_date, b.name.lower()))
+    auto_names = list(dict.fromkeys(b.name.lower() for b in auto))
+    names = [n for n in dict.fromkeys(saved_names or []) if n in auto_names]
+    for index, name in enumerate(auto_names):
+        if name not in names:
+            names.insert(min(index, len(names)), name)
+    place = {name: i for i, name in enumerate(names)}
+    ranked = sorted(bills, key=lambda b: (place[b.name.lower()], b.due_date))
+    rows, running, next_up = [], 0, None
+    left = max(cash_cents, 0)
+    for rank, bill in enumerate(ranked, 1):
+        running += bill.amount_cents
+        covered = running <= cash_cents
+        short = max(running - max(cash_cents, 0), 0)
+        row = {"rank": rank, "bill": bill, "tier": pay_tier(bill), "tier_label": TIER_LABELS[pay_tier(bill)],
+               "running": running, "covered": covered, "short": min(short, bill.amount_cents),
+               "past_due": bill.due_date < today,
+               "moved": place[bill.name.lower()] < auto_names.index(bill.name.lower())}
+        if not covered and next_up is None:
+            next_up = {"bill": bill, "have": left, "need": bill.amount_cents - left}
+        left = max(left - bill.amount_cents, 0)
+        rows.append(row)
+    return {"rows": rows, "names": names, "total": running, "next_up": next_up,
+            "to_bring_in": max(running - max(cash_cents, 0), 0)}
+
+
+def move(names: list[str], name: str, direction: str) -> list[str]:
+    """Moves one name up or down a place."""
+    order = list(names)
+    if name not in order:
+        return order
+    i = order.index(name)
+    j = i - 1 if direction == "up" else i + 1
+    if 0 <= j < len(order):
+        order[i], order[j] = order[j], order[i]
+    return order
+
+
+def profit_plan(short_cents: int, days_open: int, profit_goal: int, today: date) -> dict:
+    """Daily target for the bills in the window plus a monthly profit goal spread over the month's open days."""
+    month_start = today.replace(day=1)
+    month_end = next_due(month_start, "monthly")
+    open_days = max(working_days(month_start, month_end - timedelta(days=1)), 1)
+    bills_per_day = per_day(short_cents, days_open)
+    profit_per_day = round(profit_goal * 100 / open_days) if profit_goal else 0
+    return {"bills_per_day": bills_per_day, "profit_per_day": profit_per_day,
+            "total_per_day": bills_per_day + profit_per_day, "open_days_month": open_days, "goal": profit_goal}

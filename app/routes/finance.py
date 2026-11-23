@@ -7,6 +7,7 @@ Unpaid balances on sent job invoices count as money coming in. A bank's CSV down
 account's balance; the file itself is read once and not kept. Nothing here changes invoices or
 payments, or sends anything.
 """
+import json
 import re
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -23,7 +24,8 @@ from app import finance_plan as plan
 from app.appointments import PHOENIX
 from app.auth import get_current_user
 from app.database import get_db
-from app.finance_model import BILL_CATEGORIES, REPEATS, SCOPES, FinanceAccount, FinanceBill, FinanceChange, FinanceIncoming
+from app.finance_model import (BILL_CATEGORIES, MARKER_NOTES, NOTE_PAID_GUESS, NOTE_UNCONFIRMED, REPEATS, SCOPES,
+                               FinanceAccount, FinanceBill, FinanceChange, FinanceIncoming)
 from app.models import Invoice, Payment, RepairOrder
 from app.templating import Jinja2Templates
 
@@ -62,6 +64,30 @@ def daily_goal() -> int:
     except ValueError:
         return plan.DEFAULT_DAILY_GOAL
     return value if 0 < value <= 100000 else plan.DEFAULT_DAILY_GOAL
+
+
+def saved_pay_order() -> dict:
+    """His own pay order, {scope: [lower-case bill names]}."""
+    try:
+        value = json.loads(settings_store.raw("finance_pay_order") or "{}")
+    except ValueError:
+        return {}
+    if not isinstance(value, dict):
+        return {}
+    return {scope: [str(n).lower()[:80] for n in value.get(scope, []) if isinstance(n, str)][:200] for scope in SCOPES}
+
+
+def profit_goal() -> int:
+    """Monthly profit goal in whole dollars, 0 when he hasn't set one."""
+    try:
+        value = int(float(settings_store.raw("monthly_profit_goal") or "0"))
+    except ValueError:
+        return 0
+    return value if 0 <= value <= 1_000_000 else 0
+
+
+def _pay_list(totals) -> list:
+    return list(totals.overdue_bills) + list(totals.window_bills)
 
 
 def _owner(request: Request, db: Session):
@@ -130,6 +156,27 @@ def _recent_payments(db: Session, start: date):
     return rows
 
 
+def home_goal(db: Session) -> dict | None:
+    """Home's goal bar: money in today against what the bills need a day, the same numbers as the Money page."""
+    today = phoenix_today()
+    tomorrow = today + timedelta(days=1)
+    try:
+        accounts = db.query(FinanceAccount).all()
+        bills = db.query(FinanceBill).all()
+        incoming = db.query(FinanceIncoming).all()
+        sums = plan.totals(accounts, bills, incoming, today, 14, jobs_due(db))
+        came_in = _shop_payments(db, today, tomorrow) + plan.dollars(_received(incoming, today, tomorrow))
+    except SQLAlchemyError:
+        db.rollback()
+        return None
+    need = plan.dollars(plan.per_day(sums["business"].short, sums["days_open"]))
+    goal = daily_goal()
+    target = need if need > 0 else goal
+    return {"in": round(came_in, 2), "need": need, "goal": goal, "target": target, "bills": need > 0,
+            "days_open": sums["days_open"], "left": round(max(target - came_in, 0), 2), "hit": came_in >= target,
+            "percent": max(0, min(100, int(came_in * 100 / target))) if target else 0}
+
+
 @router.get("/", response_class=HTMLResponse)
 def finance_home(request: Request, window: int = 14, db: Session = Depends(get_db)):
     try:
@@ -172,6 +219,11 @@ def finance_home(request: Request, window: int = 14, db: Session = Depends(get_d
     lowest = min(line, key=lambda d: (d["cents"], d["day"])) if line else None
     need_per_day = plan.dollars(plan.per_day(business.short, sums["days_open"]))
     last_updated = max((a.as_of for a in accounts), default=None)
+    order = saved_pay_order()
+    pay = {scope: plan.pay_order(_pay_list(sums[scope]), order.get(scope), sums[scope].cash, today) for scope in SCOPES}
+    goal_month = profit_goal()
+    to_confirm = sorted((b for b in bills if b.status == "open" and plan.is_unconfirmed(b)), key=lambda b: b.due_date)
+    check_dates = sorted((b for b in bills if b.status == "paid" and plan.paid_date_guessed(b)), key=lambda b: b.due_date)
     paid_recently = sorted((b for b in bills if b.status == "paid" and b.paid_on and b.paid_on >= today - timedelta(days=14)),
                            key=lambda b: b.paid_on, reverse=True)
 
@@ -201,6 +253,13 @@ def finance_home(request: Request, window: int = 14, db: Session = Depends(get_d
         "personal_spending": plan.spending_by_category(bills, "personal", month_start),
         "month_label": today.strftime("%B"),
         "paid_recently": paid_recently[:6],
+        "on_time": plan.on_time(bills, today),
+        "pay": pay,
+        "profit": plan.profit_plan(business.short, sums["days_open"], goal_month, today),
+        "to_confirm": to_confirm,
+        "check_dates": check_dates,
+        "days_late": plan.days_late,
+        "is_unconfirmed": plan.is_unconfirmed,
         "activity": _recent_payments(db, today - timedelta(days=30)),
         "last_updated": last_updated,
         "categories": BILL_CATEGORIES,
@@ -239,7 +298,8 @@ def _roll_forward(db: Session, bill: FinanceBill):
                                           FinanceBill.status == "open").first()
     if exists is None:
         db.add(FinanceBill(name=bill.name, scope=bill.scope, category=bill.category, amount_cents=bill.amount_cents,
-                           due_date=following, repeats=bill.repeats, note=bill.note))
+                           due_date=following, repeats=bill.repeats,
+                           note=None if bill.note in MARKER_NOTES else bill.note))
 
 
 def _move(db: Session, account_id, scope: str, delta_cents: int, actor: str):
@@ -256,10 +316,26 @@ def _move(db: Session, account_id, scope: str, delta_cents: int, actor: str):
     return account
 
 
-def _mark_paid(db: Session, bill: FinanceBill, today: date, actor: str):
-    bill.status, bill.paid_on = "paid", today
+def _mark_paid(db: Session, bill: FinanceBill, paid_on: date, actor: str, guess: bool = False):
+    """Paying a bill also confirms it's real. A guessed paid date stays flagged until he confirms it."""
+    bill.status, bill.paid_on = "paid", paid_on
+    if bill.note in MARKER_NOTES or guess:
+        bill.note = NOTE_PAID_GUESS if guess else None
     _roll_forward(db, bill)
-    _log(db, actor, "bill_paid", f"{bill.name} {plan.dollars(bill.amount_cents)} due {bill.due_date}")
+    late = plan.days_late(bill)
+    _log(db, actor, "bill_paid", f"{bill.name} {plan.dollars(bill.amount_cents)} due {bill.due_date} paid {paid_on}"
+         + (f" ({late} days late)" if late else ""))
+
+
+def _form_day(form, today: date) -> tuple[date | None, str]:
+    """The 'paid_on' field: blank means today. Returns (day, problem)."""
+    text = str(form.get("paid_on", "")).strip()
+    if not text:
+        return today, ""
+    try:
+        return plan.parse_past_date(text, today), ""
+    except ValueError as exc:
+        return None, f"{exc}."
 
 
 def apply_lines(db: Session, lines, today: date, actor: str) -> tuple[int, list[str]]:
@@ -280,6 +356,8 @@ def apply_lines(db: Session, lines, today: date, actor: str) -> tuple[int, list[
                 bill = FinanceBill(name=line.name, due_date=line.when)
                 db.add(bill)
             bill.amount_cents, bill.scope, bill.category, bill.repeats = line.amount, line.scope, line.category, line.repeats
+            if line.unconfirmed and bill.note is None:
+                bill.note = NOTE_UNCONFIRMED
             _log(db, actor, "bill", f"{line.name} {plan.dollars(line.amount)} due {line.when} {line.scope}")
         elif line.kind == "owed":
             item = db.query(FinanceIncoming).filter(_ci(FinanceIncoming.source, line.name), FinanceIncoming.status == "expected").first()
@@ -294,7 +372,7 @@ def apply_lines(db: Session, lines, today: date, actor: str) -> tuple[int, list[
             if bill is None:
                 problems.append(f"No open bill named {line.name}.")
                 continue
-            _mark_paid(db, bill, today, actor)
+            _mark_paid(db, bill, line.when or today, actor, guess=line.guess)
         elif line.kind == "got":
             item = (db.query(FinanceIncoming).filter(_ci(FinanceIncoming.source, line.name), FinanceIncoming.status == "expected")
                     .first())
@@ -332,17 +410,41 @@ async def paste(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/bills/{bill_id}/{action}")
 async def bill_action(bill_id: int, action: str, request: Request, db: Session = Depends(get_db)):
-    if action not in ("paid", "skip"):
+    if action not in ("paid", "skip", "confirm", "paiddate"):
         raise HTTPException(404)
 
     def work(form, user, today):
         bill = db.get(FinanceBill, bill_id)
-        if bill is None or bill.status != "open":
+        if bill is None:
+            return "", ["That bill is gone."]
+        if action == "paiddate":
+            if bill.status != "paid":
+                return "", ["That bill isn't marked paid."]
+            day, problem = _form_day(form, today)
+            if day is None:
+                return "", [problem]
+            bill.paid_on = day
+            if bill.note == NOTE_PAID_GUESS:
+                bill.note = None
+            late = plan.days_late(bill)
+            _log(db, user.username, "paid_date", f"{bill.name} due {bill.due_date} paid {day}")
+            return f"{bill.name}: paid {day.strftime('%b %-d')}, " + (f"{late} days late." if late else "on time."), []
+        if bill.status != "open":
             return "", ["That bill was already closed."]
+        if action == "confirm":
+            if bill.note == NOTE_UNCONFIRMED:
+                bill.note = None
+            _log(db, user.username, "bill_confirmed", f"{bill.name} due {bill.due_date}")
+            return f"{bill.name} is confirmed.", []
         if action == "paid":
-            _mark_paid(db, bill, today, user.username)
+            day, problem = _form_day(form, today)
+            if day is None:
+                return "", [problem]
+            _mark_paid(db, bill, day, user.username)
             account = _move(db, form.get("account"), bill.scope, -bill.amount_cents, user.username)
-            return f"Marked {bill.name} paid{f' from {account.name}' if account else ''}.", []
+            late = plan.days_late(bill)
+            return (f"Marked {bill.name} paid{f' from {account.name}' if account else ''}"
+                    + (f", {late} days late." if late else ".")), []
         bill.status = "skipped"
         _roll_forward(db, bill)
         _log(db, user.username, "bill_removed", f"{bill.name} due {bill.due_date}")
@@ -385,6 +487,51 @@ async def add(request: Request, db: Session = Depends(get_db)):
         lines, problems = plan.parse_paste(" | ".join(fields), today)
         done, more = apply_lines(db, lines, today, user.username)
         return ("Saved." if done else ""), [p.replace("Line 1: ", "") for p in problems + more]
+    return await _save(request, db, work)
+
+
+@router.post("/order")
+async def order(request: Request, db: Session = Depends(get_db)):
+    """Moves a bill up or down the pay order, or puts the order back to automatic."""
+    def work(form, user, today):
+        scope, name, direction = str(form.get("scope", "")), str(form.get("name", "")).strip().lower()[:80], str(form.get("direction", ""))
+        if scope not in SCOPES or direction not in ("up", "down", "reset"):
+            return "", ["That move didn't make sense."]
+        saved = saved_pay_order()
+        if direction == "reset":
+            saved[scope] = []
+            notice = "Pay order is back to automatic."
+        else:
+            bills = db.query(FinanceBill).all()
+            accounts = db.query(FinanceAccount).all()
+            incoming = db.query(FinanceIncoming).all()
+            window = int(form.get("window") or 14) if str(form.get("window") or "14").isdigit() else 14
+            sums = plan.totals(accounts, bills, incoming, today, window if window in plan.WINDOWS else 14)
+            current = plan.pay_order(_pay_list(sums[scope]), saved.get(scope), sums[scope].cash, today)["names"]
+            if name not in current:
+                return "", ["That bill isn't in the pay order."]
+            saved[scope] = plan.move(current, name, direction)
+            notice = ""
+        settings_store.save(db, "finance_pay_order", saved, user.username)
+        settings_store.clear_cache()
+        _log(db, user.username, "pay_order", f"{scope} {direction} {name}")
+        return notice, []
+    return await _save(request, db, work)
+
+
+@router.post("/profit")
+async def profit(request: Request, db: Session = Depends(get_db)):
+    def work(form, user, today):
+        text = str(form.get("profit", "")).strip()
+        try:
+            value = plan.cents(text or "0") // 100
+        except ValueError:
+            return "", ["The profit goal has to be a dollar amount."]
+        if not 0 <= value <= 1_000_000:
+            return "", ["The profit goal has to be between $0 and $1,000,000."]
+        settings_store.save(db, "monthly_profit_goal", str(value), user.username)
+        settings_store.clear_cache()
+        return (f"Monthly profit goal set to ${value:,}." if value else "Profit goal cleared."), []
     return await _save(request, db, work)
 
 
