@@ -219,7 +219,7 @@ class McpTests(_Flow):
         self.assertFalse(moved["isError"], moved)
         self.assertIn('"status": "diagnosing"', moved["content"][0]["text"])
         refused = self.rpc(headers, "tools/call", {"name": "set_job_status", "arguments": {
-            "job_id": ro_id, "status": "complete"}}).json()["result"]
+            "job_id": ro_id, "status": "delivered"}}).json()["result"]
         self.assertTrue(refused["isError"])
         with self.Session() as db:
             self.assertEqual(db.get(RepairOrder, ro_id).status, "diagnosing")

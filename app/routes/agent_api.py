@@ -11,8 +11,9 @@ Deliberately limited:
   already been asked to approve or that is invoiced, except one thing behind its own
   scope (estimates:send): texting a job's approval link, through the same send as the
   owner's Ask for approval button, so it is logged on the job and never sent twice;
-* a job's status can be moved on the board, but never to Complete or Picked up,
-  because those can text the customer (pickup text, review request);
+* a job's status can be moved on the board, including to Complete (ready for pickup),
+  but the status-driven texts (pickup text) are not fired from here, and Picked up
+  (delivered) stays with the office because it can send the review request;
 * every change is written to agent_actions in the same transaction.
 Read-only (recovery) mode still blocks every write, as for staff.
 """
@@ -187,8 +188,9 @@ class JobIn(BaseModel):
     mileage_in: int | None = Field(default=None, ge=0, le=5_000_000)
 
 
-# Board columns the assistant may move a job to. Complete and Delivered (picked up) are left out
-# on purpose: app.job_events can text the customer from them, so the office does those on the dashboard.
+# Board columns the assistant may move a job to. Complete (ready for pickup) is allowed, but
+# app.job_events is not fired, so no pickup text goes out from here. Delivered (picked up) is left
+# out on purpose: it can send the review request, so the office does it on the dashboard.
 AGENT_STATUSES = {
     "intake": "Intake",
     "diagnosing": "Diagnosing",
@@ -196,8 +198,11 @@ AGENT_STATUSES = {
     "in_progress": "In Progress",
     "waiting_approval": "Waiting Approval",
     "approval_received": "Approval Received",
+    "complete": "Complete",  # the board's ready-for-pickup column
 }
-OFFICE_ONLY_STATUSES = ("complete", "delivered")
+STATUS_ALIASES = {"ready_for_pickup": "complete", "ready": "complete", "completed": "complete", "done": "complete",
+                  "picked_up": "delivered"}
+OFFICE_ONLY_STATUSES = ("delivered",)
 
 
 class JobStatusIn(BaseModel):
@@ -453,15 +458,16 @@ def set_job_status(ro_id: int, payload: JobStatusIn, db: Session = Depends(get_d
     """Move a job to another board column, with the same checks as the job page's status menu.
     Nothing is sent to the customer."""
     target = (payload.status or "").strip().lower().replace(" ", "_").replace("-", "_")
+    target = STATUS_ALIASES.get(target, target)
     if target in OFFICE_ONLY_STATUSES:
-        raise HTTPException(409, "Complete and Picked up can text the customer, so the office marks those on the dashboard.")
+        raise HTTPException(409, "Picked up can text the customer a review request, so the office marks it on the dashboard.")
     if target not in AGENT_STATUSES:
         raise HTTPException(422, "Unknown status. Use one of: " + ", ".join(AGENT_STATUSES) + ".")
     ro = db.get(RepairOrder, ro_id)
     if ro is None:
         raise HTTPException(404, "Job not found.")
     if ro.status in OFFICE_ONLY_STATUSES:
-        raise HTTPException(409, f"This job is already {ro.status}. The office moves finished jobs on the dashboard.")
+        raise HTTPException(409, "This job is already picked up. The office moves picked-up jobs on the dashboard.")
     blocked = ro_status_policy.status_error(ro, target, "owner")
     if blocked:
         raise HTTPException(*blocked)
@@ -476,6 +482,8 @@ def set_job_status(ro_id: int, payload: JobStatusIn, db: Session = Depends(get_d
         db.refresh(ro)
     data = job_json(ro)
     data.update(previous_status=before, changed=target != before, next_step=_next_step(db, ro))
+    if target == "complete" and target != before:
+        data["note"] = "Marked ready for pickup. No pickup text was sent; the customer hasn't been told."
     return data
 
 

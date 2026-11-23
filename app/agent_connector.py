@@ -430,7 +430,9 @@ TOOLS = {
                            lambda db, key, a: agent_api.add_lines(a.job_id, a.lines, db, key), False),
     "set_job_status": ("estimates:write", "Move a job (repair order) to another column on the job board: "
                        + ", ".join(agent_api.AGENT_STATUSES) + ". Same checks as the job page, so In Progress and "
-                       "Waiting Parts need an approved line. Not Complete or Picked up (those can text the customer). "
+                       "Waiting Parts need an approved line, and Complete (ready for pickup, also accepted as "
+                       "ready_for_pickup) needs approved work that was diagnosing, in progress or waiting parts. "
+                       "Marking Complete here sends no pickup text. Not Picked up (that can text the customer). "
                        "Optional short note on why or the next step goes in the change log. Nothing is sent to anyone.",
                        _JobStatus, lambda db, key, a: agent_api.set_job_status(
                            a.job_id, agent_api.JobStatusIn(status=a.status, note=a.note), db, key), False),
