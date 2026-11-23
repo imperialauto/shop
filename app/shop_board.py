@@ -33,6 +33,11 @@ from app.models import Customer, LineItem, PartsOrder, Payment, RepairOrder, Use
 
 log = logging.getLogger(__name__)
 GOAL_KEY = "daily_sales_goal"
+CLOCK_KEY = "board_job_clock"  # time actually worked per job, started and stopped on the phone page
+TIMER_KEY = "board_timers"  # running job and test timers shown big on the TV
+TIMER_MAX_MINUTES = 480
+TIMER_MAX_RUNNING = 6
+TIMER_KEEP_AFTER = timedelta(minutes=30)  # a finished timer stays up (flashing) this long unless stopped
 LOT_KEY = "board_on_lot"  # which open jobs' cars are physically at the shop; board view only
 WORK_STAGES = ("in_progress", "diagnosing", "approval_received", "waiting_parts", "complete")
 GOAL_DEFAULT = 500  # Jae's figure (Nov 21, 2026): $500 a day including parts
@@ -95,14 +100,14 @@ def _local(value):
 
 
 def _who(customer) -> str:
-    """First name and last initial: enough for the bay, not a full name on a wall."""
+    """First name only: customers can see the TV (Jae, Nov 22, 2026)."""
     if not customer:
         return ""
     first = (customer.first_name or "").strip()
     last = (customer.last_name or "").strip().rstrip("-").strip()
     if not first or first.lower().startswith("unknown") or first[0].isdigit():
         return ""  # placeholder names like "2013 Ford Explorer Overheating" aren't a person
-    return f"{first} {last[0]}." if last and not last.lower().startswith("unknown") else first
+    return first.split()[0][:24]
 
 
 def _job(order, *, time_label=None, mobile=False):
@@ -173,6 +178,7 @@ def jobs_today(db: Session, now: datetime) -> list[dict]:
     A job counts as here when it was marked here on the phone page, or work on it has started
     (unless it was marked gone). Booked visits for cars not here yet show under Coming in."""
     marks = lot_marks(db)
+    clocks = job_clocks(db)
     today = now.date()
     out = []
     for order in open_orders(db):
@@ -181,18 +187,126 @@ def jobs_today(db: Session, now: datetime) -> list[dict]:
         job = _job(order)
         arrived = _arrived(order, marks)
         job["days"] = max(0, (today - arrived.astimezone(PHOENIX).date()).days) if arrived else None
+        job.update(_time_vs_book(db, order, clocks.get(order.id), now))
         out.append(job)
     out.sort(key=lambda job: (job["rank"], -(job["days"] or 0), -job["id"]))
     return out[:MAX_JOBS]
+
+
+# ---------------------------------------------------------------- book time vs time worked
+
+def book_hours(db: Session, ro_id: int) -> float:
+    """Book labor hours on the job: labor lines not declined (quantity is hours)."""
+    lines = db.query(LineItem).filter(LineItem.repair_order_id == ro_id, LineItem.item_type == "labor").all()
+    return round(sum(max(0.0, line.quantity or 0.0) for line in lines if line.approval != "declined"), 1)
+
+
+def job_clocks(db: Session) -> dict:
+    """{ro_id: {"on": datetime started or None, "spent": seconds already worked}}."""
+    row = db.get(business_settings.BusinessSetting, CLOCK_KEY)
+    try:
+        data = json.loads(row.value if row is not None and row.value else "{}")
+    except (TypeError, ValueError):
+        data = {}
+    out = {}
+    for key, value in (data.items() if isinstance(data, dict) else []):
+        if not str(key).isdigit() or not isinstance(value, dict):
+            continue
+        try:
+            on = datetime.fromisoformat(value["on"]) if value.get("on") else None
+            out[int(key)] = {"on": on, "spent": max(0, int(value.get("spent") or 0))}
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def worked_seconds(clock: dict | None, now: datetime) -> int:
+    if not clock:
+        return 0
+    running = int((now - clock["on"]).total_seconds()) if clock["on"] else 0
+    return clock["spent"] + max(0, running)
+
+
+def _time_vs_book(db: Session, order, clock: dict | None, now: datetime) -> dict:
+    book = book_hours(db, order.id)
+    worked = worked_seconds(clock, now) / 3600
+    return {"book": book, "worked": round(worked, 1), "clock_on": bool(clock and clock["on"]),
+            "over_book": bool(book and worked > book)}
+
+
+def set_clock(db: Session, user: User, ro_id: int, on: bool, now: datetime | None = None) -> bool:
+    """Start or stop the work clock on a job. Changes only what the board shows, never the job."""
+    order = db.get(RepairOrder, ro_id)
+    if order is None or order.status == "delivered":
+        return False
+    now = (now or now_local()).astimezone(timezone.utc)
+    clocks = job_clocks(db)
+    clock = clocks.setdefault(ro_id, {"on": None, "spent": 0})
+    if on and clock["on"] is None:
+        clock["on"] = now
+    elif not on and clock["on"] is not None:
+        clock["spent"] = worked_seconds(clock, now)
+        clock["on"] = None
+    open_ids = {o.id for o in db.query(RepairOrder.id).filter(RepairOrder.status != "delivered")}
+    value = json.dumps({str(k): {"on": v["on"].isoformat() if v["on"] else None, "spent": v["spent"]}
+                        for k, v in sorted(clocks.items()) if k in open_ids})
+    if business_settings.save(db, CLOCK_KEY, value, f"user:{user.id}"):
+        db.commit()
+        business_settings.clear_cache()
+    return True
+
+
+# ---------------------------------------------------------------- pickup and waiting on the customer
+
+def ready_for_pickup(db: Session) -> list[dict]:
+    """Finished cars still here: first name and vehicle, for a banner across the TV."""
+    marks = lot_marks(db)
+    return [{"id": o.id, "who": _who(o.customer), "vehicle": o.vehicle.label if o.vehicle else ""}
+            for o in open_orders(db) if o.status == "complete" and _is_here(o, marks)]
+
+
+def waiting_on_customer(db: Session, now: datetime) -> list[dict]:
+    """Jobs stuck on the customer's yes, longest wait first, with how long."""
+    out = []
+    for order in open_orders(db):
+        if order.status != "waiting_approval":
+            continue
+        pending = [line.created_at for line in order_lines(db, order.id) if line.approval == "pending" and line.created_at]
+        since = min(pending) if pending else (order.updated_at or order.created_at)
+        if since is not None and since.tzinfo is None:
+            since = since.replace(tzinfo=timezone.utc)
+        hours = int((now - since).total_seconds() // 3600) if since else None
+        out.append({"id": order.id, "who": _who(order.customer),
+                    "vehicle": order.vehicle.label if order.vehicle else "", "hours": hours,
+                    "wait": _wait_label(hours)})
+    out.sort(key=lambda w: -(w["hours"] or 0))
+    return out
+
+
+def order_lines(db: Session, ro_id: int) -> list:
+    return db.query(LineItem).filter(LineItem.repair_order_id == ro_id).all()
+
+
+def _wait_label(hours: int | None) -> str:
+    if hours is None:
+        return ""
+    if hours < 1:
+        return "Just sent"
+    if hours < 48:
+        return f"{hours} hr"
+    return f"{hours // 24} days"
 
 
 def lot_list(db: Session) -> list[dict]:
     """Every open job with whether the board counts its car as here, for the phone page."""
     marks = lot_marks(db)
     rows = []
+    clocks = job_clocks(db)
+    now = now_local()
     for order in open_orders(db):
         job = _job(order)
         job["here"] = _is_here(order, marks)
+        job.update(_time_vs_book(db, order, clocks.get(order.id), now))
         job["marked"] = order.id in marks["here"] or order.id in marks["away"]
         rows.append(job)
     rows.sort(key=lambda job: (not job["here"], job["rank"], -job["id"]))
@@ -217,6 +331,80 @@ def set_here(db: Session, user: User, ro_id: int, here: bool, now: datetime | No
     if business_settings.save(db, LOT_KEY, value, f"user:{user.id}"):
         db.commit()
         business_settings.clear_cache()
+    return True
+
+
+# ---------------------------------------------------------------- job and test timers
+
+def _timer_rows(db: Session) -> list[dict]:
+    row = db.get(business_settings.BusinessSetting, TIMER_KEY)
+    try:
+        data = json.loads(row.value if row is not None and row.value else "[]")
+    except (TypeError, ValueError):
+        data = []
+    rows = []
+    for t in data if isinstance(data, list) else []:
+        try:
+            ends = datetime.fromisoformat(t["ends"])
+            rows.append({"id": str(t["id"])[:16], "label": str(t.get("label") or "Timer")[:60], "ends": ends,
+                         "minutes": int(t.get("minutes") or 0)})
+        except (KeyError, TypeError, ValueError):
+            continue
+    return rows
+
+
+def _save_timers(db: Session, user: User, rows: list[dict]) -> None:
+    value = json.dumps([{"id": t["id"], "label": t["label"], "minutes": t["minutes"], "ends": t["ends"].isoformat()}
+                        for t in rows])
+    if business_settings.save(db, TIMER_KEY, value, f"user:{user.id}"):
+        db.commit()
+        business_settings.clear_cache()
+
+
+def timers(db: Session, now: datetime) -> list[dict]:
+    """Running timers, soonest first. One that ran out shows as time up for a while, then drops off."""
+    out = []
+    for t in sorted(_timer_rows(db), key=lambda t: t["ends"]):
+        if now - t["ends"] > TIMER_KEEP_AFTER:
+            continue
+        left = int((t["ends"] - now).total_seconds())
+        out.append({"id": t["id"], "label": t["label"], "minutes": t["minutes"], "left": left, "up": left <= 0,
+                    "ends_ms": int(t["ends"].timestamp() * 1000), "ends_at": t["ends"].astimezone(PHOENIX).strftime("%-I:%M %p")})
+    return out
+
+
+def start_timer(db: Session, user: User, label: str, minutes, now: datetime | None = None) -> dict:
+    label = " ".join((label or "").split())[:60] or "Timer"
+    try:
+        minutes = int(float(str(minutes).strip()))
+    except (TypeError, ValueError):
+        raise ValueError("Enter the minutes as a number, like 15.") from None
+    if not 1 <= minutes <= TIMER_MAX_MINUTES:
+        raise ValueError(f"Pick between 1 and {TIMER_MAX_MINUTES} minutes.")
+    now = (now or now_local()).astimezone(timezone.utc)
+    rows = [t for t in _timer_rows(db) if now - t["ends"] <= TIMER_KEEP_AFTER]
+    if len(rows) >= TIMER_MAX_RUNNING:
+        raise ValueError(f"{TIMER_MAX_RUNNING} timers are already up. Stop one first.")
+    timer = {"id": uuid4().hex[:12], "label": label, "minutes": minutes, "ends": now + timedelta(minutes=minutes)}
+    _save_timers(db, user, rows + [timer])
+    return timer
+
+
+def change_timer(db: Session, user: User, timer_id: str, operation: str, now: datetime | None = None) -> bool:
+    """stop: take it off the TV. plus5: add five minutes (from now if it already ran out)."""
+    now = (now or now_local()).astimezone(timezone.utc)
+    rows = _timer_rows(db)
+    found = next((t for t in rows if t["id"] == timer_id), None)
+    if found is None:
+        return False
+    if operation == "stop":
+        rows.remove(found)
+    elif operation == "plus5":
+        found["ends"] = max(found["ends"], now) + timedelta(minutes=5)
+        found["minutes"] += 5
+    else:
+        raise ValueError("Unknown action.")
+    _save_timers(db, user, [t for t in rows if now - t["ends"] <= TIMER_KEEP_AFTER])
     return True
 
 
@@ -328,13 +516,14 @@ def snapshot(db: Session, user: User, now: datetime | None = None) -> dict:
 
     now = (now or now_local()).astimezone(PHOENIX)
     data = {"now": now, "jobs": None, "sales": None, "todos": None, "todos_on": enabled(),
-            "show_money": user.role == "owner", "coming": None, "waiting": None, "parts": None}
-    for key, read in (("jobs", jobs_today), ("coming", coming_in)):
+            "show_money": user.role == "owner", "coming": None, "waiting": None, "parts": None, "timers": None,
+            "pickup": None, "on_customer": None}
+    for key, read in (("jobs", jobs_today), ("coming", coming_in), ("timers", timers), ("on_customer", waiting_on_customer)):
         try:
             data[key] = read(db, now)
         except SQLAlchemyError:
             db.rollback()
-    for key, read in (("waiting", waiting_on_you), ("parts", parts_coming)):
+    for key, read in (("waiting", waiting_on_you), ("parts", parts_coming), ("pickup", ready_for_pickup)):
         try:
             data[key] = read(db)
         except SQLAlchemyError:

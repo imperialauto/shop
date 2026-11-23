@@ -44,6 +44,8 @@ KEYS = {
     "daily_sales_goal": "DAILY_SALES_GOAL",
     # Shop TV board: which open jobs' cars are at the shop. Set on /board/manage.
     "board_on_lot": "BOARD_ON_LOT_JSON",
+    "board_timers": "BOARD_TIMERS_JSON",
+    "board_job_clock": "BOARD_JOB_CLOCK_JSON",
 }
 CACHE_SECONDS = 15
 _cache: dict = {"at": 0.0, "values": None}
