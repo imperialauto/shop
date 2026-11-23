@@ -43,7 +43,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeSerializer, URLS
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session
 
-from app import agent_keys
+from app import agent_keys, board_agent
 from app.auth import get_current_user
 from app.config import SECRET_KEY
 from app.database import get_db
@@ -386,6 +386,16 @@ TOOLS = {
     "book_appointment": ("appointments:write", "Book a tentative appointment for a job (open_job first if there is none), "
                          "within shop hours and without double-booking.",
                          AppointmentInput, lambda db, key, a: agent_api.book_appointment(a, db, key), False),
+    "list_board_todos": ("board", "The shop TV to-do list: open to-dos and those ticked off since a time, each with "
+                         "its kind (alert from a customer, task from the owner's Tasks page, or manual), its task_key "
+                         "and when it was ticked off.", board_agent.BoardList,
+                         lambda db, key, a: board_agent.list_todos(db, a), True),
+    "add_board_todo": ("board", "Add a to-do to the shop TV. With task_key, adding the same task again returns the "
+                       "one already there. It shows on the TV, so no phone numbers or full customer names.",
+                       board_agent.BoardAdd, lambda db, key, a: board_agent.add_todo(db, key, a), False),
+    "set_board_todo": ("board", "Tick a shop TV to-do off (it moves to Completed) or put it back, by todo_id or task_key. "
+                       "Ticking off a customer alert also clears it from Needs attention; alerts can't be put back.",
+                       board_agent.BoardSet, lambda db, key, a: board_agent.set_todo(db, key, a), False),
     "confirm_appointment": ("appointments:confirm", "Confirm a tentative appointment, only after the owner has said yes. "
                             "It then shows on his calendar feed and adds his reminder task. Nothing is sent to the customer.",
                             _Appointment, lambda db, key, a: agent_api.confirm_appointment(a.appointment_id, db, key), False),

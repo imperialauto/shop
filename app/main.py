@@ -222,6 +222,9 @@ async def recovery_mode(request: Request, call_next):
 
 @app.on_event("startup")
 def startup():
+    from app import shop_board
+
+    shop_board.register_alert_hooks()  # does nothing unless SHOP_BOARD_ALERTS is on
     preview_seed.seed()
     preview_check.start()
     audit = database_audit()

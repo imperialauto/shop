@@ -42,6 +42,8 @@ KEYS = {
     "appointment_feed": "APPOINTMENT_FEED_SETTING",
     # Shop TV board (app/shop_board.py): money to bring in each day. Set on /board/manage.
     "daily_sales_goal": "DAILY_SALES_GOAL",
+    # Shop TV board: which open jobs' cars are at the shop. Set on /board/manage.
+    "board_on_lot": "BOARD_ON_LOT_JSON",
 }
 CACHE_SECONDS = 15
 _cache: dict = {"at": 0.0, "values": None}
