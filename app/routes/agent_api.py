@@ -11,6 +11,8 @@ Deliberately limited:
   already been asked to approve or that is invoiced, except one thing behind its own
   scope (estimates:send): texting a job's approval link, through the same send as the
   owner's Ask for approval button, so it is logged on the job and never sent twice;
+* a job's status can be moved on the board, but never to Complete or Picked up,
+  because those can text the customer (pickup text, review request);
 * every change is written to agent_actions in the same transaction.
 Read-only (recovery) mode still blocks every write, as for staff.
 """
@@ -22,7 +24,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app import agent_keys
+from app import agent_keys, next_action, ro_status_policy, website_alerts
 from app.agent_keys import AgentKey
 from app.appointment_model import Appointment
 from app.database import get_db
@@ -171,6 +173,27 @@ class JobIn(BaseModel):
     vehicle_id: int = Field(gt=0)
     concern: str | None = Field(default=None, max_length=4000)
     mileage_in: int | None = Field(default=None, ge=0, le=5_000_000)
+
+
+# Board columns the assistant may move a job to. Complete and Delivered (picked up) are left out
+# on purpose: app.job_events can text the customer from them, so the office does those on the dashboard.
+AGENT_STATUSES = {
+    "intake": "Intake",
+    "diagnosing": "Diagnosing",
+    "waiting_parts": "Waiting Parts",
+    "in_progress": "In Progress",
+    "waiting_approval": "Waiting Approval",
+    "approval_received": "Approval Received",
+}
+OFFICE_ONLY_STATUSES = ("complete", "delivered")
+
+
+class JobStatusIn(BaseModel):
+    status: str = Field(description="One of: " + ", ".join(AGENT_STATUSES) + ".")
+    note: str | None = Field(default=None, max_length=200,
+                             description="Why, or the next step, in a few words. Kept in the assistant's change log.")
+
+    _clean = field_validator("note", mode="before")(_blank_to_none)
 
 
 class EstimateIn(BaseModel):
@@ -405,6 +428,43 @@ def add_lines(ro_id: int, lines: list[LineIn], db: Session = Depends(get_db),
     db.commit()
     db.refresh(ro)
     return job_json(ro)
+
+
+def _next_step(db: Session, ro: RepairOrder) -> dict | None:
+    step = next_action.for_job(db, ro, "owner")
+    return {"who": step["who"], "title": step["title"], "detail": step.get("detail")} if step else None
+
+
+@router.post("/jobs/{ro_id}/status")
+def set_job_status(ro_id: int, payload: JobStatusIn, db: Session = Depends(get_db),
+                   key: AgentKey = Depends(agent("estimates:write"))):
+    """Move a job to another board column, with the same checks as the job page's status menu.
+    Nothing is sent to the customer."""
+    target = (payload.status or "").strip().lower().replace(" ", "_").replace("-", "_")
+    if target in OFFICE_ONLY_STATUSES:
+        raise HTTPException(409, "Complete and Picked up can text the customer, so the office marks those on the dashboard.")
+    if target not in AGENT_STATUSES:
+        raise HTTPException(422, "Unknown status. Use one of: " + ", ".join(AGENT_STATUSES) + ".")
+    ro = db.get(RepairOrder, ro_id)
+    if ro is None:
+        raise HTTPException(404, "Job not found.")
+    if ro.status in OFFICE_ONLY_STATUSES:
+        raise HTTPException(409, f"This job is already {ro.status}. The office moves finished jobs on the dashboard.")
+    blocked = ro_status_policy.status_error(ro, target, "owner")
+    if blocked:
+        raise HTTPException(*blocked)
+    before = ro.status
+    if target != before:
+        ro.status = target
+        if target != "intake":
+            website_alerts.close_for_job(db, ro, f"assistant:{key.key_prefix}", f"job moved to {target}")
+        summary = f"{before} -> {target}" + (f"; {payload.note}" if payload.note else "")
+        agent_keys.record(db, key, "job.status", "repair_order", ro.id, summary)
+        db.commit()
+        db.refresh(ro)
+    data = job_json(ro)
+    data.update(previous_status=before, changed=target != before, next_step=_next_step(db, ro))
+    return data
 
 
 @router.get("/appointments")

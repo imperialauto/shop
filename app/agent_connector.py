@@ -323,6 +323,10 @@ class _Lines(BaseModel):
     lines: list[agent_api.LineIn] = Field(min_length=1, max_length=60)
 
 
+class _JobStatus(agent_api.JobStatusIn):
+    job_id: int = Field(gt=0)
+
+
 class _Empty(BaseModel):
     pass
 
@@ -386,6 +390,12 @@ TOOLS = {
                  agent_api.JobIn, lambda db, key, a: agent_api.open_job(a, db, key), False),
     "add_estimate_lines": ("estimates:write", "Add draft lines to an open job that has no invoice.", _Lines,
                            lambda db, key, a: agent_api.add_lines(a.job_id, a.lines, db, key), False),
+    "set_job_status": ("estimates:write", "Move a job (repair order) to another column on the job board: "
+                       + ", ".join(agent_api.AGENT_STATUSES) + ". Same checks as the job page, so In Progress and "
+                       "Waiting Parts need an approved line. Not Complete or Picked up (those can text the customer). "
+                       "Optional short note on why or the next step goes in the change log. Nothing is sent to anyone.",
+                       _JobStatus, lambda db, key, a: agent_api.set_job_status(
+                           a.job_id, agent_api.JobStatusIn(status=a.status, note=a.note), db, key), False),
     "list_recent_decisions": ("estimates:read", "Jobs whose estimate lines a customer approved or declined recently "
                               "(approval link or text yes), newest first, with customer, vehicle, the lines and totals. "
                               "Read only; nothing is sent to anyone.", _Decisions,
