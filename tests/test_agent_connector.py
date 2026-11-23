@@ -14,6 +14,7 @@ from test_agent_api import PASSWORD, _Setup
 from app import agent_connector, agent_keys
 from app.agent_keys import AgentAction, AgentKey
 from app.main import app
+from app.models import Customer, RepairOrder, Vehicle
 
 CALLBACK = "https://claude.ai/api/mcp/auth_callback"
 
@@ -199,6 +200,30 @@ class McpTests(_Flow):
         missing = self.rpc(headers, "tools/call", {"name": "get_job", "arguments": {"job_id": 999}}).json()["result"]
         self.assertTrue(missing["isError"])
         self.assertIn("not found", missing["content"][0]["text"])
+
+    def test_set_job_status_tool(self):
+        headers, _ = self.connect()
+        with self.Session() as db:
+            c = Customer(first_name="Sam", last_name="Example")
+            db.add(c)
+            db.flush()
+            v = Vehicle(customer_id=c.id, make="Dodge")
+            db.add(v)
+            db.flush()
+            ro = RepairOrder(customer_id=c.id, vehicle_id=v.id, status="intake", public_token="u" * 40)
+            db.add(ro)
+            db.commit()
+            ro_id = ro.id
+        moved = self.rpc(headers, "tools/call", {"name": "set_job_status", "arguments": {
+            "job_id": ro_id, "status": "diagnosing", "note": "scan for codes"}}).json()["result"]
+        self.assertFalse(moved["isError"], moved)
+        self.assertIn('"status": "diagnosing"', moved["content"][0]["text"])
+        refused = self.rpc(headers, "tools/call", {"name": "set_job_status", "arguments": {
+            "job_id": ro_id, "status": "complete"}}).json()["result"]
+        self.assertTrue(refused["isError"])
+        with self.Session() as db:
+            self.assertEqual(db.get(RepairOrder, ro_id).status, "diagnosing")
+            self.assertEqual([a.action for a in db.query(AgentAction).all()], ["job.status"])
 
     def test_revoking_in_settings_cuts_claude_off(self):
         headers, _ = self.connect()
