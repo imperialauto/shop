@@ -91,7 +91,7 @@ class ShopBoardTests(unittest.TestCase):
         self.assertEqual([j["id"] for j in jobs], [self.shop_id])
         self.assertEqual((jobs[0]["who"], jobs[0]["stage"], jobs[0]["tech"]), ("", "In progress", "Mike"))
         self.assertEqual([(c["day"], c["time"], c["who"], c["vehicle"]) for c in coming],
-                         [("Today", "2:30 PM", "Pat S.", "2016 Ford Focus")])
+                         [("Today", "2:30 PM", "Pat", "2016 Ford Focus")])
 
     def test_money_in_today_uses_the_phoenix_day_and_the_goal(self):
         with self.Session() as db:
@@ -103,10 +103,10 @@ class ShopBoardTests(unittest.TestCase):
         client = self.client()
         page = client.get("/board")
         self.assertEqual(page.status_code, 200)
-        for text in ("Cars here", "Coming in", "Waiting on you", "Parts on order", "Money in today", "$326", "of $500", "2016 Ford Focus", 'hx-get="/board/panel"'):
+        for text in ("Cars here", "Coming in", "Waiting on you", "Waiting on customer", "Money in today", "$326", "of $500", "2016 Ford Focus", 'hx-get="/board/panel"'):
             self.assertIn(text, page.text)
         self.assertNotIn("+16025550100", page.text)
-        self.assertNotIn("Sample", page.text.replace("Pat S.", ""))
+        self.assertNotIn("Sample", page.text.replace("Pat", ""))
         panel = client.get("/board/panel")
         self.assertEqual(panel.status_code, 200)
         self.assertNotIn("<html", panel.text)

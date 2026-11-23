@@ -120,7 +120,7 @@ class BoardLiveTests(unittest.TestCase):
         with self.Session() as db:
             coming = shop_board.coming_in(db, NOW)
         self.assertEqual([(c["day"], c["vehicle"], c["who"], c["tentative"]) for c in coming],
-                         [("Tomorrow", "2004 Cadillac Escalade", "Sam F.", True)])
+                         [("Tomorrow", "2004 Cadillac Escalade", "Sam", True)])
 
     # ---------------------------------------------------------------- waiting on you and parts
     def test_waiting_on_you_counts_texts_calls_and_estimates(self):
@@ -144,6 +144,77 @@ class BoardLiveTests(unittest.TestCase):
         self.assertIn("Thermostat", panel)
         self.assertNotIn("48.5", panel)
 
+    # ---------------------------------------------------------------- timers
+    def test_timer_starts_from_the_phone_shows_on_the_tv_and_flags_time_up(self):
+        phone = self.client("mike")
+        with patch.object(shop_board, "now_local", return_value=datetime.now(PHOENIX)):
+            r = phone.post("/board/timers", data={"label": "Explorer pressure test", "minutes": "15"}, follow_redirects=False)
+            self.assertEqual(r.headers["location"], "/board/manage?saved=timer#timers")
+            panel = phone.get("/board/panel").text
+            self.assertIn("Explorer pressure test", panel)
+            self.assertIn('class="tv-timer "', panel)
+            with self.Session() as db:
+                (timer,) = shop_board.timers(db, datetime.now(PHOENIX))
+                self.assertTrue(895 <= timer["left"] <= 900)
+                later = shop_board.timers(db, datetime.now(PHOENIX) + timedelta(minutes=16))
+                self.assertTrue(later[0]["up"])
+                self.assertEqual(shop_board.timers(db, datetime.now(PHOENIX) + timedelta(minutes=50)), [])  # drops off
+            phone.post(f"/board/timers/{timer['id']}", data={"operation": "plus5"})
+            with self.Session() as db:
+                self.assertEqual(shop_board.timers(db, datetime.now(PHOENIX))[0]["minutes"], 20)
+            phone.post(f"/board/timers/{timer['id']}", data={"operation": "stop"})
+            self.assertNotIn("Explorer pressure test", phone.get("/board/panel").text)
+
+    def test_custom_minutes_and_bad_input(self):
+        phone = self.client()
+        phone.post("/board/timers", data={"label": "Brake bleed", "minutes": "", "custom": "7"})
+        with self.Session() as db:
+            self.assertEqual([t["minutes"] for t in shop_board.timers(db, datetime.now(PHOENIX))], [7])
+        bad = phone.post("/board/timers", data={"label": "x", "minutes": "0"}, follow_redirects=False)
+        self.assertIn("error=", bad.headers["location"])
+        bad = phone.post("/board/timers", data={"label": "x", "custom": "abc"}, follow_redirects=False)
+        self.assertIn("error=", bad.headers["location"])
+
+    # ---------------------------------------------------------------- pickup, waiting on customer, book time
+    def test_ready_for_pickup_banner_uses_first_name_only(self):
+        with self.Session() as db:
+            db.get(RepairOrder, 12).status = "complete"
+            db.get(Customer, 2).first_name = "Lee"
+            db.commit()
+        panel = self.client().get("/board/panel").text
+        self.assertIn("Ready for pickup", panel)
+        self.assertIn("Lee · 2013 Ford Explorer", panel)
+        self.assertNotIn("Overheating", panel)
+
+    def test_waiting_on_customer_lists_approval_jobs_with_how_long(self):
+        with self.Session() as db:
+            db.get(RepairOrder, 11).updated_at = (NOW - timedelta(days=3)).astimezone(timezone.utc).replace(tzinfo=None)
+            db.commit()
+            rows = shop_board.waiting_on_customer(db, NOW)
+        self.assertEqual([(r["id"], r["who"]) for r in rows], [(11, "Sam")])  # one per car: the newer Fusion job
+        self.assertEqual(rows[0]["wait"], "3 days")
+
+    def test_job_clock_shows_time_worked_against_book_time(self):
+        with self.Session() as db:
+            db.add(LineItem(repair_order_id=12, description="Diag", item_type="labor", quantity=1.0))
+            db.commit()
+        phone = self.client("mike")
+        start = NOW - timedelta(hours=2)
+        with patch.object(shop_board, "now_local", return_value=start):
+            phone.post("/board/clock/12", data={"operation": "start"})
+        with self.Session() as db:
+            job = {j["id"]: j for j in shop_board.jobs_today(db, NOW)}[12]
+        self.assertEqual((job["book"], job["clock_on"]), (2.0, True))  # head gasket line defaults to 1 hr + diag 1 hr
+        self.assertAlmostEqual(job["worked"], 2.0, places=1)
+        with patch.object(shop_board, "now_local", return_value=NOW + timedelta(minutes=30)):
+            phone.post("/board/clock/12", data={"operation": "stop"})
+        with self.Session() as db:
+            job = {j["id"]: j for j in shop_board.jobs_today(db, NOW + timedelta(hours=5))}[12]
+        self.assertEqual((job["worked"], job["clock_on"], job["over_book"]), (2.5, False, True))
+        self.assertIn("over book", self.client().get("/board/panel").text)
+        with self.Session() as db:
+            self.assertEqual(db.get(RepairOrder, 12).status, "diagnosing")  # the job itself is untouched
+
     # ---------------------------------------------------------------- customer alerts
     def _alert(self, **fields):
         with self.Session() as db:
@@ -165,7 +236,7 @@ class BoardLiveTests(unittest.TestCase):
             item.summary = "Another text"  # a later update makes no second to-do
             db.commit()
             todos = db.query(ImperialTask).filter_by(category=BOARD_CATEGORY).all()
-        self.assertEqual([t.title for t in todos], ["Missed call: Sam F., 2004 Cadillac Escalade"])
+        self.assertEqual([t.title for t in todos], ["Missed call: Sam, 2004 Cadillac Escalade"])
         panel = self.client().get("/board/panel").text
         for secret in ("+16025550102", "Private message", "Sam Fixture"):
             self.assertNotIn(secret, panel)

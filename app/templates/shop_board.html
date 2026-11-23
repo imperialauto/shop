@@ -36,9 +36,40 @@
     .full:hover { color: var(--gold); border-color: var(--gold); }
     :fullscreen .full { display: none; }
 
-    #board-panel { min-height: 0; display: grid; gap: var(--gap); grid-template-rows: auto 1fr auto; }
+    #board-panel { min-height: 0; display: flex; flex-direction: column; gap: var(--gap); }
+    #board-panel > .cols { flex: 1 1 auto; }
+
+    /* Timers: big enough to read from under a car */
+    .timers { display: grid; grid-template-columns: repeat(auto-fit, minmax(clamp(220px, 22vw, 560px), 1fr)); gap: var(--gap); }
+    .tv-timer { background: rgba(30, 6, 49, 0.9); border: 2px solid var(--gold); border-radius: clamp(10px, 1vw, 22px);
+                padding: clamp(10px, 1vw, 24px) clamp(14px, 1.4vw, 32px); display: grid; grid-template-columns: 1fr auto;
+                grid-template-rows: auto auto; column-gap: 1em; align-items: center; }
+    .tv-timer .t-label { font-size: clamp(16px, 1.7vw, 42px); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tv-timer .t-note { color: var(--muted); font-size: clamp(11px, 1vw, 24px); font-weight: 600; }
+    .tv-timer .t-clock { grid-row: span 2; grid-column: 2; font-size: clamp(40px, 5.6vw, 150px); font-weight: 800; line-height: 1;
+                         color: var(--gold); font-variant-numeric: tabular-nums; }
+    .tv-timer.soon { border-color: var(--amber); }
+    .tv-timer.soon .t-clock { color: var(--amber); }
+    .tv-timer.up { border-color: var(--red); background: rgba(120, 20, 20, 0.85); animation: timer-flash 1s steps(2, start) infinite; }
+    .tv-timer.up .t-clock { color: #FFFFFF; }
+    .tv-timer.up .t-note { color: #FFD7D2; }
+    @keyframes timer-flash { 50% { background: rgba(255, 60, 60, 0.95); } }
+    @media (prefers-reduced-motion: reduce) { .tv-timer.up { animation: none; } }
     .top { display: grid; grid-template-columns: 1fr auto; gap: var(--gap); }
-    .stack { display: grid; grid-template-rows: minmax(0, 3fr) minmax(0, 2fr); gap: var(--gap); min-height: 0; }
+    .stack { display: flex; flex-direction: column; gap: var(--gap); min-height: 0; }
+    .stack > .card { flex: 2 1 0; }
+    .stack > .card:first-child { flex: 3 1 0; }
+    .stack > .parts-card { flex: 0 1 auto; max-height: 30%; }
+
+    /* Ready for pickup */
+    .pickup { display: flex; flex-wrap: wrap; align-items: center; gap: .4em 1.2em; padding: clamp(8px, .8vw, 18px) clamp(14px, 1.4vw, 32px);
+              border-radius: clamp(10px, 1vw, 22px); background: linear-gradient(90deg, rgba(63,174,106,.35), rgba(123,224,160,.18));
+              border: 2px solid var(--green); font-size: clamp(16px, 1.8vw, 44px); font-weight: 700; }
+    .pickup .p-label { color: var(--green); text-transform: uppercase; letter-spacing: .08em; font-weight: 800; }
+    .pickup .p-car + .p-car::before { content: "•"; color: var(--green); margin-right: 1.2em; }
+    .hrs.on { color: var(--green); }
+    .hrs.over { color: var(--red); font-weight: 800; }
+    .job .when.days.late { color: var(--red); }
     .waiting { display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; column-gap: .8em; align-items: center; align-content: center; }
     .waiting .label { color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .1em; font-size: clamp(11px, 1vw, 24px); }
     .waiting .count { grid-row: span 2; font-size: clamp(30px, 4.2vw, 108px); font-weight: 800; line-height: 1; color: var(--green); }
@@ -106,8 +137,8 @@
       body { overflow: auto; }
       .tv { height: auto; }
       [data-pages] { overflow: visible; }
-      .cols, .sales, .top { grid-template-columns: 1fr; }
-      .stack { grid-template-rows: auto; }
+      .cols, .sales, .top, .timers { grid-template-columns: 1fr; }
+      .stack > .card { flex: none; }
       .sales .left { text-align: left; }
     }
   </style>
@@ -167,6 +198,40 @@
       document.body.addEventListener('htmx:afterSwap', show);
       window.addEventListener('resize', show);
       show(); setInterval(turn, PAGE_SECONDS * 1000);
+    })();
+  </script>
+  <script>
+    // Timers count down every second on the TV itself; the 20-second refresh only adds and removes them.
+    (function () {
+      var beeped = {};
+      function fmt(ms) {
+        var s = Math.round(Math.abs(ms) / 1000), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, r = s % 60;
+        return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(r).padStart(2, '0');
+      }
+      function beep() {
+        try {  // the TV may block sound until someone taps the page once; the red flash still shows
+          var A = window.AudioContext || window.webkitAudioContext, ctx = new A();
+          [0, 0.45, 0.9].forEach(function (at) {
+            var o = ctx.createOscillator(), g = ctx.createGain();
+            o.frequency.value = 880; o.connect(g); g.connect(ctx.destination);
+            g.gain.setValueAtTime(0.25, ctx.currentTime + at); g.gain.setValueAtTime(0, ctx.currentTime + at + 0.3);
+            o.start(ctx.currentTime + at); o.stop(ctx.currentTime + at + 0.32);
+          });
+        } catch (e) {}
+      }
+      function tick() {
+        document.querySelectorAll('.tv-timer[data-ends]').forEach(function (el) {
+          var left = Number(el.dataset.ends) - Date.now(), clock = el.querySelector('.t-clock');
+          var up = left <= 0;
+          clock.textContent = up ? "Time's up" : fmt(left);
+          el.classList.toggle('up', up);
+          el.classList.toggle('soon', !up && left <= 60000);
+          if (up && !beeped[el.dataset.id] && left > -60000) { beeped[el.dataset.id] = true; beep(); }
+          if (up) beeped[el.dataset.id] = true;
+        });
+      }
+      tick(); setInterval(tick, 1000);
+      document.body.addEventListener('htmx:afterSwap', tick);
     })();
   </script>
 </body>
