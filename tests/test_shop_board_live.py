@@ -147,8 +147,9 @@ class BoardLiveTests(unittest.TestCase):
     # ---------------------------------------------------------------- customer alerts
     def _alert(self, **fields):
         with self.Session() as db:
-            item = DispatchItem(quo_conversation_id="c9", customer_phone="+16025550102", customer_id=3, vehicle_id=3,
-                                status="needs_owner", last_message_id="m9", summary="Private message text",
+            fields = {"quo_conversation_id": "c9", "last_message_id": "m9", **fields}
+            item = DispatchItem(customer_phone="+16025550102", customer_id=3, vehicle_id=3,
+                                status="needs_owner", summary="Private message text",
                                 contact_name="Sam Fixture full", **fields)
             db.add(item)
             db.commit()
@@ -219,6 +220,24 @@ class BoardLiveTests(unittest.TestCase):
                 db.get(DispatchItem, item_id).status = "closed"
                 db.commit()
             self.assertEqual(shop_board.reconcile_alerts(db)["done"], 1)
+
+    def test_old_backlog_stays_off_when_alerts_turn_on_but_new_activity_lands(self):
+        since = datetime(2026, 11, 23, 1, 0, tzinfo=timezone.utc)
+        before = since - timedelta(days=2)
+        with patch.dict(os.environ, {"SHOP_BOARD_ALERTS": ""}):
+            old_id = self._alert(category="estimate", created_at=before, updated_at=before)
+        with patch.dict(os.environ, {"SHOP_BOARD_ALERTS_SINCE": "2026-11-23T01:00:00Z"}):
+            with self.Session() as db:
+                self.assertEqual(shop_board.reconcile_alerts(db)["added"], 0)
+                self.assertIsNone(self._alert_todo(db, old_id))
+                item = db.get(DispatchItem, old_id)  # the same customer texts again
+                item.summary, item.updated_at = "New text", since + timedelta(minutes=5)
+                db.commit()
+                self.assertIsNotNone(self._alert_todo(db, old_id))
+            new_id = self._alert(category="booking", quo_conversation_id="c10", last_message_id="m10", created_at=since + timedelta(minutes=9),
+                                 updated_at=since + timedelta(minutes=9))
+            with self.Session() as db:
+                self.assertIsNotNone(self._alert_todo(db, new_id))
 
     def test_a_board_problem_never_breaks_message_intake(self):
         with patch.object(shop_board, "sync_alert", side_effect=RuntimeError("boom")):
