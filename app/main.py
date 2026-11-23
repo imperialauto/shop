@@ -529,44 +529,65 @@ def update_problem(task_id: int, operation: str = Form(...), db: Session = Depen
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
-def dashboard(request: Request, view: str = "open", db: Session = Depends(get_db)):
+def dashboard(request: Request, view: str = "", db: Session = Depends(get_db)):
+    """Home: one screen in the shop board's style. The full customer queue has its own page."""
     try:
         user = get_current_user(request, db)
     except HTTPException:
         return RedirectResponse("/login", status_code=302)
+    if view:  # old links to a queue filter (/dashboard?view=customer) open the full queue
+        return RedirectResponse(f"/dashboard/inbox?view={view}", status_code=302)
 
+    from app import shop_board
+    context = _home_context(request, db, user, "open")
+    context["board"] = shop_board.snapshot(db, user)
+    context["queue_total"] = len(context["dispatch_items"])
+    context["dispatch_items"] = context["dispatch_items"][:HOME_QUEUE_ROWS]
+    return templates.TemplateResponse("dashboard.html", context)
+
+
+HOME_QUEUE_ROWS = 5  # Home shows the top of the queue; the rest is one tap away
+
+
+@app.get("/dashboard/inbox", response_class=HTMLResponse)
+def dashboard_inbox(request: Request, view: str = "open", db: Session = Depends(get_db)):
+    """The whole Needs-you queue: every customer text and call waiting on the shop, with filters and rules."""
+    try:
+        user = get_current_user(request, db)
+    except HTTPException:
+        return RedirectResponse("/login", status_code=302)
+    context = _home_context(request, db, user, view)
+    context["queue_path"] = "/dashboard/inbox"
+    context["queue_back"] = f"/dashboard/inbox?view={context['dispatch_view']}"
+    return templates.TemplateResponse("inbox.html", context)
+
+
+def _home_context(request: Request, db: Session, user: User, view: str) -> dict:
     from datetime import datetime
     from app.appointments import PHOENIX
-    from app.models import Customer, Invoice, RepairOrder
-    open_ros = db.query(RepairOrder).filter(RepairOrder.status != "delivered").order_by(RepairOrder.created_at.desc()).limit(10).all()
-    total_customers = db.query(Customer).count()
-    total_ros = db.query(RepairOrder).count()
+    from app.models import RepairOrder
+    open_ros = db.query(RepairOrder).filter(RepairOrder.status != "delivered").order_by(RepairOrder.created_at.desc()).limit(HOME_JOB_ROWS).all()
     open_count = db.query(RepairOrder).filter(RepairOrder.status != "delivered").count()
-
-    # Saved internal tasks share the existing dashboard attention list.
-    # Feature remains off until its additive migration is verified.
-    task_snapshot = imperial_tasks.owner_dashboard_tasks(db, user.role)
-    dev_work_snapshot = dev_work.dashboard_snapshot(db, user.role)
-
-    return templates.TemplateResponse("dashboard.html", {
+    return {
         "request": request,
-        "imperial_task_snapshot": task_snapshot,
-        "dev_work_snapshot": dev_work_snapshot,
+        # Saved internal tasks share the attention list. Feature stays off until its migration is verified.
+        "imperial_task_snapshot": imperial_tasks.owner_dashboard_tasks(db, user.role),
+        "dev_work_snapshot": dev_work.dashboard_snapshot(db, user.role),
         "user": user,
         "open_ros": open_ros,
         # Same next step as the Jobs board and job page (one source), not the raw concern text.
         "next_steps": {ro.id: next_action.for_job(db, ro, user.role) for ro in open_ros},
-        "total_customers": total_customers,
-        "total_ros": total_ros,
         "open_count": open_count,
-        "total_invoices": db.query(Invoice).filter(Invoice.status == "sent").count(),
         "now": datetime.now(PHOENIX),
         **dispatch.dashboard_context(db, view),
         "home": home_summary.summary(db, user),
         "health": system_health.report(db) if user.role in ("owner", "admin") else None,
         "legal_review": _legal_review_titles() if user.role == "owner" else [],
         "read_only": app.state.read_only,
-    })
+    }
+
+
+HOME_JOB_ROWS = 8
 
 
 def _settings(request: Request, db: Session, user: User, **extra):

@@ -1,158 +1,322 @@
 {% extends "base.html" %}
-{% block title %}Dashboard — Imperial Auto Care{% endblock %}
+{% block title %}Home — Imperial Auto Care{% endblock %}
 {% block content %}
+<style>
+  /* Home, built like the shop TV board: a few big cards you read at a glance, each with one link to act. */
+  .home { --h-panel: rgba(30, 6, 49, 0.82); --h-line: rgba(234,210,114,0.18); --h-green: #7BE0A0; --h-amber: #F2C35B; --h-red: #FF8A80;
+          background: radial-gradient(ellipse at top, var(--imp-purple) 0%, var(--imp-purple-deep) 75%);
+          border-radius: 18px; padding: clamp(12px, 1.6vw, 24px); display: grid; gap: clamp(12px, 1.4vw, 20px); color: var(--imp-ink); }
+  .home a { color: inherit; }
+  .h-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .h-brand { font-family: var(--imp-serif); color: var(--imp-gold); font-weight: 700; font-size: clamp(26px, 2.6vw, 40px); line-height: 1; }
+  .h-brand small { display: block; font-family: var(--imp-sans); font-weight: 600; letter-spacing: .14em; text-transform: uppercase;
+                   color: var(--imp-muted); font-size: 11px; margin-top: .4em; }
+  .h-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+  .h-clock { text-align: right; }
+  .h-clock .time { font-size: clamp(24px, 2.4vw, 36px); font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  .h-clock .date { color: var(--imp-muted); font-size: 13px; margin-top: .2em; }
 
-<div class="page-header">
-  <div>
-    <div class="page-title">Dashboard</div>
-    <div style="font-size:12px; color:var(--imp-muted); margin-top:3px;">{{ now.strftime('%A, %B %d') if now else '' }}</div>
-  </div>
-  <div style="display:flex; gap:8px; flex-wrap:wrap; margin-left:auto;">
-  {% if imperial_task_snapshot.enabled %}
-  <a href="/dashboard/tasks" class="btn-secondary">Master Tasks</a>
-  <a href="/my-day#my-to-do" class="btn-secondary">My To-do</a>
-  {% endif %}
-  <a href="/appointments/calendar" class="btn-secondary">Calendar</a>
-  <a href="/live/control" class="btn-secondary">LIVE Control</a>
-  <a href="/ro/new" class="btn-primary">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-    New RO
-  </a>
-  </div>
-</div>
+  .h-card { background: var(--h-panel); border: 1px solid var(--h-line); border-radius: 14px; padding: 16px 18px; min-width: 0; }
+  .h-card h2 { font-family: var(--imp-serif); color: var(--imp-gold); margin: 0 0 .5em; font-size: clamp(22px, 1.9vw, 28px); line-height: 1;
+               display: flex; justify-content: space-between; align-items: baseline; gap: 1em; }
+  .h-card h2 a, .h-card h2 span { font-family: var(--imp-sans); color: var(--imp-muted); font-size: 13px; font-weight: 600; text-decoration: none; }
+  .h-card h2 a:hover { color: var(--imp-gold); }
 
-<div class="page-body">
+  .h-alert { border-color: rgba(255,138,128,.6); background: rgba(120,20,20,.45); }
+  .h-alert strong { color: var(--h-red); }
+  .h-note { display: block; text-decoration: none; font-size: 14px; }
+  .h-note strong { color: var(--imp-gold); }
 
-  {% if health %}
-  <details class="card-sm" style="margin-bottom:12px; {% if not health.ok %}border-color:rgba(248,113,113,0.55);{% endif %}" {% if not health.ok %}open{% endif %} id="system-health">
-    <summary style="cursor:pointer; font-size:13px; color:{{ 'var(--imp-danger)' if not health.ok else 'var(--imp-muted)' }};">
-      {% if health.ok %}All systems working{% else %}{{ health.problems|length }} thing{{ 's need' if health.problems|length != 1 else ' needs' }} attention{% endif %}
-    </summary>
-    <ul style="list-style:none; margin:8px 0 0; padding:0; display:grid; gap:6px; font-size:13px;">
+  .h-pickup { display: flex; flex-wrap: wrap; align-items: center; gap: .4em 1.2em; padding: 12px 18px; border-radius: 14px;
+              background: linear-gradient(90deg, rgba(63,174,106,.35), rgba(123,224,160,.18)); border: 2px solid var(--h-green);
+              font-size: 18px; font-weight: 700; }
+  .h-pickup .p-label { color: var(--h-green); text-transform: uppercase; letter-spacing: .08em; font-weight: 800; }
+  .h-pickup .p-car + .p-car::before { content: "•"; color: var(--h-green); margin-right: 1.2em; }
+
+  .h-strip { display: grid; grid-template-columns: 1fr auto; gap: clamp(12px, 1.4vw, 20px); }
+  .h-sales { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 20px; text-decoration: none; }
+  .h-label { color: var(--imp-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .1em; font-size: 12px; }
+  .h-big { font-size: clamp(32px, 3.2vw, 48px); font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+  .h-big small { font-size: .42em; color: var(--imp-muted); font-weight: 600; }
+  .h-bar { height: 22px; background: rgba(255,255,255,.08); border-radius: 999px; overflow: hidden; border: 1px solid var(--h-line); }
+  .h-bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--imp-gold-dark), var(--imp-gold)); border-radius: 999px; }
+  .h-sales.hit .h-bar i { background: linear-gradient(90deg, #3FAE6A, var(--h-green)); }
+  .h-sales .left { text-align: right; font-size: 18px; font-weight: 700; }
+  .h-sales.hit .left { color: var(--h-green); }
+  .h-waiting { display: grid; grid-template-columns: auto auto; column-gap: .8em; align-items: center; text-decoration: none; }
+  .h-waiting .h-big { grid-row: span 2; color: var(--h-green); }
+  .h-waiting.on .h-big { color: var(--h-amber); }
+  .h-waiting .parts-of { font-size: 14px; font-weight: 600; }
+
+  .h-cols { display: grid; grid-template-columns: 1.3fr 1fr; gap: clamp(12px, 1.4vw, 20px); align-items: start; }
+  .h-stack { display: grid; gap: clamp(12px, 1.4vw, 20px); min-width: 0; }
+
+  .h-rows { list-style: none; margin: 0; padding: 0; }
+  .h-row { display: grid; grid-template-columns: 64px 1fr auto; gap: 12px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--h-line);
+           text-decoration: none; }
+  .h-row:last-child { border-bottom: 0; }
+  a.h-row:hover .what { color: var(--imp-gold); }
+  .h-row .when { font-weight: 800; color: var(--imp-gold); font-size: 15px; font-variant-numeric: tabular-nums; }
+  .h-row .when.late { color: var(--h-red); }
+  .h-row .what { font-size: 16px; font-weight: 700; line-height: 1.25; min-width: 0; }
+  .h-row .who { display: block; color: var(--imp-muted); font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .h-row .next { display: block; color: var(--imp-ink); font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .h-stage { font-size: 12px; font-weight: 700; padding: .35em .8em; border-radius: 999px; white-space: nowrap;
+             background: rgba(234,210,114,.14); color: var(--imp-gold); border: 1px solid rgba(234,210,114,.35); }
+  .h-stage.in_progress, .h-stage.diagnosing { background: rgba(123,224,160,.14); color: var(--h-green); border-color: rgba(123,224,160,.4); }
+  .h-stage.waiting_parts, .h-stage.waiting_approval { background: rgba(242,195,91,.12); color: var(--h-amber); border-color: rgba(242,195,91,.4); }
+  .h-stage.complete { background: rgba(187,169,204,.12); color: var(--imp-ink); border-color: rgba(187,169,204,.4); }
+  .h-stage.mobile { background: rgba(123,224,160,.10); color: var(--h-green); border-color: rgba(123,224,160,.35); }
+  .h-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--h-line); }
+  .h-chips a { text-decoration: none; font-size: 12px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--h-line); color: var(--imp-muted); }
+  .h-chips a strong { color: var(--imp-ink); margin-left: 4px; }
+  .h-chips a:hover { border-color: var(--imp-gold); color: var(--imp-gold); }
+
+  .h-queue { margin: 0 -18px -16px; border-top: 1px solid var(--h-line); }
+  .h-queue details:last-child { border-bottom: 0 !important; }
+  .h-more { display: block; padding: 12px 18px; text-align: center; font-size: 14px; font-weight: 600; color: var(--imp-gold) !important; text-decoration: none; border-top: 1px solid var(--h-line); }
+
+  .h-money { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .h-money a { text-decoration: none; }
+  .h-money .h-big { font-size: 32px; }
+  .h-sub { color: var(--imp-muted); font-size: 13px; margin-top: 4px; }
+
+  .h-todos { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .h-todo { display: flex; gap: .6em; align-items: flex-start; font-size: 15px; font-weight: 600; line-height: 1.25; }
+  .h-todo::before { content: ""; flex: none; width: .9em; height: .9em; margin-top: .15em; border: .12em solid var(--imp-gold); border-radius: .22em; }
+  .h-todo.urgent { color: #FFD7D2; }
+  .h-todo.urgent::before { border-color: var(--h-red); background: rgba(255,138,128,.2); }
+  .h-empty { color: var(--imp-muted); font-size: 14px; margin: 0; }
+  .h-warn { color: var(--h-amber); font-size: 14px; margin: 0; }
+
+  .h-foot { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; font-size: 13px; color: var(--imp-muted); }
+  .h-foot a { text-decoration: none; color: var(--imp-muted); }
+  .h-foot a:hover { color: var(--imp-gold); }
+  .h-foot details summary { cursor: pointer; }
+  .h-foot details[open] { flex-basis: 100%; }
+  .h-checks { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+
+  @media (max-width: 900px) {
+    .h-cols, .h-strip { grid-template-columns: 1fr; }
+    .h-sales { grid-template-columns: 1fr; gap: 10px; }
+    .h-sales .left { text-align: left; }
+    .h-clock { display: none; }
+    .h-actions { margin-left: 0; }
+  }
+</style>
+
+<div class="home">
+  <header class="h-head">
+    <div class="h-brand">Imperial Auto Care<small>Home</small></div>
+    <div class="h-actions">
+      <a href="/ro/new" class="btn-primary">+ New job</a>
+      <a href="/board" class="btn-secondary">Shop TV</a>
+    </div>
+    <div class="h-clock"><div class="time" id="home-time">{{ now.strftime('%-I:%M %p') if now else '' }}</div><div class="date" id="home-date">{{ now.strftime('%A, %B %-d') if now else '' }}</div></div>
+  </header>
+
+  {% if health and not health.ok %}
+  <details class="h-card h-alert" id="system-health" open>
+    <summary style="cursor:pointer;"><strong>{{ health.problems|length }} thing{{ 's need' if health.problems|length != 1 else ' needs' }} attention</strong></summary>
+    <ul class="h-checks">
       {% for c in health.checks %}
-      <li><strong style="color:{{ 'var(--imp-danger)' if not c.ok else ('var(--imp-muted)' if c.info else 'var(--imp-ok)') }};">{{ '!' if not c.ok else ('·' if c.info else '✓') }} {{ c.name }}</strong>: {{ c.detail }}{% if c.fix %} <span style="color:var(--imp-muted);">{{ c.fix }}</span>{% endif %}</li>
+      <li><strong style="color:{{ 'var(--h-red)' if not c.ok else ('var(--imp-muted)' if c.info else 'var(--imp-ok)') }};">{{ '!' if not c.ok else ('·' if c.info else '✓') }} {{ c.name }}</strong>: {{ c.detail }}{% if c.fix %} <span style="color:var(--imp-muted);">{{ c.fix }}</span>{% endif %}</li>
       {% endfor %}
     </ul>
   </details>
   {% endif %}
 
+  {% if sending_paused %}
+  <a href="/dashboard/inbox" class="h-card h-alert h-note"><strong>All texting is stopped.</strong> Nothing goes to customers or you until you resume. Resume it on the Needs you page →</a>
+  {% endif %}
+
   {% if legal_review %}
-  <a href="/settings/security-privacy#review" class="card-sm" style="display:block; margin-bottom:12px; text-decoration:none; font-size:13px; color:var(--imp-muted);">
-    <strong style="color:var(--imp-gold);">{{ legal_review|length }} item{{ 's' if legal_review|length != 1 else '' }} waiting for your review</strong> · {{ legal_review|join(', ') }}. Nothing is blocked; open to read each one →
+  <a href="/settings/security-privacy#review" class="h-card h-note">
+    <strong>{{ legal_review|length }} item{{ 's' if legal_review|length != 1 else '' }} waiting for your review</strong> · {{ legal_review|join(', ') }}. Nothing is blocked; open to read each one →
   </a>
   {% endif %}
 
-  <div id="queue">
-  {% include "_dispatch.html" %}
-  </div>
-
-  {% if home and home.ready %}
-  <div class="stat-row">
-    <a href="#queue" class="card-sm" style="display:block; text-decoration:none; {% if home.urgent %}border-color:rgba(248,113,113,0.5);{% endif %}">
-      <div style="font-size:24px; font-weight:700; color:{{ 'var(--imp-danger)' if home.urgent else 'var(--imp-ink)' }}; line-height:1;">{{ home.needs_you }}</div>
-      <div style="font-size:12px; color:var(--imp-muted); margin-top:4px;">Need you{% if home.urgent %} · {{ home.urgent }} urgent{% endif %}</div>
-    </a>
-    <a href="/appointments/calendar" class="card-sm" style="display:block; text-decoration:none;">
-      <div style="font-size:24px; font-weight:700; color:var(--imp-ink); line-height:1;">{{ home.today }}</div>
-      <div style="font-size:12px; color:var(--imp-muted); margin-top:4px;">On today's calendar{% if not home.calendar_ok %} (Apple calendar not loading){% endif %}</div>
-    </a>
-    <a href="/ro/?status=waiting_approval" class="card-sm" style="display:block; text-decoration:none;">
-      <div style="font-size:24px; font-weight:700; color:var(--imp-ink); line-height:1;">{{ home.awaiting }}</div>
-      <div style="font-size:12px; color:var(--imp-muted); margin-top:4px;">Waiting on customer approval</div>
-    </a>
-    {% if home.money %}
-    <a href="/invoices/" class="card-sm" style="display:block; text-decoration:none;">
-      <div style="font-size:24px; font-weight:700; color:var(--imp-ink); line-height:1;">${{ '{:,.0f}'.format(home.money.owed) }}</div>
-      <div style="font-size:12px; color:var(--imp-muted); margin-top:4px;">Owed on {{ home.money.owed_count }} invoice{{ 's' if home.money.owed_count != 1 }} · ${{ '{:,.0f}'.format(home.money.paid_week) }} paid this week</div>
-      {% if home.money.cycle.median_hours is not none %}<div style="font-size:12px; color:var(--imp-muted); margin-top:2px;">First contact to paid: {{ (home.money.cycle.median_hours / 24)|round(1) }} days typical ({{ home.money.cycle.jobs }} job{{ 's' if home.money.cycle.jobs != 1 }}, last 30 days)</div>{% endif %}
-    </a>
-    {% else %}
-    <a href="/ro/" class="card-sm" style="display:block; text-decoration:none;">
-      <div style="font-size:24px; font-weight:700; color:var(--imp-ink); line-height:1;">{{ open_count }}</div>
-      <div style="font-size:12px; color:var(--imp-muted); margin-top:4px;">Open jobs</div>
-    </a>
-    {% endif %}
-  </div>
-  <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px;">
-    {% for s in home.stages %}
-    <a href="/ro/?status={{ s.key }}" class="badge badge-{{ s.key }}" style="text-decoration:none; padding:8px 12px; min-height:36px; display:inline-flex; align-items:center; gap:6px;">{{ s.label }} <strong>{{ s.count }}</strong></a>
-    {% endfor %}
-  </div>
+  {% if board.pickup %}
+  <section class="h-pickup" aria-label="Ready for pickup">
+    <span class="p-label">Ready for pickup</span>
+    {% for p in board.pickup %}<a class="p-car" href="/ro/{{ p.id }}" style="text-decoration:none;">{% if p.who %}{{ p.who }} · {% endif %}{{ p.vehicle }}</a>{% endfor %}
+  </section>
   {% endif %}
 
-
-
-  {% if user.role == 'owner' and dev_work_snapshot and dev_work_snapshot.enabled %}
-  <div class="card" id="imperial-development-work" style="margin-bottom:18px;">
-    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
-      <strong>Imperial Development Work</strong>
-      <span style="font-size:12px; color:var(--imp-muted);">Worker not connected — capture and tracking only</span>
-    </div>
-    {% if dev_work_snapshot.error %}
-    <p style="color:var(--imp-danger);">{{ dev_work_snapshot.error }}</p>
-    {% elif dev_work_snapshot.jobs %}
-    <ul style="display:grid; gap:8px; list-style:none; padding:0;">
-      {% for job in dev_work_snapshot.jobs %}
-      <li style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; border-bottom:1px solid var(--imp-line); padding-bottom:7px;">
-        <span><strong>#{{ job.id }}</strong> {{ job.projectKey|capitalize }} <span style="color:var(--imp-muted);">· {{ job.latestSummary or 'No verified update' }}</span></span>
-        <span class="badge">{{ job.status|replace('_',' ')|title }}</span>
-      </li>
-      {% endfor %}
-    </ul>
-    {% else %}
-    <p style="font-size:13px; color:var(--imp-muted);">No development work has been captured in Imperial yet.</p>
-    {% endif %}
+  <div class="h-strip">
+    {% if board.show_money %}
+    {% set s = board.sales %}
+    <a href="/finance/" class="h-card h-sales {% if s and s.hit %}hit{% endif %}" aria-label="Money in today">
+      {% if s %}
+      <div><div class="h-label">Money in today</div><div class="h-big">${{ '{:,.0f}'.format(s.total) }} <small>of ${{ '{:,.0f}'.format(s.goal) }}</small></div></div>
+      <div class="h-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ s.percent }}"><i style="width: {{ s.percent }}%"></i></div>
+      <div class="left">{% if s.hit %}Goal hit{% else %}${{ '{:,.0f}'.format(s.left) }} to go{% endif %}</div>
+      {% else %}
+      <p class="h-warn">Today's sales couldn't be loaded.</p>
+      {% endif %}
+    </a>
+    {% else %}<div></div>{% endif %}
+    <a href="#queue" class="h-card h-waiting {% if queue_total %}on{% endif %}" aria-label="Need you">
+      <div class="h-label">Need you</div>
+      <div class="h-big">{{ queue_total }}</div>
+      <div class="parts-of">{% if not queue_total %}All clear{% elif home and home.ready and home.urgent %}{{ home.urgent }} urgent{% else %}in the queue{% endif %}</div>
+    </a>
   </div>
-  {% endif %}
 
-  <!-- Open ROs Table -->
-  <div class="card" style="padding:0; overflow:hidden;">
-    <div style="padding:14px 16px 12px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--imp-line);">
-      <span style="font-size:13.5px; font-weight:600; color:var(--imp-ink);">Open Repair Orders</span>
-      <a href="/ro/" style="font-size:12px; color:var(--imp-muted); text-decoration:none;" onmouseover="this.style.color='var(--imp-gold)'" onmouseout="this.style.color='var(--imp-muted)'">View all →</a>
+  <div class="h-cols">
+    <div class="h-stack">
+      <section class="h-card" id="queue" aria-label="Needs you">
+        <h2>Needs you <a href="/dashboard/inbox">{{ queue_total }} open · See all →</a></h2>
+        {% if not dispatch_ready %}
+        <p class="h-empty">The queue is not set up on this database yet.</p>
+        {% elif not dispatch_items %}
+        <p class="h-empty">All clear. No customer is waiting on you.</p>
+        {% else %}
+        {% if read_only %}<p class="h-warn" style="margin-bottom:8px;">The system is read-only. Decisions won't save.</p>{% endif %}
+        <div class="h-queue">
+          {% for row in dispatch_items %}{% set item = row.item %}
+          {% include "_dispatch_row.html" %}
+          {% endfor %}
+          {% if queue_total > dispatch_items|length %}<a class="h-more" href="/dashboard/inbox">See {{ queue_total - dispatch_items|length }} more →</a>{% endif %}
+        </div>
+        {% endif %}
+      </section>
+
+      <section class="h-card" aria-label="Jobs">
+        <h2>Jobs <a href="/ro/">{{ open_count }} open · All jobs →</a></h2>
+        {% if open_ros %}
+        <div class="h-rows">
+          {% for ro in open_ros %}{% set step = next_steps.get(ro.id) %}
+          <a class="h-row" href="/ro/{{ ro.id }}" aria-label="Open job {{ ro.id }}">
+            <span class="when">#{{ ro.id }}</span>
+            <span class="what">{{ ro.vehicle.label if ro.vehicle else 'No vehicle' }}
+              <span class="who">{% if ro.customer.customer_type == 'fleet' %}Fleet · {{ ro.customer.fleet_name }}{% else %}{{ ro.customer.first_name }} {{ ro.customer.last_name }}{% endif %}</span>
+              <span class="next">Next step: {% if step %}{{ step.who }}: {{ step.title }}{% else %}—{% endif %}</span>
+            </span>
+            <span class="h-stage {{ ro.status }}">{{ ro.status.replace('_',' ').title() }}</span>
+          </a>
+          {% endfor %}
+        </div>
+        {% if open_count > open_ros|length %}<a class="h-more" href="/ro/" style="margin:8px -18px 0;">See {{ open_count - open_ros|length }} more jobs →</a>{% endif %}
+        {% else %}
+        <p class="h-empty">No open jobs. <a href="/ro/new" style="color:var(--imp-gold);">Start one →</a></p>
+        {% endif %}
+        {% if home and home.ready %}
+        <nav class="h-chips" aria-label="Jobs by stage">
+          {% for s in home.stages %}<a href="/ro/?status={{ s.key }}">{{ s.label }}<strong>{{ s.count }}</strong></a>{% endfor %}
+        </nav>
+        {% endif %}
+      </section>
     </div>
-    {% if open_ros %}
-    <table>
-      <thead>
-        <tr>
-          <th style="padding-left:16px;">RO</th>
-          <th>Customer</th>
-          <th>Vehicle</th>
-          <th>Next step</th>
-          <th>Status</th>
-          <th style="padding-right:16px;">Date</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for ro in open_ros %}
-        <tr class="cursor-pointer" onclick="window.location='/ro/{{ ro.id }}'" style="cursor:pointer;">
-          <td data-label="RO" style="padding-left:16px; color: var(--imp-heading); font-weight:600; font-family:monospace;"><a href="/ro/{{ ro.id }}" aria-label="Open repair order {{ ro.id }}" style="color:inherit; text-decoration:underline; text-underline-offset:3px;">#{{ ro.id }}</a></td>
-          <td data-label="Customer">
-            {% if ro.customer.customer_type == 'fleet' %}
-            <span class="badge badge-fleet" style="margin-right:6px;">FLEET</span>{{ ro.customer.fleet_name }}
-            {% else %}
-            <span style="color:var(--imp-ink);">{{ ro.customer.first_name }} {{ ro.customer.last_name }}</span>
-            {% endif %}
-          </td>
-          <td data-label="Vehicle">{{ ro.vehicle.label }}</td>
-          {% set step = next_steps.get(ro.id) %}
-          <td data-label="Next step" style="max-width:260px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--imp-muted);">{% if step %}{{ step.who }}: {{ step.title }}{% else %}—{% endif %}</td>
-          <td data-label="Status">
-            <span class="badge badge-{{ ro.status }}">{{ ro.status.replace('_',' ').title() }}</span>
-          </td>
-          <td data-label="Date" style="padding-right:16px; font-size:12px; color:var(--imp-muted);">{{ ro.created_at.strftime('%m/%d/%y') }}</td>
-        </tr>
+
+    <div class="h-stack">
+      <section class="h-card" aria-label="Coming in">
+        <h2>Coming in <a href="/appointments/calendar">Calendar →</a></h2>
+        {% if board.coming is none %}
+        <p class="h-warn">Appointments couldn't be loaded.</p>
+        {% elif not board.coming %}
+        <p class="h-empty">Nothing booked for today or tomorrow.</p>
+        {% else %}
+        <div class="h-rows">
+          {% for v in board.coming %}
+          <div class="h-row">
+            <span class="when">{{ v.time }}<span class="who">{{ v.day }}</span></span>
+            <span class="what">{{ v.vehicle }}{% if v.who %}<span class="who">{{ v.who }}</span>{% endif %}</span>
+            <span class="h-stage {% if v.mobile %}mobile{% endif %}">{% if v.mobile %}Mobile{% else %}Drop-off{% endif %}{% if v.tentative %}?{% endif %}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% if home and home.ready and not home.calendar_ok %}<p class="h-sub">Apple calendar not loading.</p>{% endif %}
+      </section>
+
+      <section class="h-card" aria-label="Waiting on customer">
+        <h2>Waiting on customer <a href="/ro/?status=waiting_approval">{% if home and home.ready %}{{ home.awaiting }} · {% endif %}See all →</a></h2>
+        <p class="h-sub" style="margin:-4px 0 8px;">Waiting on customer approval</p>
+        {% if board.on_customer is none %}
+        <p class="h-warn">Jobs couldn't be loaded.</p>
+        {% elif not board.on_customer %}
+        <p class="h-empty">No jobs waiting on a customer's yes.</p>
+        {% else %}
+        <div class="h-rows">
+          {% for w in board.on_customer %}
+          <a class="h-row" href="/ro/{{ w.id }}">
+            <span class="when {% if w.hours and w.hours >= 48 %}late{% endif %}">{{ w.wait }}</span>
+            <span class="what">{{ w.vehicle }}{% if w.who %}<span class="who">{{ w.who }}</span>{% endif %}</span>
+            <span class="h-stage waiting_approval">Approval</span>
+          </a>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </section>
+
+      {% if home and home.ready and home.money %}{% set m = home.money %}
+      <section class="h-card" aria-label="Money">
+        <h2>Money <a href="/finance/">Money page →</a></h2>
+        <div class="h-money">
+          <a href="/invoices/"><div class="h-label">Owed to you</div><div class="h-big">${{ '{:,.0f}'.format(m.owed) }}</div><div class="h-sub">on {{ m.owed_count }} invoice{{ 's' if m.owed_count != 1 }}</div></a>
+          <a href="/invoices/"><div class="h-label">This week</div><div class="h-big">${{ '{:,.0f}'.format(m.paid_week) }}</div><div class="h-sub">paid this week</div></a>
+        </div>
+        {% if m.cycle.median_hours is not none %}<p class="h-sub" style="margin-top:10px;">First contact to paid: {{ (m.cycle.median_hours / 24)|round(1) }} days typical ({{ m.cycle.jobs }} job{{ 's' if m.cycle.jobs != 1 }}, last 30 days)</p>{% endif %}
+      </section>
+      {% endif %}
+
+      {% if board.todos_on %}
+      <section class="h-card" aria-label="To-do">
+        <h2>To-do <a href="/board/manage">{% if board.todos %}{{ board.todos.open_count }} left · {% endif %}Edit →</a></h2>
+        {% if board.todos is none %}
+        <p class="h-warn">The to-do list couldn't be loaded.</p>
+        {% elif not board.todos.open %}
+        <p class="h-empty">{% if board.todos.done %}All caught up.{% else %}Nothing on the list.{% endif %}</p>
+        {% else %}
+        <ul class="h-todos">
+          {% for t in board.todos.open[:6] %}<li class="h-todo {% if t.urgent %}urgent{% endif %}">{{ t.title }}</li>{% endfor %}
+        </ul>
+        {% if board.todos.open_count > 6 %}<p class="h-sub">+ {{ board.todos.open_count - 6 }} more</p>{% endif %}
+        {% endif %}
+        {% if imperial_task_snapshot.enabled and imperial_task_snapshot.tasks %}
+        <p class="h-sub" style="margin-top:10px;"><a href="/dashboard/tasks?scope=review" style="color:var(--imp-gold); text-decoration:none;">{{ imperial_task_snapshot.tasks|length }} saved task{{ 's' if imperial_task_snapshot.tasks|length != 1 }} to review →</a></p>
+        {% endif %}
+      </section>
+      {% endif %}
+    </div>
+  </div>
+
+  <footer class="h-foot">
+    {% if imperial_task_snapshot.enabled %}<a href="/dashboard/tasks">Master Tasks</a><a href="/my-day#my-to-do">My To-do</a>{% endif %}
+    <a href="/dashboard/inbox">Needs you (all)</a>
+    <a href="/live/control">LIVE Control</a>
+    {% if user.role == 'owner' and dev_work_snapshot and dev_work_snapshot.enabled %}
+    <details id="imperial-development-work">
+      <summary>Development work ({{ dev_work_snapshot.jobs|length }})</summary>
+      {% if dev_work_snapshot.error %}<p style="color:var(--imp-danger);">{{ dev_work_snapshot.error }}</p>
+      {% elif dev_work_snapshot.jobs %}
+      <ul class="h-checks">{% for job in dev_work_snapshot.jobs %}<li><strong>#{{ job.id }}</strong> {{ job.projectKey|capitalize }} · {{ job.latestSummary or 'No verified update' }} · {{ job.status|replace('_',' ')|title }}</li>{% endfor %}</ul>
+      {% else %}<p>No development work has been captured yet.</p>{% endif %}
+    </details>
+    {% endif %}
+    {% if health and health.ok %}
+    <details id="system-health">
+      <summary>All systems working</summary>
+      <ul class="h-checks">
+        {% for c in health.checks %}
+        <li><strong style="color:{{ 'var(--imp-muted)' if c.info else 'var(--imp-ok)' }};">{{ '·' if c.info else '✓' }} {{ c.name }}</strong>: {{ c.detail }}</li>
         {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <div style="padding:40px 20px; text-align:center; color:var(--imp-muted); font-size:13.5px;">
-      No open repair orders.
-      <a href="/ro/new" style="color: var(--imp-heading); text-decoration:none; margin-left:4px;">Create one →</a>
-    </div>
+      </ul>
+    </details>
     {% endif %}
-  </div>
-
+  </footer>
 </div>
-{% endblock %}
 
+<script>
+  // Phoenix time, whatever zone this computer is set to.
+  (function () {
+    var t = document.getElementById('home-time'), d = document.getElementById('home-date');
+    if (!t || !window.Intl) return;
+    var tf = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Phoenix', hour: 'numeric', minute: '2-digit' });
+    var df = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Phoenix', weekday: 'long', month: 'long', day: 'numeric' });
+    function tick() { var n = new Date(); t.textContent = tf.format(n); d.textContent = df.format(n); }
+    tick(); setInterval(tick, 15000);
+  })();
+</script>
+{% endblock %}

@@ -35,6 +35,8 @@
             font-size: clamp(11px, .8vw, 18px); padding: .5em .9em; cursor: pointer; }
     .full:hover { color: var(--gold); border-color: var(--gold); }
     :fullscreen .full { display: none; }
+    .full.sound-off { color: var(--amber); border-color: var(--amber); font-weight: 700; }
+    :fullscreen .full.sound-off:not([hidden]) { display: inline-block; }
 
     #board-panel { min-height: 0; display: flex; flex-direction: column; gap: var(--gap); }
     #board-panel > .cols { flex: 1 1 auto; }
@@ -147,6 +149,7 @@
   <div class="tv">
     <header>
       <div class="brand">Imperial Auto Care<small>Shop board</small></div>
+      <button class="full sound-off" id="sound-on" type="button" hidden>Turn on timer sound</button>
       <button class="full" type="button" onclick="document.documentElement.requestFullscreen && document.documentElement.requestFullscreen()">Full screen</button>
       <div class="clock"><div class="time" id="clock-time">{{ board.now.strftime('%-I:%M %p') }}</div><div class="date" id="clock-date">{{ board.now.strftime('%A, %B %-d') }}</div></div>
     </header>
@@ -203,20 +206,40 @@
   <script>
     // Timers count down every second on the TV itself; the 20-second refresh only adds and removes them.
     (function () {
-      var beeped = {};
+      var beeped = {}, ctx = null, soundBtn = document.getElementById('sound-on');
+      // Browsers keep a page silent until someone taps it once. The first tap or key press anywhere on the
+      // board (or the amber button) turns sound on for as long as the page stays open.
+      function unlock() {
+        try {
+          var A = window.AudioContext || window.webkitAudioContext;
+          if (!A) return;
+          if (!ctx) ctx = new A();
+          if (ctx.state === 'suspended') ctx.resume();
+        } catch (e) {}
+        setTimeout(showSoundState, 300);
+      }
+      function soundReady() { return !!ctx && ctx.state === 'running'; }
+      function showSoundState() { if (soundBtn) soundBtn.hidden = soundReady(); }
+      ['pointerdown', 'keydown', 'touchstart'].forEach(function (ev) { document.addEventListener(ev, unlock, { passive: true }); });
+      if (soundBtn) soundBtn.addEventListener('click', function () { unlock(); setTimeout(function () { beep(1); }, 350); });
+      unlock();  // works straight away where the browser allows sound without a tap
+      setInterval(showSoundState, 5000);
       function fmt(ms) {
         var s = Math.round(Math.abs(ms) / 1000), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, r = s % 60;
         return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(r).padStart(2, '0');
       }
-      function beep() {
-        try {  // the TV may block sound until someone taps the page once; the red flash still shows
-          var A = window.AudioContext || window.webkitAudioContext, ctx = new A();
-          [0, 0.45, 0.9].forEach(function (at) {
-            var o = ctx.createOscillator(), g = ctx.createGain();
-            o.frequency.value = 880; o.connect(g); g.connect(ctx.destination);
-            g.gain.setValueAtTime(0.25, ctx.currentTime + at); g.gain.setValueAtTime(0, ctx.currentTime + at + 0.3);
-            o.start(ctx.currentTime + at); o.stop(ctx.currentTime + at + 0.32);
-          });
+      function beep(rounds) {
+        if (!soundReady()) { showSoundState(); return; }  // the red flash still shows
+        try {
+          var t0 = ctx.currentTime;
+          for (var r = 0; r < (rounds || 1); r++) {
+            [0, 0.35, 0.7].forEach(function (at) {
+              var start = t0 + r * 1.6 + at, o = ctx.createOscillator(), g = ctx.createGain();
+              o.type = 'square'; o.frequency.value = 1000; o.connect(g); g.connect(ctx.destination);
+              g.gain.setValueAtTime(0.5, start); g.gain.setValueAtTime(0, start + 0.25);
+              o.start(start); o.stop(start + 0.27);
+            });
+          }
         } catch (e) {}
       }
       function tick() {
@@ -226,8 +249,10 @@
           clock.textContent = up ? "Time's up" : fmt(left);
           el.classList.toggle('up', up);
           el.classList.toggle('soon', !up && left <= 60000);
-          if (up && !beeped[el.dataset.id] && left > -60000) { beeped[el.dataset.id] = true; beep(); }
-          if (up) beeped[el.dataset.id] = true;
+          // When time is up: three loud beeps, then again every 15 seconds for the first minute.
+          var id = el.dataset.id, ring = up && left > -60000 ? Math.floor(-left / 15000) : -1;
+          if (ring >= 0 && beeped[id] !== ring && !(beeped[id] === 'old')) { beeped[id] = ring; beep(ring === 0 ? 2 : 1); }
+          if (up && beeped[id] === undefined) beeped[id] = 'old';  // ended long before this page opened: flash only
         });
       }
       tick(); setInterval(tick, 1000);
