@@ -1,6 +1,6 @@
 """Operations queue persistence. Apply migrations/20261102_dispatcher.sql first."""
 from datetime import datetime
-from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, String, Text, text
 from app.database import Base
 
 OPEN_STATUSES = ("routine", "needs_owner")
@@ -63,6 +63,9 @@ class DispatchAudit(Base):
 class DispatchOutbound(Base):
     """One row per text this system may send, so nothing goes out twice."""
     __tablename__ = "dispatch_outbound"
+    # Mirrors the PostgreSQL constraint so SQLite tests reject the same statuses production does.
+    __table_args__ = (CheckConstraint("status IN ('queued','reserved','sent','failed','skipped')",
+                                      name="dispatch_outbound_valid_status"),)
     id = Column(Integer, primary_key=True)
     dedupe_key = Column(String(160), nullable=False, unique=True)
     kind = Column(String(16), nullable=False)

@@ -7,6 +7,7 @@ import json
 import os
 import re
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from pydantic import AwareDatetime, BaseModel, Field
@@ -708,7 +709,9 @@ def due_owner_messages(db: Session, now: datetime) -> list[dict]:
 def queued_replies(db: Session) -> list[dict]:
     """Replies approved on the dashboard. Each is handed over once and never retried."""
     replies = []
-    rows = db.query(DispatchOutbound).filter(DispatchOutbound.kind == DASHBOARD_REPLY, DispatchOutbound.status == "queued").all()
+    rows = (db.query(DispatchOutbound)
+            .filter_by(kind=DASHBOARD_REPLY, status="queued")
+            .with_for_update(skip_locked=True).all())
     for row in rows:
         item = db.get(DispatchItem, row.item_id)
         row.status = "reserved"
@@ -1306,7 +1309,7 @@ def set_sending(request: Request, action: str = Form(...), db: Session = Depends
         resume(db, user.username)
     else:
         raise HTTPException(422, "Choose stop or resume.")
-    return RedirectResponse("/dashboard", status_code=303)
+    return RedirectResponse("/dashboard/inbox", status_code=303)
 
 
 @router.post("/{item_id}/decide")
@@ -1352,11 +1355,22 @@ def decide(
         db.add(DispatchOutbound(dedupe_key=f"dashboard:{item.id}:{item.last_message_id}", kind=DASHBOARD_REPLY, item_id=item.id, status="queued"))
         if PROMISE.search(text):
             audit(db, item.id, "system", "follow_up_due", (item.decided_at + PROMISE_AFTER).isoformat())
+    _commit_send(db)
+    return RedirectResponse(back_to(next_page), status_code=303)
+
+
+def _commit_send(db):
+    """Commit a decision and its queued reply. The only failure that may pass quietly is the
+    same reply already being queued (a double tap: unique dedupe key). Anything else rolls
+    back and tells the owner nothing was sent, instead of looking like it worked."""
     try:
         db.commit()
-    except IntegrityError:
+    except IntegrityError as error:
         db.rollback()
-    return RedirectResponse(back_to(next_page), status_code=303)
+        if "dedupe_key" in str(getattr(error, "orig", error)):
+            return
+        raise HTTPException(503, "That reply couldn't be queued, so nothing was sent and the item is still open. "
+                                 "Try again, or reply in Quo.") from error
 
 
 def back_to(path: str) -> str:
@@ -1403,6 +1417,11 @@ def compose(
     newest_message_id = newest_message_id.strip()[:128]
     if not newest_message_id:
         raise HTTPException(409, "The latest messages couldn't be checked. Refresh the page, or reply in Quo.")
+    # Concurrent submissions of the same text from the same thread state share one queue key.
+    fingerprint = json.dumps([number, newest_message_id, text], ensure_ascii=False)
+    dedupe_key = f"compose:{sha256(fingerprint.encode()).hexdigest()}"
+    if db.query(DispatchOutbound.id).filter_by(dedupe_key=dedupe_key).first():
+        return RedirectResponse(back_to(next_page), status_code=303)
     recent = [row for row in db.query(DispatchItem).order_by(DispatchItem.updated_at.desc()).limit(500)
               if "".join(c for c in (row.customer_phone or "") if c.isdigit())[-10:] == tail]
     if any(website_alerts.is_website(row) and row.status in OPEN_STATUSES for row in recent):
@@ -1425,11 +1444,11 @@ def compose(
     item.draft_reply = text
     item.thread_message_id = newest_message_id
     audit(db, item.id, user.username, "owner_compose" if open_item is None else "owner_approve")
-    db.add(DispatchOutbound(dedupe_key=f"compose:{item.id}:{uuid4().hex}", kind=DASHBOARD_REPLY,
+    db.add(DispatchOutbound(dedupe_key=dedupe_key, kind=DASHBOARD_REPLY,
                             item_id=item.id, status="queued"))
     if PROMISE.search(text):
         audit(db, item.id, "system", "follow_up_due", (now + PROMISE_AFTER).isoformat())
-    db.commit()
+    _commit_send(db)
     return RedirectResponse(back_to(next_page), status_code=303)
 
 
@@ -1445,7 +1464,7 @@ def close(item_id: int, request: Request, db: Session = Depends(get_db)):
     item.updated_at = datetime.now().astimezone()
     audit(db, item.id, user.username, "owner_close")
     db.commit()
-    return RedirectResponse("/dashboard?view=customer", status_code=303)
+    return RedirectResponse("/dashboard/inbox?view=customer", status_code=303)
 
 
 @router.post("/policies")
@@ -1476,7 +1495,7 @@ async def save_policies(request: Request, db: Session = Depends(get_db)):
             policy.mode = mode
         audit(db, None, user.username, "policy_saved", f"{key}={mode}")
     db.commit()
-    return RedirectResponse("/dashboard", status_code=303)
+    return RedirectResponse("/dashboard/inbox", status_code=303)
 
 
 VIEWS = {
@@ -1648,6 +1667,7 @@ class QuoContact(BaseModel):
     firstName: str = Field(default="", max_length=120)
     lastName: str = Field(default="", max_length=120)
     company: str = Field(default="", max_length=120)
+    externalId: str = Field(default="", max_length=120)
     emails: list[str] = Field(default_factory=list, max_length=10)
     phones: list[str] = Field(default_factory=list, max_length=10)
 

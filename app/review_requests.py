@@ -34,7 +34,13 @@ LATEST = timedelta(days=7)  # a pickup older than this is never asked, so switch
 DEFAULT_LINK = "https://g.page/r/CR_GDvvvSci2EBM/review"  # owner's Ask for reviews link, checked by him Nov 21 2026
 PLACEHOLDER = "https://g.page/r/review"  # the old default in app/config.py, never a real link
 LINK_HOSTS = {"g.page", "search.google.com", "www.google.com", "google.com", "maps.app.goo.gl", "goo.gl", "g.co"}
-DONE = ("sent", "held", "reviewed")  # any of these for a customer means: never ask again
+# Ledger rows live in dispatch_outbound, whose database check allows only queued, reserved, sent, failed
+# and skipped. So: queued = waiting for the day after pickup; sent = the text went to the send queue;
+# skipped with a draft (item_id) = held for the owner's YES; skipped with the ":reviewed" key = the owner
+# marked them reviewed; any other skipped = never asked (too old, not eligible). This kind is never
+# picked up by the messaging service, which only sends dashboard_reply rows.
+WAITING = "queued"
+REVIEWED_KEY = "reviewed"
 
 
 def enabled() -> bool:
@@ -69,7 +75,10 @@ def _customer_rows(db: Session, customer_id: int):
 
 
 def asked_before(db: Session, customer_id: int) -> bool:
-    return _customer_rows(db, customer_id).filter(DispatchOutbound.status.in_(DONE)).first() is not None
+    """Sent, held for the owner, or marked reviewed: never ask this customer again."""
+    rows = _customer_rows(db, customer_id).filter(DispatchOutbound.status.in_(("sent", "skipped")))
+    return any(row.status == "sent" or row.item_id is not None or row.dedupe_key.endswith(":" + REVIEWED_KEY)
+               for row in rows)
 
 
 def schedule(db: Session, ro: RepairOrder, now: datetime | None = None) -> DispatchOutbound | None:
@@ -82,7 +91,7 @@ def schedule(db: Session, ro: RepairOrder, now: datetime | None = None) -> Dispa
     if db.query(DispatchOutbound.id).filter_by(dedupe_key=key).first():
         return None
     now = now or datetime.now(timezone.utc)
-    row = DispatchOutbound(dedupe_key=key, kind=KIND, status="scheduled", created_at=now, updated_at=now)
+    row = DispatchOutbound(dedupe_key=key, kind=KIND, status=WAITING, created_at=now, updated_at=now)
     db.add(row)
     db.flush()
     return row
@@ -91,12 +100,12 @@ def schedule(db: Session, ro: RepairOrder, now: datetime | None = None) -> Dispa
 def mark_reviewed(db: Session, customer_id: int, actor: str) -> None:
     """Owner says this customer already left a review (or shouldn't be asked). Nothing more is ever sent."""
     now = datetime.now(timezone.utc)
-    for row in _customer_rows(db, customer_id).filter(DispatchOutbound.status == "scheduled"):
+    for row in _customer_rows(db, customer_id).filter(DispatchOutbound.status == WAITING):
         row.status, row.updated_at = "skipped", now
-    key = f"{_prefix(customer_id)}reviewed"
+    key = f"{_prefix(customer_id)}{REVIEWED_KEY}"
     row = db.query(DispatchOutbound).filter_by(dedupe_key=key).first()
     if row is None:
-        db.add(DispatchOutbound(dedupe_key=key, kind=KIND, status="reviewed", created_at=now, updated_at=now))
+        db.add(DispatchOutbound(dedupe_key=key, kind=KIND, status="skipped", created_at=now, updated_at=now))
     db.add(DispatchAudit(item_id=None, actor=actor[:64], action="review_marked_done", detail=f"customer {customer_id}"))
 
 
@@ -139,14 +148,14 @@ def due(db: Session, now: datetime, fetch=None, allowed=None) -> DispatchItem | 
     if not enabled() or link is None or not (allowed or customer_followups.allowed_now)(now):
         return None
     today = now.astimezone(PHOENIX).date()
-    rows = db.query(DispatchOutbound).filter(DispatchOutbound.kind == KIND, DispatchOutbound.status == "scheduled") \
+    rows = db.query(DispatchOutbound).filter(DispatchOutbound.kind == KIND, DispatchOutbound.status == WAITING) \
         .order_by(DispatchOutbound.created_at, DispatchOutbound.id).with_for_update().all()
     for row in rows:
         picked_up = _utc(row.created_at)
         if picked_up.astimezone(PHOENIX).date() >= today:
             continue  # the day after pickup, never the same day
         if now - picked_up > LATEST:
-            _close(row, "expired", now)
+            _close(row, "skipped", now)  # too old to ask
             continue
         try:
             customer_id, ro_id = (int(x) for x in row.dedupe_key.removeprefix("review:").split(":"))
@@ -188,7 +197,7 @@ def due(db: Session, now: datetime, fetch=None, allowed=None) -> DispatchItem | 
             item.status = "approved" if automatic else "needs_owner"
         db.flush()
         row.item_id = item.id
-        _close(row, "sent" if automatic else "held", now)
+        _close(row, "sent" if automatic else "skipped", now)  # skipped + item_id = held for the owner
         if automatic:
             item.decided_at = now
             db.add(DispatchOutbound(dedupe_key=f"rev:{ro.id}:{item.id}:{newest}"[:160], kind=DASHBOARD_REPLY,

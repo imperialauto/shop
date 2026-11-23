@@ -24,6 +24,10 @@
 </div>
 {% endif %}
 
+{% set tag_kind, tag_target, tag_next = 'job', ro.id, '/ro/' ~ ro.id %}
+{% include "_tags.html" %}
+{% if customer_tag_list %}<p class="text-xs text-stone-400" style="margin:-8px 0 14px;">Customer tags: {% for n in customer_tag_list %}<a href="/tags/?q={{ n|urlencode }}" style="color:var(--imp-gold);">#{{ n }}</a> {% endfor %}</p>{% endif %}
+
 {% if timeline and timeline.steps|length > 1 %}
 <p class="text-xs text-stone-400 mb-3" id="job-timeline">
   {% for s in timeline.steps %}{{ s.label }}{% if not loop.first %} +{{ (s.hours / 24)|round(1) if s.hours >= 24 else s.hours }}{{ 'd' if s.hours >= 24 else 'h' }}{% endif %}{% if not loop.last %} → {% endif %}{% endfor %}
@@ -201,7 +205,7 @@
     <tbody>
       {% for li in ro.line_items %}
       <tr>
-        <td>{{ li.description }}{% if li.approval == 'pending' %} <span class="text-yellow-400 text-xs">Waiting on customer</span>{% elif li.approval == 'approved' %} <span class="text-green-400 text-xs">{% if li.approval_source == 'in_person' %}Approved in person{% elif li.approval_source == 'phone' %}Approved by phone{% else %}Approved{% endif %}{% if li.approval_recorded_by %} · recorded by {{ li.approval_recorded_by }}{% endif %}</span>{% elif li.approval == 'declined' %} <span class="text-red-400 text-xs">Declined, not billed</span>{% endif %}</td>
+        <td>{{ li.description }}{% if li.approval == 'pending' %} <span class="text-yellow-400 text-xs">Waiting on customer</span>{% elif li.approval == 'approved' %} <span class="text-green-400 text-xs">{% if li.approval_source == 'in_person' %}Approved in person{% elif li.approval_source == 'phone' %}Approved by phone{% elif li.approval_source == 'text' %}Approved by text{% else %}Approved{% endif %}{% if li.approval_recorded_by %} · recorded by {{ li.approval_recorded_by }}{% endif %}</span>{% elif li.approval == 'declined' %} <span class="text-red-400 text-xs">Declined, not billed</span>{% endif %}</td>
         <td class="text-stone-400">{{ li.item_type }}</td>
         <td class="text-right text-stone-400">{{ li.quantity }}</td>
         <td class="text-right text-stone-400">${{ "%.2f"|format(li.unit_price) }}</td>

@@ -7,9 +7,14 @@
 // contacts too, and every write fires contact.updated. Events for a number we
 // wrote in the last few minutes are dropped, and the dashboard also refuses
 // any label that reads like a job ("Honda Accord Oil Leak"), which is what
-// our sync writes. Nothing here writes back to Quo, so nothing can loop.
+// our sync writes.
+//
+// The one write back to Quo (only with QUO_NAME_WRITEBACK=1): in the hourly
+// catch-up, a name typed in the dashboard goes onto our own placeholder
+// contact ("New Lead 0111"). That write is marked as ours, so its webhook is
+// dropped, and the dashboard already keeps typed names, so it cannot loop.
 
-const { recentlyWritten } = require("./quoContacts");
+const { recentlyWritten, noteWrite } = require("./quoContacts");
 
 const SEEN_LIMIT = 500;
 
@@ -32,7 +37,9 @@ function namesOf(contact) {
 
 const MAX_PAGES = 40;
 
-function createContactEvents({ quo, shopClient, skip = new Set(), wroteRecently = recentlyWritten, pageDelayMs = 250 }) {
+const OWN_PREFIX = "imperial-ops:";
+
+function createContactEvents({ quo, shopClient, skip = new Set(), wroteRecently = recentlyWritten, pageDelayMs = 250, writeBack = false, markWritten = noteWrite }) {
   const seen = new Set();
 
   async function handle(body, eventId) {
@@ -57,19 +64,45 @@ function createContactEvents({ quo, shopClient, skip = new Set(), wroteRecently 
   // before this existed. Reports to the Home health line through the dashboard.
   async function catchUp() {
     const contacts = [];
+    const byId = new Map();
     let pageToken;
     for (let page = 0; page < MAX_PAGES; page += 1) {
       const { data = [], nextPageToken } = await quo.listContacts({ pageToken });
       for (const contact of data) {
         const phones = phonesOf(contact).filter((p) => !skip.has(p.replace(/\D/g, "").slice(-10)));
         if (!phones.length || phones.some((p) => wroteRecently(p))) continue;
-        contacts.push({ id: String(contact.id || ""), ...namesOf(contact), phones: phones.slice(0, 10) });
+        byId.set(String(contact.id || ""), contact);
+        contacts.push({ id: String(contact.id || ""), ...namesOf(contact), externalId: String(contact.externalId || "").slice(0, 120), phones: phones.slice(0, 10) });
       }
       if (!nextPageToken) break;
       pageToken = nextPageToken;
       await new Promise((resolve) => setTimeout(resolve, pageDelayMs)); // stay under Quo's rate limit
     }
-    return shopClient.quoContactsCatchUp(contacts);
+    const result = await shopClient.quoContactsCatchUp(contacts);
+    result.renamedInQuo = writeBack ? await namesToQuo(result.names_for_quo || [], byId) : 0;
+    return result;
+  }
+
+  // Names typed in the dashboard, onto our own placeholder contacts in Quo.
+  // Checked again here: ours, still not a hand-made contact, number not skipped.
+  async function namesToQuo(offers, byId) {
+    let renamed = 0;
+    for (const offer of offers.slice(0, 50)) {
+      const contact = byId.get(String(offer.id || ""));
+      if (!contact || !String(contact.externalId || "").startsWith(OWN_PREFIX)) continue;
+      const firstName = String(offer.firstName || "").trim().slice(0, 64);
+      if (!firstName) continue;
+      const fields = contact.defaultFields || {};
+      phonesOf(contact).forEach((p) => markWritten(p)); // our own write: the webhook drops it
+      try {
+        await quo.updateContact(contact.id, { ...fields, firstName, lastName: String(offer.lastName || "").trim().slice(0, 64) });
+        renamed += 1;
+      } catch (err) {
+        console.error("Quo contact rename failed:", err.message);
+      }
+      await new Promise((resolve) => setTimeout(resolve, pageDelayMs));
+    }
+    return renamed;
   }
 
   return { handle, catchUp };

@@ -80,7 +80,7 @@ class ReviewTextTests(unittest.TestCase):
     def test_outside_shop_hours_waits(self):
         reviews.schedule(self.db, self.ro(), PICKUP)
         self.assertIsNone(self.due(allowed=False))
-        self.assertEqual(self.outbound(), [("review_request", "scheduled")])
+        self.assertEqual(self.outbound(), [("review_request", "queued")])
 
     def test_once_per_customer_ever(self):
         reviews.schedule(self.db, self.ro(), PICKUP)
@@ -103,9 +103,10 @@ class ReviewTextTests(unittest.TestCase):
         self.db.commit()
         reviews.schedule(self.db, self.ro(), PICKUP)
         self.assertIsNone(self.due())
-        self.assertEqual(self.outbound(), [("review_request", "scheduled")])
+        self.assertEqual(self.outbound(), [("review_request", "queued")])
         self.assertIsNone(self.due(PICKUP + timedelta(days=8)))
-        self.assertEqual(self.outbound(), [("review_request", "expired")])
+        self.assertEqual(self.outbound(), [("review_request", "skipped")])
+        self.assertFalse(reviews.asked_before(self.db, 1))  # too old to ask is not an ask
 
     def test_customer_texted_since_pickup_waits_for_owner(self):
         reviews.schedule(self.db, self.ro(), PICKUP)
@@ -114,7 +115,8 @@ class ReviewTextTests(unittest.TestCase):
         self.db.commit()
         item = self.due()
         self.assertEqual(item.status, "needs_owner")
-        self.assertEqual(self.outbound(), [("review_request", "held")])
+        self.assertEqual(self.outbound(), [("review_request", "skipped")])
+        self.assertTrue(reviews.asked_before(self.db, 1))  # a draft held for the owner counts as asked
 
     def test_unreadable_thread_or_waived_balance_waits_for_owner(self):
         reviews.schedule(self.db, self.ro(), PICKUP)
@@ -151,7 +153,7 @@ class ReviewTextTests(unittest.TestCase):
         ro = invoices._settle(invoice, picked_up=True)
         self.assertEqual(ro.status, "delivered")
         invoices._schedule_review(self.db, ro)
-        self.assertEqual(self.outbound(), [("review_request", "scheduled")])
+        self.assertEqual(self.outbound(), [("review_request", "queued")])
 
 
 class ReviewSettingsTests(unittest.TestCase):

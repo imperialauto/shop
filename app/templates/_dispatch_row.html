@@ -1,0 +1,58 @@
+{# One customer conversation in the Needs-you queue. Used on Home (first few) and on the full queue page. #}
+  <details style="border-bottom:1px solid var(--imp-line);{% if (row.days_waiting or 0) >= 2 %} box-shadow: inset 3px 0 0 var(--imp-danger);{% endif %}"{% if item.urgency == 'safety' and not row.last_from_us %} open{% endif %}{% if row.last_from_us %} class="waiting-on-them"{% endif %}>
+    <summary style="padding:12px 16px; cursor:pointer; color:var(--imp-ink); font-size:13px;">
+      {% if row.last_from_us %}<span class="pill">You replied · waiting on them</span>{% elif item.urgency == 'safety' %}<strong style="color:var(--imp-danger);">Safety</strong> ·{% elif item.urgency == 'urgent' %}<strong style="color: var(--imp-heading);">Urgent</strong> ·{% endif %}
+      {{ row.customer_name or item.customer_phone }}{% if item.vehicle_text %} · {{ item.vehicle_text }}{% endif %} · {{ item.category|capitalize }}{% if item.status == 'needs_owner' %} · Your approval{% endif %}{% if (row.days_waiting or 0) >= 2 %} · <strong style="color:var(--imp-danger);">{{ row.days_waiting }} days waiting</strong>{% endif %}
+      {% if item.summary %}<span style="display:block; margin-top:3px; color:var(--imp-muted); font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">“{{ item.summary[:90] }}”</span>{% endif %}
+    </summary>
+    <div style="padding:0 16px 14px; font-size:13px; color:var(--imp-muted);">
+      <p style="margin:0 0 8px; overflow-wrap:anywhere;">{{ item.summary or 'No message text.' }}</p>
+      <p style="margin:0 0 8px; font-size:12.5px;">
+        {% if row.open_ro %}<a href="/ro/{{ row.open_ro.id }}" style="color: var(--imp-heading);">Job #{{ row.open_ro.id }}</a> · {{ row.open_ro.status.replace('_',' ') }}{% if row.estimate is not none %} · ${{ '%.2f'|format(row.estimate) }}{% endif %}{% else %}No job yet · Nothing priced yet{% endif %}
+        {% if row.next_appointment %} · Appointment booked{% endif %}
+      </p>
+      {% if item.status in ('routine', 'needs_owner') %}
+      <form method="post" action="/dispatch/{{ item.id }}/decide">
+        <input type="hidden" name="expected_message_id" value="{{ item.last_message_id }}">
+        <input type="hidden" name="next" value="{{ queue_back|default('/dashboard') }}">
+        {% if not item.draft_reply and item.proposed_action %}<p style="margin:0 0 8px; overflow-wrap:anywhere;">Next step: {{ item.proposed_action }}</p>{% endif %}
+        {% if (item.quo_conversation_id or '').startswith('WEB') %}
+        <p style="margin:0 0 8px;">Website request: contact this customer by phone.</p>
+        {% else %}
+        {% if row.draft_state == 'retrying' %}<p class="pill pill-warn" style="display:inline-block; margin:0 0 6px;">AI draft didn't come through. Retrying automatically.</p>
+        {% elif row.draft_state == 'gave_up' %}<p class="pill pill-warn" style="display:inline-block; margin:0 0 6px;">AI couldn't draft this one after 3 tries. Use a quick reply or write your own.</p>{% endif %}
+        {% if row.quick_replies %}
+        <div class="chip-row" role="group" aria-label="Quick replies">
+          {% for reply in row.quick_replies %}
+          <button type="button" class="qchip" data-quick-reply="{{ reply.text }}">{{ reply.label }}</button>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <label class="sr-only" for="reply-{{ item.id }}">Reply to customer</label>
+        <textarea id="reply-{{ item.id }}" name="reply_text" rows="3" maxlength="1500" class="form-input" style="display:block; margin:0 0 8px;" placeholder="Tap a quick reply or type your own">{{ item.draft_reply or '' }}</textarea>
+        <label style="margin:0 0 8px;display:inline-flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" name="offer_snap" value="1"> Offer Snap Finance</label>
+        {% endif %}
+        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+          <button class="btn-primary" name="decision" value="approve">{{ 'Send' if not (item.quo_conversation_id or '').startswith('WEB') else 'Mark handled' }}</button>
+          <button class="btn-secondary" name="decision" value="decline">Done, no reply</button>
+          <details class="more-menu">
+            <summary class="btn-secondary">More</summary>
+            <div class="more-menu-list">
+              <a href="tel:{{ item.customer_phone }}">Call</a>
+              {% if item.customer_id %}<a href="/customers/{{ item.customer_id }}#file">Customer file</a>{% endif %}
+              {% if not row.open_ro %}<a href="{{ row.start_job }}">Start job</a>{% endif %}
+              {% if row.reasons %}<span>Why you: {{ row.reasons|join(', ') }}</span>{% endif %}
+              {% for entry in row.history %}<span>{{ entry.direction|capitalize }}: {{ (entry.body or '')[:140] }}</span>{% endfor %}
+            </div>
+          </details>
+        </div>
+      </form>
+      {% else %}
+      <p style="margin:0 0 8px;">{{ item.status|capitalize }}: {{ item.proposed_action }}</p>
+      <div style="display:flex; flex-wrap:wrap; gap:8px;">
+        {% if item.status == 'approved' %}<form method="post" action="/dispatch/{{ item.id }}/close"><button class="btn-secondary">Close</button></form>{% endif %}
+        <a class="btn-secondary" href="tel:{{ item.customer_phone }}">Call</a>
+      </div>
+      {% endif %}
+    </div>
+  </details>

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Tags — Imperial Auto Care{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title">Tags</div>
+    <div style="font-size:12px; color:var(--imp-muted); margin-top:3px;">Find every job and customer with a tag.</div>
+  </div>
+  <div style="margin-left:auto;"><a href="/dashboard" class="btn-secondary">← Home</a></div>
+</div>
+<div class="page-body" style="display:grid; gap:14px;">
+  {% if not ready %}
+  <div class="card" style="font-size:13px; color:var(--imp-muted);">Tags aren't switched on yet.</div>
+  {% endif %}
+  <form method="get" class="card" style="display:flex; gap:8px; margin:0;">
+    <label for="tag-q" style="position:absolute; left:-9999px;">Search tags</label>
+    <input id="tag-q" name="q" value="{{ q }}" class="form-input" placeholder="Search tags, like fleet" style="flex:1; min-height:44px;" list="tag-all">
+    <datalist id="tag-all">{% for t in all_tags %}<option value="{{ t.name }}">{% endfor %}</datalist>
+    <button class="btn-primary" type="submit" style="min-height:44px;">Search</button>
+  </form>
+  {% if all_tags %}
+  <nav aria-label="All tags" style="display:flex; flex-wrap:wrap; gap:6px;">
+    {% for t in all_tags %}<a class="tag-pill" href="/tags/?q={{ t.name|urlencode }}"{% if t.name == q %} aria-current="true"{% endif %}>#{{ t.name }} <strong>{{ t.count }}</strong></a>{% endfor %}
+  </nav>
+  {% elif ready %}
+  <p style="font-size:13px; color:var(--imp-muted);">No tags yet. Add one on any job or customer page.</p>
+  {% endif %}
+  {% if q %}
+  <section class="card" aria-label="Jobs with this tag">
+    <strong style="font-size:13.5px;">Jobs · {{ jobs|length }}</strong>
+    {% for ro in jobs %}
+    <p style="margin:8px 0 0; font-size:13.5px;"><a href="/ro/{{ ro.id }}" style="color:var(--imp-gold);">#{{ ro.id }} {{ ro.vehicle.label if ro.vehicle else 'No vehicle' }}</a> · {{ ro.customer.first_name }} {{ ro.customer.last_name }} · {{ ro.status.replace('_',' ') }}
+      {% for n in job_tags.get(ro.id, []) %}<span class="tag-mini">#{{ n }}</span>{% endfor %}</p>
+    {% else %}<p style="margin:8px 0 0; font-size:13px; color:var(--imp-muted);">No jobs with that tag.</p>{% endfor %}
+  </section>
+  <section class="card" aria-label="Customers with this tag">
+    <strong style="font-size:13.5px;">Customers · {{ customers|length }}</strong>
+    {% for c in customers %}
+    <p style="margin:8px 0 0; font-size:13.5px;"><a href="/customers/{{ c.id }}" style="color:var(--imp-gold);">{% if c.customer_type == 'fleet' %}{{ c.fleet_name }}{% else %}{{ c.first_name }} {{ c.last_name }}{% endif %}</a>
+      {% for n in customer_tags.get(c.id, []) %}<span class="tag-mini">#{{ n }}</span>{% endfor %}</p>
+    {% else %}<p style="margin:8px 0 0; font-size:13px; color:var(--imp-muted);">No customers with that tag.</p>{% endfor %}
+  </section>
+  {% endif %}
+</div>
+<style>
+  .tag-pill { display:inline-flex; gap:6px; align-items:center; min-height:36px; padding:0 12px; border-radius:999px; border:1px solid var(--imp-line); color:var(--imp-ink); text-decoration:none; font-size:13px; }
+  .tag-pill[aria-current] { border-color:var(--imp-gold); color:var(--imp-gold); }
+  .tag-mini { margin-left:6px; font-size:12px; color:var(--imp-muted); }
+</style>
+{% endblock %}
