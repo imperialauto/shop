@@ -454,6 +454,31 @@ def alerts_enabled() -> bool:
     return os.getenv("SHOP_BOARD_ALERTS", "").strip().lower() in ("1", "true", "yes", "on") and enabled()
 
 
+def alerts_since() -> datetime | None:
+    """SHOP_BOARD_ALERTS_SINCE (ISO time): only items with activity at or after it get a new
+    to-do, so turning alerts on doesn't dump the old backlog onto the board."""
+    raw = os.getenv("SHOP_BOARD_ALERTS_SINCE", "").strip()
+    if not raw:
+        return None
+    try:
+        when = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        log.warning("shop_board_alerts_since_invalid")
+        return None
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+
+
+def _is_new(item: DispatchItem, since: datetime | None) -> bool:
+    if since is None:
+        return True
+    when = item.updated_at or item.created_at
+    if when is None:
+        return False
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return when >= since
+
+
 def _alert_key(item_id: int) -> str:
     return f"item:{item_id}"
 
@@ -496,7 +521,7 @@ def sync_alert(db: Session, item: DispatchItem, actor: str = "system:alerts") ->
     needs_owner = item.status == NEEDS_OWNER
     urgent = item.urgency not in (None, "", "normal")
     if task is None:
-        if not needs_owner:
+        if not needs_owner or not _is_new(item, alerts_since()):
             return ""
         task = ImperialTask(title=alert_title(db, item), source=SOURCE_ALERT, external_id=key, category=BOARD_CATEGORY,
                             priority="urgent" if urgent else "normal", status="open", created_at=now, updated_at=now)
