@@ -541,6 +541,52 @@ def delete_line_item(request: Request, ro_id: int, li_id: int, db: Session = Dep
     return RedirectResponse(f"/ro/{ro_id}", status_code=302)
 
 
+REMOVED_STATE = {"pending": "waiting on customer", "approved": "approved", "declined": "declined"}
+
+
+@router.post("/{ro_id}/remove-line/{li_id}")
+def remove_sent_line(request: Request, ro_id: int, li_id: int, db: Session = Depends(get_db),
+                     confirm: str = Form("")):
+    """Owner-only removal of a line that was already sent for approval (waiting, approved or declined).
+
+    Unsent lines keep the ordinary office delete. Nothing is sent to the customer. A line that is
+    marked done, or an approved line on a job with an invoice, is never removed here, so a bill
+    can't silently change. Every removal is written to the audit log with what the line was.
+    """
+    user = require_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    if user.role != "owner":
+        raise HTTPException(403, "Only the owner can remove a line that was sent for approval.")
+    if confirm != "remove":
+        raise HTTPException(422, "Confirm the removal to continue.")
+    li = db.query(LineItem).filter(
+        LineItem.id == li_id, LineItem.repair_order_id == ro_id
+    ).with_for_update().first()
+    if li is None:
+        raise HTTPException(404, "Line item not found.")
+    if li.approval is None:
+        raise HTTPException(409, "This line wasn't sent for approval. Use the regular delete.")
+    if li.completed_at:
+        raise HTTPException(409, "This line is marked done. Reopen it first if it really should be removed.")
+    ro = li.repair_order
+    if li.approval == "approved" and any(inv.status != "void" for inv in ro.invoices):
+        raise HTTPException(409, "This approved line is on a job with an invoice. Void or fix the invoice first.")
+    state = REMOVED_STATE.get(li.approval, li.approval)
+    detail = f"Job #{ro_id}: removed line '{li.description}' ${li.total:,.2f} ({state})"
+    db.delete(li)
+    db.flush()
+    db.refresh(ro)
+    if not any(x.approval == "pending" for x in ro.line_items):
+        # Nothing is left for the customer to answer, so a queued approval text must not go out.
+        approval_links.close_for(db, ro, actor=user.username, action="line_removed")
+        if ro.status == "waiting_approval" and any(x.approval == "approved" for x in ro.line_items):
+            ro.status = "approval_received"
+    db.add(DispatchAudit(item_id=None, actor=user.username[:64], action="line_removed", detail=detail[:255]))
+    db.commit()
+    return RedirectResponse(f"/ro/{ro_id}?line_removed=1#line-items", status_code=303)
+
+
 @router.get("/{ro_id}/vehicles", response_class=HTMLResponse)
 def get_vehicles_for_customer(request: Request, ro_id: int, customer_id: int, db: Session = Depends(get_db)):
     """HTMX endpoint — returns vehicle options only to authenticated staff."""

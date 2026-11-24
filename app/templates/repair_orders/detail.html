@@ -190,6 +190,7 @@
   {% set qp = request.query_params %}
   {% if qp.get('upload') == 'failed' %}<p class="text-sm text-red-400 mb-2" role="alert">Nothing was saved: {{ qp.get('why') }}. Try again with a photo (JPG, PNG, WebP, HEIC) or PDF under 10 MB.</p>
   {% elif qp.get('upload') %}<p class="text-sm text-green-400 mb-2" role="status">Saved {{ qp.get('upload') }} file{{ 's' if qp.get('upload') != '1' }} to this job.{% if qp.get('why') %} Not saved: {{ qp.get('why') }}.{% endif %}</p>{% endif %}
+  {% if qp.get('line_removed') %}<p class="text-sm text-green-400 mb-2" role="status">Line removed. Nothing was sent to the customer.</p>{% endif %}
   {% if ro.line_items %}
   <table class="mb-4">
     <thead>
@@ -230,6 +231,12 @@
           {% if user.role in ("owner", "admin", "office") and li.approval is none and not ro.invoices and not li.completed_at %}
           <form method="post" action="/ro/{{ ro.id }}/delete-line-item/{{ li.id }}" class="inline">
             <button type="submit" class="text-red-500 hover:text-red-400 text-xs" onclick="return confirm('Delete this line item?')">×</button>
+          </form>
+          {% endif %}
+          {% if user.role == "owner" and li.approval is not none and not li.completed_at and not (li.approval == 'approved' and ro.invoices|selectattr('status', 'ne', 'void')|list) %}
+          <form method="post" action="/ro/{{ ro.id }}/remove-line/{{ li.id }}" class="inline">
+            <input type="hidden" name="confirm" value="remove">
+            <button type="submit" class="text-red-500 hover:text-red-400 text-xs" style="min-height:44px;min-width:44px" aria-label="Remove {{ li.description }}" onclick="return confirm('Remove this line? It was already sent to the customer. Nothing is texted to them.')">×</button>
           </form>
           {% endif %}
         </td>
