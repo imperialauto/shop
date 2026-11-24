@@ -157,4 +157,6 @@ input:focus, select:focus, textarea:focus { outline: 3px solid rgba(203,176,107,
 .gallery-item a { display: block; aspect-ratio: 4 / 3; overflow: hidden; }
 .gallery-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .gallery-item figcaption { padding: 10px 12px; font-size: .92rem; color: var(--muted); }
+.gallery-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 860px) { .gallery-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 520px) { .gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .gallery-item figcaption { font-size: .82rem; padding: 8px; } }

@@ -66,7 +66,7 @@ class PickupTextTests(unittest.TestCase):
         [(status, text)] = self.pickups(job)
         self.assertEqual(status, "approved")
         self.assertIn("Hi Pat, your 2016 Ford Focus is done and ready for pickup.", text)
-        self.assertIn("The balance due is $229.10, by Zelle to jaelan@imperialautocarellc.com or cash.", text)
+        self.assertIn("The balance due is $229.10, by Zelle to jaelan@imperialautocarellc.com, Apple Pay, cash, or card with a QuickBooks link I can text you.", text)
         self.assertNotIn("Storage", text)  # only where the customer agreed to the terms
         self.assertNotIn("Snap", text)
         self.assertTrue(text.endswith("Jae"))

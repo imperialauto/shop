@@ -223,7 +223,8 @@ def authorize_page(request: Request, db: Session = Depends(get_db)):
                    for d in agent_keys.EXPIRY_DAYS)
     body = (
         '<p style="color:#a1a1aa">Claude will get its own key for this dashboard. It can only do what you tick here. '
-        'It can never invoice, take payments, see finances, change logins or settings, or text customers. '
+        'It can never invoice, take payments, see finances, or change logins or settings. It texts customers only '
+        'if you tick the approval link box, and then only a job\'s approval link, from the shop line. '
         'Every change it makes is listed in Settings, where you can turn it off any time.</p>'
         f'<form method="post" action="/connect/authorize">{hidden}{boxes}'
         f'<p>Key lasts <select name="days">{days}</select></p>'
@@ -322,6 +323,10 @@ class _Lines(BaseModel):
     lines: list[agent_api.LineIn] = Field(min_length=1, max_length=60)
 
 
+class _JobStatus(agent_api.JobStatusIn):
+    job_id: int = Field(gt=0)
+
+
 class _Empty(BaseModel):
     pass
 
@@ -334,6 +339,14 @@ class _Decisions(BaseModel):
     since: datetime | None = Field(default=None, description="ISO time to look back to, e.g. 2026-11-22T14:00:00-07:00. "
                                    "Blank means the last 24 hours; at most 14 days back.")
     include_staff: bool = Field(default=False, description="Also list yes/no recorded by shop staff in person or by phone.")
+
+
+class _SendApproval(BaseModel):
+    job_id: int = Field(gt=0)
+    offer_snap: bool = Field(default=False, description="Add the line offering Snap Finance.")
+    message: str | None = Field(default=None, max_length=1200,
+                                description="Wording of the text, signed as the owner would. Blank uses the dashboard's "
+                                "standard approval text.")
 
 
 class _Appointment(BaseModel):
@@ -377,6 +390,12 @@ TOOLS = {
                  agent_api.JobIn, lambda db, key, a: agent_api.open_job(a, db, key), False),
     "add_estimate_lines": ("estimates:write", "Add draft lines to an open job that has no invoice.", _Lines,
                            lambda db, key, a: agent_api.add_lines(a.job_id, a.lines, db, key), False),
+    "set_job_status": ("estimates:write", "Move a job (repair order) to another column on the job board: "
+                       + ", ".join(agent_api.AGENT_STATUSES) + ". Same checks as the job page, so In Progress and "
+                       "Waiting Parts need an approved line. Not Complete or Picked up (those can text the customer). "
+                       "Optional short note on why or the next step goes in the change log. Nothing is sent to anyone.",
+                       _JobStatus, lambda db, key, a: agent_api.set_job_status(
+                           a.job_id, agent_api.JobStatusIn(status=a.status, note=a.note), db, key), False),
     "list_recent_decisions": ("estimates:read", "Jobs whose estimate lines a customer approved or declined recently "
                               "(approval link or text yes), newest first, with customer, vehicle, the lines and totals. "
                               "Read only; nothing is sent to anyone.", _Decisions,
@@ -396,6 +415,14 @@ TOOLS = {
     "set_board_todo": ("board", "Tick a shop TV to-do off (it moves to Completed) or put it back, by todo_id or task_key. "
                        "Ticking off a customer alert also clears it from Needs attention; alerts can't be put back.",
                        board_agent.BoardSet, lambda db, key, a: board_agent.set_todo(db, key, a), False),
+    "send_approval_request": ("estimates:send", "Text the customer their approval link for a job from the shop line, "
+                              "the same as the owner pressing Ask for approval on the dashboard, so the text is logged on "
+                              "the job. Only when the owner has asked for it to go. Optional message is the text's wording; "
+                              "the job's link is added if it isn't in it. Won't send twice: refuses if their link already "
+                              "went out (from anywhere) and they haven't replied since, or if texting is paused.",
+                              _SendApproval, lambda db, key, a: agent_api.send_approval(
+                                  a.job_id, agent_api.SendApprovalIn(offer_snap=a.offer_snap, message=a.message), db, key),
+                              False),
     "confirm_appointment": ("appointments:confirm", "Confirm a tentative appointment, only after the owner has said yes. "
                             "It then shows on his calendar feed and adds his reminder task. Nothing is sent to the customer.",
                             _Appointment, lambda db, key, a: agent_api.confirm_appointment(a.appointment_id, db, key), False),

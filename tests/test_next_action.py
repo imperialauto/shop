@@ -61,7 +61,10 @@ class NextActionTests(unittest.TestCase):
         self.assertEqual(self.step()["title"], "Approval link send is not confirmed")
         self.change(lambda db, ro: db.add(DispatchItem(quo_conversation_id="LINK5", customer_phone="+16025550100", category="approval_link",
                                                         summary="x", last_message_id="none", status="needs_owner")))
-        self.assertIn("waiting for your YES", self.step()["title"])
+        self.assertIn("waiting for your YES", self.step("office")["title"])
+        # The owner's own step sends the waiting text straight away instead of pointing at the queue.
+        self.assertIn("hasn't gone out yet", self.step()["title"])
+        self.assertEqual((self.step()["post"], self.step()["button"]), ("/ro/5/request-approval", "Text approval link"))
         self.change(lambda db, ro: setattr(ro.line_items[0], "approval", "approved"))
         self.assertEqual(self.step()["button"], "Choose tech")
         self.change(lambda db, ro: setattr(ro, "assigned_tech_id", 2))
@@ -83,7 +86,8 @@ class NextActionTests(unittest.TestCase):
                                                    unit_price=280, item_type="part", approval="pending")))
         # No item or an owner's alert is not evidence that the customer got a text.
         self.assertEqual(self.step()["title"], "Approval link send is not confirmed")
-        self.assertEqual(self.step()["button"], "Queue approval link")
+        self.assertEqual(self.step("office")["button"], "Queue approval link")
+        self.assertEqual(self.step()["button"], "Text approval link")
         self.change(lambda db, ro: db.add(DispatchItem(
             id=44, quo_conversation_id="LINK5", customer_phone="+16025550100",
             category="approval_link", summary="estimate", last_message_id="m2", status="approved")))

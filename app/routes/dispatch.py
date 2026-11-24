@@ -1302,7 +1302,7 @@ def set_sending(request: Request, action: str = Form(...), db: Session = Depends
         resume(db, user.username)
     else:
         raise HTTPException(422, "Choose stop or resume.")
-    return RedirectResponse("/dashboard", status_code=303)
+    return RedirectResponse("/dashboard/inbox", status_code=303)
 
 
 @router.post("/{item_id}/decide")
@@ -1457,7 +1457,7 @@ def close(item_id: int, request: Request, db: Session = Depends(get_db)):
     item.updated_at = datetime.now().astimezone()
     audit(db, item.id, user.username, "owner_close")
     db.commit()
-    return RedirectResponse("/dashboard?view=customer", status_code=303)
+    return RedirectResponse("/dashboard/inbox?view=customer", status_code=303)
 
 
 @router.post("/policies")
@@ -1488,7 +1488,7 @@ async def save_policies(request: Request, db: Session = Depends(get_db)):
             policy.mode = mode
         audit(db, None, user.username, "policy_saved", f"{key}={mode}")
     db.commit()
-    return RedirectResponse("/dashboard", status_code=303)
+    return RedirectResponse("/dashboard/inbox", status_code=303)
 
 
 VIEWS = {

@@ -102,7 +102,7 @@
     </div>
     <div class="flex-1">
       <label class="form-label">Reference</label>
-      <input type="text" name="reference" class="form-input" placeholder="Zelle/Apple Cash name, check #, last 4…" />
+      <input type="text" name="reference" class="form-input" placeholder="Zelle or Apple Pay name, QuickBooks payment #, last 4…" />
     </div>
     {% if invoice.repair_order and invoice.repair_order.status == 'complete' %}
     <label class="flex items-center gap-2" style="min-height:44px"><input type="checkbox" name="picked_up" checked> Customer is picking up now (closes the job when paid in full)</label>

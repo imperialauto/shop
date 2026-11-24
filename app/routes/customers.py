@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Customer, RepairOrder, Vehicle
 from app.auth import get_current_user
-from app import customer_file, name_finder, quo_import
+from app import customer_file, name_finder, quo_import, tags
 from app.appointments import PHOENIX
 import os, secrets
 
@@ -33,7 +33,8 @@ def list_customers(request: Request, db: Session = Depends(get_db), search: str 
         query = query.filter(Customer.customer_type == "individual")
     customers = query.order_by(Customer.last_name).all()
     if search.strip():
-        customers = [c for c in customers if matches(c, search)]
+        tagged = tags.matching(db, "customer", search)
+        customers = [c for c in customers if c.id in tagged or matches(c, search)]
     return templates.TemplateResponse("customers/list.html", {
         "request": request, "user": user, "customers": customers,
         "search": search, "type_filter": type_filter,
@@ -179,6 +180,7 @@ def view_customer(request: Request, customer_id: int, db: Session = Depends(get_
     return templates.TemplateResponse("customers/detail.html", {
         "request": request, "user": user, "customer": customer, "file": file, "show": show, "tz": PHOENIX,
         "tasks": tasks, "can_text": user.role in ("owner", "admin", "office"), "sending_paused": _paused(db, is_paused),
+        "tag_list": tags.names_for(db, "customer", [customer.id]).get(customer.id, []), "tag_known": tags.known(db),
     })
 
 

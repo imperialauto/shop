@@ -45,7 +45,13 @@ curl -H "Authorization: Bearer $IMPERIAL_AGENT_KEY" https://<dashboard>/internal
 Endpoints (all under `/internal/agent/v1`): `GET /whoami`, `GET /customers?q=`,
 `GET /customers/{id}`, `POST /customers`, `POST /customers/{id}/vehicles`,
 `GET /jobs/{id}`, `POST /estimates`, `POST /jobs/{id}/lines`,
-`GET /appointments`, `POST /appointments`.
+`POST /jobs/{id}/status`, `GET /appointments`, `POST /appointments`.
+
+`POST /jobs/{id}/status` with `{"status": "in_progress", "note": "parts in"}` moves a job on the
+board (scope `estimates:write`). It runs the job page's own checks (`app/ro_status_policy.py`),
+closes the job's website request item like the staff button, logs `job.status` with
+`old -> new; note`, and returns the job with its next step. It never moves a job to Complete or
+Picked up, or moves one that is already there, because those can text the customer.
 
 ## Claude connector (sign in once, no key in chat)
 
