@@ -160,7 +160,8 @@ def build(db, ro: RepairOrder, margin_target: float = MARGIN_TARGET) -> dict:
     declined_s = _section("Declined", declined, rate) if declined else None
 
     invoice = next((i for i in ro.invoices if i.status != "void"), None)
-    paid = invoice.paid_total if invoice else 0.0
+    from app import job_deposits
+    paid = (invoice.paid_total if invoice else 0.0) + job_deposits.unapplied_total(ro)
     deposit_due = round(main_s.total * DEPOSIT_SHARE, 2)
     approved = any(ln.item.approval == "approved" for ln in main) or ro.status in (
         "approval_received", "in_progress", "waiting_parts", "complete", "delivered")

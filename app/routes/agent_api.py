@@ -196,6 +196,17 @@ class JobStatusIn(BaseModel):
     _clean = field_validator("note", mode="before")(_blank_to_none)
 
 
+class DepositIn(BaseModel):
+    amount: float = Field(gt=0, description="Dollars the customer already paid, e.g. 325.00.")
+    method: str = Field(description="How they paid: one of the shop's payment methods, e.g. zelle, cash, quickbooks, "
+                        "apple_cash, snap_finance, other.")
+    paid_on: str | None = Field(default=None, description="Day the money came in, YYYY-MM-DD in shop time. Blank is today.")
+    reference: str | None = Field(default=None, max_length=128,
+                                  description="Optional confirmation number or note, e.g. a Zelle confirmation.")
+
+    _clean = field_validator("paid_on", "reference", mode="before")(_blank_to_none)
+
+
 class EstimateIn(BaseModel):
     customer_id: int = Field(gt=0)
     vehicle_id: int = Field(gt=0)
@@ -465,6 +476,28 @@ def set_job_status(ro_id: int, payload: JobStatusIn, db: Session = Depends(get_d
     data = job_json(ro)
     data.update(previous_status=before, changed=target != before, next_step=_next_step(db, ro))
     return data
+
+
+@router.post("/jobs/{ro_id}/deposits")
+def record_deposit(ro_id: int, payload: DepositIn, db: Session = Depends(get_db),
+                   key: AgentKey = Depends(agent("estimates:write"))):
+    """Record a deposit the customer already paid on a job. It moves onto the invoice when the invoice is made.
+    Nothing is sent to anyone."""
+    from app import job_deposits
+    ro = db.get(RepairOrder, ro_id)
+    if ro is None:
+        raise HTTPException(404, "Job not found.")
+    dep, error = job_deposits.record(
+        db, ro, payload.amount, payload.method, payload.reference or "", payload.paid_on or "",
+        by=f"assistant:{key.key_prefix}",
+        before_commit=lambda d: agent_keys.record(db, key, "job.deposit", "repair_order", ro.id,
+                                                  f"${d.amount:,.2f} {d.method}"))
+    if error:
+        raise HTTPException(409, error)
+    db.refresh(ro)
+    summary = job_deposits.summary(ro)
+    return {"deposit": job_deposits.as_json(dep), "job": job_json(ro),
+            "deposits_paid": summary["paid"], "deposit_due": summary["deposit_due"], "short": summary["short"]}
 
 
 @router.get("/appointments")
