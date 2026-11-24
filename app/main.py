@@ -21,7 +21,7 @@ import time
 
 from app.security import limiter
 from app.permissions import ROLES, role_gate
-from app import home_summary, legacy_redirects, next_action, preview_check, preview_seed, system_health
+from app import home_summary, legacy_redirects, next_action, preview_check, preview_seed, public_links, system_health
 from app import tags as tag_store
 from app.public_site import preview_code, indexable, visible_lines, hidden_slugs
 import hashlib
@@ -744,7 +744,7 @@ def public_status(request: Request, token: str, db: Session = Depends(get_db)):
     return templates.TemplateResponse("public_status.html", {
         "request": request, "ro": ro, "reference": f"WEB-{ro.id}",
         "visit": visit, "visit_label": phoenix_label(visit.starts_at) if visit else "",
-        "status_url": str(request.url_for("public_status", token=token)),
+        "status_url": public_links.public_url(f"/status/{token}"),
         "shared_files": ro_evidence.attachments_for(db, ro.id, customer_only=True),
         "inspection": ro_evidence.inspection_for(db, ro.id),
     }, headers=PRIVATE_PAGE)
@@ -761,7 +761,7 @@ def public_status_calendar(request: Request, token: str, db: Session = Depends(g
     from app.routes.live import utc
     stamp = lambda d: utc(d).astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     esc = lambda t: str(t).replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
-    link = str(request.url_for("public_status", token=token))
+    link = public_links.public_url(f"/status/{token}")
     where = (f"{BUSINESS['street']}, {BUSINESS['city']}, {BUSINESS['region']} {BUSINESS['postal']}"
              if visit.location == "shop" else "Mobile visit at your location")
     body = "\r\n".join([

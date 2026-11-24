@@ -41,6 +41,6 @@
   {% endfor %}
   </tbody>
 </table></div>
-<p class="text-xs text-stone-400 mt-2">Tax shown at the dashboard's {{ '%.1f'|format(tax_rate * 100) }}% on parts until you confirm the one rate. Margin target {{ pct(margin_target) }}.</p>
+<p class="text-xs text-stone-400 mt-2">Tax at {{ '%.1f'|format(tax_rate * 100) }}% on parts, the Arizona rate for the shop's address. Margin target {{ pct(margin_target) }}.</p>
 </div>
 {% endblock %}

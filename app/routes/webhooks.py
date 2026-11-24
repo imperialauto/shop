@@ -5,6 +5,7 @@ from app.database import get_db
 from app.config import OPENPHONE_SIGNING_SECRET, OPENPHONE_API_KEY, GROQ_API_KEY, OWNER_PHONE, OPENPHONE_PHONE_NUMBER_ID
 from app.calendar_utils import create_appointment
 from app.sending_pause import sending_allowed
+from app import public_links
 import hmac, hashlib, base64, json, httpx, os, secrets, datetime
 from groq import AsyncGroq
 from app.groq_models import text_model, vision_model
@@ -511,7 +512,7 @@ async def openphone_webhook(
                 f"Appt booked: {name} ({from_number})\n"
                 f"{year} {make} {model}\n"
                 f"{appt_str}\n"
-                f"RO: https://web-production-94989.up.railway.app/ro/{session.draft_ro_id}",
+                f"RO: {public_links.public_url(f'/ro/{session.draft_ro_id}')}",
             )
 
         session.status = "scheduled"

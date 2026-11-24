@@ -94,7 +94,7 @@
       <tr><td>Sales tax ({{ '%.1f'|format(s.tax_rate * 100) }}% on {{ usd(s.main.parts_taxed) }} parts)</td><td class="text-right">{{ usd(s.main.tax) }}</td><td class="text-right">{{ usd(s.main.tax) }}</td><td class="text-right">$0.00</td><td class="text-right">pass-through</td></tr>
     </tbody>
   </table></div>
-  <p class="text-xs text-stone-400 mt-2">Tax uses the dashboard's {{ '%.1f'|format(s.tax_rate * 100) }}%. Shop Manager uses 8.8% and your written rule says 8.6%, so this number moves once you pick the one rate. Labor, diag and supplies show no outside cost.</p>
+  <p class="text-xs text-stone-400 mt-2">Tax is {{ '%.1f'|format(s.tax_rate * 100) }}% on parts, the Arizona rate for the shop's address (state and Maricopa 6.3% plus Glendale 2.9%). Labor, diag and supplies show no outside cost.</p>
 </div>
 
 <div class="card mb-4">
