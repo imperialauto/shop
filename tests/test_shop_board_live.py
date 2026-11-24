@@ -169,7 +169,7 @@ class BoardLiveTests(unittest.TestCase):
         phone = self.client()
         phone.post("/board/timers", data={"label": "Brake bleed", "minutes": "", "custom": "7"})
         with self.Session() as db:
-            self.assertEqual([t["minutes"] for t in shop_board.timers(db, datetime.now(PHOENIX))], [7])
+            self.assertEqual([t["minutes"] for t in shop_board.timers(db, NOW)], [7])  # setUp freezes the board clock at NOW
         bad = phone.post("/board/timers", data={"label": "x", "minutes": "0"}, follow_redirects=False)
         self.assertIn("error=", bad.headers["location"])
         bad = phone.post("/board/timers", data={"label": "x", "custom": "abc"}, follow_redirects=False)

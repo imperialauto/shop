@@ -21,6 +21,8 @@ class Jinja2Templates(_Base):
         super().__init__(*args, **kwargs)
         self.env.globals.setdefault("ask_on", _ask_on)
         self.env.globals.setdefault("ask_href", _ask_href)
+        from app import public_links
+        self.env.globals["public_base"] = public_links.base_url  # customer links: imperialautophx.com
 
     def TemplateResponse(self, *args, **kwargs):  # noqa: N802 - Starlette's name
         if args and isinstance(args[0], str):

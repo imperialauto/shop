@@ -28,7 +28,8 @@ def conversation_key(ro_id: int) -> str:
 
 
 def base_url() -> str:
-    return os.getenv("PUBLIC_BASE_URL", "https://web-production-94989.up.railway.app").rstrip("/")
+    from app import public_links
+    return public_links.base_url()
 
 
 def mobile(phone) -> str | None:
