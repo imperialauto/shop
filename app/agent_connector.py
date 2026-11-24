@@ -327,6 +327,10 @@ class _JobStatus(agent_api.JobStatusIn):
     job_id: int = Field(gt=0)
 
 
+class _Deposit(agent_api.DepositIn):
+    job_id: int = Field(gt=0)
+
+
 class _Empty(BaseModel):
     pass
 
@@ -396,6 +400,12 @@ TOOLS = {
                        "Optional short note on why or the next step goes in the change log. Nothing is sent to anyone.",
                        _JobStatus, lambda db, key, a: agent_api.set_job_status(
                            a.job_id, agent_api.JobStatusIn(status=a.status, note=a.note), db, key), False),
+    "record_deposit": ("estimates:write", "Record a deposit a customer already paid on a job (amount, how they paid, "
+                       "the day it came in). It shows on the job page and moves onto the invoice when the invoice is "
+                       "made. Refuses more than is left on the job, and the same amount, method and day twice without a "
+                       "reference. Nothing is sent to anyone.", _Deposit,
+                       lambda db, key, a: agent_api.record_deposit(a.job_id, agent_api.DepositIn(
+                           amount=a.amount, method=a.method, paid_on=a.paid_on, reference=a.reference), db, key), False),
     "list_recent_decisions": ("estimates:read", "Jobs whose estimate lines a customer approved or declined recently "
                               "(approval link or text yes), newest first, with customer, vehicle, the lines and totals. "
                               "Read only; nothing is sent to anyone.", _Decisions,
