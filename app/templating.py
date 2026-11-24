@@ -5,6 +5,11 @@ from fastapi.templating import Jinja2Templates as _Base
 
 
 class Jinja2Templates(_Base):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from app import public_links
+        self.env.globals["public_base"] = public_links.base_url  # customer links: imperialautophx.com
+
     def TemplateResponse(self, *args, **kwargs):  # noqa: N802 - Starlette's name
         if args and isinstance(args[0], str):
             name, rest = args[0], args[1:]
