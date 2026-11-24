@@ -10,7 +10,7 @@ from app.config import SECRET_KEY
 from app.database import get_db, init_db
 from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user, after_login, REMEMBER_DAYS, wants_remember
-from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, my_day, business_settings_page, dispatch, imperial_tasks, dev_work, live, finance, owner_setup, public_site, staff
+from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, my_day, business_settings_page, dispatch, imperial_tasks, dev_work, live, finance, owner_estimates, owner_setup, public_site, staff
 from app.routes import account_security, local_node, security_center, ro_evidence, agent_api, shop_board
 from app.routes import tags as tag_routes
 from app import agent_keys, agent_connector, appointment_feed
@@ -58,6 +58,7 @@ app.include_router(ro_evidence.public_router, tags=["public"])
 # Shop workstation (Imperial Local Node) — its own key, never INTERNAL_API_KEY.
 app.include_router(local_node.worker_router, prefix="/internal/local-node", tags=["internal"])
 app.include_router(invoices.router, prefix="/invoices", tags=["invoices"])
+app.include_router(owner_estimates.router, prefix="/finance", tags=["finance"])
 app.include_router(finance.router, prefix="/finance", tags=["finance"])
 app.include_router(owner_setup.router, tags=["owner_setup"])
 app.include_router(account_security.router, tags=["security"])
@@ -148,7 +149,8 @@ def read_only_exempt(request: Request) -> bool:
         return True  # owner configuration, audited, checks for the owner itself
     if request.url.path.startswith("/settings/users/"):
         return True  # logins only; these routes check for the owner themselves
-    if request.method == "POST" and request.url.path.startswith("/finance/"):
+    if (request.method == "POST" and request.url.path.startswith("/finance/")
+            and not request.url.path.startswith("/finance/jobs/")):  # job sourcing records are shop data
         return True  # owner's own money figures only, audited; these routes check for the owner themselves
     # The one-time owner claim has its own strong Railway secret + CSRF
     # checks and only updates the sole user credential, not customer data.

@@ -4,6 +4,7 @@
 
 <div class="flex items-center gap-3 mb-2">
   <a href="/ro/" class="text-stone-400 hover:text-gold-300 text-sm">← Repair Orders</a>
+  {% if user.role == 'owner' %}<a href="/finance/jobs/{{ ro.id }}" class="text-sm" style="color:var(--imp-gold)" id="owner-sheet-link">Owner sheet: profit and parts</a>{% endif %}
 </div>
 
 {% if next_step %}
