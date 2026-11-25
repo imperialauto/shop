@@ -9,7 +9,7 @@
 <div class="flex items-start justify-between mb-6">
   <div>
     <h1 class="text-2xl font-bold text-yellow-400">Invoice #{{ invoice.id }}</h1>
-    <p class="text-stone-400 text-sm">RO <a href="/ro/{{ invoice.repair_order_id }}" class="text-gold-400 hover:underline">#{{ invoice.repair_order_id }}</a> · {{ invoice.created_at.strftime('%B %d, %Y') }}</p>
+    <p class="text-stone-400 text-sm">RO <a href="/ro/{{ invoice.repair_order_id }}" class="text-gold-400 hover:underline">#{{ invoice.repair_order_id }}</a> · {{ (invoice.created_at|shop_time).strftime('%B %d, %Y') }}</p>
   </div>
   <div class="flex gap-2">
     {% if invoice.status == 'draft' %}
@@ -61,7 +61,7 @@
     <p class="text-stone-400 text-sm">Tax ({{ "%.1f"|format(invoice.tax_rate * 100) }}%): <span class="text-stone-200">${{ "%.2f"|format(invoice.tax_amount) }}</span></p>
     <p class="text-gold-300 font-bold text-lg">Total: ${{ "%.2f"|format(invoice.total) }}</p>
     <p class="text-stone-400 text-sm">Paid: <span class="text-green-400">${{ "%.2f"|format(total_paid) }}</span></p>
-    {% if invoice.waived_amount %}<p class="text-stone-400 text-sm">Waived: <span class="text-stone-200">${{ "%.2f"|format(invoice.waived_amount) }}</span>{% if invoice.waived_by %} <span class="text-xs">by {{ invoice.waived_by }}{% if invoice.waived_at %} {{ invoice.waived_at.strftime('%m/%d/%y') }}{% endif %}{% if invoice.waived_reason %} · {{ invoice.waived_reason }}{% endif %}</span>{% endif %}</p>
+    {% if invoice.waived_amount %}<p class="text-stone-400 text-sm">Waived: <span class="text-stone-200">${{ "%.2f"|format(invoice.waived_amount) }}</span>{% if invoice.waived_by %} <span class="text-xs">by {{ invoice.waived_by }}{% if invoice.waived_at %} {{ (invoice.waived_at|shop_time).strftime('%m/%d/%y') }}{% endif %}{% if invoice.waived_reason %} · {{ invoice.waived_reason }}{% endif %}</span>{% endif %}</p>
     {% if can_waive and invoice.status != 'void' %}<form method="post" action="/invoices/{{ invoice.id }}/waive/undo" class="inline"><button type="submit" class="text-stone-400 underline text-xs" style="min-height:44px">Undo waive</button></form>{% endif %}{% endif %}
     <p class="text-stone-400 text-sm">Balance: <span class="{% if balance > 0 %}text-red-400{% else %}text-green-400{% endif %} font-semibold">${{ "%.2f"|format(balance) }}</span></p>
   </div>
@@ -73,7 +73,7 @@
   <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Payments</h3>
   {% for p in invoice.payments %}
   <div class="flex justify-between py-1 border-b border-plum-700 text-sm">
-    <span>{{ p.paid_at.strftime('%m/%d/%y') }} — {{ method_labels.get(p.method, p.method|title) }}{% if p.reference %} ({{ p.reference }}){% endif %}</span>
+    <span>{{ (p.paid_at|shop_time).strftime('%m/%d/%y') }} — {{ method_labels.get(p.method, p.method|title) }}{% if p.reference %} ({{ p.reference }}){% endif %}</span>
     <span class="text-green-400 font-semibold">${{ "%.2f"|format(p.amount) }}</span>
   </div>
   {% endfor %}
