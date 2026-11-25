@@ -180,7 +180,7 @@ class ApprovalLinkTests(unittest.TestCase):
         self.assertIn("Review the itemized charges and any applicable tax", item.draft_reply)
         self.assertIn("verify tax treatment", item.summary)
         sign_page = TestClient(app).get("/sign/ro/made-up-token").text
-        self.assertIn("Review the itemized charges and any applicable taxes", sign_page)
+        self.assertIn("Review the itemized charges before authorizing", sign_page)
         self.assertNotIn("Before tax. Declined items", sign_page)
 
     def test_mobile_numbers(self):
