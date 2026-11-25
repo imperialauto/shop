@@ -32,6 +32,8 @@ KEYS = {
     "automatic_oil_reminders": "AUTOMATIC_OIL_REMINDERS",
     "oil_reminder_months": "OIL_REMINDER_MONTHS",
     "automatic_declined_followup": "AUTOMATIC_DECLINED_FOLLOWUP",
+    "automatic_declined_reminder": "AUTOMATIC_DECLINED_REMINDER",
+    "canned_jobs": "CANNED_JOBS_JSON",
     "automatic_diag_credit_reminder": "AUTOMATIC_DIAG_CREDIT_REMINDER",
     "automatic_snap_link": "AUTOMATIC_SNAP_LINK",
     "snap_apply_link": "SNAP_APPLY_LINK",

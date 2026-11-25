@@ -10,6 +10,7 @@ from app.models import RepairOrder, Customer, Vehicle, User, LineItem, Communica
 from app.auth import get_current_user
 from app import job_flags
 from app import tags, approval_links, customer_file, ro_delete, cycle_time, customer_followups, estimate_pdf, job_closeout, job_events, line_changes, next_action, ro_status_policy, snap_offer, website_alerts
+from app import canned_jobs
 from app.dispatch_model import DispatchAudit, DispatchItem, DispatchOutbound
 from app.sending_pause import DASHBOARD_REPLY, is_paused
 from app.routes import local_node
@@ -220,6 +221,7 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         "closeout_problem": job_closeout.problem(ro),
         "flags": job_flags.for_job(db, ro),
         "parts_card": parts_tracking.card(db, ro, user.role),
+        "canned_jobs": canned_jobs.menu(),
     })
 
 

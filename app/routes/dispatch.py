@@ -779,6 +779,8 @@ def tick(request: Request, background: BackgroundTasks, owner_texts: bool = True
             quote_followups.queue_next(db, now)  # a draft for the owner's Send; nothing goes out here
             from app import diag_credit
             diag_credit.queue_next(db, now)  # same: a draft only
+            from app import declined_followups
+            declined_followups.queue_next(db, now)  # 30-60 day reminder: a draft only, off by default
         except (SQLAlchemyError, HTTPException, ValueError) as exc:
             db.rollback()
             print(f"declined_followup_unavailable {type(exc).__name__}")
