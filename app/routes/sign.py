@@ -6,7 +6,7 @@ from app.database import get_db
 from app.models import RepairOrder, Invoice
 from datetime import datetime, timezone
 
-from app import approval_links, approval_options, deposit_requests, website_alerts
+from app import approval_links, approval_options, deposit_requests, next_visit, referrals, website_alerts
 import os
 import secrets
 from app.security_controls import link_expired
@@ -87,6 +87,8 @@ async def sign_ro_submit(request: Request, token: str, db: Session = Depends(get
     for li in pending:
         li.approval, li.decided_at = decisions[li.id], now
         li.approval_source, li.approval_recorded_by = "link", None
+    from app import discounts
+    discounts.follow_decisions(ro)  # declined everything: the shop's discounts go with it
     ro.signature_data = signature_data
     ro.approved_by = (approved_by or "Customer")[:128]
     ro.signed_at = datetime.utcnow()
@@ -126,6 +128,8 @@ def sign_invoice_page(request: Request, invoice_id: int, token: str = "", db: Se
         raise HTTPException(status_code=404, detail="Not found")
     return templates.TemplateResponse("sign_invoice.html", {
         "request": request, "invoice": invoice, "ro": invoice.repair_order,
+        "next_visit": next_visit.receipt_line(invoice),
+        "share": referrals.share_line(db, invoice),
     }, headers=PRIVATE_PAGE)
 
 

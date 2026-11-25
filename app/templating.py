@@ -20,6 +20,8 @@ class Jinja2Templates(_Base):
         from app import public_links
         self.env.globals["public_base"] = public_links.base_url  # customer links: imperialautophx.com
         self.env.filters["shop_time"] = shop_time
+        from app import discounts
+        self.env.filters["money"] = discounts.money  # -$75.00 for a discount, never $-75.00
 
     def TemplateResponse(self, *args, **kwargs):  # noqa: N802 - Starlette's name
         if args and isinstance(args[0], str):

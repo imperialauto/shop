@@ -448,7 +448,9 @@ TOOLS = {
     "open_job": ("estimates:write", "Open a job (repair order) for a customer's vehicle with no lines yet, "
                  "so an appointment can be booked for it. Add the vehicle first if needed; make and model may be blank.",
                  agent_api.JobIn, lambda db, key, a: agent_api.open_job(a, db, key), False),
-    "add_estimate_lines": ("estimates:write", "Add draft lines to an open job that has no invoice.", _Lines,
+    "add_estimate_lines": ("estimates:write", "Add draft lines to an open job that has no invoice. For money off, send a line with "
+                           "item_type discount and unit_price as the positive amount off (75 for $75 off); it shows as "
+                           "a discount on the approval page and invoice. Nothing is sent to the customer.", _Lines,
                            lambda db, key, a: agent_api.add_lines(a.job_id, a.lines, db, key), False),
     "set_job_status": ("estimates:write", "Move a job (repair order) to another column on the job board: "
                        + ", ".join(agent_api.AGENT_STATUSES) + ". Same checks as the job page, so In Progress and "

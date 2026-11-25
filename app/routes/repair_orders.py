@@ -471,21 +471,33 @@ def add_line_item(
         raise HTTPException(404, "Job not found.")
     if not description.strip():
         return RedirectResponse(f"/ro/{ro_id}?line_error=description#line-items", status_code=303)
-    # A discount goes in as a misc line with a negative price; nothing else may be negative.
-    if not (quantity > 0) or (unit_price < 0 and item_type != "misc"):
-        return RedirectResponse(f"/ro/{ro_id}?line_error=amount#line-items", status_code=303)
     invoice = next((inv for inv in ro.invoices if inv.status != "void"), None)
-    if invoice and (invoice.status != "draft" or invoice.customer_signed_at):
-        return RedirectResponse(f"/ro/{ro_id}?line_error=invoiced#line-items", status_code=303)
-    li = LineItem(
-        repair_order_id=ro_id,
-        description=description.strip(),
-        item_type=item_type,
-        quantity=quantity,
-        unit_price=unit_price,
-    )
-    db.add(li)
-    db.flush()
+    if item_type == "discount":
+        # The amount off, typed as a plain number (75 or -75 both mean $75 off). Approved by the shop,
+        # untaxed, and shown to the customer as money off rather than an item to approve.
+        if invoice and (invoice.status != "draft" or invoice.customer_signed_at):
+            return RedirectResponse(f"/ro/{ro_id}?line_error=invoiced#line-items", status_code=303)
+        from app import discounts
+        try:
+            discounts.add(db, ro, description, abs(unit_price) * (quantity if quantity > 0 else 1), user.username)
+        except discounts.DiscountError as exc:
+            reason = "discount_too_big" if str(exc) == "too_big" else "amount"
+            return RedirectResponse(f"/ro/{ro_id}?line_error={reason}#line-items", status_code=303)
+    else:
+        # A misc line may still carry a negative price; nothing else may be negative.
+        if not (quantity > 0) or (unit_price < 0 and item_type != "misc"):
+            return RedirectResponse(f"/ro/{ro_id}?line_error=amount#line-items", status_code=303)
+        if invoice and (invoice.status != "draft" or invoice.customer_signed_at):
+            return RedirectResponse(f"/ro/{ro_id}?line_error=invoiced#line-items", status_code=303)
+        li = LineItem(
+            repair_order_id=ro_id,
+            description=description.strip(),
+            item_type=item_type,
+            quantity=quantity,
+            unit_price=unit_price,
+        )
+        db.add(li)
+        db.flush()
     if invoice:  # a draft invoice keeps up with the job, so a late line is billed
         from app.routes.invoices import refresh_draft
         db.refresh(ro)

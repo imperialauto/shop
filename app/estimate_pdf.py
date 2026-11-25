@@ -7,7 +7,8 @@ Lines follow the dashboard's own conventions (notes/estimate-process.md):
 * one line per part, labor and shop supplies;
 * $0 misc lines for diagnostic findings and the diagnostic credit;
 * add-ons are lines whose description starts with "OPTIONAL", shown in their own section;
-* declined lines are listed but never counted.
+* declined lines are listed but never counted;
+* discounts (item type "discount", a negative untaxed line) show as money off the recommended repair.
 Tax is the dashboard's parts-only rate, the same one invoices and deposit texts use.
 """
 import io
@@ -44,19 +45,20 @@ def is_optional(line) -> bool:
 def _sums(lines) -> dict:
     parts = sum(li.total for li in lines if li.item_type == "part")
     labor = sum(li.total for li in lines if li.item_type == "labor")
-    other = sum(li.total for li in lines if li.item_type not in ("part", "labor"))
+    discount = sum(li.total for li in lines if li.item_type == "discount")
+    other = sum(li.total for li in lines if li.item_type not in ("part", "labor", "discount"))
     tax = round(parts * tax_rate(), 2)
     return {"parts": round(parts, 2), "labor": round(labor, 2),
             "labor_hours": round(sum(li.quantity for li in lines if li.item_type == "labor"), 2),
-            "other": round(other, 2), "tax": tax, "total": round(parts + labor + other + tax, 2),
-            "lines": len(lines)}
+            "other": round(other, 2), "discount": round(discount, 2), "tax": tax,
+            "total": round(parts + labor + other + discount + tax, 2), "lines": len(lines)}
 
 
 def totals(ro: RepairOrder) -> dict:
     """Recommended work, optional add-ons and the grand total. Declined lines are left out."""
     counted = [li for li in ro.line_items if li.approval != "declined"]
-    main = _sums([li for li in counted if not is_optional(li)])
-    optional = _sums([li for li in counted if is_optional(li)])
+    main = _sums([li for li in counted if li.item_type == "discount" or not is_optional(li)])
+    optional = _sums([li for li in counted if li.item_type != "discount" and is_optional(li)])
     return {"tax_rate": tax_rate(), "recommended": main, "optional": optional,
             "total_with_options": round(main["total"] + optional["total"], 2),
             "deposit": round(main["total"] * DEPOSIT_SHARE, 2),
@@ -144,8 +146,8 @@ def build(ro: RepairOrder, today: date | None = None) -> bytes:
     sums = totals(ro)
     counted = [li for li in ro.line_items if li.approval != "declined"]
     notes = [li for li in counted if not is_optional(li) and li.item_type == "misc" and not li.unit_price]
-    main = [li for li in counted if not is_optional(li) and li not in notes]
-    optional = [li for li in counted if is_optional(li)]
+    main = [li for li in counted if (li.item_type == "discount" or not is_optional(li)) and li not in notes]
+    optional = [li for li in counted if is_optional(li) and li.item_type != "discount"]
     declined = [li for li in ro.line_items if li.approval == "declined"]
 
     for li in notes:  # $0 note lines: findings, diagnostic credit
@@ -182,6 +184,8 @@ def build(ro: RepairOrder, today: date | None = None) -> bytes:
             rows.append([f"Labor subtotal ({part['labor_hours']:g} hrs)", "", "", _money(part["labor"])])
         if part["other"]:
             rows.append(["Shop supplies and other", "", "", _money(part["other"])])
+        if part["discount"]:
+            rows.append(["Discount", "", "", _money(part["discount"])])
         if part["tax"]:
             rows.append([f"Tax {sums['tax_rate'] * 100:g}% (parts only)", "", "", _money(part["tax"])])
         rows.append([label, "", "", _money(part["total"])])

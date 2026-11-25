@@ -65,6 +65,29 @@ class TotalsTests(_Setup):
         self.assertEqual(t["declined"], 1)
 
 
+class DiscountTests(_Setup):
+    def test_discount_is_money_off_the_recommended_repair_and_not_editable_here(self):
+        ro_id, ids = make_job(self.Session, SAMPLE + [
+            {"description": "Referral credit", "item_type": "discount", "unit_price": -25, "taxable": False,
+             "approval": "approved"}])
+        with self.Session() as db:
+            ro = db.get(RepairOrder, ro_id)
+            t = estimate_pdf.totals(ro)
+            self.assertTrue(estimate_pdf.build(ro).startswith(b"%PDF"))
+        main = t["recommended"]
+        self.assertEqual((main["discount"], main["other"]), (-25.0, 27.0))
+        self.assertEqual(main["tax"], round(98.99 * estimate_pdf.tax_rate(), 2))
+        self.assertEqual(main["total"], round(98.99 + 270 + 27 - 25 + main["tax"], 2))
+        self.assertEqual(t["optional"]["discount"], 0)
+        _, headers = self.issue()
+        for call in (lambda: self.client.patch(f"/internal/agent/v1/jobs/{ro_id}/lines/{ids[-1]}", headers=headers,
+                                               json={"unit_price": 5}),
+                     lambda: self.client.delete(f"/internal/agent/v1/jobs/{ro_id}/lines/{ids[-1]}", headers=headers)):
+            out = call()
+            self.assertEqual(out.status_code, 409)
+            self.assertIn("discount", out.json()["detail"])
+
+
 class LineEditTests(_Setup):
     def test_edit_and_remove_draft_lines_recalculate_and_log(self):
         _, headers = self.issue()

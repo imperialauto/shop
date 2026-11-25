@@ -113,7 +113,7 @@ class LineItem(Base):
     id = Column(Integer, primary_key=True)
     repair_order_id = Column(Integer, ForeignKey("repair_orders.id"), nullable=False)
     description = Column(Text, nullable=False)
-    item_type = Column(String(16), default="labor")  # labor, part, sublet, misc
+    item_type = Column(String(16), default="labor")  # labor, part, sublet, misc, discount (negative, untaxed, see app/discounts.py)
     quantity = Column(Float, default=1.0)
     unit_price = Column(Float, default=0.0)
     taxable = Column(Boolean, default=True)

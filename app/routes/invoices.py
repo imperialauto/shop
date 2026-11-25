@@ -4,6 +4,7 @@ from app.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Invoice, RepairOrder, Payment
+from app import next_visit, referrals
 from app.auth import get_current_user
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -151,9 +152,11 @@ def create_invoice(request: Request, ro_id: int, db: Session = Depends(get_db)):
     existing = db.query(Invoice).filter(Invoice.repair_order_id == ro_id, Invoice.status != "void").first()
     if existing:
         return RedirectResponse(f"/invoices/{existing.id}", status_code=303)
-    billable = [li for li in ro.line_items if li.billable]
-    if not billable:
+    if not any(li.billable for li in ro.line_items):
         return RedirectResponse(f"/ro/{ro_id}", status_code=303)
+    next_visit.apply(db, ro, user.username)  # 10% off labor from their last paid job, when on
+    referrals.apply_to_job(db, ro, user.username)  # $25 referral discount and store credit, when on
+    billable = [li for li in ro.line_items if li.billable]
 
     subtotal, tax_rate, tax_amount, total = totals_for(billable)
 
@@ -251,7 +254,9 @@ def add_payment(
     if paid_at is not None:
         payment.paid_at = paid_at
     invoice.payments.append(payment)
-    _schedule_review(db, _settle(invoice, picked_up == "on"))
+    ro = _settle(invoice, picked_up == "on")
+    referrals.on_paid(db, invoice)  # the referrer earns $25 credit when the friend's job is paid
+    _schedule_review(db, ro)
     db.commit()
     return RedirectResponse(f"/invoices/{invoice_id}", status_code=302)
 
@@ -284,7 +289,9 @@ def waive_balance(
     invoice.waived_reason = reason.strip()[:500] or None
     invoice.waived_by = user.username[:64]
     invoice.waived_at = datetime.now(timezone.utc)
-    _schedule_review(db, _settle(invoice, picked_up == "on"))
+    ro = _settle(invoice, picked_up == "on")
+    referrals.on_paid(db, invoice)  # the referrer earns $25 credit when the friend's job is paid
+    _schedule_review(db, ro)
     db.commit()
     return RedirectResponse(f"/invoices/{invoice_id}", status_code=302)
 
