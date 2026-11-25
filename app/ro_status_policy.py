@@ -9,6 +9,15 @@ This module has no side effects, database writes, or outbound messaging.
 from app.models import RepairOrder
 
 
+# A job in one of these is finished with: picked up, or closed as not going ahead (a duplicate or a
+# quote the customer passed on). Everything else is an open job.
+CLOSED_STATUSES = ("delivered", "cancelled")
+
+
+def is_open(ro) -> bool:
+    return (getattr(ro, "status", None) or "intake") not in CLOSED_STATUSES
+
+
 FINISH_FROM = frozenset(("diagnosing", "approval_received", "in_progress", "waiting_parts", "complete"))
 
 
