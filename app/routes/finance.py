@@ -66,6 +66,12 @@ def daily_goal() -> int:
     return value if 0 < value <= 100000 else plan.DEFAULT_DAILY_GOAL
 
 
+def goal_mode() -> str:
+    """"fixed": Home and the TV measure against the daily goal; "bills": against what the bills need a day
+    when that is more than zero. Fixed unless the owner picks bills on /board/manage."""
+    return "bills" if (settings_store.raw("daily_goal_mode") or "").strip().lower() == "bills" else "fixed"
+
+
 def saved_pay_order() -> dict:
     """His own pay order, {scope: [lower-case bill names]}."""
     try:
@@ -187,8 +193,10 @@ def home_goal(db: Session) -> dict | None:
         return None
     need = plan.dollars(plan.per_day(sums["business"].short, sums["days_open"]))
     goal = daily_goal()
-    target = need if need > 0 else goal
+    use_bills = need > 0 and goal_mode() == "bills"
+    target = need if use_bills else goal
     return {"in": round(came_in, 2), "need": need, "goal": goal, "target": target, "bills": need > 0,
+            "source": "bills" if use_bills else "fixed",
             "days_open": sums["days_open"], "left": round(max(target - came_in, 0), 2), "hit": came_in >= target,
             "percent": max(0, min(100, int(came_in * 100 / target))) if target else 0}
 

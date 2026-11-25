@@ -214,7 +214,14 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         "changes": line_changes.summary(ro),
         "has_changes": line_changes.has_changes(ro),
         "closeout_problem": job_closeout.problem(ro),
+        "job_timer": _job_timer().for_job(db, ro, user),
     })
+
+
+def _job_timer():
+    from app import job_timer
+
+    return job_timer
 
 
 def _deposits():

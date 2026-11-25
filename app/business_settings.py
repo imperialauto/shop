@@ -45,6 +45,9 @@ KEYS = {
     "appointment_feed": "APPOINTMENT_FEED_SETTING",
     # Money to bring in each day: shared by the Shop TV board (/board/manage) and the Money page.
     "daily_sales_goal": "DAILY_SALES_GOAL",
+    # Which daily goal Home, the scoreboard and the TV use: "fixed" (daily_sales_goal, the default) or "bills"
+    # (what the bills need a day when that is more than zero). Set on /board/manage.
+    "daily_goal_mode": "DAILY_GOAL_MODE",
     "finance_pay_order": "FINANCE_PAY_ORDER_JSON",
     "monthly_profit_goal": "MONTHLY_PROFIT_GOAL",
     # Profit goal for May through September; 0 means use the monthly goal all year.

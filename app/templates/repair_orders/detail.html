@@ -57,6 +57,7 @@
   </div>
 </div>
 
+{% include "repair_orders/_timer.html" %}
 {% if request.query_params.get('closed_out') %}<p class="text-sm text-green-400 mb-3" role="status">Job marked {{ 'picked up' if request.query_params.get('closed_out') == 'delivered' else 'complete' }}. Nothing was texted to the customer.</p>{% endif %}
 {% if user.role == 'owner' and not closeout_problem %}
 {% set work_lines = ro.line_items|rejectattr('item_type', 'equalto', 'discount')|rejectattr('approval', 'equalto', 'declined')|list %}
