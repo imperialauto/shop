@@ -178,9 +178,14 @@
   {% if home_flags %}{% include "_flags_home.html" %}{% endif %}
 
   {% if board.show_money %}{% set g = goal_bar %}{% set m = home.money if home and home.ready else none %}
-  <section class="h-card h-moneystrip {% if g and g.hit %}hit{% endif %}" aria-label="Money">
+  <section class="h-card h-moneystrip {% if (scoreboard and scoreboard.hit) or (not scoreboard and g and g.hit) %}hit{% endif %}" aria-label="Money">
     <a href="/finance/" aria-label="Daily goal">
-      {% if g %}
+      {% if scoreboard %}{% set s = scoreboard %}
+      <div class="h-label">Money in today</div>
+      <div class="h-big">${{ '{:,.0f}'.format(s.today) }} <small>of ${{ '{:,.0f}'.format(s.goal) }}{% if s.hit %} · Goal hit{% else %} · ${{ '{:,.0f}'.format(s.left) }} to go{% endif %}</small></div>
+      <div class="h-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ s.percent }}"><i style="width: {{ s.percent }}%"></i></div>
+      <div class="h-sub">Week ${{ '{:,.0f}'.format(s.week) }} of ${{ '{:,.0f}'.format(s.week_goal) }}{% if s.hours_today %} · {{ '%.1f'|format(s.hours_today) }} h clocked today{% endif %} · {% if s.source == 'bills' %}goal is what the bills need{% else %}your ${{ '{:,.0f}'.format(s.fixed_goal) }} goal{% endif %}</div>
+      {% elif g %}
       <div class="h-label">Money in today</div>
       <div class="h-big">${{ '{:,.0f}'.format(g['in']) }} <small>of ${{ '{:,.0f}'.format(g.target) }}{% if g.hit %} · Goal hit{% else %} · ${{ '{:,.0f}'.format(g.left) }} to go{% endif %}</small></div>
       <div class="h-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ g.percent }}"><i style="width: {{ g.percent }}%"></i></div>

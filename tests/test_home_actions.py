@@ -52,7 +52,9 @@ class HomeActionTests(unittest.TestCase):
         db.close()
         self.assertFalse(goal["bills"])
         self.assertEqual(goal["target"], goal["goal"])
-        self.assertIn("Bills covered", self.client.get("/dashboard").text)
+        html = self.client.get("/dashboard").text
+        self.assertIn("Money in today", html)
+        self.assertIn("Week $", html)  # scoreboard line: the week so far against the goal
 
     def test_job_row_has_one_tap_step_and_turns_red_after_two_days(self):
         html = self.client.get("/dashboard").text

@@ -554,6 +554,11 @@ def dashboard(request: Request, view: str = "", db: Session = Depends(get_db)):
     if context["board"]["show_money"]:
         from app.routes.finance import home_goal
         context["goal_bar"] = home_goal(db)
+        try:  # one "money in today" number on Home: the scoreboard's (payments, deposits, money marked Got it)
+            from app.scoreboard import scoreboard
+            context["scoreboard"] = scoreboard(db)
+        except Exception:  # Home still loads; the strip falls back to the goal bar
+            context["scoreboard"] = None
     context["queue_total"] = len(context["dispatch_items"])
     context["dispatch_items"] = context["dispatch_items"][:HOME_QUEUE_ROWS]
     return templates.TemplateResponse("dashboard.html", context)
