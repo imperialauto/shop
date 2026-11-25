@@ -118,6 +118,18 @@ class ShopBoardTests(unittest.TestCase):
             sales = shop_board.sales_today(db, NOW)
         self.assertEqual((sales["total"], sales["count"], sales["hit"]), (1365.5, 3, True))
 
+    def test_money_in_today_counts_money_marked_got_it_like_home(self):
+        from datetime import date
+        from app.finance_model import FinanceIncoming
+        with self.Session() as db:
+            db.add_all([FinanceIncoming(source="Zelle from a customer", amount_cents=70000, status="received",
+                                        received_on=date(2026, 11, 23)),
+                        FinanceIncoming(source="Still expected", amount_cents=5000, status="expected",
+                                        expected_date=date(2026, 11, 23))])
+            db.commit()
+            sales = shop_board.sales_today(db, NOW)
+        self.assertEqual(sales["total"], 1025.5)
+
     def test_tv_page_and_refresh_panel(self):
         client = self.client()
         page = client.get("/board")
