@@ -180,8 +180,15 @@ def page(request: Request, db: Session, user, status: int = 200, **extra):
     except SQLAlchemyError:  # the settings tables are not created yet
         db.rollback()
         history, extra = [], {"not_ready": True, **extra}
+    from app import referrals
+    referral_report = None
+    if referrals.enabled():
+        try:
+            referral_report = referrals.report(db)
+        except SQLAlchemyError:  # the referral tables are not created yet
+            db.rollback()
     return templates.TemplateResponse("business_settings.html", {"request": request, "user": user, "settings": current(), "vehicle_classes": VEHICLE_CLASSES,
-                                      "history": history, **extra}, status_code=status)
+                                      "history": history, "referral_report": referral_report, **extra}, status_code=status)
 
 
 @router.get("/settings/business", response_class=HTMLResponse)

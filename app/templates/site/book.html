@@ -126,6 +126,7 @@
           {% endif %}
           {% set require_make = true %}
           {% include "site/_person_vehicle.html" %}
+          {% if referral_box %}{% include "site/_referral_code.html" %}{% endif %}
           <fieldset>
             <legend>Anything we should know?</legend>
             <label for="notes">Notes <span class="hint">Optional. Symptoms, warning lights or questions.</span></label>

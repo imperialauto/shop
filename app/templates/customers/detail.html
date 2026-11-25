@@ -28,6 +28,29 @@
 {% set tag_kind, tag_target, tag_next = 'customer', customer.id, '/customers/' ~ customer.id %}
 {% include "_tags.html" %}
 
+{% if referral %}
+<section id="referrals" class="card mb-4" aria-label="Referrals" style="display:grid;gap:8px">
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <h2 class="font-bold">Referrals</h2>
+    <span class="text-sm">Store credit <strong class="{{ 'text-green-400' if referral.credit > 0 else '' }}">${{ '{:,.2f}'.format(referral.credit) }}</strong></span>
+  </div>
+  {% if referral.code %}
+  <p class="text-sm">Their code: <strong class="text-yellow-400" style="letter-spacing:.05em">{{ referral.code }}</strong>. A friend who gives it gets $25 off a first job over $200, and they get $25 credit once that job is paid. {% if referral.sent %}{{ referral.sent }} referred, {{ referral.earned }} paid.{% endif %}</p>
+  {% elif can_text %}
+  <form method="post" action="/customers/{{ customer.id }}/referral-code"><button class="btn-secondary">Make referral code</button> <span class="text-xs text-stone-500">Nothing is sent to them.</span></form>
+  {% endif %}
+  {% if referral.referred_by %}
+  <p class="text-sm text-stone-300">Referred by {{ referral.referrer.first_name if referral.referrer else 'a customer' }} ({{ referral.referred_by.code }}). {% if referral.referred_by.status == 'earned' %}First job paid; credit given.{% elif referral.referred_by.discount_line_id %}$25 off is on job #{{ referral.referred_by.friend_ro_id }}.{% else %}$25 off comes off their first job over $200 when its invoice is made.{% endif %}</p>
+  {% elif referral.can_be_referred and can_text %}
+  <form method="post" action="/customers/{{ customer.id }}/referred-by" class="flex flex-wrap items-center gap-2">
+    <label for="ref-code" class="text-sm">Came in on a referral code?</label>
+    <input id="ref-code" name="code" class="form-input" style="width:140px" placeholder="PAT4821" autocomplete="off" required>
+    <button class="btn-secondary">Save code</button>
+  </form>
+  {% endif %}
+  {% if referral_error %}<p role="alert" class="text-sm text-amber-300">{{ referral_error }}</p>{% endif %}
+</section>
+{% endif %}
 {% set item = file.open_item %}
 {% set mv = file.mentioned_vehicle %}
 <section class="card mb-4" aria-label="Right now" style="display:grid;gap:10px;border-color:rgba(234,210,114,.45)">
