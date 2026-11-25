@@ -6,7 +6,7 @@ from app.database import get_db
 from app.models import RepairOrder, Invoice
 from datetime import datetime, timezone
 
-from app import approval_links, deposit_requests, website_alerts
+from app import approval_links, approval_options, deposit_requests, next_visit, referrals, website_alerts
 import os
 import secrets
 from app.security_controls import link_expired
@@ -23,13 +23,22 @@ templates = Jinja2Templates(
 
 def _sign_page(request, ro, error=None, status=200):
     pending = [li for li in ro.line_items if li.approval == "pending"]
+    from app.routes.invoices import SHOP_TAX_RATE
     subtotal = sum(li.total for li in ro.line_items if li.approval in ("approved", "pending"))
+    # Same math as the deposit text and the invoice: tax on parts only.
+    subtotal = round(subtotal + round(sum(li.total for li in ro.line_items
+                                          if li.approval in ("approved", "pending") and li.item_type == "part")
+                                      * SHOP_TAX_RATE, 2), 2)
+    fixed = [li for li in ro.line_items if li.approval == "approved"]
     from app import security_controls
     terms = None
     if security_controls.value("terms_on_approval_page"):
         terms = [p.strip() for p in security_controls.value("terms_text").split("\n\n") if p.strip()]
     return templates.TemplateResponse("sign_ro.html", {
         "request": request, "ro": ro, "subtotal": subtotal, "pending": pending, "error": error, "terms": terms,
+        "options": approval_options.groups(pending), "tax_rate": SHOP_TAX_RATE,
+        "fixed_total": round(sum(li.total for li in fixed), 2),
+        "fixed_taxable": round(sum(li.total for li in fixed if li.item_type == "part"), 2),
     }, status_code=status, headers=PRIVATE_PAGE)
 
 
@@ -59,6 +68,10 @@ async def sign_ro_submit(request: Request, token: str, db: Session = Depends(get
     decisions = {li.id: form.get(f"line_{li.id}") for li in pending}
     if any(choice not in ("approved", "declined") for choice in decisions.values()):
         return _sign_page(request, ro, "Choose Approve or Decline for each item.", 422)
+    if len(approval_options.groups(pending)) > 1:
+        mixed = approval_options.mixed_error(pending, decisions)
+        if mixed:
+            return _sign_page(request, ro, mixed, 422)
     if not signature_data or signature_data in ("data:,", ""):
         return _sign_page(request, ro, "Please draw your signature before submitting.", 422)
     from app import security_controls
@@ -113,6 +126,8 @@ def sign_invoice_page(request: Request, invoice_id: int, token: str = "", db: Se
         raise HTTPException(status_code=404, detail="Not found")
     return templates.TemplateResponse("sign_invoice.html", {
         "request": request, "invoice": invoice, "ro": invoice.repair_order,
+        "next_visit": next_visit.receipt_line(invoice),
+        "share": referrals.share_line(db, invoice),
     }, headers=PRIVATE_PAGE)
 
 

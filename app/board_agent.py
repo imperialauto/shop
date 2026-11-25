@@ -5,6 +5,7 @@ board (with when each was ticked off), add a to-do once per Tasks-page task, and
 or bring it back. Every change is logged in agent_actions. Nothing here contacts anyone.
 """
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, model_validator
@@ -89,3 +90,112 @@ def set_todo(db: Session, key, args: BoardSet) -> dict:
         raise HTTPException(422, str(exc)) from None
     db.refresh(task)
     return {"todo": shop_board.todo_json(task), "changed": True}
+
+
+# ---------------------------------------------------------------- TV timers, cars on the lot, job clocks
+# These change only what the shop TV shows (business settings), never a job, and contact no one.
+
+class TimerStart(BaseModel):
+    label: str = Field(default="Timer", max_length=60, description="What it's for, in a few words, like "
+                       "\"Explorer pressure test\". It shows big on the shop TV, so no phone numbers or full customer names.")
+    minutes: int = Field(ge=1, le=shop_board.TIMER_MAX_MINUTES, description="How long, in whole minutes.")
+
+
+class TimerChange(BaseModel):
+    timer_id: str | None = Field(default=None, max_length=16, description="From list_board_timers or start_board_timer.")
+    label: str | None = Field(default=None, max_length=60, description="Or the timer's label (or part of it), "
+                              "when exactly one timer on the TV matches.")
+    action: Literal["stop", "add_5_minutes"] = Field(description="stop takes it off the TV (also silences one that "
+                                                     "ran out); add_5_minutes adds five minutes (from now if it ran out).")
+
+    @model_validator(mode="after")
+    def _one(self):
+        if not (self.timer_id or (self.label or "").strip()):
+            raise ValueError("Send timer_id or label.")
+        return self
+
+
+class CarHere(BaseModel):
+    job_id: int = Field(gt=0)
+    here: bool = Field(description="true: the car is at the shop (shows under Cars here); false: it left.")
+
+
+class JobClock(BaseModel):
+    job_id: int = Field(gt=0)
+    running: bool = Field(description="true starts the work clock on the job; false stops it (time worked is kept).")
+
+
+def _actor(key) -> str:
+    return f"agent:{key.id}"
+
+
+def list_timers(db: Session) -> dict:
+    now = shop_board.now_local()
+    return {"timers": shop_board.timers(db, now), "max_running": shop_board.TIMER_MAX_RUNNING,
+            "note": "The TV beeps when a timer runs out, once someone has tapped the TV page since it last reloaded."}
+
+
+def start_timer(db: Session, key, args: TimerStart) -> dict:
+    agent_keys.record(db, key, "board_timer_started", None, None, f"{args.label} {args.minutes} min")
+    try:
+        timer = shop_board.start_timer(db, _actor(key), args.label, args.minutes)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(422, str(exc)) from None
+    db.commit()
+    shown = next((t for t in shop_board.timers(db, shop_board.now_local()) if t["id"] == timer["id"]), None)
+    return {"timer": shown or {"id": timer["id"], "label": timer["label"], "minutes": timer["minutes"]},
+            "note": "It shows on the TV within about 20 seconds."}
+
+
+def _find_timer(db: Session, args: TimerChange) -> dict:
+    running = shop_board.timers(db, shop_board.now_local())
+    if args.timer_id:
+        found = [t for t in running if t["id"] == args.timer_id]
+    else:
+        want = " ".join(args.label.lower().split())
+        found = [t for t in running if t["label"].lower() == want] or [t for t in running if want in t["label"].lower()]
+    if not found:
+        raise HTTPException(404, "No timer like that is on the TV. It may have ended or been stopped.")
+    if len(found) > 1:
+        raise HTTPException(409, "More than one timer matches: " + ", ".join(f"{t['label']} ({t['id']})" for t in found)
+                            + ". Send its timer_id.")
+    return found[0]
+
+
+def change_timer(db: Session, key, args: TimerChange) -> dict:
+    timer = _find_timer(db, args)
+    operation = "stop" if args.action == "stop" else "plus5"
+    agent_keys.record(db, key, "board_timer_" + ("stopped" if operation == "stop" else "plus5"), None, None, timer["label"])
+    if not shop_board.change_timer(db, _actor(key), timer["id"], operation):
+        db.rollback()
+        raise HTTPException(404, "That timer already ended.")
+    db.commit()
+    return {"changed": timer["label"], "action": args.action, "timers": shop_board.timers(db, shop_board.now_local())}
+
+
+def list_jobs(db: Session) -> dict:
+    """Open jobs as the TV labels them (first name and vehicle), whether the car is here, and time worked vs book."""
+    rows = shop_board.lot_list(db)
+    keep = ("id", "who", "vehicle", "stage", "here", "book", "worked", "clock_on", "over_book")
+    return {"jobs": [{k: row.get(k) for k in keep if k in row} for row in rows]}
+
+
+def set_here(db: Session, key, args: CarHere) -> dict:
+    agent_keys.record(db, key, "board_car_here" if args.here else "board_car_gone", "repair_order", args.job_id)
+    if not shop_board.set_here(db, _actor(key), args.job_id, args.here):
+        db.rollback()
+        raise HTTPException(404, "That job isn't open.")
+    db.commit()
+    return {"job_id": args.job_id, "here": args.here}
+
+
+def set_clock(db: Session, key, args: JobClock) -> dict:
+    agent_keys.record(db, key, "board_clock_started" if args.running else "board_clock_stopped", "repair_order", args.job_id)
+    if not shop_board.set_clock(db, _actor(key), args.job_id, args.running):
+        db.rollback()
+        raise HTTPException(404, "That job isn't open.")
+    db.commit()
+    row = next((r for r in shop_board.lot_list(db) if r["id"] == args.job_id), {})
+    return {"job_id": args.job_id, "clock_on": row.get("clock_on", args.running), "worked_hours": row.get("worked"),
+            "book_hours": row.get("book")}

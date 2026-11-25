@@ -43,7 +43,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeSerializer, URLS
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session
 
-from app import agent_keys, board_agent
+from app import agent_keys, board_agent, shop_board
 from app.auth import get_current_user
 from app.config import SECRET_KEY
 from app.database import get_db
@@ -327,6 +327,10 @@ class _JobStatus(agent_api.JobStatusIn):
     job_id: int = Field(gt=0)
 
 
+class _Deposit(agent_api.DepositIn):
+    job_id: int = Field(gt=0)
+
+
 class _Empty(BaseModel):
     pass
 
@@ -353,6 +357,14 @@ class _Appointment(BaseModel):
     appointment_id: int = Field(gt=0)
 
 
+class _AppointmentChange(agent_api.AppointmentChangeIn):
+    appointment_id: int = Field(gt=0)
+
+
+class _JobNotes(agent_api.JobNotesIn):
+    job_id: int = Field(gt=0)
+
+
 def _call_update_customer(db, key, a: _CustomerUpdate):
     data = a.model_dump(exclude_unset=True)
     customer_id = data.pop("customer_id")
@@ -367,6 +379,16 @@ def _call_vehicle(db, key, a: _Vehicle):
     data = a.model_dump()
     customer_id = data.pop("customer_id")
     return agent_api.add_vehicle(customer_id, agent_api.VehicleIn(**data), db, key)
+
+
+def _call_job_notes(db, key, a: _JobNotes):
+    data = a.model_dump()
+    job_id = data.pop("job_id")
+    return agent_api.update_job_notes(job_id, agent_api.JobNotesIn(**data), db, key)
+
+
+def _call_appointment_change(db, key, a: _AppointmentChange):
+    return agent_api.change_appointment(a.appointment_id, agent_api.AppointmentChangeIn(action=a.action), db, key)
 
 
 TOOLS = {
@@ -396,6 +418,12 @@ TOOLS = {
                        "Optional short note on why or the next step goes in the change log. Nothing is sent to anyone.",
                        _JobStatus, lambda db, key, a: agent_api.set_job_status(
                            a.job_id, agent_api.JobStatusIn(status=a.status, note=a.note), db, key), False),
+    "record_deposit": ("estimates:write", "Record a deposit a customer already paid on a job (amount, how they paid, "
+                       "the day it came in). It shows on the job page and moves onto the invoice when the invoice is "
+                       "made. Refuses more than is left on the job, and the same amount, method and day twice without a "
+                       "reference. Nothing is sent to anyone.", _Deposit,
+                       lambda db, key, a: agent_api.record_deposit(a.job_id, agent_api.DepositIn(
+                           amount=a.amount, method=a.method, paid_on=a.paid_on, reference=a.reference), db, key), False),
     "list_recent_decisions": ("estimates:read", "Jobs whose estimate lines a customer approved or declined recently "
                               "(approval link or text yes), newest first, with customer, vehicle, the lines and totals. "
                               "Read only; nothing is sent to anyone.", _Decisions,
@@ -415,6 +443,31 @@ TOOLS = {
     "set_board_todo": ("board", "Tick a shop TV to-do off (it moves to Completed) or put it back, by todo_id or task_key. "
                        "Ticking off a customer alert also clears it from Needs attention; alerts can't be put back.",
                        board_agent.BoardSet, lambda db, key, a: board_agent.set_todo(db, key, a), False),
+    "list_board_timers": ("board", "Countdown timers showing on the shop TV, soonest first, with time left; one that "
+                          "ran out shows as time up for a while.", _Empty,
+                          lambda db, key, a: board_agent.list_timers(db), True),
+    "start_board_timer": ("board", "Start a countdown that shows big on the shop TV and beeps when it runs out, like "
+                          "a 5-minute timer or \"Explorer pressure test\" for 15 minutes. Up to "
+                          f"{shop_board.TIMER_MAX_RUNNING} at once, {shop_board.TIMER_MAX_MINUTES} minutes at most. "
+                          "No phone numbers or full customer names in the label.", board_agent.TimerStart,
+                          lambda db, key, a: board_agent.start_timer(db, key, a), False),
+    "change_board_timer": ("board", "Stop a shop TV timer (also silences one that ran out) or add five minutes, by "
+                           "timer_id or by its label.", board_agent.TimerChange,
+                           lambda db, key, a: board_agent.change_timer(db, key, a), False),
+    "list_board_jobs": ("board", "Open jobs as the shop TV shows them: first name, vehicle, stage, whether the car is "
+                        "marked here at the shop, and hours worked against book time.", _Empty,
+                        lambda db, key, a: board_agent.list_jobs(db), True),
+    "set_car_here": ("board", "Mark a job's car as at the shop (it shows under Cars here on the TV) or gone. Changes "
+                     "only the TV, never the job.", board_agent.CarHere,
+                     lambda db, key, a: board_agent.set_here(db, key, a), False),
+    "set_job_clock": ("board", "Start or stop the work clock on a job, so the TV shows time worked against book time. "
+                      "Changes only the TV, never the job.", board_agent.JobClock,
+                      lambda db, key, a: board_agent.set_clock(db, key, a), False),
+    "update_job_notes": ("estimates:write", "Add a dated line to a job's tech notes and/or set its concern, as on the "
+                         "job page. Nothing is sent to anyone.", _JobNotes, _call_job_notes, False),
+    "change_appointment": ("appointments:write", "Cancel a visit or mark a confirmed one completed, as the calendar's "
+                           "buttons do. Closes the owner's reminder task. Nothing is sent to the customer.",
+                           _AppointmentChange, _call_appointment_change, False),
     "send_approval_request": ("estimates:send", "Text the customer their approval link for a job from the shop line, "
                               "the same as the owner pressing Ask for approval on the dashboard, so the text is logged on "
                               "the job. Only when the owner has asked for it to go. Optional message is the text's wording; "

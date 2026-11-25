@@ -7,7 +7,6 @@ from sqlalchemy import func
 from app.database import get_db
 from app.models import RepairOrder, Customer, Vehicle, User, LineItem, Communication, PartsOrder
 from app.auth import get_current_user
-from app.config import GOOGLE_REVIEW_LINK
 from app import tags, approval_links, customer_file, ro_delete, cycle_time, customer_followups, job_events, next_action, ro_status_policy, snap_offer, website_alerts
 from app.dispatch_model import DispatchAudit, DispatchItem, DispatchOutbound
 from app.sending_pause import DASHBOARD_REPLY, is_paused
@@ -208,22 +207,37 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         "progress": _evidence().progress(ro),
         "offsite_estimate": customer_followups.offsite_estimate_at(db, ro.id) is not None,
         "delete_blockers": ro_delete.blockers(ro) if user.role == "owner" else None,
+        "deposits": _deposits().summary(ro) if user.role != "tech" else None,
+        "deposit_methods": _deposit_methods() if user.role in ("owner", "admin", "office") else [],
+        "deposit_method_labels": _method_labels(),
+        "today": _today(),
     })
+
+
+def _deposits():
+    from app import job_deposits
+    return job_deposits
+
+
+def _deposit_methods():
+    from app.routes.invoices import METHOD_LABELS, enabled_methods
+    return [(m, METHOD_LABELS[m]) for m in enabled_methods()]
+
+
+def _method_labels():
+    from app.routes.invoices import METHOD_LABELS
+    return METHOD_LABELS
+
+
+def _today():
+    from datetime import datetime as _dt
+    from app.routes.invoices import _shop_day
+    return _shop_day(_dt.utcnow()).isoformat()
 
 
 def _evidence():
     from app.routes import ro_evidence  # imports require_user from here
     return ro_evidence
-
-
-async def _send_review_request(phone: str, first_name: str):
-    """Background task: send Google review request after delivery."""
-    from app.routes.webhooks import send_sms
-    msg = (
-        f"Hi {first_name}! Thanks for choosing Imperial Auto Care — we really appreciate your business. "
-        f"If you have 30 seconds, a Google review helps us out more than you know: {GOOGLE_REVIEW_LINK} 🙏"
-    )
-    await send_sms(phone, msg)
 
 
 @router.post("/{ro_id}/update-status")
@@ -255,16 +269,6 @@ def update_status(
     if status != prev_status:
         job_events.fire(db, ro, status)
         db.commit()
-
-    # Auto-send review request when marked delivered (only once)
-    if status == "delivered" and prev_status != "delivered" and os.getenv("REVIEW_REQUESTS_ENABLED") == "true":
-        if ro.customer and ro.customer.phone and GOOGLE_REVIEW_LINK:
-            background_tasks.add_task(
-                _send_review_request,
-                ro.customer.phone,
-                ro.customer.first_name or "there",
-            )
-            print(f"[Review] Queued review request to {ro.customer.phone} for RO #{ro_id}")
 
     back = request.query_params.get("back")
     return RedirectResponse({"my-day": "/my-day", "home": "/dashboard"}.get(back, f"/ro/{ro_id}"), status_code=302)
@@ -446,16 +450,32 @@ def add_line_item(
     user = require_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=302)
+    ro = db.query(RepairOrder).filter(RepairOrder.id == ro_id).first()
+    if not ro:
+        raise HTTPException(404, "Job not found.")
+    if not description.strip():
+        return RedirectResponse(f"/ro/{ro_id}?line_error=description#line-items", status_code=303)
+    # A discount goes in as a misc line with a negative price; nothing else may be negative.
+    if not (quantity > 0) or (unit_price < 0 and item_type != "misc"):
+        return RedirectResponse(f"/ro/{ro_id}?line_error=amount#line-items", status_code=303)
+    invoice = next((inv for inv in ro.invoices if inv.status != "void"), None)
+    if invoice and (invoice.status != "draft" or invoice.customer_signed_at):
+        return RedirectResponse(f"/ro/{ro_id}?line_error=invoiced#line-items", status_code=303)
     li = LineItem(
         repair_order_id=ro_id,
-        description=description,
+        description=description.strip(),
         item_type=item_type,
         quantity=quantity,
         unit_price=unit_price,
     )
     db.add(li)
+    db.flush()
+    if invoice:  # a draft invoice keeps up with the job, so a late line is billed
+        from app.routes.invoices import refresh_draft
+        db.refresh(ro)
+        refresh_draft(db, invoice, ro)
     db.commit()
-    return RedirectResponse(f"/ro/{ro_id}", status_code=302)
+    return RedirectResponse(f"/ro/{ro_id}" + ("?line_added=invoice#line-items" if invoice else ""), status_code=302)
 
 
 
@@ -539,6 +559,52 @@ def delete_line_item(request: Request, ro_id: int, li_id: int, db: Session = Dep
     db.delete(li)
     db.commit()
     return RedirectResponse(f"/ro/{ro_id}", status_code=302)
+
+
+REMOVED_STATE = {"pending": "waiting on customer", "approved": "approved", "declined": "declined"}
+
+
+@router.post("/{ro_id}/remove-line/{li_id}")
+def remove_sent_line(request: Request, ro_id: int, li_id: int, db: Session = Depends(get_db),
+                     confirm: str = Form("")):
+    """Owner-only removal of a line that was already sent for approval (waiting, approved or declined).
+
+    Unsent lines keep the ordinary office delete. Nothing is sent to the customer. A line that is
+    marked done, or an approved line on a job with an invoice, is never removed here, so a bill
+    can't silently change. Every removal is written to the audit log with what the line was.
+    """
+    user = require_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    if user.role != "owner":
+        raise HTTPException(403, "Only the owner can remove a line that was sent for approval.")
+    if confirm != "remove":
+        raise HTTPException(422, "Confirm the removal to continue.")
+    li = db.query(LineItem).filter(
+        LineItem.id == li_id, LineItem.repair_order_id == ro_id
+    ).with_for_update().first()
+    if li is None:
+        raise HTTPException(404, "Line item not found.")
+    if li.approval is None:
+        raise HTTPException(409, "This line wasn't sent for approval. Use the regular delete.")
+    if li.completed_at:
+        raise HTTPException(409, "This line is marked done. Reopen it first if it really should be removed.")
+    ro = li.repair_order
+    if li.approval == "approved" and any(inv.status != "void" for inv in ro.invoices):
+        raise HTTPException(409, "This approved line is on a job with an invoice. Void or fix the invoice first.")
+    state = REMOVED_STATE.get(li.approval, li.approval)
+    detail = f"Job #{ro_id}: removed line '{li.description}' ${li.total:,.2f} ({state})"
+    db.delete(li)
+    db.flush()
+    db.refresh(ro)
+    if not any(x.approval == "pending" for x in ro.line_items):
+        # Nothing is left for the customer to answer, so a queued approval text must not go out.
+        approval_links.close_for(db, ro, actor=user.username, action="line_removed")
+        if ro.status == "waiting_approval" and any(x.approval == "approved" for x in ro.line_items):
+            ro.status = "approval_received"
+    db.add(DispatchAudit(item_id=None, actor=user.username[:64], action="line_removed", detail=detail[:255]))
+    db.commit()
+    return RedirectResponse(f"/ro/{ro_id}?line_removed=1#line-items", status_code=303)
 
 
 @router.get("/{ro_id}/vehicles", response_class=HTMLResponse)

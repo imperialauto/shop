@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Customer, RepairOrder, Vehicle
 from app.auth import get_current_user
-from app import customer_file, name_finder, quo_import, tags
+from app import customer_file, name_finder, next_visit, quo_import, referrals, review_requests, tags
+from datetime import datetime, timezone
 from app.appointments import PHOENIX
 import os, secrets
 
@@ -180,8 +181,67 @@ def view_customer(request: Request, customer_id: int, db: Session = Depends(get_
     return templates.TemplateResponse("customers/detail.html", {
         "request": request, "user": user, "customer": customer, "file": file, "show": show, "tz": PHOENIX,
         "tasks": tasks, "can_text": user.role in ("owner", "admin", "office"), "sending_paused": _paused(db, is_paused),
+        "referral": _paused(db, lambda d: referrals.summary(d, customer)) if referrals.enabled() else None,
+        "referral_error": request.query_params.get("referral_error"),
+        "next_visit": _paused(db, lambda d: next_visit.open_offer(d, customer.id, datetime.now(timezone.utc))) if next_visit.enabled() else None,
+        "review_done": _paused(db, lambda d: review_requests.asked_before(d, customer.id)),
         "tag_list": tags.names_for(db, "customer", [customer.id]).get(customer.id, []), "tag_known": tags.known(db),
     })
+
+
+def _office(request: Request, db: Session, customer_id: int):
+    user = require_user(request, db)
+    if not user:
+        return None, None
+    if user.role not in ("owner", "admin", "office"):
+        raise HTTPException(403, "Only the office can change referrals.")
+    if not referrals.enabled():
+        raise HTTPException(404)
+    customer = db.get(Customer, customer_id)
+    if not customer:
+        raise HTTPException(status_code=404)
+    return user, customer
+
+
+@router.post("/{customer_id}/referral-code")
+def make_referral_code(request: Request, customer_id: int, db: Session = Depends(get_db)):
+    """Makes the customer's sharing code. Nothing is sent to them."""
+    user, customer = _office(request, db, customer_id)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    referrals.code_for(db, customer, user.username)
+    db.commit()
+    return RedirectResponse(f"/customers/{customer_id}#referrals", status_code=303)
+
+
+@router.post("/{customer_id}/referred-by")
+def record_referral(request: Request, customer_id: int, db: Session = Depends(get_db), code: str = Form("")):
+    """A new customer gave someone's code: their first job over $200 gets $25 off."""
+    user, customer = _office(request, db, customer_id)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    _, problem = referrals.record(db, customer, code, user.username)
+    if problem:
+        db.rollback()
+        from urllib.parse import quote
+        return RedirectResponse(f"/customers/{customer_id}?referral_error={quote(problem)}#referrals", status_code=303)
+    db.commit()
+    return RedirectResponse(f"/customers/{customer_id}#referrals", status_code=303)
+
+
+@router.post("/{customer_id}/reviewed")
+def mark_reviewed(request: Request, customer_id: int, db: Session = Depends(get_db)):
+    """Already left a Google review, or shouldn't be asked: the review text never goes to them."""
+    user = require_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    if user.role not in ("owner", "admin", "office"):
+        raise HTTPException(403, "Only the office can change this.")
+    if not db.query(Customer.id).filter(Customer.id == customer_id).first():
+        raise HTTPException(status_code=404)
+    review_requests.mark_reviewed(db, customer_id, user.username)
+    db.commit()
+    return RedirectResponse(f"/customers/{customer_id}", status_code=303)
 
 
 @router.get("/{customer_id}/edit", response_class=HTMLResponse)

@@ -16,8 +16,9 @@ from sqlalchemy.orm import Session
 
 from app.models import Customer
 
-BATCH = 8  # the messaging service checks in every 5 minutes, so history fills in within a few hours
+BATCH = 2  # Keep background name lookups from crowding interactive Quo requests.
 EVERY_SECONDS = 120
+OUTAGE_COOLDOWN_SECONDS = 900
 RECHECK_AFTER = timedelta(days=7)
 _lock = threading.Lock()
 _last_sweep = None  # monotonic time of the last sweep; None until the first one
@@ -93,7 +94,8 @@ def sweep(session_factory, ask=None, limit: int = BATCH) -> dict:
                 tally[outcome] += 1
                 db.commit()
                 if outcome == "unavailable":
-                    break  # Quo or the AI is down; stop and try again next sweep
+                    _last_sweep = time.monotonic() + OUTAGE_COOLDOWN_SECONDS - EVERY_SECONDS
+                    break
         return tally
     finally:
         _lock.release()

@@ -16,6 +16,7 @@ def database_audit(include_counts=True):
     local_node_enabled = os.getenv("LOCAL_NODE_ENABLED", "").strip().lower() == "true"
     agent_api_enabled = os.getenv("AGENT_API_ENABLED", "").strip().lower() == "true"
     bank_feed_enabled = bool(os.getenv("PLAID_CLIENT_ID", "").strip() and os.getenv("PLAID_SECRET", "").strip())
+    referrals_enabled = os.getenv("REFERRALS_ENABLED", "").strip().lower() == "true"
     if leads_enabled:
         from app import lead_model  # noqa: F401; only audit new tables after enablement
     result = {"connected": False, "driver": engine.url.get_backend_name(),
@@ -43,6 +44,8 @@ def database_audit(include_counts=True):
                     continue  # Assistant key tables are uncreated until separately approved migration
                 if not bank_feed_enabled and name in ("bank_links", "bank_accounts", "bank_transactions"):
                     continue  # Bank feed tables are expected only once its Plaid keys are set
+                if not referrals_enabled and name in ("referral_codes", "referrals", "customer_credits"):
+                    continue  # Referral tables are uncreated until separately approved migration
                 if name not in existing:
                     result["missing_tables"].append(name)
                     continue
