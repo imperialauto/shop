@@ -13,6 +13,7 @@ from app import tags, approval_links, customer_file, ro_delete, cycle_time, cust
 from app.dispatch_model import DispatchAudit, DispatchItem, DispatchOutbound
 from app.sending_pause import DASHBOARD_REPLY, is_paused
 from app.routes import local_node
+from app import parts_tracking
 import os, secrets
 from datetime import datetime, timezone
 
@@ -218,6 +219,7 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         "has_changes": line_changes.has_changes(ro),
         "closeout_problem": job_closeout.problem(ro),
         "flags": job_flags.for_job(db, ro),
+        "parts_card": parts_tracking.card(db, ro, user.role),
     })
 
 

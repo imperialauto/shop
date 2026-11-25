@@ -534,6 +534,8 @@
   {% else %}<p class="text-stone-500 text-sm mt-3">No photos or files on this job yet.</p>{% endif %}
 </div>
 
+{% include "repair_orders/_parts_card.html" %}
+
 {% if sourced_parts %}
 <!-- Internal parts cost is not an approved customer selling price. -->
 <div class="card mb-4" id="parts-sourcing">
