@@ -55,6 +55,11 @@
 
     .already-signed { background: rgba(74,222,128,0.08); border: 1px solid rgba(74,222,128,0.2); color: var(--imp-ok); border-radius: 10px; padding: 16px; text-align: center; font-size: 14px; }
 
+    .quick-picks { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .quick-note { width: 100%; font-size: 12.5px; color: var(--imp-muted); }
+    .quick-btn { flex: 1 1 140px; min-height: 44px; border-radius: 8px; border: 1px solid var(--imp-line); background: var(--imp-paper); color: var(--imp-ink); font-size: 14px; font-weight: 600; cursor: pointer; padding: 8px 10px; }
+    .quick-primary { background: var(--imp-gold); color: var(--imp-purple-deep); border-color: var(--imp-gold); }
+
     .auth-notice { font-size: 11.5px; color: var(--imp-muted); line-height: 1.5; margin-top: 8px; }
   </style>
 </head>
@@ -97,6 +102,19 @@
   <!-- Line Items -->
   <div class="card">
     <div class="section-title">Approve or decline each item</div>
+    {% if pending|length > 1 %}
+    <div class="quick-picks" role="group" aria-label="Quick choices">
+      {% if options %}
+      <p class="quick-note">This estimate has {{ options|length }} options. Pick one and we'll fill in the items for you. You can still change any item below.</p>
+      {% for opt in options %}
+      <button type="button" class="quick-btn quick-primary" data-option="{{ opt.number }}" data-ids="{{ opt.ids|join(',') }}">Choose Option {{ opt.number }}{% if opt.name %} ({{ opt.name }}){% endif %}</button>
+      {% endfor %}
+      {% else %}
+      <button type="button" class="quick-btn quick-primary" id="approve-all">Approve all</button>
+      {% endif %}
+      <button type="button" class="quick-btn" id="decline-all">Decline all</button>
+    </div>
+    {% endif %}
     <table>
       <tbody>
         {% for li in ro.line_items if li.approval in ['approved', 'pending'] %}
@@ -106,7 +124,7 @@
             <div style="font-size:11.5px; color:var(--imp-muted); margin-top:1px;">{{ li.item_type | title }} × {{ li.quantity }}{% if li.approval == 'approved' %} · Approved{% elif li.approval == 'declined' %} · Declined{% endif %}</div>
             {% if li.approval == 'pending' %}
             <div style="display:flex; gap:8px; margin-top:8px;">
-              <label style="flex:1; min-height:44px; display:flex; align-items:center; gap:6px; background:var(--imp-surface); border-radius:8px; padding:0 10px;"><input type="radio" name="line_{{ li.id }}" value="approved" data-amount="{{ '%.2f'|format(li.total) }}" required> Approve</label>
+              <label style="flex:1; min-height:44px; display:flex; align-items:center; gap:6px; background:var(--imp-surface); border-radius:8px; padding:0 10px;"><input type="radio" name="line_{{ li.id }}" value="approved" data-amount="{{ '%.2f'|format(li.total) }}" data-line="{{ li.id }}" required> Approve</label>
               <label style="flex:1; min-height:44px; display:flex; align-items:center; gap:6px; background:var(--imp-surface); border-radius:8px; padding:0 10px;"><input type="radio" name="line_{{ li.id }}" value="declined"> Decline</label>
             </div>
             {% endif %}
@@ -232,6 +250,7 @@
     var label = document.getElementById('approved-total');
     var radios = document.querySelectorAll('input[type=radio][name^="line_"]');
     if (!label || !radios.length) return;
+    var optional = {{ '{' }}{% for li in pending if li.description and li.description.strip().upper().startswith('OPTIONAL') %}"{{ li.id }}": true{% if not loop.last %}, {% endif %}{% endfor %}{{ '}' }};
     var fixed = {{ '%.2f'|format(ro.line_items|selectattr('approval', 'equalto', 'approved')|map(attribute='total')|sum) }};
     function update() {
       var sum = fixed;
@@ -240,6 +259,35 @@
     }
     radios.forEach(function (r) { r.addEventListener('change', update); });
     update();
+
+    // Quick choices: they only tick the boxes below; the customer can still change any item before signing.
+    function set(lineId, choice) {
+      var r = document.querySelector('input[type=radio][name="line_' + lineId + '"][value="' + choice + '"]');
+      if (r) r.checked = true;
+    }
+    var all = Array.prototype.map.call(document.querySelectorAll('input[type=radio][value=approved]'), function (r) { return r.dataset.line; });
+    var optionIds = {};
+    document.querySelectorAll('[data-option]').forEach(function (b) { optionIds[b.dataset.option] = b.dataset.ids.split(','); });
+    var inAnyOption = {};
+    Object.keys(optionIds).forEach(function (k) { optionIds[k].forEach(function (id) { inAnyOption[id] = true; }); });
+    var approveAll = document.getElementById('approve-all');
+    if (approveAll) approveAll.addEventListener('click', function () { all.forEach(function (id) { set(id, 'approved'); }); update(); });
+    var declineAll = document.getElementById('decline-all');
+    if (declineAll) declineAll.addEventListener('click', function () { all.forEach(function (id) { set(id, 'declined'); }); update(); });
+    document.querySelectorAll('[data-option]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var mine = {};
+        optionIds[b.dataset.option].forEach(function (id) { mine[id] = true; });
+        // This option's items and the items that go with every option are approved; the other options' are declined.
+        // Lines marked OPTIONAL are left for the customer to decide.
+        all.forEach(function (id) {
+          if (mine[id]) set(id, 'approved');
+          else if (inAnyOption[id]) set(id, 'declined');
+          else if (!optional[id]) set(id, 'approved');
+        });
+        update();
+      });
+    });
   })();
 </script>
 {% endif %}
