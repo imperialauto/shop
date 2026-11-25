@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, ForeignKey, Enum, LargeBinary
+from sqlalchemy import Column, Integer, String, Text, Float, Boolean, Date, DateTime, ForeignKey, Enum, LargeBinary
 from sqlalchemy.orm import relationship
 from app.database import Base
 import enum
@@ -191,6 +191,7 @@ class PartsOrder(Base):
     status = Column(String(32), default="ordered")  # ordered, received, returned
     ordered_at = Column(DateTime, default=datetime.utcnow)
     received_at = Column(DateTime)
+    eta = Column(Date)  # supplier's expected arrival day (shop's local day); see app/parts_tracking.py
 
 
 class Communication(Base):
