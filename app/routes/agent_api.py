@@ -748,11 +748,15 @@ def update_job_notes(ro_id: int, payload: JobNotesIn, db: Session = Depends(get_
 class SendApprovalIn(BaseModel):
     offer_snap: bool = False
     message: str | None = Field(default=None, max_length=1200)
+    resend: bool = Field(default=False, description="Only when the owner says the earlier text never reached "
+                                                     "the customer: sends the link again even if one shows as sent.")
 
 
 SEND_NOTES = {
     "sending": "Handed to the shop line. It shows on the job once Quo sends it; the owner gets the usual Sent notice.",
-    "already": "Not sent: their link already went out from the dashboard and they haven't texted since.",
+    "already": "Not sent: Quo confirmed their link went out and they haven't texted since. If the owner says it never "
+               "reached them, call again with resend.",
+    "in_flight": "Not sent: the last approval text is still with the shop line. Check again in a few minutes.",
     "texted": "Not sent: a text after their last message already has this job's link.",
     "paused": "Not sent: texting is paused on the dashboard.",
     "no_phone": "Not sent: the customer has no mobile number on file.",
@@ -775,11 +779,16 @@ def send_approval(ro_id: int, payload: SendApprovalIn, db: Session = Depends(get
     actor = f"Claude connector {key.key_prefix}"[:64]
     message = (payload.message or "").strip() or None
     state, item = approval_links.send_now(db, ro, actor, key.created_by_user_id, offer_snap=payload.offer_snap,
-                                          text=message, audit_detail=f"Claude connector, job {ro.id}")
+                                          text=message, resend=payload.resend,
+                                          audit_detail=f"Claude connector{' resend' if payload.resend else ''}, job {ro.id}")
     if state == "sending":
         agent_keys.record(db, key, "approval.send", "repair_order", ro.id, f"approval text #{item.id}")
         db.commit()
     db.refresh(ro)
+    last = approval_links.last_send(db, ro)
     return {"state": state, "sent": state == "sending", "note": SEND_NOTES[state],
+            "last_text": ({"state": last["state"], "at": last["at"].isoformat() if last.get("at") else None,
+                           "why": last.get("why")} if last else None),
+            "sign_link": approval_links.sign_link(ro),
             "queue_item": item.id if item is not None else None,
             "text": item.draft_reply if state == "sending" else None, "job": job_json(ro)}

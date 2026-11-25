@@ -11,7 +11,7 @@ refuses to send if the customer has texted since the button was pressed.
 """
 import os
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -151,12 +151,79 @@ def _already_texted(ro: RepairOrder, messages: list) -> bool:
     return any(token in str(m.get("body") or "") for m in after)
 
 
+# A text handed to the shop line that Quo hasn't confirmed by now never went out.
+NO_ANSWER_AFTER = timedelta(minutes=20)
+NOT_SENT_WHY = {"failed": "the shop line couldn't send it",
+                "skipped": "the shop line held it back (a newer text in their thread, or a safety check)",
+                "expired": "the shop line never confirmed it went out"}
+
+
+def _aware(dt):
+    if dt is None:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _settle(db: Session, rows: list) -> None:
+    """A text still waiting on the shop line long after it was handed over counts as not sent, so the
+    owner can send it again; it is also taken out of the queue so it can't go out late as a double."""
+    now = datetime.now(timezone.utc)
+    for row in rows:
+        started = _aware(row.updated_at or row.created_at)
+        if row.status in ("queued", "reserved") and started is not None and now - started > NO_ANSWER_AFTER:
+            row.status, row.updated_at = "failed", now
+            db.add(DispatchAudit(item_id=row.item_id, actor="system", action="text_expired",
+                                 detail="no word from the shop line that it went out"))
+
+
+def _rows_for(db: Session, ro: RepairOrder) -> list:
+    from app.dispatch_model import DispatchOutbound
+    ids = [i for (i,) in db.query(DispatchItem.id).filter(
+        DispatchItem.quo_conversation_id == conversation_key(ro.id)).all()]
+    if not ids:
+        return []
+    return (db.query(DispatchOutbound).filter(DispatchOutbound.item_id.in_(ids))
+            .order_by(DispatchOutbound.id.desc()).all())
+
+
+def last_send(db: Session, ro: RepairOrder) -> dict | None:
+    """What really happened to the newest approval text for this job, for the job page. Read only.
+
+    state: sent (Quo took it), waiting (handed to the shop line, no answer yet) or not_sent.
+    """
+    rows = _rows_for(db, ro)
+    if not rows:
+        return None
+    row = rows[0]
+    at = _aware(row.updated_at or row.created_at)
+    if row.status == "sent":
+        return {"state": "sent", "at": at, "item_id": row.item_id}
+    if row.status in ("queued", "reserved"):
+        if at is not None and datetime.now(timezone.utc) - at > NO_ANSWER_AFTER:
+            return {"state": "not_sent", "at": at, "item_id": row.item_id, "why": NOT_SENT_WHY["expired"]}
+        return {"state": "waiting", "at": at, "item_id": row.item_id}
+    expired = row.status == "failed" and db.query(DispatchAudit.id).filter(
+        DispatchAudit.item_id == row.item_id, DispatchAudit.action == "text_expired").first() is not None
+    why = "expired" if expired else row.status
+    return {"state": "not_sent", "at": at, "item_id": row.item_id, "why": NOT_SENT_WHY.get(why, NOT_SENT_WHY["failed"])}
+
+
+def sign_link(ro: RepairOrder) -> str | None:
+    """The page where the customer approves, for the owner to copy and send another way."""
+    return f"{base_url()}/sign/ro/{ro.public_token}" if ro.public_token else None
+
+
 def send_now(db: Session, ro: RepairOrder, actor: str, actor_user_id: int, offer_snap: bool = False,
-             text: str | None = None, audit_detail: str | None = None) -> tuple[str, DispatchItem | None]:
+             text: str | None = None, audit_detail: str | None = None,
+             resend: bool = False) -> tuple[str, DispatchItem | None]:
     """Texts the customer their approval link now. Returns (state, item).
 
     state is one of: paused, no_phone, nothing, unavailable, already, texted (the link went out
-    outside the dashboard and they haven't replied), sending (handed to the shop line).
+    outside the dashboard and they haven't replied), in_flight (an earlier press is still with the
+    shop line), sending (handed to the shop line).
+    "already" counts only a text Quo confirmed (or one still in flight): a send the shop line failed,
+    held back or never confirmed can be sent again. resend=True is the owner's "Send it again": it
+    skips the already-sent checks, but never doubles a text that is still in flight.
     Undecided lines are marked waiting on the customer whatever happens, as Ask for approval did.
     When lines changed or were added since the customer last answered (app/line_changes.py), the
     text says the estimate was updated and is sent once per set of changes, even though their
@@ -197,22 +264,31 @@ def send_now(db: Session, ro: RepairOrder, actor: str, actor_user_id: int, offer
         return "unavailable", None
     messages = thread.get("messages") or []
     newest = (messages[-1].get("id") if messages else None) or "none"
-    if changes:
+    earlier = _rows_for(db, ro)
+    _settle(db, earlier)
+    db.commit()
+    if any(o.status in ("queued", "reserved") for o in earlier):
+        return "in_flight", None
+    if resend:
+        prefix = f"resend:{ro.id}:{newest}"[:150]
+    elif changes:
         # One send per set of changes. Their earlier link text doesn't count: this is new.
         prefix = f"changes:{ro.id}:{line_changes.revision_key(ro)}"
     else:
+        sent_items = {o.item_id for o in earlier if o.status == "sent"}
         already = (db.query(DispatchItem).filter(DispatchItem.quo_conversation_id == conversation_key(ro.id),
                                                  DispatchItem.status == "approved",
-                                                 DispatchItem.last_message_id == newest).first())
+                                                 DispatchItem.last_message_id == newest,
+                                                 DispatchItem.id.in_(sent_items or {-1})).first())
         if already is not None:
-            # Same link, and nothing has happened in their thread since it went out: never text it twice.
+            # Quo confirmed this link and nothing has happened in their thread since: never text it twice.
             return "already", already
         if _already_texted(ro, messages):
             return "texted", None
         # One send per job per point in their thread. A failed or skipped try may be tried again.
         prefix = f"approval:{ro.id}:{newest}"[:150]
     tries = db.query(DispatchOutbound).filter(DispatchOutbound.dedupe_key.like(prefix + "%")).all()
-    if any(o.status not in ("failed", "skipped") for o in tries):
+    if not resend and any(o.status not in ("failed", "skipped") for o in tries):
         return "already", None
     body = custom_text(ro, text, offer_snap) if text else (line_changes.message(ro, offer_snap) if changes else None)
     item = queue(db, ro, newest, actor, offer_snap=offer_snap, text=body)

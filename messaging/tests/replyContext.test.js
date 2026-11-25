@@ -18,7 +18,7 @@ function fakeQuo({ messages = [message], calls = [], callFailure = false } = {})
       if (callFailure) throw Error("Quo unavailable");
       return { data: calls };
     },
-    sendMessage: async (record) => { sent.push(record); },
+    sendMessage: async (record) => { sent.push(record); return { id: `AC${sent.length}` }; },
   };
 }
 function fakeShop() {

@@ -81,6 +81,7 @@ class OwnerAction(BaseModel):
 class OutboundResult(BaseModel):
     key: str = Field(min_length=1, max_length=160)
     status: str = Field(pattern="^(sent|failed|skipped)$")
+    messageId: str | None = Field(default=None, max_length=80)  # Quo's id for the text, when it was sent
 
 
 class SyncReport(BaseModel):
@@ -1243,9 +1244,13 @@ def outbound_result(result: OutboundResult, db: Session = Depends(get_db), _auth
     row = db.query(DispatchOutbound).filter(DispatchOutbound.dedupe_key == result.key).first()
     if row is None:
         raise HTTPException(404, "Unknown message.")
+    if row.status == "failed" and result.status == "sent" and row.kind == DASHBOARD_REPLY:
+        # It had been given up on (no word for too long) and the owner may have sent it again; record it.
+        audit(db, row.item_id, "system", "text_sent_late", row.kind)
     row.status = result.status
     row.updated_at = datetime.now().astimezone()
-    audit(db, row.item_id, "system", f"text_{result.status}", row.kind)
+    audit(db, row.item_id, "system", f"text_{result.status}",
+          f"{row.kind} {result.messageId}"[:255] if result.messageId else row.kind)
     db.commit()
     return {"recorded": True}
 

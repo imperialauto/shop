@@ -224,6 +224,7 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         "flags": job_flags.for_job(db, ro),
         "parts_card": parts_tracking.card(db, ro, user.role),
         "canned_jobs": canned_jobs.menu(),
+        "approval_send": _approval_send(db, ro, user),
         "job_timer": _job_timer().for_job(db, ro, user),
     })
 
@@ -356,9 +357,23 @@ def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db)
 SENDERS = ("owner", "admin")
 
 
-def _send_link(db: Session, ro: RepairOrder, user, offer_snap: str):
+def _approval_send(db: Session, ro: RepairOrder, user) -> dict | None:
+    """The newest approval text's real state and the link to copy, for the owner's job page."""
+    if user.role not in SENDERS:
+        return None
+    try:
+        last = approval_links.last_send(db, ro)
+    except Exception:  # the job page still loads
+        db.rollback()
+        last = None
+    return {"last": last, "sign_link": approval_links.sign_link(ro)}
+
+
+def _send_link(db: Session, ro: RepairOrder, user, offer_snap: str, resend: bool = False):
     asked = sum(1 for li in ro.line_items if li.approval is None)
-    state, item = approval_links.send_now(db, ro, user.username, user.id, offer_snap=snap_offer.checked(offer_snap))
+    state, item = approval_links.send_now(db, ro, user.username, user.id, offer_snap=snap_offer.checked(offer_snap),
+                                          resend=resend,
+                                          audit_detail=f"owner pressed Send it again, job {ro.id}" if resend else None)
     if state in ("sending", "already") and item is not None:
         state = f"{state}{item.id}"
     return RedirectResponse(f"/ro/{ro.id}?asked={asked}&link={state}#line-items", status_code=303)
@@ -381,6 +396,23 @@ def text_link_now(request: Request, ro_id: int, db: Session = Depends(get_db), o
     if not ro:
         raise HTTPException(status_code=404)
     return _send_link(db, ro, user, offer_snap)
+
+
+@router.post("/{ro_id}/resend-link")
+def resend_link(request: Request, ro_id: int, db: Session = Depends(get_db), offer_snap: str = Form(default="")):
+    """The owner's "Send it again": texts the approval link even though an earlier one shows as sent
+    (for when it never reached them). Never doubles a text the shop line is still sending."""
+    user = require_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    if user.role not in SENDERS:
+        raise HTTPException(403, "Only the owner can text the customer from here.")
+    ro = db.get(RepairOrder, ro_id)
+    if not ro:
+        raise HTTPException(status_code=404)
+    if ro.status in ("delivered", "cancelled"):
+        raise HTTPException(409, "This job is closed.")
+    return _send_link(db, ro, user, offer_snap, resend=True)
 
 
 IN_PERSON_SOURCES = {"in_person": "in person", "phone": "by phone"}
