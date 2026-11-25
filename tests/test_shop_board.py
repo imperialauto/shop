@@ -130,6 +130,16 @@ class ShopBoardTests(unittest.TestCase):
             sales = shop_board.sales_today(db, NOW)
         self.assertEqual(sales["total"], 1025.5)
 
+    def test_an_open_screen_reloads_after_a_deploy_and_when_refresh_stalls(self):
+        from app.routes import shop_board as board_route
+        client = self.client()
+        with patch.object(board_route, "BUILD", "deploy-2"):
+            page = client.get("/board").text
+            panel = client.get("/board/panel").text
+        self.assertIn('data-build="deploy-2"', page)
+        self.assertIn("!== \"deploy-2\") location.reload()", panel)
+        self.assertIn("lastSwap > 180000", page)
+
     def test_tv_page_and_refresh_panel(self):
         client = self.client()
         page = client.get("/board")

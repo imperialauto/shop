@@ -1,4 +1,6 @@
 """Shop TV board (/board) and the phone page that runs its to-do list (/board/manage)."""
+import os
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.exc import SQLAlchemyError
@@ -13,6 +15,8 @@ from app.templating import Jinja2Templates
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 REFRESH_SECONDS = 20
+# Changes with every deploy. A TV left open across a deploy sees a new value in the panel and reloads itself.
+BUILD = os.environ.get("RAILWAY_DEPLOYMENT_ID") or os.environ.get("RAILWAY_GIT_COMMIT_SHA") or ""
 TIMER_PRESETS = (5, 10, 15, 20, 30, 60)
 
 
@@ -21,7 +25,7 @@ def tv_board(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)  # not signed in: sign in, then back here
     return templates.TemplateResponse("shop_board.html", {
         "request": request, "user": user, "board": shop_board.snapshot(db, user),
-        "refresh": REFRESH_SECONDS,
+        "refresh": REFRESH_SECONDS, "build": BUILD,
     })
 
 
@@ -33,7 +37,7 @@ def tv_board_panel(request: Request, db: Session = Depends(get_db)):
     except HTTPException:
         return templates.TemplateResponse("shop_board_signed_out.html", {"request": request})
     return templates.TemplateResponse("shop_board_panel.html", {
-        "request": request, "user": user, "board": shop_board.snapshot(db, user),
+        "request": request, "user": user, "board": shop_board.snapshot(db, user), "build": BUILD,
     })
 
 
