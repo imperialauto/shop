@@ -59,6 +59,7 @@ class AlertHistoryTests(unittest.TestCase):
         self.assertEqual(alert_center.recipient_for("customer"), "Customer")
         self.assertEqual(alert_center.recipient_for("dashboard_reply"), "Customer")
         self.assertEqual(alert_center.recipient_for("owner_alert"), "Owner")
+        self.assertEqual(alert_center.recipient_for("review_request"), "Customer")  # the day-after-pickup review ask
         self.assertEqual(alert_center.STATUS["reserved"], "Send unconfirmed")
 
 
