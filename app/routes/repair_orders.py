@@ -208,7 +208,32 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         "progress": _evidence().progress(ro),
         "offsite_estimate": customer_followups.offsite_estimate_at(db, ro.id) is not None,
         "delete_blockers": ro_delete.blockers(ro) if user.role == "owner" else None,
+        "deposits": _deposits().summary(ro) if user.role != "tech" else None,
+        "deposit_methods": _deposit_methods() if user.role in ("owner", "admin", "office") else [],
+        "deposit_method_labels": _method_labels(),
+        "today": _today(),
     })
+
+
+def _deposits():
+    from app import job_deposits
+    return job_deposits
+
+
+def _deposit_methods():
+    from app.routes.invoices import METHOD_LABELS, enabled_methods
+    return [(m, METHOD_LABELS[m]) for m in enabled_methods()]
+
+
+def _method_labels():
+    from app.routes.invoices import METHOD_LABELS
+    return METHOD_LABELS
+
+
+def _today():
+    from datetime import datetime as _dt
+    from app.routes.invoices import _shop_day
+    return _shop_day(_dt.utcnow()).isoformat()
 
 
 def _evidence():

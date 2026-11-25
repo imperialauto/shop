@@ -13,6 +13,7 @@ from app.auth import hash_password, verify_password, login_user, logout_user, ge
 from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, my_day, business_settings_page, dispatch, imperial_tasks, dev_work, live, finance, owner_estimates, owner_setup, public_site, staff
 from app.routes import account_security, local_node, security_center, ro_evidence, agent_api, shop_board
 from app.routes import tags as tag_routes
+from app.routes import job_deposit_routes
 from app import agent_keys, agent_connector, appointment_feed
 from app.scheduler import start_scheduler
 
@@ -52,6 +53,7 @@ app.include_router(live.router, prefix="/live", tags=["live"])
 app.include_router(vehicles.router, prefix="/vehicles", tags=["vehicles"])
 app.include_router(local_node.staff_router, prefix="/ro", tags=["local_node"])
 app.include_router(ro_evidence.router, prefix="/ro", tags=["repair_orders"])
+app.include_router(job_deposit_routes.router, prefix="/ro", tags=["repair_orders"])
 app.include_router(repair_orders.router, prefix="/ro", tags=["repair_orders"])
 app.include_router(tag_routes.router, prefix="/tags", tags=["tags"])
 app.include_router(ro_evidence.public_router, tags=["public"])

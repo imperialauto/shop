@@ -144,3 +144,5 @@
  </div>
 </div>
 <div class="foot">Updated {{ board.now.strftime('%-I:%M:%S %p') }}</div>
+{# A screen still running the page from before a deploy reloads once to pick up the new board. #}
+<script>if (document.body.getAttribute('data-build') !== {{ build|default('', true)|tojson }}) location.reload();</script>

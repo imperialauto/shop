@@ -308,6 +308,51 @@
   {% endif %}
   {% endif %}
 
+  {% if deposits %}
+  <!-- Deposits paid on the job before it has an invoice -->
+  <div id="deposits" class="mt-4 border-t border-stone-700 pt-3">
+    <div class="flex flex-wrap items-baseline justify-between gap-2">
+      <h3 class="text-gold-300 font-bold">Deposit</h3>
+      {% if deposits.job_total > 0 %}
+      <span class="text-sm {{ 'text-green-400' if deposits.short == 0 else 'text-amber-300' }}">
+        {% if deposits.paid == 0 %}None recorded. 50% is ${{ "%.2f"|format(deposits.deposit_due) }}.
+        {% elif deposits.short == 0 %}${{ "%.2f"|format(deposits.paid) }} paid, 50% covered.
+        {% else %}${{ "%.2f"|format(deposits.paid) }} paid, ${{ "%.2f"|format(deposits.short) }} short of 50%.{% endif %}
+      </span>
+      {% endif %}
+    </div>
+    {% set dep_msg = request.query_params.get('deposit', '') %}
+    {% if dep_msg == 'recorded' %}<p class="text-sm text-green-400 mt-2">Deposit recorded. Nothing was sent to the customer.</p>
+    {% elif dep_msg == 'removed' %}<p class="text-sm text-stone-300 mt-2">Deposit removed.</p>{% endif %}
+    {% if request.query_params.get('deposit_error') %}<p role="alert" class="text-sm text-amber-300 mt-2">{{ request.query_params.get('deposit_error') }}</p>{% endif %}
+    {% if deposits.deposits %}
+    <ul class="mt-2 space-y-1 text-sm">
+      {% for d in deposits.deposits %}
+      <li class="flex flex-wrap items-center justify-between gap-2" style="min-height:44px">
+        <span>${{ "%.2f"|format(d.amount) }} · {{ deposit_method_labels.get(d.method, d.method) }} · {{ d.received_at.strftime('%b %-d') }}{% if d.reference %} · {{ d.reference }}{% endif %}{% if d.payment_id %} <span class="text-stone-500 text-xs">(on the invoice)</span>{% endif %}</span>
+        {% if user.role == 'owner' and not d.payment_id %}
+        <form method="post" action="/ro/{{ ro.id }}/deposits/{{ d.id }}/remove"><button type="submit" class="btn-secondary" style="min-height:44px">Remove</button></form>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if deposit_methods and ro.status != 'delivered' %}
+    <details class="mt-2" {% if request.query_params.get('deposit_error') %}open{% endif %}>
+      <summary class="text-sm text-stone-300 cursor-pointer" style="min-height:44px;display:flex;align-items:center;justify-content:flex-end">Record a deposit</summary>
+      <form method="post" action="/ro/{{ ro.id }}/deposits" class="mt-2 grid grid-cols-2 gap-2 items-end">
+        <div><label class="form-label">Amount</label><input type="number" name="amount" step="0.01" min="0.01" required class="form-input" value="{{ '%.2f'|format(deposits.short) if deposits.short else '' }}"></div>
+        <div><label class="form-label">Paid by</label><select name="method" class="form-select">{% for m, label in deposit_methods %}<option value="{{ m }}">{{ label }}</option>{% endfor %}</select></div>
+        <div><label class="form-label">Day received</label><input type="date" name="paid_on" max="{{ today }}" value="{{ today }}" class="form-input"></div>
+        <div><label class="form-label">Reference (optional)</label><input type="text" name="reference" maxlength="128" class="form-input"></div>
+        <p class="col-span-2 text-stone-500 text-xs">Records money already received. It moves onto the invoice when you create it. No text goes to the customer.</p>
+        <div class="col-span-2 text-right"><button type="submit" class="btn-primary" style="min-height:44px">Record deposit</button></div>
+      </form>
+    </details>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <!-- Add Line Item -->
   <form method="post" action="/ro/{{ ro.id }}/add-line-item" class="mt-4 grid grid-cols-5 gap-2 items-end">
     <div class="col-span-2">
