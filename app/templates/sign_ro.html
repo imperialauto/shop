@@ -121,7 +121,7 @@
         <tr>
           <td class="td-desc">
             {{ li.description }}
-            <div style="font-size:11.5px; color:var(--imp-muted); margin-top:1px;">{{ li.item_type | title }} × {{ li.quantity }}{% if li.approval == 'approved' %} · Approved{% elif li.approval == 'declined' %} · Declined{% endif %}</div>
+            <div style="font-size:11.5px; color:var(--imp-muted); margin-top:1px;">{% if li.item_type == 'discount' %}Discount, taken off your total{% else %}{{ li.item_type | title }} × {{ li.quantity }}{% if li.approval == 'approved' %} · Approved{% elif li.approval == 'declined' %} · Declined{% endif %}{% endif %}</div>
             {% if li.approval == 'pending' %}
             <div style="display:flex; gap:8px; margin-top:8px;">
               <label style="flex:1; min-height:44px; display:flex; align-items:center; gap:6px; background:var(--imp-surface); border-radius:8px; padding:0 10px;"><input type="radio" name="line_{{ li.id }}" value="approved" data-amount="{{ '%.2f'|format(li.total) }}" data-taxable="{{ 1 if li.item_type == 'part' else 0 }}" data-line="{{ li.id }}" required> Approve</label>
@@ -129,7 +129,7 @@
             </div>
             {% endif %}
           </td>
-          <td class="td-right">${{ "%.2f"|format(li.total) }}</td>
+          <td class="td-right">{{ li.total|money }}</td>
         </tr>
         {% endfor %}
       </tbody>
