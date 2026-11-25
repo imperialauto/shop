@@ -145,7 +145,7 @@
     }
   </style>
 </head>
-<body>
+<body data-build="{{ build }}">
   <div class="tv">
     <header>
       <div class="brand">Imperial Auto Care<small>Shop board</small></div>
@@ -168,6 +168,11 @@
       // If the screen is left up overnight, start fresh each morning.
       var opened = dateFmt.format(new Date());
       setInterval(function () { if (dateFmt.format(new Date()) !== opened) location.reload(); }, 600000);
+      // Watchdog: if the board hasn't refreshed in 3 minutes (a lost connection, or the refresh script never
+      // loaded), reload the whole page so the screen never sits on old information.
+      var lastSwap = Date.now();
+      document.body.addEventListener('htmx:afterSwap', function () { lastSwap = Date.now(); });
+      setInterval(function () { if (Date.now() - lastSwap > 180000 && navigator.onLine !== false) location.reload(); }, 30000);
     })();
 
     // A list longer than its card turns pages every few seconds, so every item gets its turn on screen.

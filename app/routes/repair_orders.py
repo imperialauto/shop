@@ -207,7 +207,32 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         "progress": _evidence().progress(ro),
         "offsite_estimate": customer_followups.offsite_estimate_at(db, ro.id) is not None,
         "delete_blockers": ro_delete.blockers(ro) if user.role == "owner" else None,
+        "deposits": _deposits().summary(ro) if user.role != "tech" else None,
+        "deposit_methods": _deposit_methods() if user.role in ("owner", "admin", "office") else [],
+        "deposit_method_labels": _method_labels(),
+        "today": _today(),
     })
+
+
+def _deposits():
+    from app import job_deposits
+    return job_deposits
+
+
+def _deposit_methods():
+    from app.routes.invoices import METHOD_LABELS, enabled_methods
+    return [(m, METHOD_LABELS[m]) for m in enabled_methods()]
+
+
+def _method_labels():
+    from app.routes.invoices import METHOD_LABELS
+    return METHOD_LABELS
+
+
+def _today():
+    from datetime import datetime as _dt
+    from app.routes.invoices import _shop_day
+    return _shop_day(_dt.utcnow()).isoformat()
 
 
 def _evidence():
@@ -252,14 +277,21 @@ def update_status(
 @router.post("/{ro_id}/request-approval")
 def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db),
                      offer_snap: str = Form(default="")):
-    """Marks undecided lines as waiting on the customer and queues the approval
-    text for the owner's YES. Nothing is sent from here."""
+    """Ask for approval.
+
+    Owner or admin: texts the customer their approval link now from the shop line. The press is
+    the owner's yes, so there is no second YES text, and the text is logged on the job.
+    Office staff: marks undecided lines as waiting on the customer and queues the text for the
+    owner's YES. Nothing is sent from here for them.
+    """
     user = require_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=302)
     ro = db.get(RepairOrder, ro_id)
     if not ro:
         raise HTTPException(status_code=404)
+    if user.role in SENDERS:
+        return _send_link(db, ro, user, offer_snap)
     fresh = [li for li in ro.line_items if li.approval is None]
     for li in fresh:
         li.approval = "pending"
@@ -288,6 +320,14 @@ def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db)
 SENDERS = ("owner", "admin")
 
 
+def _send_link(db: Session, ro: RepairOrder, user, offer_snap: str):
+    asked = sum(1 for li in ro.line_items if li.approval is None)
+    state, item = approval_links.send_now(db, ro, user.username, user.id, offer_snap=snap_offer.checked(offer_snap))
+    if state in ("sending", "already") and item is not None:
+        state = f"{state}{item.id}"
+    return RedirectResponse(f"/ro/{ro.id}?asked={asked}&link={state}#line-items", status_code=303)
+
+
 @router.post("/{ro_id}/text-link-now")
 def text_link_now(request: Request, ro_id: int, db: Session = Depends(get_db), offer_snap: str = Form(default="")):
     """The owner's own button: texts the customer their one approval link from the shop line.
@@ -304,43 +344,7 @@ def text_link_now(request: Request, ro_id: int, db: Session = Depends(get_db), o
     ro = db.get(RepairOrder, ro_id)
     if not ro:
         raise HTTPException(status_code=404)
-
-    def back(state: str):
-        return RedirectResponse(f"/ro/{ro_id}?link={state}#line-items", status_code=303)
-
-    if is_paused(db):
-        return back("paused")
-    if approval_links.mobile(ro.customer.phone) is None:
-        return back("no_phone")
-    fresh = [li for li in ro.line_items if li.approval is None]
-    for li in fresh:
-        li.approval = "pending"
-    if fresh:
-        ro.status = "waiting_approval"
-        website_alerts.close_for_job(db, ro, user.username, "approval link texted")
-    if not any(li.approval == "pending" for li in ro.line_items):
-        db.commit()
-        return back("nothing")
-    db.commit()
-    thread, problem = customer_file._bridge("/conversation", approval_links.mobile(ro.customer.phone)[-10:])
-    if problem:
-        return back("unavailable")
-    messages = thread.get("messages") or []
-    newest = (messages[-1].get("id") if messages else None) or "none"
-    key = approval_links.conversation_key(ro.id)
-    already = (db.query(DispatchItem).filter(DispatchItem.quo_conversation_id == key, DispatchItem.status == "approved",
-                                             DispatchItem.last_message_id == newest).first())
-    if already is not None:
-        # Same link, and nothing has happened in their thread since it went out: never text it twice.
-        return back(f"already{already.id}")
-    item = approval_links.queue(db, ro, newest, user.username, offer_snap=snap_offer.checked(offer_snap))
-    now = datetime.now().astimezone()
-    item.status, item.decided_by, item.decided_at, item.updated_at = "approved", user.id, now, now
-    db.add(DispatchAudit(item_id=item.id, actor=user.username[:64], action="owner_approve", detail=f"text link now, job {ro.id}"))
-    db.add(DispatchOutbound(dedupe_key=f"dashboard:{item.id}:{item.last_message_id}", kind=DASHBOARD_REPLY,
-                            item_id=item.id, status="queued"))
-    db.commit()
-    return back(f"sending{item.id}")
+    return _send_link(db, ro, user, offer_snap)
 
 
 IN_PERSON_SOURCES = {"in_person": "in person", "phone": "by phone"}
@@ -539,6 +543,52 @@ def delete_line_item(request: Request, ro_id: int, li_id: int, db: Session = Dep
     db.delete(li)
     db.commit()
     return RedirectResponse(f"/ro/{ro_id}", status_code=302)
+
+
+REMOVED_STATE = {"pending": "waiting on customer", "approved": "approved", "declined": "declined"}
+
+
+@router.post("/{ro_id}/remove-line/{li_id}")
+def remove_sent_line(request: Request, ro_id: int, li_id: int, db: Session = Depends(get_db),
+                     confirm: str = Form("")):
+    """Owner-only removal of a line that was already sent for approval (waiting, approved or declined).
+
+    Unsent lines keep the ordinary office delete. Nothing is sent to the customer. A line that is
+    marked done, or an approved line on a job with an invoice, is never removed here, so a bill
+    can't silently change. Every removal is written to the audit log with what the line was.
+    """
+    user = require_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    if user.role != "owner":
+        raise HTTPException(403, "Only the owner can remove a line that was sent for approval.")
+    if confirm != "remove":
+        raise HTTPException(422, "Confirm the removal to continue.")
+    li = db.query(LineItem).filter(
+        LineItem.id == li_id, LineItem.repair_order_id == ro_id
+    ).with_for_update().first()
+    if li is None:
+        raise HTTPException(404, "Line item not found.")
+    if li.approval is None:
+        raise HTTPException(409, "This line wasn't sent for approval. Use the regular delete.")
+    if li.completed_at:
+        raise HTTPException(409, "This line is marked done. Reopen it first if it really should be removed.")
+    ro = li.repair_order
+    if li.approval == "approved" and any(inv.status != "void" for inv in ro.invoices):
+        raise HTTPException(409, "This approved line is on a job with an invoice. Void or fix the invoice first.")
+    state = REMOVED_STATE.get(li.approval, li.approval)
+    detail = f"Job #{ro_id}: removed line '{li.description}' ${li.total:,.2f} ({state})"
+    db.delete(li)
+    db.flush()
+    db.refresh(ro)
+    if not any(x.approval == "pending" for x in ro.line_items):
+        # Nothing is left for the customer to answer, so a queued approval text must not go out.
+        approval_links.close_for(db, ro, actor=user.username, action="line_removed")
+        if ro.status == "waiting_approval" and any(x.approval == "approved" for x in ro.line_items):
+            ro.status = "approval_received"
+    db.add(DispatchAudit(item_id=None, actor=user.username[:64], action="line_removed", detail=detail[:255]))
+    db.commit()
+    return RedirectResponse(f"/ro/{ro_id}?line_removed=1#line-items", status_code=303)
 
 
 @router.get("/{ro_id}/vehicles", response_class=HTMLResponse)

@@ -76,7 +76,7 @@ Deposits. Jobs over $1,000 need a 50% deposit before parts are ordered. Jobs fro
 
 Customer-supplied parts. We install customer-supplied parts at the customer-supplied-parts labor rate and do not warranty those parts or labor caused by their failure.
 
-Payment. Payment is due when the vehicle is picked up. We accept Zelle, cash, card and the other methods listed at the counter. Financing may be available through Snap Finance.
+Payment. Payment is due when the vehicle is picked up. We accept card through a QuickBooks payment link, Zelle, Apple Pay and cash. Financing may be available through Snap Finance.
 
 Storage. Storage of $25 per day starts 3 days after we tell you the work is complete.
 

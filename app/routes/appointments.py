@@ -215,29 +215,34 @@ def confirm(db: Session, appointment_id: int, actor: str, closed_by: str, before
 @router.post("/{appointment_id}/cancel")
 def cancel_appointment(appointment_id: int, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
-    appointment = db.query(Appointment).filter(Appointment.id == appointment_id).with_for_update().first()
-    if appointment is None:
-        raise HTTPException(404, "Appointment not found.")
-    if appointment.status in ("completed", "cancelled"):
-        raise HTTPException(409, "Appointment cannot be cancelled from its current state.")
-    appointment.status = "cancelled"
-    appointment_followup.close_reminder(db, appointment, f"user:{user.id}", "cancelled")
-    if lead_lifecycle.enabled():
-        lead_lifecycle.reopen_cancelled_booking(db, appointment.id, f"user:{user.id}")
-    db.commit()
-    return {"id": appointment.id, "status": appointment.status}
+    return close(db, appointment_id, "cancelled", f"user:{user.id}")
 
 
 @router.post("/{appointment_id}/complete")
 def complete_appointment(appointment_id: int, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
+    return close(db, appointment_id, "completed", f"user:{user.id}")
+
+
+def close(db: Session, appointment_id: int, outcome: str, actor: str, before_commit=None):
+    """Cancel or complete a visit. Shared by the calendar page and the assistant API; sends nothing to the customer."""
     appointment = db.query(Appointment).filter(Appointment.id == appointment_id).with_for_update().first()
     if appointment is None:
         raise HTTPException(404, "Appointment not found.")
-    if appointment.status != "confirmed":
-        raise HTTPException(409, "Only confirmed appointments can be completed.")
-    appointment.status = "completed"
-    appointment_followup.close_reminder(db, appointment, f"user:{user.id}", "completed")
+    if outcome == "cancelled":
+        if appointment.status in ("completed", "cancelled"):
+            raise HTTPException(409, "Appointment cannot be cancelled from its current state.")
+    elif outcome == "completed":
+        if appointment.status != "confirmed":
+            raise HTTPException(409, "Only confirmed appointments can be completed.")
+    else:
+        raise HTTPException(422, "Unknown change.")
+    appointment.status = outcome
+    appointment_followup.close_reminder(db, appointment, actor, outcome)
+    if outcome == "cancelled" and lead_lifecycle.enabled():
+        lead_lifecycle.reopen_cancelled_booking(db, appointment.id, actor)
+    if before_commit is not None:
+        before_commit(appointment)
     db.commit()
     return {"id": appointment.id, "status": appointment.status}
 
