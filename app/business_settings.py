@@ -53,6 +53,8 @@ KEYS = {
     "board_on_lot": "BOARD_ON_LOT_JSON",
     "board_timers": "BOARD_TIMERS_JSON",
     "board_job_clock": "BOARD_JOB_CLOCK_JSON",
+    # Owner's yes / not now on each code change, set on the Changes page (app/change_review.py).
+    "change_approvals": "CHANGE_APPROVALS_JSON",
 }
 CACHE_SECONDS = 15
 _cache: dict = {"at": 0.0, "values": None}

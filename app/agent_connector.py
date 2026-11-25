@@ -43,7 +43,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeSerializer, URLS
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session
 
-from app import agent_keys, board_agent, shop_board
+from app import agent_keys, board_agent, change_review, shop_board
 from app.auth import get_current_user
 from app.config import SECRET_KEY
 from app.database import get_db
@@ -478,6 +478,11 @@ TOOLS = {
                               _SendApproval, lambda db, key, a: agent_api.send_approval(
                                   a.job_id, agent_api.SendApprovalIn(offer_snap=a.offer_snap, message=a.message), db, key),
                               False),
+    "list_change_decisions": ("changes:read", "The owner's decisions on the Changes page: for each code change "
+                              "(GitHub pull request number) whether he approved it or said not now, the exact commit "
+                              "he saw, when, and his note. Approved only means approved at that commit; a later "
+                              "update needs his yes again. Read only.", _Empty,
+                              lambda db, key, a: {"decisions": change_review.decision_list()}, True),
     "confirm_appointment": ("appointments:confirm", "Confirm a tentative appointment, only after the owner has said yes. "
                             "It then shows on his calendar feed and adds his reminder task. Nothing is sent to the customer.",
                             _Appointment, lambda db, key, a: agent_api.confirm_appointment(a.appointment_id, db, key), False),
