@@ -30,7 +30,7 @@ from app.appointment_model import Appointment
 from app.appointments import PHOENIX
 from app.imperial_task_model import BOARD_CATEGORY, ImperialTask, ImperialTaskAudit
 from app.dispatch_model import DispatchItem
-from app.models import Customer, LineItem, PartsOrder, Payment, RepairOrder, User, Vehicle
+from app.models import Customer, JobDeposit, LineItem, PartsOrder, Payment, RepairOrder, User, Vehicle
 
 log = logging.getLogger(__name__)
 GOAL_KEY = "daily_sales_goal"
@@ -481,6 +481,12 @@ def sales_today(db: Session, now: datetime) -> dict:
     total = db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(
         Payment.paid_at >= since, Payment.paid_at < until).scalar() or 0
     count = db.query(Payment).filter(Payment.paid_at >= since, Payment.paid_at < until).count()
+    # Deposits taken on a job before it has an invoice (Zelle and the rest) are money in too. Once a deposit moves
+    # onto an invoice it is a Payment with the same day, so only the ones not carried yet are added here.
+    deposits = db.query(JobDeposit).filter(JobDeposit.received_at >= since, JobDeposit.received_at < until,
+                                           JobDeposit.removed_at.is_(None), JobDeposit.payment_id.is_(None))
+    total = float(total) + float(deposits.with_entities(func.coalesce(func.sum(JobDeposit.amount), 0)).scalar() or 0)
+    count += deposits.count()
     goal = daily_goal()
     total = round(float(total), 2)
     return {"total": total, "goal": goal, "count": count,

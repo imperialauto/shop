@@ -17,7 +17,7 @@ from app.auth import hash_password
 from app.database import Base, get_db
 from app.imperial_task_model import BOARD_CATEGORY, ImperialTask
 from app.main import app
-from app.models import Customer, Invoice, Payment, RepairOrder, User, Vehicle
+from app.models import Customer, Invoice, JobDeposit, Payment, RepairOrder, User, Vehicle
 
 PASSWORD = "fixture-password-1"
 NOW = datetime(2026, 11, 23, 15, 0, tzinfo=PHOENIX)
@@ -98,6 +98,20 @@ class ShopBoardTests(unittest.TestCase):
             sales = shop_board.sales_today(db, NOW)
         self.assertEqual((sales["total"], sales["goal"], sales["count"]), (325.5, 500, 2))
         self.assertEqual((sales["percent"], sales["left"], sales["hit"]), (65, 174.5, False))
+
+    def test_money_in_today_counts_deposits_not_yet_on_an_invoice(self):
+        noon = datetime(2026, 11, 23, 19, 0)  # noon Phoenix, naive UTC
+        with self.Session() as db:
+            db.add_all([
+                JobDeposit(repair_order_id=self.shop_id, amount=1040, method="zelle", received_at=noon),
+                JobDeposit(repair_order_id=self.shop_id, amount=50, method="cash", received_at=noon,
+                           removed_at=datetime.now(timezone.utc)),  # taken back: not counted
+                JobDeposit(repair_order_id=self.shop_id, amount=99, method="zelle",
+                           received_at=noon - timedelta(days=1)),  # yesterday: not counted
+            ])
+            db.commit()
+            sales = shop_board.sales_today(db, NOW)
+        self.assertEqual((sales["total"], sales["count"], sales["hit"]), (1365.5, 3, True))
 
     def test_tv_page_and_refresh_panel(self):
         client = self.client()

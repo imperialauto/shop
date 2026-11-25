@@ -61,7 +61,8 @@ class JobDepositTests(_Setup):
             self.assertEqual(db.query(Payment).count(), 0)  # no invoice yet, nothing invented
 
     def test_backdated_deposit_keeps_its_day(self):
-        yesterday = (datetime.utcnow() - timedelta(days=1)).date().isoformat()
+        from app.routes.invoices import _shop_day
+        yesterday = (_shop_day(datetime.utcnow()) - timedelta(days=1)).isoformat()  # shop day, not UTC day
         self.assertEqual(self.record(paid_on=yesterday).status_code, 303)
         with self.Session() as db:
             dep = db.query(JobDeposit).one()
