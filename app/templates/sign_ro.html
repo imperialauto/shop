@@ -60,6 +60,12 @@
     .quick-btn { flex: 1 1 140px; min-height: 44px; border-radius: 8px; border: 1px solid var(--imp-line); background: var(--imp-paper); color: var(--imp-ink); font-size: 14px; font-weight: 600; cursor: pointer; padding: 8px 10px; }
     .quick-primary { background: var(--imp-gold); color: var(--imp-purple-deep); border-color: var(--imp-gold); }
 
+    .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+    .photo-grid a { display: block; font-size: 12px; color: var(--imp-muted); overflow-wrap: anywhere; text-decoration: none; }
+    .photo-grid img { width: 100%; aspect-ratio: 4/3; object-fit: cover; border-radius: 6px; display: block; }
+    .photo-file { display: flex; align-items: center; justify-content: center; min-height: 72px; border: 1px solid var(--imp-line); border-radius: 6px; padding: 6px; text-align: center; }
+    .line-photos { margin-top: 8px; }
+
     .auth-notice { font-size: 11.5px; color: var(--imp-muted); line-height: 1.5; margin-top: 8px; }
   </style>
 </head>
@@ -72,6 +78,17 @@
     <div class="sub">Glendale, AZ — Auto &amp; Diesel Repair</div>
   </div>
 </div>
+
+{% macro photo_grid(files, label) -%}
+<div class="photo-grid" role="list" aria-label="{{ label }}">
+  {% for f in files %}
+  <a role="listitem" href="/status/{{ ro.public_token }}/files/{{ f.id }}" target="_blank" rel="noopener">
+    {% if f.content_type in ('image/jpeg', 'image/png', 'image/webp') %}<img src="/status/{{ ro.public_token }}/files/{{ f.id }}" alt="Photo from the shop" loading="lazy">
+    {% else %}<span class="photo-file">{{ 'PDF' if f.content_type == 'application/pdf' else 'Photo' }} · tap to open</span>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+{%- endmacro %}
 
 <div class="container">
 
@@ -95,6 +112,14 @@
     <div class="vehicle-line">{{ ro.vehicle.label }}</div>
     {% if ro.vehicle.engine %}<div class="vehicle-sub">{{ ro.vehicle.engine }}</div>{% endif %}
   </div>
+
+  {% if job_photos %}
+  <div class="card" id="inspection-photos">
+    <div class="section-title">Photos from the inspection</div>
+    {{ photo_grid(job_photos, "Photos from the inspection") }}
+    <p style="font-size:12px; color:var(--imp-muted); margin-top:8px;">Tap a photo to see it full size.</p>
+  </div>
+  {% endif %}
 
   <form method="post" id="sign-form">
     <input type="hidden" name="signature_data" id="sig-data" />
@@ -128,6 +153,7 @@
           <td class="td-desc">
             {{ li.description }}
             <div style="font-size:11.5px; color:var(--imp-muted); margin-top:1px;">{% if li.item_type == 'discount' %}Discount, taken off your total{% else %}{{ li.item_type | title }} × {{ li.quantity }}{% if li.approval == 'approved' %} · Approved{% elif li.approval == 'declined' %} · Declined{% endif %}{% endif %}{% if changes %}{% for c in changes.changed if c.line.id == li.id %} · <strong>Changed</strong>, was {{ c.was.total|money }}{% if c.description_changed %} ({{ c.was.description }}){% endif %}{% endfor %}{% if li.id in changes.new_ids %} · <strong>New</strong>{% endif %}{% endif %}</div>
+            {% if line_photos.get(li.id) %}<div class="line-photos">{{ photo_grid(line_photos[li.id], "Photos for " ~ li.description) }}</div>{% endif %}
             {% if li.approval == 'pending' %}
             <div style="display:flex; gap:8px; margin-top:8px;">
               <label style="flex:1; min-height:44px; display:flex; align-items:center; gap:6px; background:var(--imp-surface); border-radius:8px; padding:0 10px;"><input type="radio" name="line_{{ li.id }}" value="approved" data-amount="{{ '%.2f'|format(li.total) }}" data-taxable="{{ 1 if li.item_type == 'part' else 0 }}" data-line="{{ li.id }}" required> Approve</label>

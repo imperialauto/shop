@@ -231,8 +231,6 @@
     {% if progress.total %}<span class="ml-2 normal-case {{ 'text-green-400' if progress.all_done else 'text-stone-300' }}" id="work-progress">{{ progress.done }} of {{ progress.total }} done{% if progress.all_done %} · all work done. Set the job status when it's ready{% endif %}</span>{% endif %}
   </h3>
   {% set qp = request.query_params %}
-  {% if qp.get('upload') == 'failed' %}<p class="text-sm text-red-400 mb-2" role="alert">Nothing was saved: {{ qp.get('why') }}. Try again with a photo (JPG, PNG, WebP, HEIC) or PDF under 10 MB.</p>
-  {% elif qp.get('upload') %}<p class="text-sm text-green-400 mb-2" role="status">Saved {{ qp.get('upload') }} file{{ 's' if qp.get('upload') != '1' }} to this job.{% if qp.get('why') %} Not saved: {{ qp.get('why') }}.{% endif %}</p>{% endif %}
   {% if qp.get('line_error') == 'amount' %}<p class="text-sm text-amber-300 mb-2" role="alert">Nothing was added: the quantity has to be more than 0, and only a misc line can have a negative price. For money off, pick Discount and type the amount off.</p>
   {% elif qp.get('line_error') == 'discount_too_big' %}<p class="text-sm text-amber-300 mb-2" role="alert">Nothing was added: the discounts would be more than the job's charges.</p>
   {% elif qp.get('line_error') == 'description' %}<p class="text-sm text-amber-300 mb-2" role="alert">Nothing was added: give the line a description.</p>
@@ -486,55 +484,7 @@
   <p class="text-stone-500 text-xs mt-1">Areas left on Not checked don't show. Saving changes no prices and texts nobody.</p>
 </div>
 
-<div class="card mb-4" id="evidence">
-  <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Photos &amp; files</h3>
-  <form method="post" action="/ro/{{ ro.id }}/attachments" enctype="multipart/form-data" class="grid gap-2" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); align-items:end;">
-    <div>
-      <label class="form-label" for="ev-files">Add photos or PDF</label>
-      <input id="ev-files" type="file" name="files" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf" multiple required class="form-input" style="min-height:44px" />
-    </div>
-    <div>
-      <label class="form-label" for="ev-line">For line (optional)</label>
-      <select id="ev-line" name="line_item_id" class="form-select" style="min-height:44px">
-        <option value="">Whole job</option>
-        {% for li in ro.line_items %}<option value="{{ li.id }}">{{ li.description[:60] }}</option>{% endfor %}
-      </select>
-    </div>
-    {% if user.role in ("owner", "admin", "office") %}
-    <div>
-      <label class="form-label" for="ev-vis">Who can see it</label>
-      <select id="ev-vis" name="visibility" class="form-select" style="min-height:44px">
-        <option value="customer" selected>Customer too (status page)</option>
-        <option value="internal">Shop only</option>
-      </select>
-    </div>
-    {% endif %}
-    <div><button type="submit" class="btn-secondary" style="min-height:44px">Upload</button></div>
-  </form>
-  <p class="text-stone-500 text-xs mt-1">JPG, PNG, WebP, HEIC or PDF, up to 10 MB each. Uploading doesn't change the job, its prices, or the invoice.</p>
-  {% if attachments %}
-  {% set line_names = {} %}{% for li in ro.line_items %}{% set _ = line_names.update({li.id: li.description}) %}{% endfor %}
-  <ul class="mt-3 grid gap-3" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); list-style:none; padding:0;">
-    {% for a in attachments %}
-    <li class="text-xs" id="file-{{ a.id }}">
-      <a href="/ro/{{ ro.id }}/attachments/{{ a.id }}" target="_blank" rel="noopener">
-        {% if a.content_type in ('image/jpeg', 'image/png', 'image/webp') %}<img src="/ro/{{ ro.id }}/attachments/{{ a.id }}" alt="{{ a.filename }}" loading="lazy" style="width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:6px;">
-        {% else %}<span class="block p-4 text-center" style="border:1px solid var(--imp-line,#444); border-radius:6px;">{{ 'PDF' if a.content_type == 'application/pdf' else 'HEIC photo' }}</span>{% endif %}
-      </a>
-      <div class="text-stone-300 mt-1" style="overflow-wrap:anywhere;">{{ a.filename }}</div>
-      <div class="text-stone-500">{{ line_names.get(a.line_item_id, 'Whole job') }} · {{ a.uploaded_by }}</div>
-      <div class="{{ 'text-green-400' if a.visibility == 'customer' else 'text-stone-500' }}">{{ 'Customer can see' if a.visibility == 'customer' else 'Shop only' }}</div>
-      {% if user.role in ("owner", "admin", "office") %}
-      <form method="post" action="/ro/{{ ro.id }}/attachments/{{ a.id }}/visibility">
-        <input type="hidden" name="visibility" value="{{ 'internal' if a.visibility == 'customer' else 'customer' }}">
-        <button type="submit" class="underline text-stone-400" style="min-height:44px">{{ 'Make shop only' if a.visibility == 'customer' else 'Show customer' }}</button>
-      </form>
-      {% endif %}
-    </li>
-    {% endfor %}
-  </ul>
-  {% else %}<p class="text-stone-500 text-sm mt-3">No photos or files on this job yet.</p>{% endif %}
-</div>
+{% include "repair_orders/_photos_card.html" %}
 
 {% include "repair_orders/_parts_card.html" %}
 
@@ -570,47 +520,7 @@
 </div>
 {% endif %}
 
-<!-- Communications -->
-<div class="card mb-4">
-  <div class="flex items-center justify-between mb-3">
-    <h3 class="text-xs text-stone-400 uppercase tracking-wide">Message History</h3>
-    {% if ro.customer.phone %}
-    <a href="tel:{{ ro.customer.phone }}" class="text-xs text-gold-400 hover:underline">
-      📞 {{ ro.customer.phone }}
-    </a>
-    {% endif %}
-  </div>
-
-  {% if comms %}
-  <div class="flex flex-col gap-2 max-h-96 overflow-y-auto pr-1" id="comms-thread">
-    {% for comm in comms %}
-    <div class="flex {% if comm.direction == 'outbound' %}justify-end{% else %}justify-start{% endif %}">
-      <div class="max-w-xs lg:max-w-md">
-        {# Channel badge above bubble #}
-        <div class="text-xs text-stone-500 mb-0.5 {% if comm.direction == 'outbound' %}text-right{% endif %}">
-          {{ comm.channel | upper }} · {{ (comm.created_at|shop_time).strftime('%b %d, %I:%M %p') }}
-        </div>
-        <div class="px-3 py-2 rounded-2xl text-sm leading-snug
-          {% if comm.direction == 'outbound' %}
-            bg-yellow-500 text-stone-900 rounded-br-sm
-          {% else %}
-            bg-stone-700 text-stone-100 rounded-bl-sm
-          {% endif %}">
-          {{ comm.body }}
-        </div>
-      </div>
-    </div>
-    {% endfor %}
-  </div>
-  <script>
-    // Auto-scroll to bottom of thread on load
-    const thread = document.getElementById('comms-thread');
-    if (thread) thread.scrollTop = thread.scrollHeight;
-  </script>
-  {% else %}
-  <p class="text-stone-500 text-sm">No messages yet. Messages from the SMS intake bot will appear here.</p>
-  {% endif %}
-</div>
+{% include "repair_orders/_texts_card.html" %}
 
 {% if user.role == 'owner' %}
 <details class="card mt-4 border border-red-900/60">

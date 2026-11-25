@@ -237,7 +237,7 @@ class OneLinkTests(unittest.TestCase):
 
     def test_photos_default_to_customer_for_the_office_and_stay_internal_for_techs(self):
         page = self.client("owner").get("/ro/5").text
-        self.assertIn('<option value="customer" selected>', page)
+        self.assertIn('name="visibility" value="customer" checked', page)  # Show customer starts ticked
         self.client("owner").post("/ro/5/attachments", files={"files": ("a.png", PNG, "image/png")}, data={"visibility": "customer"})
         self.client("tech").post("/ro/5/attachments", files={"files": ("b.png", PNG, "image/png")})
         with self.Session() as db:
