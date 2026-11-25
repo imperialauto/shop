@@ -7,6 +7,7 @@ from sqlalchemy import func
 from app.database import get_db
 from app.models import RepairOrder, Customer, Vehicle, User, LineItem, Communication, PartsOrder
 from app.auth import get_current_user
+from app import job_flags
 from app import tags, approval_links, customer_file, ro_delete, cycle_time, customer_followups, estimate_pdf, job_closeout, job_events, line_changes, next_action, ro_status_policy, snap_offer, website_alerts
 from app.dispatch_model import DispatchAudit, DispatchItem, DispatchOutbound
 from app.sending_pause import DASHBOARD_REPLY, is_paused
@@ -214,6 +215,7 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         "changes": line_changes.summary(ro),
         "has_changes": line_changes.has_changes(ro),
         "closeout_problem": job_closeout.problem(ro),
+        "flags": job_flags.for_job(db, ro),
     })
 
 

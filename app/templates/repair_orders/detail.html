@@ -25,6 +25,15 @@
 </div>
 {% endif %}
 
+{% if flags %}
+<div class="card mb-4" id="job-flags" role="status" style="border-color:rgba(251,191,36,.6); background:rgba(251,191,36,.07);">
+  <p class="text-xs uppercase tracking-wide text-amber-300" style="margin:0">Doesn't add up · {{ flags|length }}</p>
+  <ul style="margin:6px 0 0; padding-left:18px;">
+    {% for f in flags %}<li class="text-sm {{ 'text-amber-200' if f.severity == 'warn' else 'text-stone-300' }}" data-flag="{{ f.code }}" style="margin:2px 0;">{{ f.message }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 {% set tag_kind, tag_target, tag_next = 'job', ro.id, '/ro/' ~ ro.id %}
 {% include "_tags.html" %}
 {% if customer_tag_list %}<p class="text-xs text-stone-400" style="margin:-8px 0 14px;">Customer tags: {% for n in customer_tag_list %}<a href="/tags/?q={{ n|urlencode }}" style="color:var(--imp-gold);">#{{ n }}</a> {% endfor %}</p>{% endif %}
