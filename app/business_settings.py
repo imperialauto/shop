@@ -24,6 +24,9 @@ KEYS = {
     "owner_alert_batch_limit": "OWNER_ALERT_BATCH_LIMIT",
     "task_followup_days": "TASK_FOLLOWUP_DAYS",
     "automatic_customer_followups": "AUTOMATIC_CUSTOMER_FOLLOWUPS",
+    "next_visit_offer": "NEXT_VISIT_OFFER",
+    "automatic_review_text": "AUTOMATIC_REVIEW_TEXT",
+    "google_review_link": "GOOGLE_REVIEW_LINK",
     "automatic_deposit_text": "AUTOMATIC_DEPOSIT_TEXT",
     "automatic_pickup_text": "AUTOMATIC_PICKUP_TEXT",
     "automatic_oil_reminders": "AUTOMATIC_OIL_REMINDERS",
@@ -44,10 +47,14 @@ KEYS = {
     "daily_sales_goal": "DAILY_SALES_GOAL",
     "finance_pay_order": "FINANCE_PAY_ORDER_JSON",
     "monthly_profit_goal": "MONTHLY_PROFIT_GOAL",
+    # Profit goal for May through September; 0 means use the monthly goal all year.
+    "summer_profit_goal": "SUMMER_PROFIT_GOAL",
     # Shop TV board: which open jobs' cars are at the shop. Set on /board/manage.
     "board_on_lot": "BOARD_ON_LOT_JSON",
     "board_timers": "BOARD_TIMERS_JSON",
     "board_job_clock": "BOARD_JOB_CLOCK_JSON",
+    # Owner's yes / not now on each code change, set on the Changes page (app/change_review.py).
+    "change_approvals": "CHANGE_APPROVALS_JSON",
 }
 CACHE_SECONDS = 15
 _cache: dict = {"at": 0.0, "values": None}

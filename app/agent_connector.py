@@ -43,7 +43,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeSerializer, URLS
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session
 
-from app import agent_keys, board_agent, shop_board
+from app import agent_keys, board_agent, change_review, shop_board
 from app.auth import get_current_user
 from app.config import SECRET_KEY
 from app.database import get_db
@@ -410,7 +410,9 @@ TOOLS = {
     "open_job": ("estimates:write", "Open a job (repair order) for a customer's vehicle with no lines yet, "
                  "so an appointment can be booked for it. Add the vehicle first if needed; make and model may be blank.",
                  agent_api.JobIn, lambda db, key, a: agent_api.open_job(a, db, key), False),
-    "add_estimate_lines": ("estimates:write", "Add draft lines to an open job that has no invoice.", _Lines,
+    "add_estimate_lines": ("estimates:write", "Add draft lines to an open job that has no invoice. For money off, send a line with "
+                           "item_type discount and unit_price as the positive amount off (75 for $75 off); it shows as "
+                           "a discount on the approval page and invoice. Nothing is sent to the customer.", _Lines,
                            lambda db, key, a: agent_api.add_lines(a.job_id, a.lines, db, key), False),
     "set_job_status": ("estimates:write", "Move a job (repair order) to another column on the job board: "
                        + ", ".join(agent_api.AGENT_STATUSES) + ". Same checks as the job page, so In Progress and "
@@ -476,6 +478,11 @@ TOOLS = {
                               _SendApproval, lambda db, key, a: agent_api.send_approval(
                                   a.job_id, agent_api.SendApprovalIn(offer_snap=a.offer_snap, message=a.message), db, key),
                               False),
+    "list_change_decisions": ("changes:read", "The owner's decisions on the Changes page: for each code change "
+                              "(GitHub pull request number) whether he approved it or said not now, the exact commit "
+                              "he saw, when, and his note. Approved only means approved at that commit; a later "
+                              "update needs his yes again. Read only.", _Empty,
+                              lambda db, key, a: {"decisions": change_review.decision_list()}, True),
     "confirm_appointment": ("appointments:confirm", "Confirm a tentative appointment, only after the owner has said yes. "
                             "It then shows on his calendar feed and adds his reminder task. Nothing is sent to the customer.",
                             _Appointment, lambda db, key, a: agent_api.confirm_appointment(a.appointment_id, db, key), False),

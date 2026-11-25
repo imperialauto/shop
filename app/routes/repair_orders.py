@@ -7,7 +7,6 @@ from sqlalchemy import func
 from app.database import get_db
 from app.models import RepairOrder, Customer, Vehicle, User, LineItem, Communication, PartsOrder
 from app.auth import get_current_user
-from app.config import GOOGLE_REVIEW_LINK
 from app import tags, approval_links, customer_file, ro_delete, cycle_time, customer_followups, job_events, next_action, ro_status_policy, snap_offer, website_alerts
 from app.dispatch_model import DispatchAudit, DispatchItem, DispatchOutbound
 from app.sending_pause import DASHBOARD_REPLY, is_paused
@@ -241,16 +240,6 @@ def _evidence():
     return ro_evidence
 
 
-async def _send_review_request(phone: str, first_name: str):
-    """Background task: send Google review request after delivery."""
-    from app.routes.webhooks import send_sms
-    msg = (
-        f"Hi {first_name}! Thanks for choosing Imperial Auto Care — we really appreciate your business. "
-        f"If you have 30 seconds, a Google review helps us out more than you know: {GOOGLE_REVIEW_LINK} 🙏"
-    )
-    await send_sms(phone, msg)
-
-
 @router.post("/{ro_id}/update-status")
 def update_status(
     request: Request,
@@ -280,16 +269,6 @@ def update_status(
     if status != prev_status:
         job_events.fire(db, ro, status)
         db.commit()
-
-    # Auto-send review request when marked delivered (only once)
-    if status == "delivered" and prev_status != "delivered" and os.getenv("REVIEW_REQUESTS_ENABLED") == "true":
-        if ro.customer and ro.customer.phone and GOOGLE_REVIEW_LINK:
-            background_tasks.add_task(
-                _send_review_request,
-                ro.customer.phone,
-                ro.customer.first_name or "there",
-            )
-            print(f"[Review] Queued review request to {ro.customer.phone} for RO #{ro_id}")
 
     back = request.query_params.get("back")
     return RedirectResponse({"my-day": "/my-day", "home": "/dashboard"}.get(back, f"/ro/{ro_id}"), status_code=302)
@@ -482,16 +461,44 @@ def add_line_item(
     user = require_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=302)
-    li = LineItem(
-        repair_order_id=ro_id,
-        description=description,
-        item_type=item_type,
-        quantity=quantity,
-        unit_price=unit_price,
-    )
-    db.add(li)
+    ro = db.query(RepairOrder).filter(RepairOrder.id == ro_id).first()
+    if not ro:
+        raise HTTPException(404, "Job not found.")
+    if not description.strip():
+        return RedirectResponse(f"/ro/{ro_id}?line_error=description#line-items", status_code=303)
+    invoice = next((inv for inv in ro.invoices if inv.status != "void"), None)
+    if item_type == "discount":
+        # The amount off, typed as a plain number (75 or -75 both mean $75 off). Approved by the shop,
+        # untaxed, and shown to the customer as money off rather than an item to approve.
+        if invoice and (invoice.status != "draft" or invoice.customer_signed_at):
+            return RedirectResponse(f"/ro/{ro_id}?line_error=invoiced#line-items", status_code=303)
+        from app import discounts
+        try:
+            discounts.add(db, ro, description, abs(unit_price) * (quantity if quantity > 0 else 1), user.username)
+        except discounts.DiscountError as exc:
+            reason = "discount_too_big" if str(exc) == "too_big" else "amount"
+            return RedirectResponse(f"/ro/{ro_id}?line_error={reason}#line-items", status_code=303)
+    else:
+        # A misc line may still carry a negative price; nothing else may be negative.
+        if not (quantity > 0) or (unit_price < 0 and item_type != "misc"):
+            return RedirectResponse(f"/ro/{ro_id}?line_error=amount#line-items", status_code=303)
+        if invoice and (invoice.status != "draft" or invoice.customer_signed_at):
+            return RedirectResponse(f"/ro/{ro_id}?line_error=invoiced#line-items", status_code=303)
+        li = LineItem(
+            repair_order_id=ro_id,
+            description=description.strip(),
+            item_type=item_type,
+            quantity=quantity,
+            unit_price=unit_price,
+        )
+        db.add(li)
+        db.flush()
+    if invoice:  # a draft invoice keeps up with the job, so a late line is billed
+        from app.routes.invoices import refresh_draft
+        db.refresh(ro)
+        refresh_draft(db, invoice, ro)
     db.commit()
-    return RedirectResponse(f"/ro/{ro_id}", status_code=302)
+    return RedirectResponse(f"/ro/{ro_id}" + ("?line_added=invoice#line-items" if invoice else ""), status_code=302)
 
 
 

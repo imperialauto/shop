@@ -9,7 +9,7 @@ from app.models import User
 
 ROLES = {"admin": "Admin", "office": "Office Coordinator", "tech": "Technician"}
 PUBLIC = ("/site", "/login", "/logout", "/status", "/sign", "/webhooks", "/internal", "/healthz", "/readyz", "/live/overlay", "/owner-setup", "/.well-known")
-OWNER_ONLY = ("/finance", "/settings/users", "/settings/business", "/settings/security-privacy", "/alerts")
+OWNER_ONLY = ("/finance", "/changes", "/settings/users", "/settings/business", "/settings/security-privacy", "/alerts")
 ADMIN_ONLY = ("/live", "/dispatch/sending", "/dispatch/policies")
 OFFICE = ("/my-day", "/board", "/dashboard", "/customers", "/vehicles", "/ro", "/appointments", "/invoices", "/estimates", "/dispatch", "/ai", "/settings", "/ask")
 TECH_READ = re.compile(r"^/(ask|ask/requests/\d+(/state)?|my-day|board(/panel|/manage)?|ro(/board|/|/\d+(/vehicles|/attachments/\d+|/ai-review/\d+(/status)?)?)?|vehicles/\d+|appointments/?|appointments/calendar|settings(/security)?)$")

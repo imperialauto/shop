@@ -6,7 +6,7 @@ from app.database import get_db
 from app.models import RepairOrder, Invoice
 from datetime import datetime, timezone
 
-from app import approval_links, approval_options, deposit_requests, website_alerts
+from app import approval_links, approval_options, deposit_requests, next_visit, referrals, website_alerts
 import os
 import secrets
 from app.security_controls import link_expired
@@ -23,14 +23,22 @@ templates = Jinja2Templates(
 
 def _sign_page(request, ro, error=None, status=200):
     pending = [li for li in ro.line_items if li.approval == "pending"]
+    from app.routes.invoices import SHOP_TAX_RATE
     subtotal = sum(li.total for li in ro.line_items if li.approval in ("approved", "pending"))
+    # Same math as the deposit text and the invoice: tax on parts only.
+    subtotal = round(subtotal + round(sum(li.total for li in ro.line_items
+                                          if li.approval in ("approved", "pending") and li.item_type == "part")
+                                      * SHOP_TAX_RATE, 2), 2)
+    fixed = [li for li in ro.line_items if li.approval == "approved"]
     from app import security_controls
     terms = None
     if security_controls.value("terms_on_approval_page"):
         terms = [p.strip() for p in security_controls.value("terms_text").split("\n\n") if p.strip()]
     return templates.TemplateResponse("sign_ro.html", {
         "request": request, "ro": ro, "subtotal": subtotal, "pending": pending, "error": error, "terms": terms,
-        "options": approval_options.groups(pending),
+        "options": approval_options.groups(pending), "tax_rate": SHOP_TAX_RATE,
+        "fixed_total": round(sum(li.total for li in fixed), 2),
+        "fixed_taxable": round(sum(li.total for li in fixed if li.item_type == "part"), 2),
     }, status_code=status, headers=PRIVATE_PAGE)
 
 
@@ -79,6 +87,8 @@ async def sign_ro_submit(request: Request, token: str, db: Session = Depends(get
     for li in pending:
         li.approval, li.decided_at = decisions[li.id], now
         li.approval_source, li.approval_recorded_by = "link", None
+    from app import discounts
+    discounts.follow_decisions(ro)  # declined everything: the shop's discounts go with it
     ro.signature_data = signature_data
     ro.approved_by = (approved_by or "Customer")[:128]
     ro.signed_at = datetime.utcnow()
@@ -118,6 +128,8 @@ def sign_invoice_page(request: Request, invoice_id: int, token: str = "", db: Se
         raise HTTPException(status_code=404, detail="Not found")
     return templates.TemplateResponse("sign_invoice.html", {
         "request": request, "invoice": invoice, "ro": invoice.repair_order,
+        "next_visit": next_visit.receipt_line(invoice),
+        "share": referrals.share_line(db, invoice),
     }, headers=PRIVATE_PAGE)
 
 

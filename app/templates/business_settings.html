@@ -91,6 +91,28 @@
     <p class="text-sm text-stone-400 mt-2">This field controls when conversations appear in the task board. Confirmed off-site estimates appear after two days.</p>
   </section>
   <section class="card">
+    <h2 class="font-bold mb-2">Next-visit offer</h2>
+    <input type="hidden" name="next_visit_offer_shown" value="1">
+    <label><input type="checkbox" name="next_visit_offer" {% if settings.next_visit_offer %}checked{% endif %}> 10% off labor on the next visit</label>
+    <p class="text-sm text-stone-400 mt-2">Every job paid in full prints the offer on the customer's receipt: 10% off labor, up to $50, on their next job over $200 within 90 days. It comes off automatically when that job's invoice is made. One offer per job, so it doesn't stack with the referral's $25 off, and a job that used it doesn't earn another. Never tied to a review.</p>
+  </section>
+  {% if referral_report %}
+  <section class="card">
+    <h2 class="font-bold mb-2">Referrals: $25 + $25</h2>
+    <p class="text-sm">{{ referral_report.referrals }} referred, {{ referral_report.earned }} paid. ${{ '{:,.2f}'.format(referral_report.discount_given) }} given off first jobs, ${{ '{:,.2f}'.format(referral_report.credit_given) }} credit earned, ${{ '{:,.2f}'.format(referral_report.credit_used) }} credit used.</p>
+    <p class="text-sm text-stone-400 mt-2">Make a customer's code on their page. A new customer who gives a code gets $25 off a first job over $200; the person who shared it gets $25 credit once that job is paid. Credit comes off their next invoice automatically.</p>
+  </section>
+  {% endif %}
+  <section class="card">
+    <h2 class="font-bold mb-2">Google review text</h2>
+    <input type="hidden" name="automatic_review_text_shown" value="1">
+    <label><input type="checkbox" name="automatic_review_text" {% if settings.automatic_review_text %}checked{% endif %}> Text a Google review request the day after pickup</label>
+    <label for="google-review-link" class="block mt-3">Google review link</label>
+    <input id="google-review-link" name="google_review_link" type="url" value="{{ settings.google_review_link }}"
+           placeholder="https://g.page/r/..." class="form-input" style="max-width:420px">
+    <p class="text-sm text-stone-400 mt-2">Once per customer, ever. Goes out during shop hours the day after a job is marked picked up, after the bill is paid, and only for pickups in the last 7 days. If they texted you since pickup, a balance was waived, or their texts can't be checked, the draft waits for your YES. Mark a customer as already reviewed on their page and they're never asked. It never offers a discount for a review; Google doesn't allow that.</p>
+  </section>
+  <section class="card">
     <h2 class="font-bold mb-2">Deposit text</h2>
     <input type="hidden" name="automatic_deposit_text_shown" value="1">
     <label><input type="checkbox" name="automatic_deposit_text" {% if settings.automatic_deposit_text %}checked{% endif %}> Text the deposit request when a customer approves on their link</label>

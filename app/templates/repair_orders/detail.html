@@ -190,6 +190,11 @@
   {% set qp = request.query_params %}
   {% if qp.get('upload') == 'failed' %}<p class="text-sm text-red-400 mb-2" role="alert">Nothing was saved: {{ qp.get('why') }}. Try again with a photo (JPG, PNG, WebP, HEIC) or PDF under 10 MB.</p>
   {% elif qp.get('upload') %}<p class="text-sm text-green-400 mb-2" role="status">Saved {{ qp.get('upload') }} file{{ 's' if qp.get('upload') != '1' }} to this job.{% if qp.get('why') %} Not saved: {{ qp.get('why') }}.{% endif %}</p>{% endif %}
+  {% if qp.get('line_error') == 'amount' %}<p class="text-sm text-amber-300 mb-2" role="alert">Nothing was added: the quantity has to be more than 0, and only a misc line can have a negative price. For money off, pick Discount and type the amount off.</p>
+  {% elif qp.get('line_error') == 'discount_too_big' %}<p class="text-sm text-amber-300 mb-2" role="alert">Nothing was added: the discounts would be more than the job's charges.</p>
+  {% elif qp.get('line_error') == 'description' %}<p class="text-sm text-amber-300 mb-2" role="alert">Nothing was added: give the line a description.</p>
+  {% elif qp.get('line_error') == 'invoiced' %}<p class="text-sm text-amber-300 mb-2" role="alert">Nothing was added: this job's invoice was already sent, signed or paid. Void it and create a new one to add charges.</p>
+  {% elif qp.get('line_added') == 'invoice' %}<p class="text-sm text-green-400 mb-2" role="status">Line added, and the draft invoice total was updated to match.</p>{% endif %}
   {% if qp.get('line_removed') %}<p class="text-sm text-green-400 mb-2" role="status">Line removed. Nothing was sent to the customer.</p>{% endif %}
   {% if ro.line_items %}
   <table class="mb-4">
@@ -210,8 +215,8 @@
         <td>{{ li.description }}{% if li.approval == 'pending' %} <span class="text-yellow-400 text-xs">Waiting on customer</span>{% elif li.approval == 'approved' %} <span class="text-green-400 text-xs">{% if li.approval_source == 'in_person' %}Approved in person{% elif li.approval_source == 'phone' %}Approved by phone{% elif li.approval_source == 'text' %}Approved by text{% else %}Approved{% endif %}{% if li.approval_recorded_by %} · recorded by {{ li.approval_recorded_by }}{% endif %}</span>{% elif li.approval == 'declined' %} <span class="text-red-400 text-xs">Declined, not billed</span>{% endif %}</td>
         <td class="text-stone-400">{{ li.item_type }}</td>
         <td class="text-right text-stone-400">{{ li.quantity }}</td>
-        <td class="text-right text-stone-400">${{ "%.2f"|format(li.unit_price) }}</td>
-        <td class="text-right font-semibold">${{ "%.2f"|format(li.total) }}</td>
+        <td class="text-right text-stone-400">{{ li.unit_price|money }}</td>
+        <td class="text-right font-semibold{% if li.total < 0 %} text-green-400{% endif %}">{{ li.total|money }}</td>
         <td id="work-{{ li.id }}">
           {% if li.completed_at %}
           <span class="text-green-400 text-xs">✓ Done{% if li.completed_by %} · {{ li.completed_by }}{% endif %}</span>
@@ -366,6 +371,7 @@
         <option value="part">Part</option>
         <option value="sublet">Sublet</option>
         <option value="misc">Misc</option>
+        <option value="discount">Discount ($ off)</option>
       </select>
     </div>
     <div>

@@ -14,6 +14,7 @@ from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, 
 from app.routes import account_security, local_node, security_center, ro_evidence, ask, agent_api, shop_board
 from app.routes import tags as tag_routes
 import app.assist_model  # noqa: F401  registers Ask Imperial tables
+from app.routes import changes as change_routes
 from app.routes import job_deposit_routes
 from app import agent_keys, agent_connector, appointment_feed
 from app.scheduler import start_scheduler
@@ -74,6 +75,7 @@ app.include_router(appointment_feed.owner_router, tags=["calendar_feed"])
 app.include_router(security_center.router, tags=["settings"])
 app.include_router(alert_center.router, tags=["alerts"])
 app.include_router(my_day.router, tags=["my_day"])
+app.include_router(change_routes.router, tags=["changes"])
 app.include_router(shop_board.router, tags=["shop_board"])
 app.include_router(public_site.router, tags=["public_site"])
 app.include_router(legacy_redirects.router, tags=["public_site"])
@@ -157,6 +159,8 @@ def read_only_exempt(request: Request) -> bool:
     if (request.method == "POST" and request.url.path.startswith("/finance/")
             and not request.url.path.startswith("/finance/jobs/")):  # job sourcing records are shop data
         return True  # owner's own money figures only, audited; these routes check for the owner themselves
+    if request.method == "POST" and request.url.path.startswith("/changes/"):
+        return True  # owner's yes/not now on a code change, kept with history in business_settings; owner-only route
     # The one-time owner claim has its own strong Railway secret + CSRF
     # checks and only updates the sole user credential, not customer data.
     if (request.url.path == "/owner-setup"
