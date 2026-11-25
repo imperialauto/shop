@@ -11,11 +11,12 @@
       {% elif item.roadside %}Roadside request received. Nothing is dispatched until we call you to confirm the price and timing. If you're in danger, call 911.
       {% else %}Request received. This is not a booking yet: we will review it and contact you about an estimate and a time.{% endif %}
     </p>
+    {% if item.offer %}<p class="alert alert-ok" role="status">You got our launch offer: {{ item.offer }}% off labor. We take it off your final bill.</p>{% endif %}
     {% if item.ref %}
     <div class="panel" style="margin:18px 0">
       <div class="eyebrow">Your reference</div>
       <p style="font-size:28px; font-weight:700; letter-spacing:0.05em; margin:4px 0 10px; color:var(--gold)" id="ref">{{ item.ref }}</p>
-      <p style="margin:0 0 12px">No text or email is sent, so save it now. You'll need it with your phone number to check on your vehicle.</p>
+      <p style="margin:0 0 12px">{% if item.texted %}We'll text you a confirmation with this reference. Save it too: you'll need it with your phone number to check on your vehicle.{% else %}No text or email is sent, so save it now. You'll need it with your phone number to check on your vehicle.{% endif %}</p>
       <div class="actions">
         <button type="button" class="btn btn-light" onclick="navigator.clipboard && navigator.clipboard.writeText('{{ item.ref }}').then(function(){this.textContent='Copied';}.bind(this))">Copy reference</button>
         {% if item.token %}<a class="btn btn-purple" href="/status/{{ item.token }}">Open my status page</a>{% endif %}
