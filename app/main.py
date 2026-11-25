@@ -14,6 +14,7 @@ from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, 
 from app.routes import account_security, local_node, security_center, ro_evidence, agent_api, shop_board
 from app.routes import tags as tag_routes
 from app.routes import job_deposit_routes
+from app.routes import canned_jobs_page
 from app import agent_keys, agent_connector, appointment_feed
 from app.scheduler import start_scheduler
 
@@ -54,6 +55,7 @@ app.include_router(vehicles.router, prefix="/vehicles", tags=["vehicles"])
 app.include_router(local_node.staff_router, prefix="/ro", tags=["local_node"])
 app.include_router(ro_evidence.router, prefix="/ro", tags=["repair_orders"])
 app.include_router(job_deposit_routes.router, prefix="/ro", tags=["repair_orders"])
+app.include_router(canned_jobs_page.router, tags=["repair_orders"])
 app.include_router(repair_orders.router, prefix="/ro", tags=["repair_orders"])
 app.include_router(tag_routes.router, prefix="/tags", tags=["tags"])
 app.include_router(ro_evidence.public_router, tags=["public"])
@@ -147,7 +149,7 @@ def read_only_exempt(request: Request) -> bool:
         return True  # the stop switch must work even while read-only
     if request.url.path == "/site/status":
         return True  # looks up a status link and writes nothing
-    if request.url.path in ("/settings/business", "/alerts", "/settings/security-privacy"):
+    if request.url.path in ("/settings/business", "/settings/canned-jobs", "/alerts", "/settings/security-privacy"):
         return True  # owner configuration, audited, checks for the owner itself
     if request.url.path.startswith("/settings/users/"):
         return True  # logins only; these routes check for the owner themselves
