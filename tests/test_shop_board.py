@@ -17,7 +17,7 @@ from app.auth import hash_password
 from app.database import Base, get_db
 from app.imperial_task_model import BOARD_CATEGORY, ImperialTask
 from app.main import app
-from app.models import Customer, Invoice, Payment, RepairOrder, User, Vehicle
+from app.models import Customer, Invoice, JobDeposit, Payment, RepairOrder, User, Vehicle
 
 PASSWORD = "fixture-password-1"
 NOW = datetime(2026, 11, 23, 15, 0, tzinfo=PHOENIX)
@@ -93,11 +93,52 @@ class ShopBoardTests(unittest.TestCase):
         self.assertEqual([(c["day"], c["time"], c["who"], c["vehicle"]) for c in coming],
                          [("Today", "2:30 PM", "Pat", "2016 Ford Focus")])
 
+    def test_a_visit_whose_time_is_over_drops_off_coming_in(self):
+        with self.Session() as db:
+            later = shop_board.coming_in(db, datetime(2026, 11, 23, 15, 31, tzinfo=PHOENIX))
+        self.assertEqual(later, [])
+
     def test_money_in_today_uses_the_phoenix_day_and_the_goal(self):
         with self.Session() as db:
             sales = shop_board.sales_today(db, NOW)
         self.assertEqual((sales["total"], sales["goal"], sales["count"]), (325.5, 500, 2))
         self.assertEqual((sales["percent"], sales["left"], sales["hit"]), (65, 174.5, False))
+
+    def test_money_in_today_counts_deposits_not_yet_on_an_invoice(self):
+        noon = datetime(2026, 11, 23, 19, 0)  # noon Phoenix, naive UTC
+        with self.Session() as db:
+            db.add_all([
+                JobDeposit(repair_order_id=self.shop_id, amount=1040, method="zelle", received_at=noon),
+                JobDeposit(repair_order_id=self.shop_id, amount=50, method="cash", received_at=noon,
+                           removed_at=datetime.now(timezone.utc)),  # taken back: not counted
+                JobDeposit(repair_order_id=self.shop_id, amount=99, method="zelle",
+                           received_at=noon - timedelta(days=1)),  # yesterday: not counted
+            ])
+            db.commit()
+            sales = shop_board.sales_today(db, NOW)
+        self.assertEqual((sales["total"], sales["count"], sales["hit"]), (1365.5, 3, True))
+
+    def test_money_in_today_counts_money_marked_got_it_like_home(self):
+        from datetime import date
+        from app.finance_model import FinanceIncoming
+        with self.Session() as db:
+            db.add_all([FinanceIncoming(source="Zelle from a customer", amount_cents=70000, status="received",
+                                        received_on=date(2026, 11, 23)),
+                        FinanceIncoming(source="Still expected", amount_cents=5000, status="expected",
+                                        expected_date=date(2026, 11, 23))])
+            db.commit()
+            sales = shop_board.sales_today(db, NOW)
+        self.assertEqual(sales["total"], 1025.5)
+
+    def test_an_open_screen_reloads_after_a_deploy_and_when_refresh_stalls(self):
+        from app.routes import shop_board as board_route
+        client = self.client()
+        with patch.object(board_route, "BUILD", "deploy-2"):
+            page = client.get("/board").text
+            panel = client.get("/board/panel").text
+        self.assertIn('data-build="deploy-2"', page)
+        self.assertIn("!== \"deploy-2\") location.reload()", panel)
+        self.assertIn("lastSwap > 180000", page)
 
     def test_tv_page_and_refresh_panel(self):
         client = self.client()

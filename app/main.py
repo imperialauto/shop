@@ -10,9 +10,10 @@ from app.config import SECRET_KEY
 from app.database import get_db, init_db
 from app.models import User
 from app.auth import hash_password, verify_password, login_user, logout_user, get_current_user, after_login, REMEMBER_DAYS, wants_remember
-from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, my_day, business_settings_page, dispatch, imperial_tasks, dev_work, live, finance, owner_setup, public_site, staff
+from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, my_day, business_settings_page, dispatch, imperial_tasks, dev_work, live, finance, owner_estimates, owner_setup, public_site, staff
 from app.routes import account_security, local_node, security_center, ro_evidence, agent_api, shop_board
 from app.routes import tags as tag_routes
+from app.routes import job_deposit_routes
 from app import agent_keys, agent_connector, appointment_feed
 from app.scheduler import start_scheduler
 
@@ -21,7 +22,7 @@ import time
 
 from app.security import limiter
 from app.permissions import ROLES, role_gate
-from app import home_summary, legacy_redirects, next_action, preview_check, preview_seed, system_health
+from app import home_summary, legacy_redirects, next_action, preview_check, preview_seed, public_links, system_health
 from app import tags as tag_store
 from app.public_site import preview_code, indexable, visible_lines, hidden_slugs
 import hashlib
@@ -52,12 +53,14 @@ app.include_router(live.router, prefix="/live", tags=["live"])
 app.include_router(vehicles.router, prefix="/vehicles", tags=["vehicles"])
 app.include_router(local_node.staff_router, prefix="/ro", tags=["local_node"])
 app.include_router(ro_evidence.router, prefix="/ro", tags=["repair_orders"])
+app.include_router(job_deposit_routes.router, prefix="/ro", tags=["repair_orders"])
 app.include_router(repair_orders.router, prefix="/ro", tags=["repair_orders"])
 app.include_router(tag_routes.router, prefix="/tags", tags=["tags"])
 app.include_router(ro_evidence.public_router, tags=["public"])
 # Shop workstation (Imperial Local Node) — its own key, never INTERNAL_API_KEY.
 app.include_router(local_node.worker_router, prefix="/internal/local-node", tags=["internal"])
 app.include_router(invoices.router, prefix="/invoices", tags=["invoices"])
+app.include_router(owner_estimates.router, prefix="/finance", tags=["finance"])
 app.include_router(finance.router, prefix="/finance", tags=["finance"])
 app.include_router(owner_setup.router, tags=["owner_setup"])
 app.include_router(account_security.router, tags=["security"])
@@ -148,7 +151,8 @@ def read_only_exempt(request: Request) -> bool:
         return True  # owner configuration, audited, checks for the owner itself
     if request.url.path.startswith("/settings/users/"):
         return True  # logins only; these routes check for the owner themselves
-    if request.method == "POST" and request.url.path.startswith("/finance/"):
+    if (request.method == "POST" and request.url.path.startswith("/finance/")
+            and not request.url.path.startswith("/finance/jobs/")):  # job sourcing records are shop data
         return True  # owner's own money figures only, audited; these routes check for the owner themselves
     # The one-time owner claim has its own strong Railway secret + CSRF
     # checks and only updates the sole user credential, not customer data.
@@ -742,7 +746,7 @@ def public_status(request: Request, token: str, db: Session = Depends(get_db)):
     return templates.TemplateResponse("public_status.html", {
         "request": request, "ro": ro, "reference": f"WEB-{ro.id}",
         "visit": visit, "visit_label": phoenix_label(visit.starts_at) if visit else "",
-        "status_url": str(request.url_for("public_status", token=token)),
+        "status_url": public_links.public_url(f"/status/{token}"),
         "shared_files": ro_evidence.attachments_for(db, ro.id, customer_only=True),
         "inspection": ro_evidence.inspection_for(db, ro.id),
     }, headers=PRIVATE_PAGE)
@@ -759,7 +763,7 @@ def public_status_calendar(request: Request, token: str, db: Session = Depends(g
     from app.routes.live import utc
     stamp = lambda d: utc(d).astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     esc = lambda t: str(t).replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
-    link = str(request.url_for("public_status", token=token))
+    link = public_links.public_url(f"/status/{token}")
     where = (f"{BUSINESS['street']}, {BUSINESS['city']}, {BUSINESS['region']} {BUSINESS['postal']}"
              if visit.location == "shop" else "Mobile visit at your location")
     body = "\r\n".join([

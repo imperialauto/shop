@@ -78,7 +78,7 @@ class DepositTextTests(unittest.TestCase):
         self.assertEqual((status, newest), ("approved", "AC9"))
         # $449 + 9.2% tax on the $100 part = $458.20, half is $229.10
         self.assertIn("Hi Pat, thanks for approving the work on your 2016 Ford Focus.", text)
-        self.assertIn("$229.10 deposit, half of the $458.20 total, by Zelle to jaelan@imperialautocarellc.com or cash", text)
+        self.assertIn("$229.10 deposit, half of the $458.20 total, by Zelle to jaelan@imperialautocarellc.com, Apple Pay, cash, or card with a QuickBooks link I can text you", text)
         self.assertNotIn("Snap", text)  # the approval text didn't offer it
         self.assertNotIn("http", text)  # no Snap link unless they ask
         self.assertTrue(text.endswith("Jae"))

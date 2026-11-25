@@ -9,7 +9,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app import approval_links, business_settings, customer_file, deposit_requests, security_controls
+from app import approval_links, business_settings, customer_file, deposit_requests, payment_options, security_controls
 from app.config import OWNER_PHONE
 from app.dispatch_model import DispatchAudit, DispatchItem, DispatchOutbound
 from app.models import RepairOrder
@@ -43,7 +43,7 @@ def message_for(ro: RepairOrder, balance: float | None) -> str:
     if balance is not None and balance <= 0:
         text += "You're all paid up. "
     elif balance is not None:
-        text += f"The balance due is ${balance:,.2f}, by Zelle to {deposit_requests.zelle_to()} or cash. "
+        text += f"The balance due is ${balance:,.2f}, by {payment_options.phrase()}. "
     # The storage fee is only owed where the customer agreed to the terms when they signed.
     if security_controls.value("terms_on_approval_page"):
         text += STORAGE_LINE + " "

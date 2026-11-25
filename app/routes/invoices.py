@@ -17,11 +17,11 @@ templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), ".
 
 # Every method the counter can record. The owner picks which show (Business settings → Payment methods).
 METHOD_LABELS = {
-    "zelle": "Zelle", "cash": "Cash", "apple_cash": "Apple Cash", "card": "Card (in person)",
-    "quickbooks": "QuickBooks Payments", "stripe": "Stripe", "check": "Check", "ach": "Bank transfer (ACH)",
+    "zelle": "Zelle", "cash": "Cash", "apple_cash": "Apple Pay", "card": "Card (in person)",
+    "quickbooks": "QuickBooks Payments (card)", "stripe": "Stripe", "check": "Check", "ach": "Bank transfer (ACH)",
     "paypal": "PayPal", "venmo": "Venmo", "cashapp": "Cash App", "snap_finance": "Snap Finance", "other": "Other (write it in Reference)",
 }
-DEFAULT_METHODS = ("zelle", "cash", "apple_cash", "card", "quickbooks", "stripe", "check", "snap_finance", "other")
+DEFAULT_METHODS = ("quickbooks", "zelle", "apple_cash", "cash", "snap_finance", "other")  # owner, Nov 24
 PAYMENT_METHODS = DEFAULT_METHODS  # kept for older imports
 
 
@@ -119,7 +119,7 @@ def list_invoices(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("invoices/list.html", {"request": request, "user": user, "invoices": invoices})
 
 
-SHOP_TAX_RATE = 0.092  # Glendale combined retail TPT: state 5.6, Maricopa 0.7, city 2.9 (ADOR table, June 2026).
+SHOP_TAX_RATE = 0.092  # 7915 N Glen Harbor Blvd: AZTaxes address lookup Nov 24 2026, Auto Repair: Maricopa 017 6.3 (state+county) + Glendale GE 017 2.9. The one rate everywhere.
 # Parts only: separately stated repair labor is not taxed (TPR 93-31).
 
 
@@ -153,6 +153,9 @@ def create_invoice(request: Request, ro_id: int, db: Session = Depends(get_db)):
         status="draft",
     )
     db.add(invoice)
+    db.flush()
+    from app import job_deposits
+    job_deposits.apply_to_invoice(db, invoice)  # deposits already paid on the job count on the invoice
     db.commit()
     db.refresh(invoice)
     return RedirectResponse(f"/invoices/{invoice.id}", status_code=302)
