@@ -28,7 +28,7 @@ SENT = ("pending", "approved", "declined")
 # Board columns a job moves back to "Waiting approval" from when changes go out. Work already
 # under way on approved lines (in progress, waiting parts) keeps its column.
 REASK_FROM = ("intake", "diagnosing", "approval_received", "waiting_approval")
-WAS_LABEL = {"approved": "approved", "pending": "waiting on you", "declined": "declined"}
+WAS_LABEL = {"approved": "approved", "pending": "waiting on customer", "declined": "declined"}
 
 
 class LineChangeError(ValueError):
@@ -51,8 +51,9 @@ def _open_invoice(ro: RepairOrder):
     return next((inv for inv in ro.invoices if inv.status != "void"), None)
 
 
-def edit_problem(li: LineItem) -> LineChangeError | None:
-    """Why this line can't be edited or taken off right now, or None."""
+def edit_problem(li: LineItem, removing: bool = False) -> LineChangeError | None:
+    """Why this line can't be edited or taken off right now, or None. While an invoice exists, a line
+    that was never approved (so never billed) can still be taken off; nothing can be edited."""
     ro = li.repair_order
     if li.item_type == "discount":
         return LineChangeError(409, "This is a discount line. Take it off and add the new amount instead.")
@@ -60,7 +61,7 @@ def edit_problem(li: LineItem) -> LineChangeError | None:
         return LineChangeError(409, "This line is marked done. Reopen it first if it really should change.")
     if ro.status == "delivered":
         return LineChangeError(409, "This job was picked up. Charges can't change now.")
-    if _open_invoice(ro) is not None:
+    if _open_invoice(ro) is not None and not (removing and li.approval != "approved"):
         return LineChangeError(409, "This job has an invoice. Void it first if the charges really need to change.")
     return None
 
@@ -162,7 +163,7 @@ def remove_sent(db: Session, li: LineItem, actor: str) -> dict:
     Lines the customer approved or was waiting to answer are listed on their approval page as removed
     until they next answer. Nothing is texted. Raises LineChangeError.
     """
-    problem = edit_problem(li)
+    problem = edit_problem(li, removing=True)
     if problem:
         raise problem
     if li.approval is None:

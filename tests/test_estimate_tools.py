@@ -118,19 +118,24 @@ class LineEditTests(_Setup):
             self.assertIn("98.99", db.query(AgentAction).first().summary)
             self.assertEqual(db.query(Communication).count(), 0)
 
-    def test_lines_the_customer_was_asked_about_are_refused(self):
+    def test_lines_the_customer_was_asked_about_go_back_to_them(self):
         _, headers = self.issue()
         ro_id, ids = make_job(self.Session, [
             {"description": "Pending", "unit_price": 10, "approval": "pending"},
             {"description": "Approved", "unit_price": 10, "approval": "approved"}])
-        for li_id in ids:
-            self.assertEqual(self.client.patch(f"/internal/agent/v1/jobs/{ro_id}/lines/{li_id}", headers=headers,
-                                               json={"unit_price": 1}).status_code, 409)
-            self.assertEqual(self.client.delete(f"/internal/agent/v1/jobs/{ro_id}/lines/{li_id}",
-                                                headers=headers).status_code, 409)
+        out = self.client.patch(f"/internal/agent/v1/jobs/{ro_id}/lines/{ids[1]}", headers=headers,
+                                json={"unit_price": 12})
+        self.assertEqual(out.status_code, 200, out.text)
         with self.Session() as db:
-            self.assertEqual([li.unit_price for li in db.query(LineItem).order_by(LineItem.id)], [10, 10])
-            self.assertEqual(db.query(AgentAction).count(), 0)
+            li = db.get(LineItem, ids[1])
+            self.assertEqual((li.unit_price, li.approval), (12, "pending"))
+            self.assertEqual(json.loads(li.changed_from)["approval"], "approved")
+        self.assertEqual(self.client.delete(f"/internal/agent/v1/jobs/{ro_id}/lines/{ids[0]}",
+                                            headers=headers).status_code, 200)
+        with self.Session() as db:
+            removed = json.loads(db.get(RepairOrder, ro_id).removed_since_approval)
+            self.assertEqual([r["description"] for r in removed], ["Pending"])
+            self.assertEqual(db.query(Communication).count(), 0)
 
     def test_invoiced_finished_other_job_and_done_lines_are_refused(self):
         _, headers = self.issue()
