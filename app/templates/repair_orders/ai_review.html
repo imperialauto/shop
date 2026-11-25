@@ -86,7 +86,7 @@
 {% if review.status == "approved" %}
 <div class="card mt-4" id="review-approved">
   <h3 class="text-xs uppercase tracking-wide mb-2" style="color:#7fd18b">Approved findings (saved to job)</h3>
-  <p class="text-xs text-stone-400 mb-2">By {{ names.get(review.reviewed_by_user_id, "unknown") }} · {{ review.reviewed_at.strftime('%Y-%m-%d %H:%M UTC') if review.reviewed_at else "" }}{% if review.decision_note %} · {{ review.decision_note }}{% endif %}</p>
+  <p class="text-xs text-stone-400 mb-2">By {{ names.get(review.reviewed_by_user_id, "unknown") }} · {{ (review.reviewed_at|shop_time).strftime('%Y-%m-%d %H:%M') if review.reviewed_at else "" }}{% if review.decision_note %} · {{ review.decision_note }}{% endif %}</p>
   <pre class="text-sm whitespace-pre-wrap">{{ review.approved_text }}</pre>
 </div>
 {% elif review.status == "rejected" %}
@@ -109,7 +109,7 @@
   <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-2">History</h3>
   <table class="text-xs">
     {% for e in events %}
-    <tr><td class="text-stone-400" style="padding-right:12px">{{ e.created_at.strftime('%m/%d %H:%M:%S') }}</td>
+    <tr><td class="text-stone-400" style="padding-right:12px">{{ (e.created_at|shop_time).strftime('%m/%d %H:%M:%S') }}</td>
         <td style="padding-right:12px">{% if e.actor.startswith("user:") %}{{ names.get(e.actor[5:]|int, e.actor) }}{% else %}{{ e.actor }}{% endif %}</td>
         <td style="padding-right:12px">{{ e.action }}</td>
         <td class="text-stone-400">{{ (e.detail or "")[:200] }}</td></tr>

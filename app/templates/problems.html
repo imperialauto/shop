@@ -11,7 +11,7 @@
   <details class="card-sm" id="problem-{{ task.id }}">
     <summary style="cursor:pointer; display:flex; justify-content:space-between; gap:10px;">
       <span style="overflow-wrap:anywhere;">#{{ task.id }} {{ task.title }}</span>
-      <span class="pill">{{ 'fixed' if task.status == 'done_verified' else task.created_at.strftime('%b %d') }}</span>
+      <span class="pill">{{ 'fixed' if task.status == 'done_verified' else (task.created_at|shop_time).strftime('%b %d') }}</span>
     </summary>
     <pre style="white-space:pre-wrap; font-family:inherit; font-size:13px; color:var(--imp-muted); margin:10px 0;">{{ task.details }}</pre>
     <form method="post" action="/problems/{{ task.id }}">

@@ -77,7 +77,7 @@
 
   {% if ro.signed_at and not pending %}
   <div class="already-signed" style="margin-top:20px;">
-    ✓ Already signed by {{ ro.approved_by }} on {{ ro.signed_at.strftime('%B %d, %Y') }}
+    ✓ Already signed by {{ ro.approved_by }} on {{ (ro.signed_at|shop_time).strftime('%B %d, %Y') }}
   </div>
   {% elif not pending %}
   <div class="card" style="margin-top:20px;">No estimate is ready for approval.</div>
