@@ -56,7 +56,7 @@
   {% endfor %}
   {% for feed in dispatch_health %}
   <div style="padding:8px 16px; font-size:12px; color:{{ 'var(--imp-danger)' if feed.problem else 'var(--imp-muted)' }}; border-top:1px solid var(--imp-line);">
-    {{ feed.source|capitalize }}: {% if feed.problem %}needs attention, {{ feed.failures }} failures in a row{% else %}healthy{% endif %}{% if feed.last_success_at %}, last success {{ feed.last_success_at.strftime('%b %d %H:%M') }} UTC{% endif %}
+    {{ feed.source|capitalize }}: {% if feed.problem %}needs attention, {{ feed.failures }} failures in a row{% else %}healthy{% endif %}{% if feed.last_success_at %}, last success {{ (feed.last_success_at|shop_time).strftime('%b %d %H:%M') }}{% endif %}
   </div>
   {% endfor %}
   <details style="padding:12px 16px; font-size:13px; color:var(--imp-muted);">

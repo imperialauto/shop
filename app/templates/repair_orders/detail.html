@@ -38,7 +38,7 @@
 <div class="flex items-start justify-between mb-4">
   <div>
     <h1 class="text-2xl font-bold text-yellow-400">RO #{{ ro.id }}</h1>
-    <p class="text-stone-400 text-sm mt-0.5">Created {{ ro.created_at.strftime('%B %d, %Y') }}</p>
+    <p class="text-stone-400 text-sm mt-0.5">Created {{ (ro.created_at|shop_time).strftime('%B %d, %Y') }}</p>
   </div>
   <div class="flex flex-wrap gap-2">
     <form method="post" action="/ro/{{ ro.id }}/update-status" class="flex gap-2 items-center">
@@ -100,7 +100,7 @@
     </p>
     <hr style="border-color:var(--imp-line); margin:10px 0;">
     {% if ro.signed_at %}
-    <p style="color:var(--imp-ok); font-size:12px;">✓ Signed by {{ ro.approved_by }}<br><span style="color:var(--imp-muted);">{{ ro.signed_at.strftime('%b %d %I:%M %p') }}</span></p>
+    <p style="color:var(--imp-ok); font-size:12px;">✓ Signed by {{ ro.approved_by }}<br><span style="color:var(--imp-muted);">{{ (ro.signed_at|shop_time).strftime('%b %d %I:%M %p') }}</span></p>
     {% else %}
     <details>
     <summary class="text-sm text-stone-400" style="cursor:pointer">Signature link (by hand)</summary>
@@ -329,7 +329,7 @@
     <ul class="mt-2 space-y-1 text-sm">
       {% for d in deposits.deposits %}
       <li class="flex flex-wrap items-center justify-between gap-2" style="min-height:44px">
-        <span>${{ "%.2f"|format(d.amount) }} · {{ deposit_method_labels.get(d.method, d.method) }} · {{ d.received_at.strftime('%b %-d') }}{% if d.reference %} · {{ d.reference }}{% endif %}{% if d.payment_id %} <span class="text-stone-500 text-xs">(on the invoice)</span>{% endif %}</span>
+        <span>${{ "%.2f"|format(d.amount) }} · {{ deposit_method_labels.get(d.method, d.method) }} · {{ (d.received_at|shop_time).strftime('%b %-d') }}{% if d.reference %} · {{ d.reference }}{% endif %}{% if d.payment_id %} <span class="text-stone-500 text-xs">(on the invoice)</span>{% endif %}</span>
         {% if user.role == 'owner' and not d.payment_id %}
         <form method="post" action="/ro/{{ ro.id }}/deposits/{{ d.id }}/remove"><button type="submit" class="btn-secondary" style="min-height:44px">Remove</button></form>
         {% endif %}
@@ -523,7 +523,7 @@
       <div class="max-w-xs lg:max-w-md">
         {# Channel badge above bubble #}
         <div class="text-xs text-stone-500 mb-0.5 {% if comm.direction == 'outbound' %}text-right{% endif %}">
-          {{ comm.channel | upper }} · {{ comm.created_at.strftime('%b %d, %I:%M %p') }}
+          {{ comm.channel | upper }} · {{ (comm.created_at|shop_time).strftime('%b %d, %I:%M %p') }}
         </div>
         <div class="px-3 py-2 rounded-2xl text-sm leading-snug
           {% if comm.direction == 'outbound' %}

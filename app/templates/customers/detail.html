@@ -109,7 +109,7 @@
         <td class="text-stone-400">{{ ro.vehicle.label }}</td>
         <td class="text-stone-300 max-w-xs truncate">{{ ro.concern or '—' }}</td>
         <td><span class="badge badge-{{ ro.status }}">{{ ro.status.replace('_',' ').title() }}</span></td>
-        <td class="text-stone-500 text-xs">{{ ro.created_at.strftime('%m/%d/%y') }}</td>
+        <td class="text-stone-500 text-xs">{{ (ro.created_at|shop_time).strftime('%m/%d/%y') }}</td>
       </tr>
       {% endfor %}
     </tbody>
