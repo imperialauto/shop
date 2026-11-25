@@ -34,7 +34,7 @@ INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
 
 # Public base URL customers hit for signing links / status pages. Falls back
 # to the known production URL if not set so this doesn't silently break.
-PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://web-production-94989.up.railway.app")
+from app import public_links  # customer links always use imperialautophx.com
 
 
 def internal_key_valid(candidate: str | None) -> bool:
@@ -137,7 +137,7 @@ def get_messaging_context(
             "signedAt": open_ro.signed_at.isoformat() if open_ro.signed_at else None,
             "hasSigningLink": bool(open_ro.public_token),
             "signingUrl": (
-                f"{PUBLIC_BASE_URL}/sign/ro/{open_ro.public_token}" if open_ro.public_token else None
+                public_links.public_url(f"/sign/ro/{open_ro.public_token}") if open_ro.public_token else None
             ),
         }
 
@@ -176,7 +176,7 @@ def create_or_get_signing_link(
         db.commit()
         db.refresh(ro)
 
-    signing_url = f"{PUBLIC_BASE_URL}/sign/ro/{ro.public_token}"
+    signing_url = public_links.public_url(f"/sign/ro/{ro.public_token}")
     vehicle = ro.vehicle
     vehicle_label = f"{vehicle.year} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
 

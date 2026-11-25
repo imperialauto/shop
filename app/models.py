@@ -105,6 +105,7 @@ class RepairOrder(Base):
     line_items = relationship("LineItem", back_populates="repair_order")
     invoices = relationship("Invoice", back_populates="repair_order")
     communications = relationship("Communication", back_populates="repair_order")
+    deposits = relationship("JobDeposit", back_populates="repair_order", order_by="JobDeposit.received_at")
 
 
 class LineItem(Base):
@@ -243,6 +244,25 @@ class Payment(Base):
     paid_at = Column(DateTime, default=datetime.utcnow)
 
     invoice = relationship("Invoice", back_populates="payments")
+
+
+class JobDeposit(Base):
+    """Money a customer paid on a job before it has an invoice (the 50% deposit).
+    When the job's invoice is made, each deposit becomes a payment on it (payment_id) so the balance is right."""
+    __tablename__ = "job_deposits"
+    id = Column(Integer, primary_key=True)
+    repair_order_id = Column(Integer, ForeignKey("repair_orders.id"), nullable=False, index=True)
+    amount = Column(Float, nullable=False)
+    method = Column(String(32), nullable=False)
+    reference = Column(String(128))
+    received_at = Column(DateTime, nullable=False, default=datetime.utcnow)  # naive UTC, like Payment.paid_at
+    recorded_by = Column(String(64))
+    payment_id = Column(Integer, ForeignKey("payments.id"), nullable=True)
+    removed_at = Column(DateTime(timezone=True))
+    removed_by = Column(String(64))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    repair_order = relationship("RepairOrder", back_populates="deposits")
 
 
 class EstimateSession(Base):

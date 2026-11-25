@@ -5,7 +5,11 @@
   <div class="wrap" style="max-width:820px">
     <div class="eyebrow">Book online</div>
     <h1>Book a service</h1>
+    {% if forms_open %}
     <p>Pick a standard service and an open time. If the time is available, it is confirmed right away. Complex repairs go through an <a href="/site/estimate">estimate request</a>.</p>
+    {% else %}
+    <p>Review standard services and pricing before contacting the shop.</p>
+    {% endif %}
 
     {% if error %}<p class="alert alert-error" role="alert">{{ error }}</p>{% endif %}
 

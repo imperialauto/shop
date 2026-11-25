@@ -30,7 +30,7 @@ from app.appointment_model import Appointment
 from app.appointments import PHOENIX
 from app.imperial_task_model import BOARD_CATEGORY, ImperialTask, ImperialTaskAudit
 from app.dispatch_model import DispatchItem
-from app.models import Customer, LineItem, PartsOrder, Payment, RepairOrder, User, Vehicle
+from app.models import Customer, JobDeposit, LineItem, PartsOrder, Payment, RepairOrder, User, Vehicle
 
 log = logging.getLogger(__name__)
 GOAL_KEY = "daily_sales_goal"
@@ -80,6 +80,11 @@ STAGES = {
     "waiting_approval": ("Waiting on approval", 5),
     "complete": ("Ready for pickup", 6),
 }
+
+
+def _actor(user) -> str:
+    """Who changed a board setting: a signed-in user, or a plain actor string such as "agent:7" for the assistant."""
+    return user if isinstance(user, str) else f"user:{user.id}"
 
 
 def now_local() -> datetime:
@@ -251,7 +256,7 @@ def set_clock(db: Session, user: User, ro_id: int, on: bool, now: datetime | Non
     open_ids = {o.id for o in db.query(RepairOrder.id).filter(RepairOrder.status != "delivered")}
     value = json.dumps({str(k): {"on": v["on"].isoformat() if v["on"] else None, "spent": v["spent"]}
                         for k, v in sorted(clocks.items()) if k in open_ids})
-    if business_settings.save(db, CLOCK_KEY, value, f"user:{user.id}"):
+    if business_settings.save(db, CLOCK_KEY, value, _actor(user)):
         db.commit()
         business_settings.clear_cache()
     return True
@@ -330,7 +335,7 @@ def set_here(db: Session, user: User, ro_id: int, here: bool, now: datetime | No
     open_ids = {o.id for o in db.query(RepairOrder.id).filter(RepairOrder.status != "delivered")}
     value = json.dumps({"here": {str(k): v for k, v in sorted(marks["here"].items()) if k in open_ids},
                         "away": sorted(i for i in marks["away"] if i in open_ids)})
-    if business_settings.save(db, LOT_KEY, value, f"user:{user.id}"):
+    if business_settings.save(db, LOT_KEY, value, _actor(user)):
         db.commit()
         business_settings.clear_cache()
     return True
@@ -358,7 +363,7 @@ def _timer_rows(db: Session) -> list[dict]:
 def _save_timers(db: Session, user: User, rows: list[dict]) -> None:
     value = json.dumps([{"id": t["id"], "label": t["label"], "minutes": t["minutes"], "ends": t["ends"].isoformat()}
                         for t in rows])
-    if business_settings.save(db, TIMER_KEY, value, f"user:{user.id}"):
+    if business_settings.save(db, TIMER_KEY, value, _actor(user)):
         db.commit()
         business_settings.clear_cache()
 
@@ -418,6 +423,7 @@ def coming_in(db: Session, now: datetime) -> list[dict]:
         Appointment.status.in_(("tentative", "confirmed")),
         Appointment.starts_at >= max(now - timedelta(hours=2), start).astimezone(timezone.utc),
         Appointment.starts_at < (start + timedelta(days=2)).astimezone(timezone.utc),
+        Appointment.ends_at > now.astimezone(timezone.utc),  # a visit whose time is over isn't coming in any more
     ).order_by(Appointment.starts_at).limit(20).all()
     out, seen = [], set()
     for visit in visits:
@@ -468,16 +474,19 @@ def parts_coming(db: Session) -> list[dict]:
 
 
 def sales_today(db: Session, now: datetime) -> dict:
-    """Money recorded as received today (Phoenix day), against the daily goal."""
+    """Money in today (Phoenix day) against the same target Home shows, so the TV and the dashboard always agree:
+    job payments, job deposits not on an invoice yet (Zelle and the rest), and money marked "Got it"."""
+    from app.routes.finance import home_goal, phoenix_today, sales_in  # late import: finance pulls in the web routes
+    day = now.astimezone(PHOENIX).date() if now.tzinfo else now.date()
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    # paid_at is saved as UTC without a zone.
-    since = start.astimezone(timezone.utc).replace(tzinfo=None)
+    since = start.astimezone(timezone.utc).replace(tzinfo=None)  # paid_at is saved as UTC without a zone
     until = (start + timedelta(days=1)).astimezone(timezone.utc).replace(tzinfo=None)
-    total = db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(
-        Payment.paid_at >= since, Payment.paid_at < until).scalar() or 0
-    count = db.query(Payment).filter(Payment.paid_at >= since, Payment.paid_at < until).count()
-    goal = daily_goal()
-    total = round(float(total), 2)
+    total = sales_in(db, day, day + timedelta(days=1))
+    count = (db.query(Payment).filter(Payment.paid_at >= since, Payment.paid_at < until).count()
+             + db.query(JobDeposit).filter(JobDeposit.received_at >= since, JobDeposit.received_at < until,
+                                           JobDeposit.removed_at.is_(None), JobDeposit.payment_id.is_(None)).count())
+    home = home_goal(db) if day == phoenix_today() else None
+    goal = home["target"] if home else daily_goal()
     return {"total": total, "goal": goal, "count": count,
             "percent": max(0, min(100, int(total * 100 / goal))) if goal else 0,
             "left": round(max(goal - total, 0), 2), "hit": total >= goal}

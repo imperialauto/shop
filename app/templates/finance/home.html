@@ -245,13 +245,14 @@
         <table class="fin-week">
           <tr><td>Bills through {{ end.strftime('%b %-d') }}, after cash on hand</td><td class="r">{{ usd(business.short) }}</td></tr>
           <tr><td>A day, over {{ days_open }} open day{{ 's' if days_open != 1 }}</td><td class="r">{{ usd(profit.bills_per_day) }}</td></tr>
-          {% if profit.goal %}<tr><td>Profit goal, ${{ '{:,}'.format(profit.goal) }} a month, a day</td><td class="r">{{ usd(profit.profit_per_day) }}</td></tr>
+          {% if profit.goal %}<tr><td>{{ 'Summer profit goal' if profit.summer_now else 'Profit goal' }}, ${{ '{:,}'.format(profit.goal) }} a month, a day</td><td class="r">{{ usd(profit.profit_per_day) }}</td></tr>
           <tr><th>Daily target with profit</th><th class="r">{{ usd(profit.total_per_day) }}</th></tr>{% endif %}
         </table>
-        <p class="cap">Sales after parts. The profit goal is spread over the {{ profit.open_days_month }} open days this month.</p>
+        <p class="cap">Sales after parts. The profit goal is spread over the {{ profit.open_days_month }} open days this month.{% if profit.summer %} {{ profit.summer_label }} uses the summer goal of ${{ '{:,}'.format(profit.summer) }}.{% endif %}</p>
         <form method="post" action="/finance/profit" style="display:flex;gap:8px;align-items:flex-end;margin-top:8px;">
           <input type="hidden" name="window" value="{{ window }}">
-          <div style="flex:1"><label class="form-label" for="fin-profit">Monthly profit goal</label><input id="fin-profit" class="form-input" name="profit" inputmode="numeric" value="{{ profit.goal or '' }}" placeholder="Not set" style="min-height:44px;width:100%;font-size:16px;"></div>
+          <div style="flex:1"><label class="form-label" for="fin-profit">Monthly profit goal</label><input id="fin-profit" class="form-input" name="profit" inputmode="numeric" value="{{ profit.regular or '' }}" placeholder="Not set" style="min-height:44px;width:100%;font-size:16px;"></div>
+          <div style="flex:1"><label class="form-label" for="fin-summer">Summer goal ({{ profit.summer_label }})</label><input id="fin-summer" class="form-input" name="summer" inputmode="numeric" value="{{ profit.summer or '' }}" placeholder="Same as monthly" style="min-height:44px;width:100%;font-size:16px;"></div>
           <button class="btn-secondary" type="submit" style="min-height:44px;">Save</button>
         </form>
       </section>

@@ -25,11 +25,18 @@ def _since(when) -> str:
     return f" for {int(hours)} hours" if hours < 48 else f" for {int(hours // 24)} days"
 
 
+def _first(ro: RepairOrder) -> str:
+    from app.approval_links import greeting_for
+    name = greeting_for(ro)
+    return "the customer" if name == "there" else name
+
+
 def for_job(db: Session, ro: RepairOrder, role: str) -> dict | None:
     """{"who", "title", "detail", "post"|"href", "button", "fields"} or None when the job is finished."""
     lines = ro.line_items
     invoice = next((i for i in ro.invoices if i.status != "void"), None)
     office = role != "tech"
+    sender = role in ("owner", "admin")  # their Ask for approval texts the customer straight away
 
     if ro.status == "delivered":
         return None
@@ -62,13 +69,18 @@ def for_job(db: Session, ro: RepairOrder, role: str) -> dict | None:
                 "post": f"/invoices/create/{ro.id}", "fields": {}, "button": "Create invoice"} if office else None
     if undecided and ro.status not in STARTED:
         return {"who": "Office", "title": f"Ask the customer to approve {len(undecided)} item{'s' if len(undecided) != 1 else ''}",
-                "detail": "Queues the approval text for your YES. Nothing goes out on its own.",
+                "detail": (f"Texts {_first(ro)} their approval link from the shop line now." if sender
+                           else "Queues the approval text for the owner's YES. Nothing goes out on its own."),
                 "post": f"/ro/{ro.id}/request-approval", "fields": {}, "button": "Ask for approval"} if office else None
     if pending and (not approved or ro.status not in STARTED):
         link = db.query(DispatchItem).filter(DispatchItem.quo_conversation_id == conversation_key(ro.id),
                                              DispatchItem.status.in_(OPEN_STATUSES + ("approved",))).order_by(
                                                  DispatchItem.id.desc()).first()
         waited = _since(min((li.created_at for li in pending if li.created_at), default=None))
+        if link is not None and link.status in OPEN_STATUSES and sender:
+            return {"who": "Owner", "title": f"Approval text #{link.id} hasn't gone out yet",
+                    "detail": f"Texts {_first(ro)} their approval link now. It won't repeat a link they already have.",
+                    "post": f"/ro/{ro.id}/request-approval", "fields": {}, "button": "Text approval link"}
         if link is not None and link.status in OPEN_STATUSES:
             return {"who": "Owner", "title": f"Approval text #{link.id} is waiting for your YES",
                     "detail": f"Reply YES {link.id} to the alert, or send it from the dashboard.", "href": "/dashboard#queue",
@@ -82,11 +94,15 @@ def for_job(db: Session, ro: RepairOrder, role: str) -> dict | None:
         ).first() is not None)
         if sent:
             return {"who": "Customer", "title": f"Waiting on the customer's approval{waited}",
-                    "detail": "The approval text send was recorded. Queue a reminder if needed.",
-                    "post": f"/ro/{ro.id}/request-approval", "fields": {}, "button": "Queue a reminder"} if office else None
+                    "detail": ("The approval text send was recorded. Send a reminder if needed; it won't text them twice before they reply."
+                               if sender else "The approval text send was recorded. Queue a reminder if needed."),
+                    "post": f"/ro/{ro.id}/request-approval", "fields": {},
+                    "button": "Send a reminder" if sender else "Queue a reminder"} if office else None
         return {"who": "Office", "title": "Approval link send is not confirmed",
-                "detail": "No successful customer text send is recorded for this job. Check Quo; queue a new link if needed. Nothing sends without approval.",
-                "post": f"/ro/{ro.id}/request-approval", "fields": {}, "button": "Queue approval link"} if office else None
+                "detail": ("No dashboard send is recorded for this job. Sending checks their texts first and won't repeat a link already sent."
+                           if sender else "No successful customer text send is recorded for this job. Check Quo; queue a new link if needed. Nothing sends without approval."),
+                "post": f"/ro/{ro.id}/request-approval", "fields": {},
+                "button": "Text approval link" if sender else "Queue approval link"} if office else None
     if ro.status not in STARTED:
         if not approved:
             return {"who": "Office", "title": "Review declined work",

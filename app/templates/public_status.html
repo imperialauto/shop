@@ -127,7 +127,7 @@
     </div>
   {% elif ro.signed_at %}
     <div class="signed-badge">
-      ✓ Estimate signed by {{ ro.approved_by }} on {{ ro.signed_at.strftime('%B %d, %Y') }}
+      ✓ Estimate signed by {{ ro.approved_by }} on {{ (ro.signed_at|shop_time).strftime('%B %d, %Y') }}
     </div>
   {% endif %}
 

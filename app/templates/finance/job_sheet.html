@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Job #{{ s.ro.id }} profit — Imperial Auto Care{% endblock %}
+{% macro usd(v) %}{% if v is none %}—{% else %}{% if v < 0 %}-{% endif %}${{ '{:,.2f}'.format(v|abs) }}{% endif %}{% endmacro %}
+{% macro pct(v) %}{% if v is none %}—{% else %}{{ '{:.0%}'.format(v) }}{% endif %}{% endmacro %}
+{% macro lines_table(sec, editable=True) %}
+<div class="overflow-x-auto">
+<table class="w-full text-sm os-table">
+  <thead><tr>
+    <th class="text-left">Line</th><th class="text-right">Qty / hrs</th><th class="text-right">We charge</th>
+    <th class="text-right">Our cost</th><th class="text-right">Profit</th><th class="text-right">Margin</th>
+  </tr></thead>
+  <tbody>
+  {% for ln in sec.lines %}{% set li = ln.item %}
+    <tr id="line-{{ li.id }}" class="{% if ln.flags %}os-warn{% endif %}">
+      <td>
+        <div>{{ li.description }}</div>
+        <div class="text-xs text-stone-400">{{ s.bucket_labels[ln.bucket] }}{% if li.approval %} · {{ li.approval }}{% endif %}{% if li.item_type == 'part' and ln.source and ln.source.part_number %} · #{{ ln.source.part_number }}{% endif %}</div>
+        {% if li.item_type == 'part' and ln.source and ln.source.vendor %}<div class="text-xs os-where">Get it: {{ ln.source.vendor }}</div>{% endif %}
+        {% for f in ln.flags %}<div class="text-xs os-flag">{{ f }}</div>{% endfor %}
+        {% if editable and li.item_type == 'part' %}
+        <details class="os-edit"{% if saved == li.id|string %} open{% endif %}>
+          <summary class="text-xs">{% if ln.cost is none %}Add our cost and store{% else %}Change cost or store{% endif %}</summary>
+          <form method="post" action="/finance/jobs/{{ s.ro.id }}/lines/{{ li.id }}/source" class="os-form">
+            <label>Our cost each (AutoZone Pro or Shop Manager cost, never retail)<input name="cost" inputmode="decimal" value="{% if ln.source and ln.source.cost %}{{ '%.2f'|format(ln.source.cost) }}{% endif %}" placeholder="47.69"></label>
+            <label>Part number<input name="part_number" value="{{ ln.source.part_number if ln.source and ln.source.part_number else '' }}" placeholder="Fel-Pro OS30768R"></label>
+            <label>Where to get it<input name="where" value="{{ ln.source.vendor if ln.source and ln.source.vendor else '' }}" placeholder="AutoZone, store and how many in stock"></label>
+            <button class="btn-secondary text-xs" type="submit">Save</button>
+            {% if saved == li.id|string %}<span class="text-xs os-ok">Saved</span>{% endif %}
+          </form>
+        </details>
+        {% endif %}
+      </td>
+      <td class="text-right">{{ '%g'|format(li.quantity or 0) }}</td>
+      <td class="text-right">{{ usd(ln.revenue) }}</td>
+      <td class="text-right">{{ usd(ln.cost) }}</td>
+      <td class="text-right">{{ usd(ln.profit) }}</td>
+      <td class="text-right">{{ pct(ln.margin) }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endmacro %}
+{% block content %}
+<style>
+  .os-tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:16px; }
+  .os-tile { background:var(--imp-surface); border:1px solid var(--imp-line); border-radius:12px; padding:12px 14px; }
+  .os-tile .k { font-size:12px; color:var(--imp-muted); text-transform:uppercase; letter-spacing:.06em; }
+  .os-tile .v { font-size:22px; font-weight:700; color:var(--imp-ink); margin-top:2px; }
+  .os-tile .v.good { color:#8FD19E; } .os-tile .v.bad { color:#F29C8F; }
+  .os-table th, .os-table td { padding:8px 6px; border-bottom:1px solid var(--imp-line); vertical-align:top; }
+  .os-table th { font-size:12px; color:var(--imp-muted); font-weight:600; }
+  .os-flag { color:#F29C8F; } .os-where { color:var(--imp-gold); } .os-ok { color:#8FD19E; margin-left:8px; }
+  .os-warn td:first-child { box-shadow: inset 3px 0 0 #F29C8F; padding-left:9px; }
+  .os-edit summary { cursor:pointer; color:var(--imp-gold); margin-top:4px; }
+  .os-form { display:grid; gap:6px; margin-top:6px; max-width:420px; }
+  .os-form label { display:grid; gap:2px; font-size:12px; color:var(--imp-muted); }
+  .os-form input { font-size:16px; padding:8px 10px; border-radius:8px; border:1px solid var(--imp-line); background:var(--imp-surface-2); color:var(--imp-ink); }
+  .os-banner { border-color:rgba(242,156,143,.6) !important; }
+</style>
+
+<div class="flex items-center gap-3 mb-2">
+  <a href="/finance/jobs" class="text-stone-400 hover:text-gold-300 text-sm">← All job sheets</a>
+  <a href="/ro/{{ s.ro.id }}" class="text-stone-400 hover:text-gold-300 text-sm">Open job #{{ s.ro.id }}</a>
+</div>
+
+<h2 class="text-xl mb-1">Job #{{ s.ro.id }} · owner sheet</h2>
+<p class="text-sm text-stone-400 mb-4">{{ s.ro.customer.first_name }} {{ s.ro.customer.last_name }} · {{ s.ro.vehicle.label }} · {{ s.ro.status|replace('_',' ')|title }}. Only your login can open this page; customers and staff never see it.</p>
+
+{% if s.job_flags %}
+<div class="card mb-4 os-banner">
+  {% for f in s.job_flags %}<p class="os-flag text-sm" style="margin:2px 0">{{ f }}</p>{% endfor %}
+</div>
+{% endif %}
+
+<div class="os-tiles">
+  <div class="os-tile"><div class="k">Customer pays</div><div class="v">{{ usd(s.main.total) }}</div><div class="text-xs text-stone-400">incl. {{ usd(s.main.tax) }} tax</div></div>
+  <div class="os-tile"><div class="k">Our parts cost</div><div class="v">{{ usd(s.main.cost) }}</div>{% if s.main.missing_costs %}<div class="text-xs os-flag">{{ s.main.missing_costs }} missing</div>{% endif %}</div>
+  <div class="os-tile"><div class="k">Gross profit</div><div class="v {{ 'good' if s.main.margin is not none and s.main.margin >= s.margin_target else 'bad' }}">{{ usd(s.main.profit) }}</div><div class="text-xs text-stone-400">{{ pct(s.main.margin) }} margin · target {{ pct(s.margin_target) }}</div></div>
+  <div class="os-tile"><div class="k">Book hours</div><div class="v">{{ '%g'|format(s.main.hours) }}</div><div class="text-xs text-stone-400">{% if s.effective_rate %}{{ usd(s.effective_rate) }}/hr labor{% else %}no labor lines{% endif %}</div></div>
+  <div class="os-tile"><div class="k">Profit per book hour</div><div class="v">{{ usd(s.profit_per_hour) }}</div></div>
+  <div class="os-tile"><div class="k">Deposit (50%)</div><div class="v">{{ usd(s.deposit_due) }}</div><div class="text-xs {{ 'os-flag' if s.approved and s.paid < s.deposit_due else 'text-stone-400' }}">{{ usd(s.paid) }} recorded · {{ usd(s.balance) }} left</div></div>
+</div>
+
+<div class="card mb-4">
+  <h3 class="card-title text-base mb-2">By service type</h3>
+  <div class="overflow-x-auto"><table class="w-full text-sm os-table">
+    <thead><tr><th class="text-left">Type</th><th class="text-right">We charge</th><th class="text-right">Our cost</th><th class="text-right">Profit</th><th class="text-right">Share of profit</th></tr></thead>
+    <tbody>
+    {% for key, b in s.main.by_bucket.items() %}
+      <tr><td>{{ s.bucket_labels[key] }}</td><td class="text-right">{{ usd(b.revenue) }}</td><td class="text-right">{{ usd(b.cost) }}</td><td class="text-right">{{ usd(b.profit) }}</td>
+      <td class="text-right">{% if s.main.profit > 0 %}{{ pct(b.profit / s.main.profit) }}{% else %}—{% endif %}</td></tr>
+    {% endfor %}
+      <tr><td>Sales tax ({{ '%.1f'|format(s.tax_rate * 100) }}% on {{ usd(s.main.parts_taxed) }} parts)</td><td class="text-right">{{ usd(s.main.tax) }}</td><td class="text-right">{{ usd(s.main.tax) }}</td><td class="text-right">$0.00</td><td class="text-right">pass-through</td></tr>
+    </tbody>
+  </table></div>
+  <p class="text-xs text-stone-400 mt-2">Tax is {{ '%.1f'|format(s.tax_rate * 100) }}% on parts, the Arizona rate for the shop's address (state and Maricopa 6.3% plus Glendale 2.9%). Labor, diag and supplies show no outside cost.</p>
+</div>
+
+<div class="card mb-4">
+  <h3 class="card-title text-base mb-2">{{ s.main.name }}</h3>
+  {% if s.main.lines %}{{ lines_table(s.main) }}{% else %}<p class="text-sm text-stone-400">No lines on this job yet.</p>{% endif %}
+</div>
+
+{% if s.optional %}
+<div class="card mb-4">
+  <h3 class="card-title text-base mb-1">{{ s.optional.name }}</h3>
+  <p class="text-xs text-stone-400 mb-2">If they say yes to all: customer pays {{ usd(s.optional.total) }} more, {{ usd(s.optional.profit) }} more profit ({{ pct(s.optional.margin) }}).</p>
+  {{ lines_table(s.optional) }}
+</div>
+{% endif %}
+
+{% if s.parts_to_get %}
+<div class="card mb-4">
+  <h3 class="card-title text-base mb-2">Parts run</h3>
+  <ul class="text-sm" style="margin:0; padding-left:18px">
+  {% for ln in s.parts_to_get %}{% set src = ln.source %}
+    <li style="margin:4px 0">{{ '%g'|format(ln.item.quantity or 1) }} × {{ ln.item.description }}{% if src and src.part_number %} (#{{ src.part_number }}){% endif %} — {% if src and src.vendor %}<span class="os-where">{{ src.vendor }}</span>{% else %}<span class="os-flag">no store picked</span>{% endif %}</li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if s.declined %}
+<div class="card mb-4">
+  <h3 class="card-title text-base mb-1">Declined</h3>
+  <p class="text-xs text-stone-400 mb-2">{{ usd(s.declined.revenue) }} of work they said no to, worth {{ usd(s.declined.profit) }} profit. Good list for a follow-up later.</p>
+  {{ lines_table(s.declined, editable=False) }}
+</div>
+{% endif %}
+{% endblock %}
