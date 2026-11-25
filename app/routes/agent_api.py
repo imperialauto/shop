@@ -148,10 +148,28 @@ class VehicleIn(BaseModel):
 
 class LineIn(BaseModel):
     description: str = Field(min_length=1, max_length=2000)
-    item_type: str = Field(default="labor", pattern="^(labor|part|sublet|misc)$")
+    item_type: str = Field(default="labor", pattern="^(labor|part|sublet|misc|discount)$",
+                           description="labor, part, sublet, misc, or discount. A discount is money off the job: "
+                           "give unit_price as the positive amount off (75 for $75 off). It is saved as a "
+                           "negative, untaxed line the shop has already approved, so the customer sees it as "
+                           "money off on the approval page and invoice.")
     quantity: float = Field(default=1.0, gt=0, le=10_000)
     unit_price: float = Field(default=0.0, ge=0, le=1_000_000)
     taxable: bool = True
+
+
+def _add_line(db: Session, ro: RepairOrder, line: LineIn, actor: str) -> None:
+    if line.item_type == "discount":
+        from app import discounts
+        try:
+            discounts.add(db, ro, line.description, line.unit_price * line.quantity, actor)
+        except discounts.DiscountError as exc:
+            if str(exc) == "too_big":
+                raise HTTPException(422, "The discounts would be more than the job's charges.") from None
+            raise HTTPException(422, "A discount needs a description and an amount off above 0.") from None
+        return
+    db.add(LineItem(repair_order_id=ro.id, **line.model_dump()))
+    db.flush()
 
 
 class CustomerUpdate(BaseModel):
@@ -411,8 +429,9 @@ def create_estimate(payload: EstimateIn, db: Session = Depends(get_db),
                     key: AgentKey = Depends(agent("estimates:write"))):
     """Start a job with draft estimate lines. Nothing is sent; staff send it for approval."""
     ro = _new_job(db, payload.customer_id, payload.vehicle_id, payload.concern, payload.mileage_in)
-    for line in payload.lines:
-        db.add(LineItem(repair_order_id=ro.id, **line.model_dump()))
+    for line in sorted(payload.lines, key=lambda x: x.item_type == "discount"):
+        _add_line(db, ro, line, f"assistant:{key.name}"[:64])
+        db.refresh(ro)
     agent_keys.record(db, key, "estimate.create", "repair_order", ro.id,
                       f"{len(payload.lines)} line(s); {(payload.concern or '')[:200]}")
     db.commit()
@@ -432,8 +451,11 @@ def add_lines(ro_id: int, lines: list[LineIn], db: Session = Depends(get_db),
         raise HTTPException(409, "This job already has an invoice. Staff must review charges.")
     if ro.status in ("complete", "delivered"):
         raise HTTPException(409, "This job is finished. Staff must review charges.")
-    for line in lines:
-        db.add(LineItem(repair_order_id=ro.id, **line.model_dump()))
+    actor = f"assistant:{key.name}"[:64]
+    # Charges first, so a discount sent with them is measured against them.
+    for line in sorted(lines, key=lambda x: x.item_type == "discount"):
+        _add_line(db, ro, line, actor)
+        db.refresh(ro)
     agent_keys.record(db, key, "estimate.add_lines", "repair_order", ro.id,
                       "; ".join(line.description[:60] for line in lines))
     db.commit()
