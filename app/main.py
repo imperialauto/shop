@@ -572,12 +572,45 @@ def dashboard_inbox(request: Request, view: str = "open", db: Session = Depends(
     return templates.TemplateResponse("inbox.html", context)
 
 
+def _home_jobs(db: Session) -> tuple[list, dict, dict, int]:
+    """Open jobs for Home, one row per customer's vehicle.
+
+    A customer with two open jobs on the same car shows once, as the newest job, with the others linked
+    from that row. Cars at the shop come first. Returns (shown jobs, {job id: [other open jobs]},
+    {job id: car is here}, number of open jobs)."""
+    from sqlalchemy.exc import SQLAlchemyError
+    from app import shop_board
+    from app.models import RepairOrder
+    from app.ro_status_policy import CLOSED_STATUSES
+
+    jobs = db.query(RepairOrder).filter(RepairOrder.status.notin_(CLOSED_STATUSES)).order_by(RepairOrder.id.desc()).all()
+    try:
+        marks = shop_board.lot_marks(db)
+    except SQLAlchemyError:
+        db.rollback()
+        marks = {"here": {}, "away": set()}
+    newest, others = {}, {}
+    for ro in jobs:  # newest first, so the first job seen for a car is the one shown
+        key = (ro.customer_id, ro.vehicle_id)
+        if key in newest:
+            others[newest[key].id].append(ro)
+        else:
+            newest[key] = ro
+            others[ro.id] = []
+    here = {ro.id: shop_board.car_here(ro, marks) for ro in newest.values()}
+    shown = sorted(newest.values(), key=lambda ro: (not here[ro.id], -ro.id))[:HOME_JOB_ROWS]
+    return shown, {ro.id: others[ro.id] for ro in shown}, here, len(jobs)
+
+
 def _home_context(request: Request, db: Session, user: User, view: str) -> dict:
     from datetime import datetime
     from app.appointments import PHOENIX
-    from app.models import RepairOrder
-    open_ros = db.query(RepairOrder).filter(RepairOrder.status != "delivered").order_by(RepairOrder.created_at.desc()).limit(HOME_JOB_ROWS).all()
-    open_count = db.query(RepairOrder).filter(RepairOrder.status != "delivered").count()
+    open_ros, job_others, car_here, open_count = _home_jobs(db)
+    try:
+        from app import job_flags
+        home_flags = job_flags.open_jobs_with_flags(db, 8)
+    except ImportError:  # the "Needs a look" checks ship separately
+        home_flags = []
     queue = dispatch.dashboard_context(db, view)
     for row in queue.get("dispatch_items", []):
         # Days a conversation has waited on the shop; red on Home past LATE_DAYS.
@@ -599,6 +632,9 @@ def _home_context(request: Request, db: Session, user: User, view: str) -> dict:
         "next_steps": steps,
         "job_tags": tag_store.names_for(db, "job", [ro.id for ro in open_ros]),
         "job_days": job_days,  # days a job has sat on the shop's next step
+        "job_others": job_others,  # the customer's other open jobs on the same car, folded into one row
+        "car_here": car_here,  # job id: the car is at the shop (the TV board's Here / Not here)
+        "home_flags": home_flags,
         "late_days": next_action.LATE_DAYS,
         "can_text": user.role in ("owner", "admin", "office"),
         "open_count": open_count,

@@ -26,6 +26,7 @@ from app.sending_pause import is_paused, pause, resume
 from app import quick_replies
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync, OPEN_STATUSES
 from app.models import Communication, Customer, LineItem, PartsOrder, RepairOrder, Vehicle
+from app.ro_status_policy import CLOSED_STATUSES
 from app.routes.internal_messaging import _find_customer_by_phone, _normalize_phone, require_internal_key
 
 router = APIRouter()
@@ -1539,17 +1540,56 @@ def _appointment_for(item: DispatchItem, scheduled, scheduled_jobs):
     return scheduled.get(item.customer_id)
 
 
+# Queue items made for one job, by their conversation key (LINK12, DEP12, WEB12-decision, ...). Review
+# requests (REV) and oil reminders (OIL) are meant for jobs already picked up, so they never count as stale.
+JOB_ITEM = re.compile(r"(LINK|DEP|DIAG|PICKUP|QUOTE|PARTPRICE|WEB)([0-9]+)(?:-decision)?")
+
+
+def stale_for_job(db: Session, item: DispatchItem, marks: dict | None = None, cache: dict | None = None) -> bool:
+    """True when a queue item is about a job that no longer needs it: the job is closed (picked up or
+    cancelled), or its work is complete and the car has gone, or it asks to send an approval link and
+    nothing on the job is waiting on the customer. Worked out when read; the item itself is not changed."""
+    from app import shop_board
+    from app.ro_status_policy import is_open
+
+    match = JOB_ITEM.fullmatch(item.quo_conversation_id or "")
+    if not match:
+        return False
+    ro_id = int(match[2])
+    cache = {} if cache is None else cache
+    if ro_id not in cache:
+        cache[ro_id] = db.get(RepairOrder, ro_id)
+    ro = cache[ro_id]
+    if ro is None:
+        return False
+    if not is_open(ro):
+        return True
+    if marks is None:
+        marks = shop_board.lot_marks(db)
+    if ro.status == "complete" and ro.id in marks["away"]:
+        return True
+    return match[1] == "LINK" and not any(line.approval == "pending" for line in ro.line_items)
+
+
+def _drop_stale(db: Session, items: list[DispatchItem]) -> list[DispatchItem]:
+    if not any(JOB_ITEM.fullmatch(item.quo_conversation_id or "") for item in items):
+        return items
+    from app import shop_board
+    marks, cache = shop_board.lot_marks(db), {}
+    return [item for item in items if not stale_for_job(db, item, marks, cache)]
+
+
 def _select(db: Session, view: str, scheduled: dict[int, datetime], scheduled_jobs: dict[tuple[int, int], datetime]) -> list[DispatchItem]:
     query = db.query(DispatchItem)
     if view == "completed":
         return query.filter(DispatchItem.status.in_(("declined", "closed"))).order_by(DispatchItem.updated_at.desc()).limit(25).all()
     if view == "customer":
-        return query.filter(DispatchItem.status == "approved").order_by(DispatchItem.updated_at.desc()).limit(25).all()
+        return _drop_stale(db, query.filter(DispatchItem.status == "approved").order_by(DispatchItem.updated_at.desc()).limit(60).all())[:25]
     if view == "scheduled":
         candidates = query.filter(DispatchItem.customer_id.in_(list(scheduled)),
                                   DispatchItem.status.in_(OPEN_STATUSES + ("approved",))).all()
-        return [item for item in candidates if _appointment_for(item, scheduled, scheduled_jobs)][:25]
-    items = query.filter(DispatchItem.status.in_(OPEN_STATUSES)).all()
+        return _drop_stale(db, [item for item in candidates if _appointment_for(item, scheduled, scheduled_jobs)])[:25]
+    items = _drop_stale(db, query.filter(DispatchItem.status.in_(OPEN_STATUSES)).all())
     if view == "urgent":
         items = [i for i in items if i.urgency != "normal"]
     elif view == "approval":
@@ -1571,7 +1611,7 @@ def _card(db: Session, item: DispatchItem, scheduled: dict[int, datetime], sched
                 open_ro = order
         else:
             open_ro = db.query(RepairOrder).filter(
-                RepairOrder.customer_id == customer.id, RepairOrder.status != "delivered",
+                RepairOrder.customer_id == customer.id, RepairOrder.status.notin_(CLOSED_STATUSES),
             ).order_by(RepairOrder.created_at.desc()).first()
         if open_ro and open_ro.line_items:
             estimate = sum(line.quantity * line.unit_price for line in open_ro.line_items)

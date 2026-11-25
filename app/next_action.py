@@ -76,7 +76,8 @@ def for_job(db: Session, ro: RepairOrder, role: str) -> dict | None:
         link = db.query(DispatchItem).filter(DispatchItem.quo_conversation_id == conversation_key(ro.id),
                                              DispatchItem.status.in_(OPEN_STATUSES + ("approved",))).order_by(
                                                  DispatchItem.id.desc()).first()
-        waited = _since(min((li.created_at for li in pending if li.created_at), default=None))
+        from app.shop_board import approval_sent_at  # late import: shop_board imports this module
+        waited = _since(approval_sent_at(db, ro, pending))  # since the link was last sent, as Home counts it
         if link is not None and link.status in OPEN_STATUSES and sender:
             return {"who": "Owner", "title": f"Approval text #{link.id} hasn't gone out yet",
                     "detail": f"Texts {_first(ro)} their approval link now. It won't repeat a link they already have.",

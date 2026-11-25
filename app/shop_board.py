@@ -29,8 +29,9 @@ from app.next_action import days_since
 from app.appointment_model import Appointment
 from app.appointments import PHOENIX
 from app.imperial_task_model import BOARD_CATEGORY, ImperialTask, ImperialTaskAudit
-from app.dispatch_model import DispatchItem
-from app.models import Customer, JobDeposit, LineItem, PartsOrder, Payment, RepairOrder, User, Vehicle
+from app.dispatch_model import DispatchItem, DispatchOutbound
+from app.models import Communication, Customer, JobDeposit, LineItem, PartsOrder, Payment, RepairOrder, User, Vehicle
+from app.ro_status_policy import CLOSED_STATUSES, is_open
 
 log = logging.getLogger(__name__)
 GOAL_KEY = "daily_sales_goal"
@@ -158,6 +159,20 @@ def _is_here(order, marks) -> bool:
     return order.status in WORK_STAGES and order.id not in marks["away"]
 
 
+def car_here(order, marks=None) -> bool:
+    """Whether Home and the job page show this job's car as at the shop (same rule as the TV board)."""
+    if marks is None:
+        from sqlalchemy.orm import object_session
+        db = object_session(order)
+        try:
+            marks = lot_marks(db)
+        except SQLAlchemyError:
+            if db is not None:
+                db.rollback()
+            marks = {"here": {}, "away": set()}
+    return _is_here(order, marks)
+
+
 def _arrived(order, marks) -> datetime | None:
     mark = marks["here"].get(order.id)
     if mark:
@@ -170,7 +185,7 @@ def _arrived(order, marks) -> datetime | None:
 
 def open_orders(db: Session) -> list:
     """Open jobs, one per vehicle (the newest), so a duplicate job doesn't show a car twice."""
-    orders = db.query(RepairOrder).filter(RepairOrder.status != "delivered").order_by(RepairOrder.id.desc()).all()
+    orders = db.query(RepairOrder).filter(RepairOrder.status.notin_(CLOSED_STATUSES)).order_by(RepairOrder.id.desc()).all()
     out, cars = [], set()
     for order in orders:
         if order.vehicle_id in cars:
@@ -274,22 +289,60 @@ def ready_for_pickup(db: Session) -> list[dict]:
 
 
 def waiting_on_customer(db: Session, now: datetime) -> list[dict]:
-    """Jobs stuck on the customer's yes, longest wait first, with how long."""
+    """Open jobs with lines still waiting on the customer's yes, longest wait first.
+
+    The wait counts from when the approval was last sent to them (approval_sent_at), not from when
+    the lines were written. A job with nothing pending isn't waiting on anyone, whatever its status says."""
     out = []
     for order in open_orders(db):
-        if order.status != "waiting_approval":
+        pending = [line for line in order_lines(db, order.id) if line.approval == "pending"]
+        if not pending:
             continue
-        pending = [line.created_at for line in order_lines(db, order.id) if line.approval == "pending" and line.created_at]
-        since = min(pending) if pending else (order.updated_at or order.created_at)
-        if since is not None and since.tzinfo is None:
-            since = since.replace(tzinfo=timezone.utc)
-        hours = int((now - since).total_seconds() // 3600) if since else None
+        since = approval_sent_at(db, order, pending)
+        hours = max(0, int((now - since).total_seconds() // 3600)) if since else None
         out.append({"id": order.id, "who": _who(order.customer), "customer_id": order.customer_id,
                     "phone": bool(order.customer and order.customer.phone),
                     "vehicle": order.vehicle.label if order.vehicle else "", "hours": hours,
-                    "wait": _wait_label(hours)})
+                    "wait": _wait_label(hours), "stale": bool(hours and hours >= STALE_WAIT_DAYS * 24)})
     out.sort(key=lambda w: -(w["hours"] or 0))
     return out
+
+
+STALE_WAIT_DAYS = 30  # past this, Home says so plainly: call them or close the job
+
+
+def _aware(value):
+    if value is None:
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def approval_sent_at(db: Session, order, pending=None) -> datetime | None:
+    """When the customer was last sent this job's approval link: the latest of the link text going out
+    (dispatch_outbound for the job's LINK item), the owner approving that text, or a logged text that
+    carries the job's link. Falls back to the newest pending line, then the job's own dates."""
+    from app.approval_links import conversation_key
+
+    found = []
+    items = db.query(DispatchItem).filter(DispatchItem.quo_conversation_id == conversation_key(order.id)).all()
+    ids = [item.id for item in items]
+    if ids:
+        found += [row.updated_at or row.created_at for row in db.query(DispatchOutbound).filter(
+            DispatchOutbound.item_id.in_(ids), DispatchOutbound.status == "sent")]
+        found += [item.decided_at for item in items if item.status in ("approved", "closed") and item.decided_at]
+    if order.public_token:
+        found += [c.created_at for c in db.query(Communication).filter(
+            Communication.customer_id == order.customer_id, Communication.direction == "outbound",
+            Communication.body.contains(order.public_token))]
+    found = [_aware(when) for when in found if when is not None]
+    if found:
+        return max(found)
+    if pending is None:
+        pending = [line for line in order_lines(db, order.id) if line.approval == "pending"]
+    lines = [_aware(when) for line in pending for when in (line.created_at, line.changed_at) if when is not None]
+    if lines:
+        return max(lines)
+    return _aware(order.updated_at or order.created_at)
 
 
 def order_lines(db: Session, ro_id: int) -> list:
@@ -325,7 +378,7 @@ def lot_list(db: Session) -> list[dict]:
 def set_here(db: Session, user: User, ro_id: int, here: bool, now: datetime | None = None) -> bool:
     """Mark a job's car as at the shop or gone. Changes only what the board shows, never the job."""
     order = db.get(RepairOrder, ro_id)
-    if order is None or order.status == "delivered":
+    if order is None or not is_open(order):
         return False
     marks = lot_marks(db)
     if here:
@@ -334,7 +387,7 @@ def set_here(db: Session, user: User, ro_id: int, here: bool, now: datetime | No
     else:
         marks["here"].pop(ro_id, None)
         marks["away"].add(ro_id)
-    open_ids = {o.id for o in db.query(RepairOrder.id).filter(RepairOrder.status != "delivered")}
+    open_ids = {o.id for o in db.query(RepairOrder.id).filter(RepairOrder.status.notin_(CLOSED_STATUSES))}
     value = json.dumps({"here": {str(k): v for k, v in sorted(marks["here"].items()) if k in open_ids},
                         "away": sorted(i for i in marks["away"] if i in open_ids)})
     if business_settings.save(db, LOT_KEY, value, _actor(user)):
@@ -454,8 +507,7 @@ def waiting_on_you(db: Session) -> dict:
         calls += missed
         texts += not missed
     pending = {ro for (ro,) in db.query(LineItem.repair_order_id).join(RepairOrder).filter(
-        LineItem.approval == "pending", RepairOrder.status != "delivered")}
-    pending |= {ro for (ro,) in db.query(RepairOrder.id).filter(RepairOrder.status == "waiting_approval")}
+        LineItem.approval == "pending", RepairOrder.status.notin_(CLOSED_STATUSES))}
     out = {"texts": texts, "calls": calls, "estimates": len(pending)}
     out["total"] = sum(out.values())
     return out
