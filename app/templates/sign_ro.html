@@ -115,13 +115,19 @@
       <button type="button" class="quick-btn" id="decline-all">Decline all</button>
     </div>
     {% endif %}
+    {% if changes and (changes.changed or changes.new or changes.removed) %}
+    <div style="font-size:13px; color:var(--imp-ink); background:var(--imp-surface); border-radius:8px; padding:10px 12px; margin:8px 0 12px;">
+      We updated your estimate. Only the changed or new items need your answer.{% if changes.kept %} Items you already approved stay approved.{% endif %}
+      {% if changes.removed %}<div style="margin-top:6px; color:var(--imp-muted);">Taken off: {% for r in changes.removed %}{{ r.description }} ({{ r.total|money }}){% if not loop.last %}, {% endif %}{% endfor %}.</div>{% endif %}
+    </div>
+    {% endif %}
     <table>
       <tbody>
         {% for li in ro.line_items if li.approval in ['approved', 'pending'] %}
         <tr>
           <td class="td-desc">
             {{ li.description }}
-            <div style="font-size:11.5px; color:var(--imp-muted); margin-top:1px;">{% if li.item_type == 'discount' %}Discount, taken off your total{% else %}{{ li.item_type | title }} × {{ li.quantity }}{% if li.approval == 'approved' %} · Approved{% elif li.approval == 'declined' %} · Declined{% endif %}{% endif %}</div>
+            <div style="font-size:11.5px; color:var(--imp-muted); margin-top:1px;">{% if li.item_type == 'discount' %}Discount, taken off your total{% else %}{{ li.item_type | title }} × {{ li.quantity }}{% if li.approval == 'approved' %} · Approved{% elif li.approval == 'declined' %} · Declined{% endif %}{% endif %}{% if changes %}{% for c in changes.changed if c.line.id == li.id %} · <strong>Changed</strong>, was {{ c.was.total|money }}{% if c.description_changed %} ({{ c.was.description }}){% endif %}{% endfor %}{% if li.id in changes.new_ids %} · <strong>New</strong>{% endif %}{% endif %}</div>
             {% if li.approval == 'pending' %}
             <div style="display:flex; gap:8px; margin-top:8px;">
               <label style="flex:1; min-height:44px; display:flex; align-items:center; gap:6px; background:var(--imp-surface); border-radius:8px; padding:0 10px;"><input type="radio" name="line_{{ li.id }}" value="approved" data-amount="{{ '%.2f'|format(li.total) }}" data-taxable="{{ 1 if li.item_type == 'part' else 0 }}" data-line="{{ li.id }}" required> Approve</label>

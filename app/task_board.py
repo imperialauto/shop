@@ -204,7 +204,7 @@ def board(db, now: datetime | None = None, *, linked: bool | None = None, sort: 
         if job_id and job_id not in orders:
             orders[job_id] = db.get(RepairOrder, job_id)
         order = orders.get(job_id)
-        if order and order.status == "delivered" and bucket != "done":
+        if order and order.status in ("delivered", "cancelled") and bucket != "done":
             order = None
         if linked is not None and linked != bool(order):
             continue

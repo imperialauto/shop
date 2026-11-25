@@ -13,6 +13,7 @@ PostgreSQL lock the staff booking API uses. Confirmation appears on screen only.
 """
 import logging
 
+from app.ro_status_policy import CLOSED_STATUSES
 from app import appointment_followup, business_settings, referrals, calendar_feed, estimate_prefill, lead_lifecycle, website_alerts
 import os
 import re
@@ -274,7 +275,7 @@ async def status_lost(request: Request, db: Session = Depends(get_db)):
     if phone:
         eligible = (db.query(Customer).join(RepairOrder, RepairOrder.customer_id == Customer.id)
                     .filter(Customer.phone.isnot(None), RepairOrder.public_token.isnot(None),
-                            RepairOrder.status != "delivered").distinct())
+                            RepairOrder.status.notin_(CLOSED_STATUSES)).distinct())
         matches = []
         for customer in eligible.yield_per(200):
             if phone_digits(customer.phone) == phone:
@@ -285,7 +286,7 @@ async def status_lost(request: Request, db: Session = Depends(get_db)):
             customer = matches[0]
             orders = (db.query(RepairOrder).filter(RepairOrder.customer_id == customer.id,
                                                    RepairOrder.public_token.isnot(None),
-                                                   RepairOrder.status != "delivered")
+                                                   RepairOrder.status.notin_(CLOSED_STATUSES))
                       .order_by(RepairOrder.id.desc()).limit(5).all())
             if orders:
                 website_alerts.queue_reference_help(db, customer, orders)

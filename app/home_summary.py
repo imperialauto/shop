@@ -14,7 +14,7 @@ from app.models import Invoice, LineItem, Payment, RepairOrder
 # Every non-delivered status must be represented. In particular, customer approval
 # does not mean work has started, and complete does not prove invoice/payment/pickup.
 STAGES = (("intake", "Intake"), ("diagnosing", "Diagnosing"), ("waiting_approval", "Waiting approval"),
-          ("approval_received", "Approval received"), ("waiting_parts", "Waiting parts"),
+          ("approval_received", "Approval received"), ("waiting_parts", "Parts ordered"),
           ("in_progress", "In progress"), ("complete", "Work complete"))
 
 

@@ -14,6 +14,7 @@ from pydantic import AwareDatetime, BaseModel, Field
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
+from app.ro_status_policy import CLOSED_STATUSES
 from app import calendar_feed, pricing
 from app.appointments import PHOENIX
 from app.auth import get_current_user, require_admin
@@ -920,7 +921,7 @@ def _owner_part_cost(db: Session, request_: OwnerAction) -> dict:
     if direct:
         chosen = db.query(RepairOrder).filter(
             RepairOrder.id == request_.roId,
-            RepairOrder.status != "delivered",
+            RepairOrder.status.notin_(CLOSED_STATUSES),
         ).with_for_update().first()
         if chosen is None:
             return {"ownerReply": "That RO was not found or is already delivered. Nothing changed."}
@@ -941,7 +942,7 @@ def _owner_part_cost(db: Session, request_: OwnerAction) -> dict:
             customer_id = matches[0].id
         active = db.query(RepairOrder).filter(
             RepairOrder.customer_id == customer_id,
-            RepairOrder.status != "delivered",
+            RepairOrder.status.notin_(CLOSED_STATUSES),
         ).with_for_update().all()
         if item.vehicle_id:
             active = [ro for ro in active if ro.vehicle_id == item.vehicle_id]
@@ -1080,7 +1081,7 @@ def _owner_quote_part(db: Session, request_: OwnerAction) -> dict:
 
     ro = db.query(RepairOrder).filter(
         RepairOrder.id == ro_id,
-        RepairOrder.status != "delivered",
+        RepairOrder.status.notin_(CLOSED_STATUSES),
     ).with_for_update().first()
     if ro is None:
         return {"ownerReply": "That repair order is missing or already delivered. Nothing changed."}
@@ -1161,7 +1162,7 @@ def _owner_prepare_link(db: Session, request_: OwnerAction) -> dict:
         )):
         return {"ownerReply": "Explicit RO and fitment-verification command required. Nothing changed."}
     ro = db.query(RepairOrder).filter(
-        RepairOrder.id == ro_id, RepairOrder.status != "delivered"
+        RepairOrder.id == ro_id, RepairOrder.status.notin_(CLOSED_STATUSES)
     ).with_for_update().first()
     if ro is None:
         return {"ownerReply": "Repair order not found or already delivered; nothing changed."}
@@ -1571,7 +1572,7 @@ def _card(db: Session, item: DispatchItem, scheduled: dict[int, datetime], sched
                 open_ro = order
         else:
             open_ro = db.query(RepairOrder).filter(
-                RepairOrder.customer_id == customer.id, RepairOrder.status != "delivered",
+                RepairOrder.customer_id == customer.id, RepairOrder.status.notin_(CLOSED_STATUSES),
             ).order_by(RepairOrder.created_at.desc()).first()
         if open_ro and open_ro.line_items:
             estimate = sum(line.quantity * line.unit_price for line in open_ro.line_items)

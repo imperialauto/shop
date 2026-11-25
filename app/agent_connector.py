@@ -364,6 +364,10 @@ class _SendApproval(BaseModel):
                                 "standard approval text.")
 
 
+class _CloseOut(agent_api.CloseOutIn):
+    job_id: int = Field(gt=0)
+
+
 class _Appointment(BaseModel):
     appointment_id: int = Field(gt=0)
 
@@ -454,21 +458,35 @@ TOOLS = {
                            lambda db, key, a: agent_api.add_lines(a.job_id, a.lines, db, key), False),
     "set_job_status": ("estimates:write", "Move a job (repair order) to another column on the job board: "
                        + ", ".join(agent_api.AGENT_STATUSES) + ". Same checks as the job page, so In Progress and "
-                       "Waiting Parts need an approved line, and Complete (ready for pickup, also accepted as "
-                       "ready_for_pickup) needs approved work that was diagnosing, in progress or waiting parts. "
+                       "Parts ordered (waiting_parts, also accepted as parts_ordered) need an approved line, and Complete "
+                       "(ready for pickup, also accepted as ready_for_pickup) needs approved work. cancelled (also "
+                       "closed, duplicate, not_going_ahead) closes a duplicate job or a quote the customer passed on; "
+                       "it leaves the board and can be reopened by moving it back to intake. "
                        "Marking Complete here sends no pickup text. Not Picked up (that can text the customer). "
                        "Optional short note on why or the next step goes in the change log. Nothing is sent to anyone.",
                        _JobStatus, lambda db, key, a: agent_api.set_job_status(
                            a.job_id, agent_api.JobStatusIn(status=a.status, note=a.note), db, key), False),
-    "edit_estimate_line": ("estimates:write", "Correct a draft estimate line on a job: description, item_type, quantity, "
+    "edit_estimate_line": ("estimates:write", "Change an estimate line on a job: description, item_type, quantity, "
                            "unit_price or taxable. Only the fields sent change; totals come back recalculated and the "
-                           "change is logged on the job. Only lines the customer hasn't been asked to approve yet, on a "
-                           "job with no invoice that isn't finished. Nothing is sent to anyone.", _LineEdit,
+                           "change is logged on the job. Works on an open job with no invoice, except discount lines "
+                           "and lines marked done. If the customer was already asked about the line (waiting, approved "
+                           "or declined), it goes back to waiting on them and their approval page shows what changed; "
+                           "lines nobody touched keep their approval. Nothing is sent to anyone: texting the changes "
+                           "is send_approval_request, only when the owner says so.", _LineEdit,
                            _call_edit_line, False),
-    "remove_estimate_line": ("estimates:write", "Remove a draft estimate line from a job. Same limits as "
-                             "edit_estimate_line, and not a line marked done. Totals come back recalculated and the "
-                             "removal is logged on the job. Nothing is sent to anyone.", _LineRemove,
+    "remove_estimate_line": ("estimates:write", "Remove an estimate line from a job. Same limits as "
+                             "edit_estimate_line. A line the customer approved or was asked about shows to them as "
+                             "removed until they next answer. Totals come back recalculated and the removal is logged "
+                             "on the job. Nothing is sent to anyone.", _LineRemove,
                              lambda db, key, a: agent_api.remove_line(a.job_id, a.line_id, db, key), False),
+    "close_out_job": ("estimates:write", "Only when the owner says a job is done: record the customer's in-person "
+                      "or phone approval of the listed lines, mark the work done, and move the job to Complete, or "
+                      "Picked up when picked_up is true. Unlisted lines that were never agreed are marked not agreed "
+                      "and not billed. No text goes to the customer (no pickup text, no review request) and no "
+                      "invoice is made.", _CloseOut,
+                      lambda db, key, a: agent_api.close_out(a.job_id, agent_api.CloseOutIn(
+                          approved_line_ids=a.approved_line_ids, picked_up=a.picked_up, source=a.source, note=a.note),
+                          db, key), False),
     "get_estimate_pdf": ("estimates:read", "A job's estimate as a printable PDF (recommended repair, optional add-ons, "
                          "parts-only tax, 50% deposit, terms), returned as a file, plus the dashboard link that opens "
                          "it for printing. Read only; nothing is sent to anyone.", _Job, _call_estimate_pdf, True),
@@ -524,7 +542,9 @@ TOOLS = {
                            _AppointmentChange, _call_appointment_change, False),
     "send_approval_request": ("estimates:send", "Text the customer their approval link for a job from the shop line, "
                               "the same as the owner pressing Ask for approval on the dashboard, so the text is logged on "
-                              "the job. Only when the owner has asked for it to go. Optional message is the text's wording; "
+                              "the job. Only when the owner has asked for it to go. If lines changed after the customer answered, "
+                              "it texts just the changes (\"we updated your estimate\") and approved lines stay approved. "
+                              "Optional message is the text's wording; "
                               "the job's link is added if it isn't in it. Won't send twice: refuses if their link already "
                               "went out (from anywhere) and they haven't replied since, or if texting is paused.",
                               _SendApproval, lambda db, key, a: agent_api.send_approval(

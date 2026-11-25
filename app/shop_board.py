@@ -76,7 +76,7 @@ STAGES = {
     "diagnosing": ("Diagnosing", 1),
     "approval_received": ("Approved, ready to start", 2),
     "intake": ("Checked in", 3),
-    "waiting_parts": ("Waiting on parts", 4),
+    "waiting_parts": ("Parts ordered", 4),
     "waiting_approval": ("Waiting on approval", 5),
     "complete": ("Ready for pickup", 6),
 }

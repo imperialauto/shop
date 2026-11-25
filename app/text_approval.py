@@ -146,6 +146,8 @@ def handle_inbound(db: Session, customer: Customer, comm: Communication) -> dict
         if ro.status in ("intake", "waiting_approval"):
             ro.status = "approval_received"
         approval_links.close_for(db, ro, actor="customer_text", action="approved_by_text")
+    from app import line_changes
+    line_changes.answered(ro)
     db.add(DispatchAudit(actor="customer_text", action="text_yes_approved",
                          detail=f"job {ro.id}, {len(lines)} lines"))
     _owner_task(db, key, f"{name} texted yes: job #{ro.id} moved to Approved",

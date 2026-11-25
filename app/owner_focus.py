@@ -116,7 +116,7 @@ def resolve(db, text: str, open_statuses_only: bool = True) -> dict:
     numbers = _numbers(text) - {int(n) for n in APPROVAL_REF.findall(text)} - {r["id"] for r in other}
     query = db.query(RepairOrder)
     if open_statuses_only:
-        query = query.filter(RepairOrder.status != "delivered")
+        query = query.filter(RepairOrder.status.notin_(CLOSED_STATUSES))
     scored = sorted(((_score(ro, words, numbers), ro) for ro in query.order_by(RepairOrder.id.desc()).limit(200)),
                     key=lambda pair: -pair[0])
     scored = [(score, ro) for score, ro in scored if score >= 3]
@@ -209,7 +209,7 @@ def linked_ro(db, item) -> dict:
         return {"roId": lead.repair_order_id, "how": "lead"}
     if item.vehicle_id:
         open_ros = db.query(RepairOrder).filter(RepairOrder.vehicle_id == item.vehicle_id,
-                                                RepairOrder.status != "delivered").all()
+                                                RepairOrder.status.notin_(CLOSED_STATUSES)).all()
         if len(open_ros) == 1:
             return {"roId": open_ros[0].id, "how": "vehicle"}
         return {"how": "vehicle_ambiguous" if open_ros else "vehicle_no_open_ro"}

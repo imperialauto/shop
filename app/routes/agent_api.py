@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app import agent_keys, estimate_pdf, next_action, ro_status_policy, website_alerts
+from app import line_changes, agent_keys, estimate_pdf, next_action, ro_status_policy, website_alerts
 from app.agent_keys import AgentKey
 from app.appointment_model import Appointment
 from app.database import get_db
@@ -95,7 +95,9 @@ def customer_json(c: Customer, detail: bool = False) -> dict:
 
 def line_json(li: LineItem) -> dict:
     return {"id": li.id, "description": li.description, "item_type": li.item_type, "quantity": li.quantity,
-            "unit_price": li.unit_price, "taxable": li.taxable, "approval": li.approval, "total": li.total}
+            "unit_price": li.unit_price, "taxable": li.taxable, "approval": li.approval, "total": li.total,
+            "changed_from": (lambda w: {"total": w.get("total"), "description": w.get("description"),
+                                        "approval": w.get("approval")} if w else None)(line_changes.was(li))}
 
 
 def job_json(ro: RepairOrder) -> dict:
@@ -212,14 +214,17 @@ class JobIn(BaseModel):
 AGENT_STATUSES = {
     "intake": "Intake",
     "diagnosing": "Diagnosing",
-    "waiting_parts": "Waiting Parts",
+    "waiting_parts": "Parts ordered",
     "in_progress": "In Progress",
     "waiting_approval": "Waiting Approval",
     "approval_received": "Approval Received",
     "complete": "Complete",  # the board's ready-for-pickup column
+    "cancelled": "Closed, not going ahead",  # a duplicate or a quote the customer passed on; reopen any time
 }
 STATUS_ALIASES = {"ready_for_pickup": "complete", "ready": "complete", "completed": "complete", "done": "complete",
-                  "picked_up": "delivered"}
+                  "picked_up": "delivered", "parts_ordered": "waiting_parts", "ordered_parts": "waiting_parts",
+                  "canceled": "cancelled", "closed": "cancelled", "not_going_ahead": "cancelled",
+                  "duplicate": "cancelled"}
 OFFICE_ONLY_STATUSES = ("delivered",)
 
 
@@ -466,7 +471,7 @@ def add_lines(ro_id: int, lines: list[LineIn], db: Session = Depends(get_db),
         raise HTTPException(404, "Job not found.")
     if ro.invoices:
         raise HTTPException(409, "This job already has an invoice. Staff must review charges.")
-    if ro.status in ("complete", "delivered"):
+    if ro.status in ("complete", "delivered", "cancelled"):
         raise HTTPException(409, "This job is finished. Staff must review charges.")
     actor = f"assistant:{key.name}"[:64]
     # Charges first, so a discount sent with them is measured against them.
@@ -521,21 +526,18 @@ def set_job_status(ro_id: int, payload: JobStatusIn, db: Session = Depends(get_d
 
 
 def _editable_line(db: Session, ro_id: int, line_id: int) -> LineItem:
-    """Same rules as the job page's line editor: only lines the customer hasn't been asked about,
-    on a job with no invoice that isn't finished."""
+    """Same rules as the job page's line editor: any line on an open job with no invoice, except
+    discount lines and lines marked done. A line the customer was already asked about goes back to
+    waiting on them when it changes (see app.line_changes); nothing is texted from here."""
     li = db.get(LineItem, line_id)
     if li is None or li.repair_order_id != ro_id:
         raise HTTPException(404, "That line isn't on this job.")
     ro = li.repair_order
-    if ro.invoices:
-        raise HTTPException(409, "This job already has an invoice. Staff must review charges.")
-    if ro.status in ("complete", "delivered"):
-        raise HTTPException(409, "This job is finished. Staff must review charges.")
-    if li.item_type == "discount":
-        raise HTTPException(409, "This is a discount line. Staff change or remove discounts on the job page.")
-    if li.approval is not None:
-        raise HTTPException(409, f"The customer was already asked about this line ({li.approval}), so it can't "
-                                 "change. Add a revised line instead, and staff can ask for approval again.")
+    if ro.status in ("complete", "delivered", "cancelled"):
+        raise HTTPException(409, "This job is finished or closed. Staff must review charges.")
+    problem = line_changes.edit_problem(li)
+    if problem:
+        raise HTTPException(problem.status, problem.message)
     return li
 
 
@@ -546,40 +548,87 @@ def _line_brief(li: LineItem) -> str:
 @router.patch("/jobs/{ro_id}/lines/{line_id}")
 def update_line(ro_id: int, line_id: int, payload: LineUpdate, db: Session = Depends(get_db),
                 key: AgentKey = Depends(agent("estimates:write"))):
-    """Correct a draft estimate line. Totals come back recalculated. Nothing is sent to anyone."""
+    """Change an estimate line. A line the customer was already asked about (waiting, approved or
+    declined) goes back to waiting on them, and their approval page shows it as changed. Totals come
+    back recalculated. Nothing is sent to anyone: the owner texts the changes from the job page or
+    with send_approval_request."""
     li = _editable_line(db, ro_id, line_id)
     changes = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
     if not changes:
         raise HTTPException(422, "Send at least one of description, item_type, quantity, unit_price or taxable.")
     before = _line_brief(li)
-    for field, value in changes.items():
-        setattr(li, field, value)
+    try:
+        result = line_changes.revise(db, li, f"assistant:{key.key_prefix}", **changes)
+    except line_changes.LineChangeError as exc:
+        raise HTTPException(exc.status, exc.message) from None
     after = _line_brief(li)
-    changed = before != after
-    if changed:
+    if result["changed"]:
         agent_keys.record(db, key, "estimate.edit_line", "repair_order", ro_id, f"line {li.id}: {before} -> {after}"[:500])
         db.commit()
     db.refresh(li.repair_order)
     data = job_json(li.repair_order)
-    data.update(changed=changed, line=line_json(li))
+    data.update(changed=result["changed"], line=line_json(li))
+    if result["back_to_customer"]:
+        data["note"] = ("The customer had already been asked about this line, so it's back to waiting on them. "
+                        "Nothing was texted. Send the changes when the owner says to.")
+    elif result["restored"]:
+        data["note"] = "Back to what the customer last answered, so their answer stands again."
     return data
 
 
 @router.delete("/jobs/{ro_id}/lines/{line_id}")
 def remove_line(ro_id: int, line_id: int, db: Session = Depends(get_db),
                 key: AgentKey = Depends(agent("estimates:write"))):
-    """Remove a draft estimate line. Totals come back recalculated. Nothing is sent to anyone."""
+    """Take a line off. A line the customer was asked about shows to them as removed until they next
+    answer. Totals come back recalculated. Nothing is sent to anyone."""
     li = _editable_line(db, ro_id, line_id)
-    if li.completed_at:
-        raise HTTPException(409, "This line is marked done. Staff must reopen it before it can be removed.")
     ro = li.repair_order
     removed = line_json(li)
     agent_keys.record(db, key, "estimate.remove_line", "repair_order", ro_id, f"line {li.id}: {_line_brief(li)}"[:500])
-    db.delete(li)
+    if li.approval is None:
+        db.delete(li)
+    else:
+        try:
+            line_changes.remove_sent(db, li, f"assistant:{key.key_prefix}")
+        except line_changes.LineChangeError as exc:
+            raise HTTPException(exc.status, exc.message) from None
     db.commit()
     db.refresh(ro)
     data = job_json(ro)
     data.update(removed=removed)
+    return data
+
+
+class CloseOutIn(BaseModel):
+    approved_line_ids: list[int] = Field(default_factory=list, description=(
+        "Lines the customer agreed to in person or by phone. Lines not listed that were never agreed are "
+        "marked not agreed and aren't billed. Lines already approved stay approved."))
+    picked_up: bool = Field(default=True, description="True: the car is picked up. False: done, waiting for pickup.")
+    source: str = Field(default="in_person", description="in_person or phone.")
+    note: str | None = Field(default=None, max_length=200)
+
+
+@router.post("/jobs/{ro_id}/close-out")
+def close_out(ro_id: int, payload: CloseOutIn, db: Session = Depends(get_db),
+              key: AgentKey = Depends(agent("estimates:write"))):
+    """Owner's close-out: record the in-person approval, mark the work done, and move the job to
+    Complete or Picked up in one step. No text goes to the customer (no pickup text, no review
+    request), and no invoice is made. Use only when the owner says the job is done."""
+    from app import job_closeout
+    ro = db.get(RepairOrder, ro_id)
+    if ro is None:
+        raise HTTPException(404, "Job not found.")
+    try:
+        result = job_closeout.close_out(db, ro, f"assistant:{key.key_prefix}", payload.approved_line_ids,
+                                        picked_up=payload.picked_up, source=payload.source, note=payload.note or "")
+    except job_closeout.CloseOutError as exc:
+        raise HTTPException(exc.status, exc.message) from None
+    agent_keys.record(db, key, "job.close_out", "repair_order", ro.id,
+                      f"{result['previous']} -> {result['status']}; approved {result['approved']}, not agreed {result['declined']}"[:500])
+    db.commit()
+    db.refresh(ro)
+    data = job_json(ro)
+    data.update(result=result, note="Closed out. Nothing was texted to the customer and no invoice was made.")
     return data
 
 
@@ -721,8 +770,8 @@ def send_approval(ro_id: int, payload: SendApprovalIn, db: Session = Depends(get
     ro = db.get(RepairOrder, ro_id)
     if ro is None:
         raise HTTPException(404, "Job not found.")
-    if ro.status == "delivered":
-        raise HTTPException(409, "This job is already picked up.")
+    if ro.status in ("delivered", "cancelled"):
+        raise HTTPException(409, "This job is closed (picked up or not going ahead).")
     actor = f"Claude connector {key.key_prefix}"[:64]
     message = (payload.message or "").strip() or None
     state, item = approval_links.send_now(db, ro, actor, key.created_by_user_id, offer_snap=payload.offer_snap,

@@ -29,6 +29,17 @@ def status_error(ro: RepairOrder, target: str, role: str) -> tuple[int, str] | N
     if role == "tech" and target in ("waiting_approval", "approval_received", "delivered"):
         return 403, "Customer approvals and vehicle release are handled by the office."
 
+    if target == "cancelled":
+        if role != "owner":
+            return 403, "Only the owner can close a job as not going ahead."
+        if ro.status == "delivered":
+            return 409, "This job was picked up. It can't be closed as not going ahead."
+        if any(inv.status != "void" for inv in getattr(ro, "invoices", []) or []):
+            return 409, "This job has an invoice. Void it first if the job really isn't going ahead."
+        return None
+    if ro.status == "cancelled" and role != "owner":
+        return 403, "Only the owner can reopen a job that was closed as not going ahead."
+
     lines = ro.line_items
     approved = any(line.approval == "approved" for line in lines)
     unresolved = any(line.approval in (None, "pending") for line in lines)

@@ -1,6 +1,7 @@
 from html import escape
 from fastapi import APIRouter, Request, Depends, Form, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from app.ro_status_policy import CLOSED_STATUSES
 from app.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -38,12 +39,13 @@ COMMON_CONCERNS = [
 RO_STATUSES = [
     ("intake", "Intake"),
     ("diagnosing", "Diagnosing"),
-    ("waiting_parts", "Waiting Parts"),
+    ("waiting_parts", "Parts ordered"),
     ("in_progress", "In Progress"),
     ("waiting_approval", "Waiting Approval"),
     ("approval_received", "Approval Received"),
     ("complete", "Complete"),
-    ("delivered", "Delivered"),
+    ("delivered", "Picked up"),
+    ("cancelled", "Closed, not going ahead"),
 ]
 
 
@@ -73,7 +75,7 @@ def get_next_action(ro, open_parts_count=0, has_unpaid_invoice=False):
         return "Review signed scope before work" if ro.signed_at else "Waiting on customer signature"
     if ro.status == "complete":
         return "Review payment balance" if has_unpaid_invoice else "Review pickup"
-    return "Delivered" if ro.status == "delivered" else "Review job"
+    return {"delivered": "Picked up", "cancelled": "Closed"}.get(ro.status, "Review job")
 
 
 @router.get("/board", response_class=HTMLResponse)
@@ -81,10 +83,10 @@ def board_view(request: Request, db: Session = Depends(get_db)):
     user = require_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=302)
-    ros = db.query(RepairOrder).filter(RepairOrder.status != "delivered").order_by(RepairOrder.created_at.asc()).all()
+    ros = db.query(RepairOrder).filter(RepairOrder.status.notin_(CLOSED_STATUSES)).order_by(RepairOrder.created_at.asc()).all()
     ids = [ro.id for ro in ros]
     counts = dict(db.query(PartsOrder.repair_order_id, func.count(PartsOrder.id)).filter(PartsOrder.repair_order_id.in_(ids), PartsOrder.status == "ordered").group_by(PartsOrder.repair_order_id).all()) if ids else {}
-    columns = {key: [] for key, _ in RO_STATUSES if key != "delivered"}
+    columns = {key: [] for key, _ in RO_STATUSES if key not in CLOSED_STATUSES}
     for ro in ros:
         step = next_action.for_job(db, ro, user.role)  # same answer as the job page, one source
         ro.next_action = f"{step['who']}: {step['title']}" if step else get_next_action(ro, counts.get(ro.id, 0), any(i.status != "paid" for i in ro.invoices))
@@ -100,7 +102,7 @@ def list_ros(request: Request, db: Session = Depends(get_db), status: str = "ope
 
     query = db.query(RepairOrder)
     if status == "open":
-        query = query.filter(RepairOrder.status != "delivered")
+        query = query.filter(RepairOrder.status.notin_(CLOSED_STATUSES))
     elif status in dict(RO_STATUSES):
         query = query.filter(RepairOrder.status == status)
     if search:
