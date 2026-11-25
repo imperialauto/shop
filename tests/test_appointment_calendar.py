@@ -12,7 +12,7 @@ from app import agent_keys, appointment_feed, appointment_followup
 from app.agent_keys import AgentAction
 from app.appointment_model import Appointment
 from app.imperial_task_model import PERSONAL_CATEGORY, ImperialTask, ImperialTaskAudit
-from app.models import Customer, RepairOrder, Vehicle
+from app.models import Customer, LineItem, RepairOrder, Vehicle
 
 SOON = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(days=3)
 
@@ -119,6 +119,48 @@ class FeedTests(_Data):
         for private in ("0199", "Fixture Way", "fixture@", "Example", "Unknown"):
             self.assertNotIn(private, unfolded)
         self.assertTrue(all(len(line.encode()) <= 75 for line in text.split("\r\n")))
+
+    def test_feed_shows_bay_job_lines_status_and_task_reminders(self):
+        with self.Session() as db:
+            db.add_all([LineItem(repair_order_id=self.ids.ro1, description="Timing chain kit", item_type="labor"),
+                        LineItem(repair_order_id=self.ids.ro1, description="Water pump", item_type="labor",
+                                 approval="declined"),
+                        LineItem(repair_order_id=self.ids.ro1, description="Chain guide", item_type="part")])
+            visit = self.appointment(db, self.ids.ro1)
+            visit.resource_id = "bay-2"
+            due = SOON + timedelta(hours=5)
+            todo = ImperialTask(title="Call Testa back 602-555-0199 about parts", source="dashboard",
+                                external_id="t1", status="open", due_at=due)
+            done = ImperialTask(title="Old done thing", source="dashboard", external_id="t2",
+                                status="done_verified", due_at=due)
+            undated = ImperialTask(title="No time set", source="dashboard", external_id="t3", status="open")
+            own = ImperialTask(title="Appointment reminder", source=appointment_followup.SOURCE,
+                               external_id=str(visit.id), status="open", due_at=SOON)
+            db.add_all([todo, done, undated, own])
+            db.commit()
+            text = appointment_feed.build(db, "https://shop.example.invalid")
+        unfolded = text.replace("\r\n ", "")
+        self.assertIn("SUMMARY:Testa\\, 2004 Testmake Fixture (Bay 2)", unfolded)
+        self.assertIn(f"Job #{self.ids.ro1}: Timing chain kit", unfolded)
+        self.assertIn("Status: Confirmed.", unfolded)
+        self.assertIn("LOCATION:Imperial Auto Care\\, Bay 2", unfolded)
+        self.assertNotIn("Water pump", unfolded)  # declined
+        self.assertNotIn("Chain guide", unfolded)  # parts stay off
+        self.assertEqual(unfolded.count("BEGIN:VEVENT"), 2)  # the visit and one task
+        self.assertIn(f"UID:task-{todo.id}@imperial-operations", unfolded)
+        self.assertIn("SUMMARY:Reminder: Call Testa back about parts", unfolded)
+        self.assertIn(due.strftime("DTSTART:%Y%m%dT%H%M%SZ"), unfolded)
+        self.assertIn("TRIGGER:-PT15M", unfolded)
+        for private in ("0199", "Fixture Way", "Old done thing", "No time set", "Appointment reminder"):
+            self.assertNotIn(private, unfolded)
+
+    def test_bay_names(self):
+        def bay(resource, location="shop"):
+            return appointment_feed.bay_label(SimpleNamespace(resource_id=resource, location=location))
+        self.assertEqual(bay("bay-1"), "Bay 1")
+        self.assertEqual(bay("Bay 2"), "Bay 2")
+        self.assertEqual(bay("bay-1", "mobile"), "Mobile")
+        self.assertEqual(bay("lift-a"), "Lift A")
 
     def test_long_lines_fold_and_unfold_exactly(self):
         line = "DESCRIPTION:" + "é" * 120
