@@ -3,7 +3,7 @@
    The full queue page keeps the longer row in _dispatch_row.html. #}
 {% set web = (item.quo_conversation_id or '').startswith('WEB') %}
 {% set late = (row.days_waiting or 0) >= 2 %}
-<details class="q-row{% if late %} late{% endif %}{% if row.last_from_us %} waiting-on-them{% endif %}"{% if item.urgency == 'safety' and not row.last_from_us %} open{% endif %}>
+<details data-queue-item="{{ item.id }}" data-message-id="{{ item.last_message_id }}" class="q-row{% if late %} late{% endif %}{% if row.last_from_us %} waiting-on-them{% endif %}"{% if item.urgency == 'safety' and not row.last_from_us %} open{% endif %}>
   <summary class="q-sum">
     <span class="q-text">
       <span class="q-who">{% if item.urgency == 'safety' and not row.last_from_us %}<b class="q-flag">Safety</b> {% elif item.urgency == 'urgent' and not row.last_from_us %}<b class="q-urgent">Urgent</b> {% endif %}{{ row.customer_name or item.customer_phone }}{% if item.vehicle_text %} · {{ item.vehicle_text }}{% endif %}</span>
@@ -31,8 +31,7 @@
         {% for reply in row.quick_replies %}<button type="button" class="qchip" data-quick-reply="{{ reply.text }}">{{ reply.label }}</button>{% endfor %}
       </div>
       {% endif %}
-      <label class="sr-only" for="home-reply-{{ item.id }}">Reply to customer</label>
-      <textarea id="home-reply-{{ item.id }}" name="reply_text" rows="3" maxlength="1500" class="form-input" style="display:block; margin:0 0 8px;" placeholder="Tap a quick reply or type your own">{{ item.draft_reply or '' }}</textarea>
+      {% include "_reply_box.html" %}
       {% endif %}
       <div class="q-acts">
         <button class="btn-primary q-btn" name="decision" value="approve">{{ 'Mark handled' if web else 'Send' }}</button>

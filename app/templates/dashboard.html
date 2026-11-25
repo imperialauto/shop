@@ -202,16 +202,13 @@
         <h2>Needs you <a href="/dashboard/inbox">{% if queue_total %}{{ queue_total }} · {% endif %}See all →</a></h2>
         {% if not dispatch_ready %}
         <p class="h-empty">The queue is not set up on this database yet.</p>
-        {% elif not dispatch_items %}
-        <p class="h-empty">All clear. No customer is waiting on you.</p>
         {% else %}
         {% if read_only %}<p class="h-warn" style="margin-bottom:8px;">The system is read-only. Decisions won't save.</p>{% endif %}
-        <div class="h-queue">
-          {% for row in dispatch_items %}{% set item = row.item %}
-          {% include "_dispatch_row_home.html" %}
-          {% endfor %}
-          {% if queue_total > dispatch_items|length %}<a class="h-more" href="/dashboard/inbox">See {{ queue_total - dispatch_items|length }} more →</a>{% endif %}
+        {# Re-read every ~25 s (static/reply-desk.js): new texts and fresh drafts show without a reload. #}
+        <div class="h-queue" data-queue-refresh="/dispatch/queue-rows?layout=home&limit=5&back=%2Fdashboard">
+          {% include "_dispatch_rows_home.html" %}
         </div>
+        {% if queue_total > dispatch_items|length %}<a class="h-more" href="/dashboard/inbox">See {{ queue_total - dispatch_items|length }} more →</a>{% endif %}
         {% endif %}
       </section>
 

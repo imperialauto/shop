@@ -330,6 +330,19 @@ class ReplyDeskDatabaseTests(unittest.TestCase):
         self.assertIn('data-queue-refresh="/dispatch/queue-rows?view=open&back=/dashboard/inbox', page.text)
         self.assertIn("/static/reply-desk.js", page.text)
 
+    def test_home_shows_the_draft_and_refreshes_its_own_rows(self):
+        page = self.client.get("/dashboard")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn('data-queue-refresh="/dispatch/queue-rows?layout=home', page.text)
+        self.assertIn("- Jae</textarea>", page.text)
+        self.assertIn("Say it your way", page.text)
+        rows = self.client.get("/dispatch/queue-rows?layout=home&limit=5&back=%2Fdashboard")
+        self.assertEqual(rows.status_code, 200)
+        self.assertIn('data-queue-item="40"', rows.text)
+        self.assertIn('class="q-row', rows.text)  # Home's compact row, not the full queue row
+        self.assertIn("Needs info: parts ETA", rows.text)
+        self.nothing_queued_or_changed()
+
 
 if __name__ == "__main__":
     unittest.main()
