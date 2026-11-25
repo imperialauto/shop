@@ -68,6 +68,37 @@ class Draft:
     source: str = "rules"
 
 
+# The shop asked for a time, and the customer answered with one ("Around 430, or Friday").
+ASKED_TIME = re.compile(r"\b(what time|when (works|is good|would work)|what day|what works|you available|"
+                        r"be available|good time)\b", re.I)
+CLOCK = re.compile(r"\b(?:around |at |by |after |before )?(\d{1,2})(?::?(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?\b", re.I)
+# "Can I pay it when I bring it back?": a request about how or when to pay, which is the owner's call.
+PAY_ASK = re.compile(r"\b(can|could|is it ok if|would it be ok if) (i|we) (just )?(pay|send|give)\b|"
+                     r"\bpay (it|you|that|the rest|the balance) (when|later|next|on|after|friday|monday|tuesday|"
+                     r"wednesday|thursday|saturday|sunday|tomorrow)\b|\b(payment plan|split (it|the payment))\b", re.I)
+
+
+def _last_outbound(context: dict) -> str:
+    for message in reversed(context.get("conversation") or []):
+        if message.get("direction") == "outbound" and (message.get("body") or "").strip():
+            return message["body"]
+    return ""
+
+
+def _offered_time(text: str) -> str | None:
+    """The first clock time in a customer's text, written the usual way ("430" -> "4:30")."""
+    for m in CLOCK.finditer(text):
+        hour, minute, half = m.group(1), m.group(2), (m.group(3) or "").replace(".", "").upper()
+        if minute is None and len(hour) >= 3:  # "430" read as 4:30
+            hour, minute = hour[:-2], hour[-2:]
+        if not (1 <= int(hour) <= 12) or (minute and int(minute) > 59):
+            continue
+        if minute is None and not half:
+            continue  # a bare number ("2 of them") isn't a time
+        return f"{int(hour)}:{minute or '00'}" + (f" {half}" if half else "")
+    return None
+
+
 def money(value) -> str:
     return f"${float(value):,.2f}"
 
@@ -174,6 +205,12 @@ def _status(job: dict, context: dict, asked_when: bool) -> tuple[list[str], list
         return _ready(job, context), []
     if status == "waiting_approval" or pending:
         needs = [] if job.get("status_link") else [f"status link: job #{job['id']} has none"]
+        if asked_when:
+            out = ["Some of the work on your estimate is still waiting on your OK."]
+            if job.get("status_link"):
+                out.append(f"You can review it here: {job['status_link']}")
+            out.append("Once that's settled I can give you a finish time.")
+            return out, needs
         return _pending_link(job), needs
     if status == "waiting_parts":
         return _parts_state(job)
@@ -219,6 +256,18 @@ def draft(context: dict) -> Draft:
         return done("thanks", [f"Sounds good{', ' + first if first and not _greeting(context) else ''}, thanks."])
     if INFO.search(text) and not (PRICE.search(text) or STATUS.search(text)):
         return done("hours", [SHOP_DETAILS])
+    offered = _offered_time(text) if ASKED_TIME.search(_last_outbound(context)) else None
+    if offered:
+        # Answering our "what time works?": confirm it, and leave the yes to the owner.
+        other = re.search(r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow)\b", text, re.I)
+        needs = [f"confirm you can do {offered}"
+                 + (f" (they offered {other.group(1).title()} if not)" if other else "")]
+        return done("time", [f"{offered} works, see you then."], needs)
+    if PAY_ASK.search(text):
+        invoice = (job or {}).get("invoice") or {}
+        owed = f" the {money(invoice['balance'])} balance" if invoice.get("balance") else ""
+        return done("pay_ask", ["Let me check on that and get right back to you."],
+                    [f"your call: they ask about paying{owed} on their terms: “{snippet}”"])
 
     if job:
         jid = job["id"]

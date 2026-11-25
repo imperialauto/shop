@@ -124,6 +124,34 @@ class DraftTests(unittest.TestCase):
         self.assertIn("get back to you shortly", d.text)
         self.assertTrue(d.needs_info and "sell tires" in d.needs_info[0])
 
+    def test_a_time_they_offer_back_is_confirmed_and_left_to_the_owner(self):
+        d = reply_drafts.draft(ctx("Around 430, if that's too late I can wait until Friday",
+                                   job("approval_received", total=900.0),
+                                   outbound=("Hi Testy, what time works for you today? - Jae",)))
+        self.assertEqual(d.intent, "time")
+        self.assertIn("4:30 works", d.text)
+        self.assertNotIn("$", d.text)
+        self.assertTrue(any("confirm you can do 4:30" in n and "Friday" in n for n in d.needs_info))
+
+    def test_how_long_with_work_waiting_on_them_does_not_lead_with_the_price(self):
+        d = reply_drafts.draft(ctx("how long you think it'll take?",
+                                   job("approval_received", total=824.49,
+                                       approvals={"pending": 2, "approved": 3, "declined": 0, "not_sent": 0})))
+        self.assertNotIn("824", d.text)
+        self.assertIn("finish time", d.text)
+
+    def test_asking_to_pay_later_is_the_owners_call(self):
+        d = reply_drafts.draft(ctx("can I just pay it when I bring it back?",
+                                   job("intake", invoice={"status": "sent", "total": 413.0, "paid": 0.0,
+                                                          "balance": 413.0})))
+        self.assertEqual(d.intent, "pay_ask")
+        self.assertNotIn("$", d.text)  # no balance stated as if that answered them
+        self.assertTrue(any(n.startswith("your call") and "$413.00" in n for n in d.needs_info))
+
+    def test_a_number_without_our_time_question_is_not_a_time(self):
+        d = reply_drafts.draft(ctx("I need 2 tires", job("intake")))
+        self.assertNotEqual(d.intent, "time")
+
     def test_safety_first(self):
         d = reply_drafts.draft(ctx("it's smoking and smells like fuel", job("in_progress")))
         self.assertEqual(d.intent, "safety")
