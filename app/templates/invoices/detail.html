@@ -50,8 +50,8 @@
         <td>{{ li.description }}</td>
         <td class="text-stone-400">{{ li.item_type }}</td>
         <td class="text-right text-stone-400">{{ li.quantity }}</td>
-        <td class="text-right text-stone-400">${{ "%.2f"|format(li.unit_price) }}</td>
-        <td class="text-right">${{ "%.2f"|format(li.total) }}</td>
+        <td class="text-right text-stone-400">{{ li.unit_price|money }}</td>
+        <td class="text-right">{{ li.total|money }}</td>
       </tr>
       {% endfor %}
     </tbody>
