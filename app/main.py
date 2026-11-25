@@ -606,11 +606,8 @@ def _home_context(request: Request, db: Session, user: User, view: str) -> dict:
     from datetime import datetime
     from app.appointments import PHOENIX
     open_ros, job_others, car_here, open_count = _home_jobs(db)
-    try:
-        from app import job_flags
-        home_flags = job_flags.open_jobs_with_flags(db, 8)
-    except ImportError:  # the "Needs a look" checks ship separately
-        home_flags = []
+    from app import job_flags
+    home_flags = job_flags.open_jobs_with_flags(db, 8)
     queue = dispatch.dashboard_context(db, view)
     for row in queue.get("dispatch_items", []):
         # Days a conversation has waited on the shop; red on Home past LATE_DAYS.
