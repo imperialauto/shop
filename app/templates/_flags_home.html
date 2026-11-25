@@ -1,0 +1,17 @@
+{# "Needs a look": open jobs where something doesn't add up. Context: home_flags = [(ro, flags)] from app.job_flags.open_jobs_with_flags. #}
+{% if home_flags %}
+<section class="card mb-4" id="home-flags" style="border-color:rgba(251,191,36,.6);">
+  <p class="text-xs uppercase tracking-wide text-amber-300" style="margin:0 0 6px">Needs a look · {{ home_flags|length }}</p>
+  <ul style="list-style:none; margin:0; padding:0;">
+    {% for ro, flags in home_flags %}
+    <li style="padding:8px 0; {% if not loop.first %}border-top:1px solid rgba(255,255,255,.08);{% endif %}" data-ro="{{ ro.id }}">
+      <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:baseline;">
+        <a href="/ro/{{ ro.id }}" class="font-semibold" style="color:var(--imp-gold);">RO #{{ ro.id }}</a>
+        <span class="text-sm text-stone-300" style="min-width:0;">{% if ro.customer %}{% if ro.customer.customer_type == 'fleet' and ro.customer.fleet_name %}{{ ro.customer.fleet_name }}{% else %}{{ ro.customer.first_name }} {{ ro.customer.last_name }}{% endif %}{% endif %}{% if ro.vehicle %} · {{ ro.vehicle.label }}{% endif %}</span>
+      </div>
+      <p class="text-sm {{ 'text-amber-200' if flags[0].severity == 'warn' else 'text-stone-400' }}" style="margin:2px 0 0;">{{ flags[0].message }}{% if flags|length > 1 %} <a href="/ro/{{ ro.id }}#job-flags" class="text-xs text-stone-400" style="white-space:nowrap;">+{{ flags|length - 1 }} more</a>{% endif %}</p>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
