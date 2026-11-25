@@ -23,7 +23,7 @@ from app.dispatch import AUTO_POLICIES, LOCKED_POLICIES, MAKES, POLICIES, PROMIS
 from app.appointment_model import Appointment
 from app import alert_rules, business_settings, approval_links, dispatch_anchor, name_finder, next_action, quo_import, snap_offer, website_alerts
 from app.sending_pause import is_paused, pause, resume
-from app import quick_replies
+from app import quick_replies, reply_context, reply_drafts
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync, OPEN_STATUSES
 from app.models import Communication, Customer, LineItem, PartsOrder, RepairOrder, Vehicle
 from app.routes.internal_messaging import _find_customer_by_phone, _normalize_phone, require_internal_key
@@ -1585,11 +1585,27 @@ def _card(db: Session, item: DispatchItem, scheduled: dict[int, datetime], sched
         "last_from_us": _last_from_us(item, history),
         "quick_replies": quick_replies.suggestions(item, customer, history),
         "draft_state": _draft_state(db, item),
+        **_reply_draft(db, item),
         "open_ro": open_ro,
         "estimate": estimate,
         "next_appointment": _appointment_for(item, scheduled, scheduled_jobs),
         "start_job": _start_job_url(customer, item),
     }
+
+
+def _reply_draft(db: Session, item: DispatchItem) -> dict:
+    """The reply box's starting text and what the stored facts couldn't answer. Read-only:
+    nothing is saved or queued, so a draft can never go out without the owner's Send."""
+    empty = {"reply_draft": None, "reply_source": None, "needs_info": []}
+    if website_alerts.is_website(item) or item.draft_reply == "" or item.status not in OPEN_STATUSES:
+        return empty
+    try:
+        context = reply_context.build(db, item.customer_id, item)
+        result = reply_drafts.card_draft(item, context)
+    except Exception:  # noqa: BLE001 - a draft problem must never take down the queue
+        db.rollback()
+        return empty
+    return {"reply_draft": result.text, "reply_source": result.source, "needs_info": result.needs_info}
 
 
 def _last_from_us(item: DispatchItem, history) -> bool:
@@ -1698,3 +1714,70 @@ def quo_contacts_catch_up(batch: QuoContactBatch, db: Session = Depends(get_db),
     row.last_detail = f"Checked {result['contacts']} Quo contacts; renamed {result['renamed']}."[:255]
     db.commit()
     return result
+
+
+# ── Reply desk: live queue rows, drafts and clean-up. None of these send or save anything. ──
+
+QUEUE_ROWS_MAX = 25
+
+
+def queue_rows_context(db: Session, view: str = "open", limit: int = QUEUE_ROWS_MAX, back: str = "/dashboard") -> dict:
+    """What the rows partial needs, the same rows Home and Needs-you render, plus a stamp
+    that changes whenever a row would look different (new text, new draft, decision)."""
+    from app import next_action
+    queue = dashboard_context(db, view)
+    rows = queue.get("dispatch_items", [])[:max(1, min(limit, QUEUE_ROWS_MAX))]
+    for row in rows:
+        row["days_waiting"] = 0 if row.get("last_from_us") else next_action.days_since(row["item"].created_at)
+    stamp_source = json.dumps([[r["item"].id, r["item"].last_message_id, r["item"].status, r["item"].draft_reply,
+                                r.get("reply_draft"), r.get("needs_info"), r.get("last_from_us")] for r in rows],
+                              default=str)
+    return {"dispatch_items": rows, "dispatch_ready": queue.get("dispatch_ready", False),
+            "queue_back": back_to(back), "queue_stamp": sha256(stamp_source.encode()).hexdigest()[:16]}
+
+
+@router.get("/queue-rows")
+def queue_rows(request: Request, view: str = "open", limit: int = QUEUE_ROWS_MAX, back: str = "/dashboard",
+               db: Session = Depends(get_db)):
+    """The Needs-you rows as an HTML fragment, polled every ~25 s so new texts show without a reload."""
+    from fastapi.responses import HTMLResponse
+    from app.templating import Jinja2Templates
+    get_current_user(request, db)
+    context = queue_rows_context(db, view, limit, back)
+    templates = Jinja2Templates(directory="app/templates")
+    response = templates.TemplateResponse(request, "_dispatch_rows.html", {"request": request, **context})
+    response.headers["X-Queue-Stamp"] = context["queue_stamp"]
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@router.post("/{item_id}/clean-up")
+def clean_up_reply(item_id: int, request: Request, rough: str = Form(default=""), db: Session = Depends(get_db)):
+    """Turns what the owner typed or dictated into a clean text for the reply box. Sends nothing:
+    the text only goes out when he taps Send, through the usual decide path."""
+    user = get_current_user(request, db)
+    if user.role not in COMPOSE_ROLES:
+        raise HTTPException(403, "Your login can't text customers.")
+    item = db.get(DispatchItem, item_id)
+    if item is None:
+        raise HTTPException(404, "Item not found.")
+    rough = rough.strip()[:1500]
+    if not rough:
+        raise HTTPException(422, "Type or dictate what you want to say first.")
+    context = reply_context.build(db, item.customer_id, item)
+    result = reply_drafts.clean_up(rough, context)
+    db.rollback()  # read-only: make sure nothing from building the context is written
+    return {"text": result.text, "source": result.source}
+
+
+@router.get("/{item_id}/draft")
+def fresh_draft(item_id: int, request: Request, db: Session = Depends(get_db)):
+    """The current draft for one item from the latest thread and job. Saves nothing."""
+    get_current_user(request, db)
+    item = db.get(DispatchItem, item_id)
+    if item is None:
+        raise HTTPException(404, "Item not found.")
+    data = _reply_draft(db, item)
+    db.rollback()
+    return {"text": data["reply_draft"], "source": data["reply_source"], "needsInfo": data["needs_info"],
+            "messageId": item.last_message_id}

@@ -1,5 +1,5 @@
 {# One customer conversation in the Needs-you queue. Used on Home (first few) and on the full queue page. #}
-  <details style="border-bottom:1px solid var(--imp-line);{% if (row.days_waiting or 0) >= 2 %} box-shadow: inset 3px 0 0 var(--imp-danger);{% endif %}"{% if item.urgency == 'safety' and not row.last_from_us %} open{% endif %}{% if row.last_from_us %} class="waiting-on-them"{% endif %}>
+  <details data-queue-item="{{ item.id }}" data-message-id="{{ item.last_message_id }}" style="border-bottom:1px solid var(--imp-line);{% if (row.days_waiting or 0) >= 2 %} box-shadow: inset 3px 0 0 var(--imp-danger);{% endif %}"{% if item.urgency == 'safety' and not row.last_from_us %} open{% endif %}{% if row.last_from_us %} class="waiting-on-them"{% endif %}>
     <summary style="padding:12px 16px; cursor:pointer; color:var(--imp-ink); font-size:13px;">
       {% if row.last_from_us %}<span class="pill">You replied · waiting on them</span>{% elif item.urgency == 'safety' %}<strong style="color:var(--imp-danger);">Safety</strong> ·{% elif item.urgency == 'urgent' %}<strong style="color: var(--imp-heading);">Urgent</strong> ·{% endif %}
       {{ row.customer_name or item.customer_phone }}{% if item.vehicle_text %} · {{ item.vehicle_text }}{% endif %} · {{ item.category|capitalize }}{% if item.status == 'needs_owner' %} · Your approval{% endif %}{% if (row.days_waiting or 0) >= 2 %} · <strong style="color:var(--imp-danger);">{{ row.days_waiting }} days waiting</strong>{% endif %}
@@ -19,8 +19,8 @@
         {% if (item.quo_conversation_id or '').startswith('WEB') %}
         <p style="margin:0 0 8px;">Website request: contact this customer by phone.</p>
         {% else %}
-        {% if row.draft_state == 'retrying' %}<p class="pill pill-warn" style="display:inline-block; margin:0 0 6px;">AI draft didn't come through. Retrying automatically.</p>
-        {% elif row.draft_state == 'gave_up' %}<p class="pill pill-warn" style="display:inline-block; margin:0 0 6px;">AI couldn't draft this one after 3 tries. Use a quick reply or write your own.</p>{% endif %}
+        {% if row.draft_state == 'retrying' %}<p class="pill pill-warn" style="display:inline-block; margin:0 0 6px;">AI draft didn't come through. Retrying automatically{% if row.reply_draft %}; the draft below is from the job's facts{% endif %}.</p>
+        {% elif row.draft_state == 'gave_up' %}<p class="pill pill-warn" style="display:inline-block; margin:0 0 6px;">AI couldn't draft this one after 3 tries. {% if row.reply_draft %}The draft below is from the job's facts.{% else %}Use a quick reply or write your own.{% endif %}</p>{% endif %}
         {% if row.quick_replies %}
         <div class="chip-row" role="group" aria-label="Quick replies">
           {% for reply in row.quick_replies %}
@@ -28,8 +28,7 @@
           {% endfor %}
         </div>
         {% endif %}
-        <label class="sr-only" for="reply-{{ item.id }}">Reply to customer</label>
-        <textarea id="reply-{{ item.id }}" name="reply_text" rows="3" maxlength="1500" class="form-input" style="display:block; margin:0 0 8px;" placeholder="Tap a quick reply or type your own">{{ item.draft_reply or '' }}</textarea>
+        {% include "_reply_box.html" %}
         <label style="margin:0 0 8px;display:inline-flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" name="offer_snap" value="1"> Offer Snap Finance</label>
         {% endif %}
         <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">

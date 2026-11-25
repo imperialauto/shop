@@ -1,0 +1,22 @@
+{# Reply box for one customer conversation: the drafted reply, a rough-reply box with a mic, and Clean up.
+   Nothing here sends: Clean up only rewrites the text in the box; Send (the form's approve button) sends. #}
+{% if row.needs_info %}
+<div class="needs-info" role="note" style="margin:0 0 8px; display:flex; flex-wrap:wrap; gap:6px;">
+  {% for need in row.needs_info %}<span class="pill pill-warn">Needs info: {{ need }}</span>{% endfor %}
+</div>
+{% endif %}
+<label class="sr-only" for="reply-{{ item.id }}">Reply to customer</label>
+<textarea id="reply-{{ item.id }}" name="reply_text" rows="3" maxlength="1500" class="form-input" style="display:block; margin:0 0 4px;" placeholder="Tap a quick reply or type your own" data-reply-box data-draft-source="{{ row.reply_source or '' }}">{{ row.reply_draft if row.reply_draft is not none else (item.draft_reply or '') }}</textarea>
+{% if row.reply_draft %}<p style="margin:0 0 8px; font-size:11.5px; color:var(--imp-muted);">{{ 'AI draft' if row.reply_source == 'ai' else 'Drafted from the job and the texts' }}. Edit it, or tap Send to send it as is.</p>{% endif %}
+<details class="rewrite" data-rewrite style="margin:0 0 8px;">
+  <summary style="cursor:pointer; font-size:12.5px; color:var(--imp-heading);">Say it your way</summary>
+  <div style="margin-top:6px;">
+    <label class="sr-only" for="rough-{{ item.id }}">What you want to say, rough is fine</label>
+    <textarea id="rough-{{ item.id }}" rows="2" maxlength="1500" class="form-input" style="display:block; margin:0 0 6px;" placeholder="Type or dictate it rough, e.g. tell him it's ready after 3" data-rough-box></textarea>
+    <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+      <button type="button" class="btn-secondary" data-mic hidden aria-pressed="false">Dictate</button>
+      <button type="button" class="btn-secondary" data-clean-up="/dispatch/{{ item.id }}/clean-up">Clean up</button>
+      <span role="status" data-rewrite-status style="font-size:12px; color:var(--imp-muted);"></span>
+    </div>
+  </div>
+</details>
