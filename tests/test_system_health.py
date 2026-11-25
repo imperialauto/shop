@@ -105,6 +105,9 @@ class SystemHealthTests(unittest.TestCase):
         page = client.get("/dashboard").text
         self.assertIn('id="system-health"', page)
         self.assertIn("Nightly backup", page)
+        box = page[page.index('id="system-health"'):]
+        box = box[:box.index("</div>")]
+        self.assertNotIn("✓", box)  # only what is broken shows at the top
 
 
 if __name__ == "__main__":
