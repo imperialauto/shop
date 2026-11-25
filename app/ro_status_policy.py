@@ -9,7 +9,7 @@ This module has no side effects, database writes, or outbound messaging.
 from app.models import RepairOrder
 
 
-FINISH_FROM = frozenset(("diagnosing", "in_progress", "waiting_parts", "complete"))
+FINISH_FROM = frozenset(("diagnosing", "approval_received", "in_progress", "waiting_parts", "complete"))
 
 
 def status_error(ro: RepairOrder, target: str, role: str) -> tuple[int, str] | None:

@@ -58,6 +58,14 @@ def message_for(ro: RepairOrder, offer_snap: bool = False) -> str:
     return snap_offer.add(text, offer_snap)
 
 
+def default_text(ro: RepairOrder, offer_snap: bool = False) -> str:
+    """The standard text, or the "we updated your estimate" text when lines changed since they answered."""
+    from app import line_changes
+    if line_changes.has_changes(ro):
+        return line_changes.message(ro, offer_snap)
+    return message_for(ro, offer_snap)
+
+
 def queue(db: Session, ro: RepairOrder, newest_message_id: str, actor: str,
           offer_snap: bool = False, text: str | None = None) -> DispatchItem:
     """Creates or refreshes the owner's approval item for this job. Sends nothing."""
@@ -74,7 +82,7 @@ def queue(db: Session, ro: RepairOrder, newest_message_id: str, actor: str,
     now = datetime.now().astimezone()
     # Everything is worked out before the item joins the session, so no early save sees it half-filled.
     fields = dict(customer_phone=phone, customer_id=ro.customer_id, vehicle_id=ro.vehicle_id,
-                  summary=summary, draft_reply=text or message_for(ro, offer_snap),
+                  summary=summary, draft_reply=text or default_text(ro, offer_snap),
                   proposed_action=f"Text the approval link for job #{ro.id}",
                   # The send is refused later if the customer's thread has moved past this message.
                   last_message_id=newest_message_id or "none", thread_message_id=None, updated_at=now)
@@ -134,20 +142,32 @@ def send_now(db: Session, ro: RepairOrder, actor: str, actor_user_id: int, offer
     state is one of: paused, no_phone, nothing, unavailable, already, texted (the link went out
     outside the dashboard and they haven't replied), sending (handed to the shop line).
     Undecided lines are marked waiting on the customer whatever happens, as Ask for approval did.
+    When lines changed or were added since the customer last answered (app/line_changes.py), the
+    text says the estimate was updated and is sent once per set of changes, even though their
+    earlier link already went out. Lines they approved and nobody changed stay approved.
     """
     from app import customer_file, website_alerts
     from app.dispatch_model import DispatchOutbound
     from app.sending_pause import is_paused
+
+    from app import line_changes
 
     if is_paused(db):
         return "paused", None
     phone = mobile(ro.customer.phone)
     if phone is None:
         return "no_phone", None
+    # Lines changed or added since the customer last answered: text "we updated your estimate", once
+    # per set of changes, even though their first link already went out.
+    changes = line_changes.has_changes(ro)
     fresh = [li for li in ro.line_items if li.approval is None]
     for li in fresh:
         li.approval = "pending"
-    if fresh:
+    if changes:
+        if ro.status in line_changes.REASK_FROM:
+            ro.status = "waiting_approval"
+        website_alerts.close_for_job(db, ro, actor, "estimate changes texted")
+    elif fresh:
         ro.status = "waiting_approval"
         website_alerts.close_for_job(db, ro, actor, "approval link texted")
     if not any(li.approval == "pending" for li in ro.line_items):
@@ -161,20 +181,24 @@ def send_now(db: Session, ro: RepairOrder, actor: str, actor_user_id: int, offer
         return "unavailable", None
     messages = thread.get("messages") or []
     newest = (messages[-1].get("id") if messages else None) or "none"
-    already = (db.query(DispatchItem).filter(DispatchItem.quo_conversation_id == conversation_key(ro.id),
-                                             DispatchItem.status == "approved",
-                                             DispatchItem.last_message_id == newest).first())
-    if already is not None:
-        # Same link, and nothing has happened in their thread since it went out: never text it twice.
-        return "already", already
-    if _already_texted(ro, messages):
-        return "texted", None
-    # One send per job per point in their thread. A failed or skipped try may be tried again.
-    prefix = f"approval:{ro.id}:{newest}"[:150]
+    if changes:
+        # One send per set of changes. Their earlier link text doesn't count: this is new.
+        prefix = f"changes:{ro.id}:{line_changes.revision_key(ro)}"
+    else:
+        already = (db.query(DispatchItem).filter(DispatchItem.quo_conversation_id == conversation_key(ro.id),
+                                                 DispatchItem.status == "approved",
+                                                 DispatchItem.last_message_id == newest).first())
+        if already is not None:
+            # Same link, and nothing has happened in their thread since it went out: never text it twice.
+            return "already", already
+        if _already_texted(ro, messages):
+            return "texted", None
+        # One send per job per point in their thread. A failed or skipped try may be tried again.
+        prefix = f"approval:{ro.id}:{newest}"[:150]
     tries = db.query(DispatchOutbound).filter(DispatchOutbound.dedupe_key.like(prefix + "%")).all()
     if any(o.status not in ("failed", "skipped") for o in tries):
         return "already", None
-    body = custom_text(ro, text, offer_snap) if text else None
+    body = custom_text(ro, text, offer_snap) if text else (line_changes.message(ro, offer_snap) if changes else None)
     item = queue(db, ro, newest, actor, offer_snap=offer_snap, text=body)
     now = datetime.now().astimezone()
     item.status, item.decided_by, item.decided_at, item.updated_at = "approved", actor_user_id, now, now
