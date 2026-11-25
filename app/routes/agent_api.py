@@ -30,7 +30,7 @@ from app.appointment_model import Appointment
 from app.database import get_db
 from app.models import Customer, LineItem, RepairOrder, Vehicle
 from app.routes.account_security import client_key
-from app.routes.appointments import AppointmentInput, confirm, create_appointment
+from app.routes.appointments import AppointmentInput, close, confirm, create_appointment
 from app.security import limiter
 
 router = APIRouter()
@@ -492,6 +492,57 @@ def confirm_appointment(appointment_id: int, db: Session = Depends(get_db),
                    before_commit=lambda item: agent_keys.record(
                        db, key, "appointment.confirm", "appointment", item.id,
                        f"job {item.repair_order_id} at {item.starts_at.isoformat()}"))
+
+
+class AppointmentChangeIn(BaseModel):
+    action: str = Field(pattern="^(cancel|complete)$", description="cancel: the visit is off (any not-finished "
+                        "appointment); complete: the visit happened (confirmed ones only).")
+
+
+@router.post("/appointments/{appointment_id}/change")
+def change_appointment(appointment_id: int, payload: AppointmentChangeIn, db: Session = Depends(get_db),
+                       key: AgentKey = Depends(agent("appointments:write"))):
+    """Cancel or complete a visit, as the calendar's buttons do: closes the owner's reminder task.
+    Nothing is sent to the customer."""
+    outcome = "cancelled" if payload.action == "cancel" else "completed"
+    return close(db, appointment_id, outcome, f"agent:{key.id}", before_commit=lambda item: agent_keys.record(
+        db, key, f"appointment.{payload.action}", "appointment", item.id,
+        f"job {item.repair_order_id} at {item.starts_at.isoformat()}"))
+
+
+class JobNotesIn(BaseModel):
+    add_tech_note: str | None = Field(default=None, max_length=2000, description="Added as a new dated line at the "
+                                      "end of the job's tech notes; what's there already is kept.")
+    concern: str | None = Field(default=None, max_length=2000, description="Replaces the job's concern "
+                                "(the customer's complaint), as on the job page.")
+
+    _clean = field_validator("add_tech_note", "concern", mode="before")(_blank_to_none)
+
+
+@router.post("/jobs/{ro_id}/notes")
+def update_job_notes(ro_id: int, payload: JobNotesIn, db: Session = Depends(get_db),
+                     key: AgentKey = Depends(agent("estimates:write"))):
+    """Add a tech note and/or set the concern on a job. Nothing is sent to the customer."""
+    if not (payload.add_tech_note or payload.concern):
+        raise HTTPException(422, "Send add_tech_note or concern.")
+    ro = db.get(RepairOrder, ro_id)
+    if ro is None:
+        raise HTTPException(404, "Job not found.")
+    changed = []
+    if payload.add_tech_note:
+        from app.shop_board import now_local
+
+        stamp = now_local().strftime("%b %-d %-I:%M %p")
+        line = f"{stamp} (Claude): {payload.add_tech_note}"
+        ro.tech_notes = f"{ro.tech_notes.rstrip()}\n{line}" if (ro.tech_notes or "").strip() else line
+        changed.append("tech note added")
+    if payload.concern and payload.concern != ro.concern:
+        ro.concern = payload.concern
+        changed.append("concern set")
+    agent_keys.record(db, key, "job.notes", "repair_order", ro.id, "; ".join(changed) or "no change")
+    db.commit()
+    db.refresh(ro)
+    return {"id": ro.id, "concern": ro.concern, "tech_notes": ro.tech_notes, "changed": changed}
 
 
 class SendApprovalIn(BaseModel):

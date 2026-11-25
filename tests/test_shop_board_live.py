@@ -17,7 +17,7 @@ from app.appointment_model import Appointment
 from app.appointments import PHOENIX
 from app.auth import hash_password
 from app.database import Base, get_db
-from app.dispatch_model import DispatchAudit, DispatchItem
+from app.dispatch_model import DispatchAudit, DispatchItem, DispatchOutbound
 from app.imperial_task_model import BOARD_CATEGORY, ImperialTask
 from app.main import app
 from app.models import Customer, LineItem, PartsOrder, RepairOrder, User, Vehicle
@@ -355,6 +355,104 @@ class BoardLiveTests(unittest.TestCase):
     def test_set_tool_needs_an_id_or_key(self):
         payload, err = self._call(self._key(), "set_board_todo", {"done": True})
         self.assertTrue(err)
+
+    # ---------------------------------------------------------------- the assistant's timer, lot, clock, notes and visit tools
+    def test_assistant_starts_lists_extends_and_stops_tv_timers(self):
+        key = self._key()
+        names = [t["name"] for t in agent_connector._tool_list(key)]
+        for name in ("list_board_timers", "start_board_timer", "change_board_timer", "list_board_jobs", "set_car_here", "set_job_clock"):
+            self.assertIn(name, names)
+        started, err = self._call(key, "start_board_timer", {"label": "Brake bleed", "minutes": 5})
+        self.assertFalse(err, started)
+        self.assertEqual((started["timer"]["label"], started["timer"]["left"]), ("Brake bleed", 300))
+        listing, _ = self._call(key, "list_board_timers", {})
+        self.assertEqual([t["id"] for t in listing["timers"]], [started["timer"]["id"]])
+        self.assertIn("Brake bleed", self.client().get("/board/panel").text)  # the TV shows it
+        more, err = self._call(key, "change_board_timer", {"label": "brake", "action": "add_5_minutes"})
+        self.assertFalse(err, more)
+        self.assertEqual(more["timers"][0]["left"], 600)
+        stopped, err = self._call(key, "change_board_timer", {"timer_id": started["timer"]["id"], "action": "stop"})
+        self.assertFalse(err, stopped)
+        self.assertEqual(stopped["timers"], [])
+        with self.Session() as db:
+            actions = [a.action for a in db.query(agent_keys.AgentAction).order_by(agent_keys.AgentAction.id)]
+        self.assertEqual(actions, ["board_timer_started", "board_timer_plus5", "board_timer_stopped"])
+
+    def test_timer_tool_refuses_bad_minutes_unknown_and_ambiguous_timers(self):
+        key = self._key()
+        _, err = self._call(key, "start_board_timer", {"label": "x", "minutes": 0})
+        self.assertTrue(err)
+        _, err = self._call(key, "change_board_timer", {"label": "nothing here", "action": "stop"})
+        self.assertTrue(err)
+        self._call(key, "start_board_timer", {"label": "Oil drain", "minutes": 10})
+        self._call(key, "start_board_timer", {"label": "Oil cooler test", "minutes": 15})
+        both, err = self._call(key, "change_board_timer", {"label": "oil", "action": "stop"})
+        self.assertTrue(err)
+        self.assertIn("More than one", both["error"])
+        exact, err = self._call(key, "change_board_timer", {"label": "Oil drain", "action": "stop"})
+        self.assertFalse(err, exact)
+        self.assertEqual([t["label"] for t in exact["timers"]], ["Oil cooler test"])
+        _, err = self._call(key, "change_board_timer", {"action": "stop"})
+        self.assertTrue(err)
+        with self.Session() as db:
+            for label in "abcde":  # with Oil cooler test that makes six, the most allowed
+                shop_board.start_timer(db, "agent:x", label, 5)
+        full, err = self._call(key, "start_board_timer", {"label": "One too many", "minutes": 5})
+        self.assertTrue(err)
+
+    def test_assistant_marks_a_car_here_and_runs_the_job_clock(self):
+        key = self._key()
+        here, err = self._call(key, "set_car_here", {"job_id": 12, "here": True})
+        self.assertFalse(err, here)
+        jobs, _ = self._call(key, "list_board_jobs", {})
+        row = next(j for j in jobs["jobs"] if j["id"] == 12)
+        self.assertTrue(row["here"])
+        self.assertNotIn("Overheating", str(jobs))  # board labels only, no placeholder concern names
+        on, err = self._call(key, "set_job_clock", {"job_id": 12, "running": True})
+        self.assertFalse(err, on)
+        self.assertTrue(on["clock_on"])
+        off, _ = self._call(key, "set_job_clock", {"job_id": 12, "running": False})
+        self.assertFalse(off["clock_on"])
+        _, err = self._call(key, "set_car_here", {"job_id": 999, "here": True})
+        self.assertTrue(err)
+
+    def test_assistant_adds_a_tech_note_and_sets_the_concern(self):
+        key = self._key("estimates:write")
+        got, err = self._call(key, "update_job_notes", {"job_id": 12, "add_tech_note": "Cold pressure test held 16 psi"})
+        self.assertFalse(err, got)
+        again, _ = self._call(key, "update_job_notes", {"job_id": 12, "add_tech_note": "Sludge in reservoir",
+                                                        "concern": "Overheating at idle"})
+        lines = again["tech_notes"].splitlines()
+        self.assertEqual(len(lines), 2)
+        self.assertTrue(lines[0].startswith("Nov 23 3:00 PM (Claude): Cold pressure test"))
+        self.assertEqual(again["concern"], "Overheating at idle")
+        _, err = self._call(key, "update_job_notes", {"job_id": 12})
+        self.assertTrue(err)
+        _, err = self._call(key, "update_job_notes", {"job_id": 999, "add_tech_note": "x"})
+        self.assertTrue(err)
+
+    def test_assistant_cancels_and_completes_visits_without_texting(self):
+        key = self._key("appointments:write")
+        with self.Session() as db:
+            start = (NOW + timedelta(days=1)).astimezone(timezone.utc)
+            tentative = Appointment(repair_order_id=12, resource_id="bay-2", status="tentative", starts_at=start,
+                                    ends_at=start + timedelta(hours=1))
+            confirmed = Appointment(repair_order_id=11, resource_id="bay-3", status="confirmed", starts_at=start,
+                                    ends_at=start + timedelta(hours=1))
+            db.add_all([tentative, confirmed])
+            db.commit()
+            t_id, c_id = tentative.id, confirmed.id
+        _, err = self._call(key, "change_appointment", {"appointment_id": t_id, "action": "complete"})
+        self.assertTrue(err)  # only confirmed visits complete
+        got, err = self._call(key, "change_appointment", {"appointment_id": t_id, "action": "cancel"})
+        self.assertFalse(err, got)
+        done, err = self._call(key, "change_appointment", {"appointment_id": c_id, "action": "complete"})
+        self.assertFalse(err, done)
+        with self.Session() as db:
+            self.assertEqual((db.get(Appointment, t_id).status, db.get(Appointment, c_id).status), ("cancelled", "completed"))
+            actions = [a.action for a in db.query(agent_keys.AgentAction).order_by(agent_keys.AgentAction.id)]
+            self.assertEqual(actions, ["appointment.cancel", "appointment.complete"])
+            self.assertEqual(db.query(DispatchOutbound).count(), 0)
 
 
 if __name__ == "__main__":
