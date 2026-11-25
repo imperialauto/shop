@@ -26,7 +26,7 @@ from app.auth import get_current_user
 from app.database import get_db
 from app.finance_model import (BILL_CATEGORIES, MARKER_NOTES, NOTE_PAID_GUESS, NOTE_UNCONFIRMED, REPEATS, SCOPES,
                                FinanceAccount, FinanceBill, FinanceChange, FinanceIncoming)
-from app.models import Invoice, Payment, RepairOrder
+from app.models import Invoice, JobDeposit, Payment, RepairOrder
 from app.templating import Jinja2Templates
 
 router = APIRouter()
@@ -77,10 +77,10 @@ def saved_pay_order() -> dict:
     return {scope: [str(n).lower()[:80] for n in value.get(scope, []) if isinstance(n, str)][:200] for scope in SCOPES}
 
 
-def profit_goal() -> int:
-    """Monthly profit goal in whole dollars, 0 when he hasn't set one."""
+def profit_goal(key: str = "monthly_profit_goal") -> int:
+    """A profit goal in whole dollars, 0 when he hasn't set one."""
     try:
-        value = int(float(settings_store.raw("monthly_profit_goal") or "0"))
+        value = int(float(settings_store.raw(key) or "0"))
     except ValueError:
         return 0
     return value if 0 <= value <= 1_000_000 else 0
@@ -101,6 +101,22 @@ def _shop_payments(db: Session, start: date, end_exclusive: date) -> float:
     total = (db.query(func.coalesce(func.sum(Payment.amount), 0))
              .filter(Payment.paid_at >= _utc_naive(start), Payment.paid_at < _utc_naive(end_exclusive)).scalar())
     return float(total or 0)
+
+
+def _open_deposits(db: Session, start: date, end_exclusive: date) -> float:
+    """Job deposits taken in the window that aren't on an invoice yet. Once one moves onto an invoice it is a Payment."""
+    total = (db.query(func.coalesce(func.sum(JobDeposit.amount), 0))
+             .filter(JobDeposit.received_at >= _utc_naive(start), JobDeposit.received_at < _utc_naive(end_exclusive),
+                     JobDeposit.removed_at.is_(None), JobDeposit.payment_id.is_(None)).scalar())
+    return float(total or 0)
+
+
+def sales_in(db: Session, start: date, end_exclusive: date, incoming=None) -> float:
+    """Total sales for the window, the one figure Home, the Money page and the shop TV all show: job payments,
+    job deposits not on an invoice yet, and money marked "Got it"."""
+    incoming = db.query(FinanceIncoming).all() if incoming is None else incoming
+    return round(_shop_payments(db, start, end_exclusive) + _open_deposits(db, start, end_exclusive)
+                 + plan.dollars(_received(incoming, start, end_exclusive)), 2)
 
 
 def _received(incoming, start: date, end_exclusive: date) -> int:
@@ -165,7 +181,7 @@ def home_goal(db: Session) -> dict | None:
         bills = db.query(FinanceBill).all()
         incoming = db.query(FinanceIncoming).all()
         sums = plan.totals(accounts, bills, incoming, today, 14, jobs_due(db))
-        came_in = _shop_payments(db, today, tomorrow) + plan.dollars(_received(incoming, today, tomorrow))
+        came_in = sales_in(db, today, tomorrow, incoming)
     except SQLAlchemyError:
         db.rollback()
         return None
@@ -204,15 +220,15 @@ def finance_home(request: Request, window: int = 14, db: Session = Depends(get_d
     business, personal = sums["business"], sums["personal"]
     goal = daily_goal()
     money_in = {
-        "today": _shop_payments(db, today, tomorrow) + plan.dollars(_received(incoming, today, tomorrow)),
-        "week": _shop_payments(db, week_start, tomorrow) + plan.dollars(_received(incoming, week_start, tomorrow)),
-        "month": _shop_payments(db, month_start, tomorrow) + plan.dollars(_received(incoming, month_start, tomorrow)),
+        "today": sales_in(db, today, tomorrow, incoming),
+        "week": sales_in(db, week_start, tomorrow, incoming),
+        "month": sales_in(db, month_start, tomorrow, incoming),
     }
     days_so_far = plan.working_days(week_start, today)
     this_monday, last_monday, _ = plan.week_bounds(today)
     weeks = []
     for label, start, stop in (("This week", this_monday, tomorrow), ("Last week", last_monday, this_monday)):
-        came_in = round(_shop_payments(db, start, stop) * 100) + _received(incoming, start, stop)
+        came_in = round(sales_in(db, start, stop, incoming) * 100)
         went_out = plan.paid_out(bills, "business", start, stop)
         weeks.append({"label": label, "in": came_in, "out": went_out, "left": came_in - went_out})
     line = plan.cash_line(business, today, sums["end"])
@@ -221,7 +237,8 @@ def finance_home(request: Request, window: int = 14, db: Session = Depends(get_d
     last_updated = max((a.as_of for a in accounts), default=None)
     order = saved_pay_order()
     pay = {scope: plan.pay_order(_pay_list(sums[scope]), order.get(scope), sums[scope].cash, today) for scope in SCOPES}
-    goal_month = profit_goal()
+    goal_regular, goal_summer = profit_goal(), profit_goal("summer_profit_goal")
+    goal_month, summer_now = plan.goal_for(today, goal_regular, goal_summer)
     to_confirm = sorted((b for b in bills if b.status == "open" and plan.is_unconfirmed(b)), key=lambda b: b.due_date)
     check_dates = sorted((b for b in bills if b.status == "paid" and plan.paid_date_guessed(b)), key=lambda b: b.due_date)
     paid_recently = sorted((b for b in bills if b.status == "paid" and b.paid_on and b.paid_on >= today - timedelta(days=14)),
@@ -255,7 +272,9 @@ def finance_home(request: Request, window: int = 14, db: Session = Depends(get_d
         "paid_recently": paid_recently[:6],
         "on_time": plan.on_time(bills, today),
         "pay": pay,
-        "profit": plan.profit_plan(business.short, sums["days_open"], goal_month, today),
+        "profit": {**plan.profit_plan(business.short, sums["days_open"], goal_month, today),
+                   "regular": goal_regular, "summer": goal_summer, "summer_now": summer_now,
+                   "summer_label": plan.SUMMER_LABEL},
         "to_confirm": to_confirm,
         "check_dates": check_dates,
         "days_late": plan.days_late,
@@ -522,16 +541,28 @@ async def order(request: Request, db: Session = Depends(get_db)):
 @router.post("/profit")
 async def profit(request: Request, db: Session = Depends(get_db)):
     def work(form, user, today):
-        text = str(form.get("profit", "")).strip()
-        try:
-            value = plan.cents(text or "0") // 100
-        except ValueError:
-            return "", ["The profit goal has to be a dollar amount."]
-        if not 0 <= value <= 1_000_000:
-            return "", ["The profit goal has to be between $0 and $1,000,000."]
-        settings_store.save(db, "monthly_profit_goal", str(value), user.username)
+        values = {}
+        for field, key in (("profit", "monthly_profit_goal"), ("summer", "summer_profit_goal")):
+            if field not in form:
+                continue
+            text = str(form.get(field, "")).strip()
+            try:
+                value = plan.cents(text or "0") // 100
+            except ValueError:
+                return "", ["The profit goal has to be a dollar amount."]
+            if not 0 <= value <= 1_000_000:
+                return "", ["The profit goal has to be between $0 and $1,000,000."]
+            values[key] = value
+        for key, value in values.items():
+            settings_store.save(db, key, str(value), user.username)
         settings_store.clear_cache()
-        return (f"Monthly profit goal set to ${value:,}." if value else "Profit goal cleared."), []
+        regular, summer = values.get("monthly_profit_goal"), values.get("summer_profit_goal")
+        parts = []
+        if regular is not None:
+            parts.append(f"Monthly profit goal set to ${regular:,}." if regular else "Profit goal cleared.")
+        if summer is not None:
+            parts.append(f"Summer goal ({plan.SUMMER_LABEL}) set to ${summer:,}." if summer else "Summer goal cleared.")
+        return " ".join(parts) or "Nothing changed.", []
     return await _save(request, db, work)
 
 

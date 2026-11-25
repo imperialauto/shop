@@ -103,13 +103,13 @@
     <h2 class="font-bold mb-2">Deposit text</h2>
     <input type="hidden" name="automatic_deposit_text_shown" value="1">
     <label><input type="checkbox" name="automatic_deposit_text" {% if settings.automatic_deposit_text %}checked{% endif %}> Text the deposit request when a customer approves on their link</label>
-    <p class="text-sm text-stone-400 mt-2">Asks for 50% of what they approved (tax on parts included) by Zelle or cash. It offers Snap Finance only if you ticked Offer Snap Finance on the approval text, and the Snap link is only sent if they ask. Skipped if a payment is already recorded on the job. If their texts can't be checked, the draft waits for your YES instead. Approvals you record in person don't send it.</p>
+    <p class="text-sm text-stone-400 mt-2">Asks for 50% of what they approved (tax on parts included) by card through a QuickBooks link, Zelle, Apple Pay or cash. It offers Snap Finance only if you ticked Offer Snap Finance on the approval text, and the Snap link is only sent if they ask. Skipped if a payment is already recorded on the job. If their texts can't be checked, the draft waits for your YES instead. Approvals you record in person don't send it.</p>
   </section>
   <section class="card">
     <h2 class="font-bold mb-2">Pickup text</h2>
     <input type="hidden" name="automatic_pickup_text_shown" value="1">
     <label><input type="checkbox" name="automatic_pickup_text" {% if settings.automatic_pickup_text %}checked{% endif %}> Text the customer when you mark a job Complete</label>
-    <p class="text-sm text-stone-400 mt-2">Says the car is ready and gives the balance left on the invoice, by Zelle or cash. Adds the storage line only when your terms show where customers sign. One text per job, even if the job moves back and forth. With no invoice yet, or texts it can't check, the draft waits for your YES instead.</p>
+    <p class="text-sm text-stone-400 mt-2">Says the car is ready and gives the balance left on the invoice, by card through a QuickBooks link, Zelle, Apple Pay or cash. Adds the storage line only when your terms show where customers sign. One text per job, even if the job moves back and forth. With no invoice yet, or texts it can't check, the draft waits for your YES instead.</p>
   </section>
   <section class="card">
     <h2 class="font-bold mb-2">Oil change reminder</h2>
@@ -150,7 +150,7 @@
 </form>
 <div class="card max-w-3xl mt-6">
   <h2 class="font-bold mb-2">Change history</h2>
-  {% for c in history %}<div class="text-sm py-1 border-b border-stone-800">{{ c.changed_at.strftime('%b %d, %I:%M %p') }} UTC · {{ c.changed_by }} changed {{ c.key.replace('_', ' ') }}</div>
+  {% for c in history %}<div class="text-sm py-1 border-b border-stone-800">{{ (c.changed_at|shop_time).strftime('%b %d, %I:%M %p') }} · {{ c.changed_by }} changed {{ c.key.replace('_', ' ') }}</div>
   {% else %}<p class="text-sm text-stone-400">No changes yet. Values come from the Railway settings until saved here.</p>{% endfor %}
 </div>
 {% endblock %}

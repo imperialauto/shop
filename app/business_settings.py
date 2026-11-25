@@ -46,6 +46,8 @@ KEYS = {
     "daily_sales_goal": "DAILY_SALES_GOAL",
     "finance_pay_order": "FINANCE_PAY_ORDER_JSON",
     "monthly_profit_goal": "MONTHLY_PROFIT_GOAL",
+    # Profit goal for May through September; 0 means use the monthly goal all year.
+    "summer_profit_goal": "SUMMER_PROFIT_GOAL",
     # Shop TV board: which open jobs' cars are at the shop. Set on /board/manage.
     "board_on_lot": "BOARD_ON_LOT_JSON",
     "board_timers": "BOARD_TIMERS_JSON",

@@ -131,14 +131,10 @@
   </header>
 
   {% if health and not health.ok %}
-  <details class="h-card h-alert" id="system-health" open>
-    <summary style="cursor:pointer;"><strong>{{ health.problems|length }} thing{{ 's need' if health.problems|length != 1 else ' needs' }} attention</strong></summary>
-    <ul class="h-checks">
-      {% for c in health.checks %}
-      <li><strong style="color:{{ 'var(--h-red)' if not c.ok else ('var(--imp-muted)' if c.info else 'var(--imp-ok)') }};">{{ '!' if not c.ok else ('·' if c.info else '✓') }} {{ c.name }}</strong>: {{ c.detail }}{% if c.fix %} <span style="color:var(--imp-muted);">{{ c.fix }}</span>{% endif %}</li>
-      {% endfor %}
-    </ul>
-  </details>
+  {# Only what is broken, one short line each. Working checks stay in the footer. #}
+  <div class="h-card h-alert h-note" id="system-health">
+    {% for c in health.problems %}<div><strong style="color:var(--h-red);">{{ c.name }}</strong>: {{ c.detail }}</div>{% endfor %}
+  </div>
   {% endif %}
 
   {% if sending_paused %}
