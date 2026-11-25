@@ -29,9 +29,9 @@ SCOPES = {
     "estimates:read": "Look up jobs and estimate lines",
     "estimates:write": "Start jobs and add estimate lines (drafts only, nothing sent to customers)",
     "appointments:read": "See the appointment calendar",
-    "appointments:write": "Book tentative appointments",
+    "appointments:write": "Book tentative appointments, and cancel or complete visits (nothing sent to customers)",
     "appointments:confirm": "Confirm an appointment when you say so (adds it to your calendar and reminders)",
-    "board": "See and update the shop TV to-do list",
+    "board": "See and update the shop TV: to-do list, timers, cars here and job clocks",
     "estimates:send": "Text a customer their estimate approval link from the shop line (logged on the job)",
 }
 EXPIRY_DAYS = (30, 90, 180, 365)

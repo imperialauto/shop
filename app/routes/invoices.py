@@ -153,6 +153,9 @@ def create_invoice(request: Request, ro_id: int, db: Session = Depends(get_db)):
         status="draft",
     )
     db.add(invoice)
+    db.flush()
+    from app import job_deposits
+    job_deposits.apply_to_invoice(db, invoice)  # deposits already paid on the job count on the invoice
     db.commit()
     db.refresh(invoice)
     return RedirectResponse(f"/invoices/{invoice.id}", status_code=302)
