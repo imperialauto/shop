@@ -5,6 +5,18 @@
 <div class="flex items-center gap-3 mb-2">
   <a href="/ro/" class="text-stone-400 hover:text-gold-300 text-sm">← Repair Orders</a>
   {% if user.role == 'owner' %}<a href="/finance/jobs/{{ ro.id }}" class="text-sm" style="color:var(--imp-gold)" id="owner-sheet-link">Owner sheet: profit and parts</a>{% endif %}
+  {# Car here: the same mark as Home and the shop TV board. Changes only what they show, never the job. #}
+  {% if ro.status not in ('delivered', 'cancelled') %}{% set here = car_here(ro) %}
+  <span id="car-here" style="margin-left:auto">
+    {% if user.role != 'tech' and not request.app.state.read_only %}
+    <form method="post" action="/board/lot/{{ ro.id }}" style="margin:0">
+      <input type="hidden" name="back" value="job">
+      {% if here %}<button class="btn-secondary" style="min-height:44px; color:#7BE0A0; border-color:rgba(123,224,160,.55)" name="operation" value="gone" title="Tap if the car has left">✓ Car here</button>
+      {% else %}<button class="btn-secondary" style="min-height:44px; border-style:dashed" name="operation" value="here" title="Tap when the car is dropped off">Not here yet</button>{% endif %}
+    </form>
+    {% else %}<span class="text-sm" style="{{ 'color:#7BE0A0' if here else 'color:var(--imp-muted)' }}">{{ '✓ Car here' if here else 'Not here yet' }}</span>{% endif %}
+  </span>
+  {% endif %}
 </div>
 
 {% if next_step %}

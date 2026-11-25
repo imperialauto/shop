@@ -94,8 +94,10 @@ def change_todo(task_id: int, request: Request, operation: str = Form(...), db: 
 
 
 @router.post("/board/lot/{ro_id}")
-def mark_lot(ro_id: int, request: Request, operation: str = Form(...), db: Session = Depends(get_db)):
-    """Here or gone: changes only which cars the TV lists, never the job itself."""
+def mark_lot(ro_id: int, request: Request, operation: str = Form(...), back: str = Form(""),
+             db: Session = Depends(get_db)):
+    """Here or gone: changes only which cars the TV lists, never the job itself.
+    Pressed on Home or the job page, it goes back there (back=home or back=job)."""
     user = get_current_user(request, db)
     if request.app.state.read_only:
         raise HTTPException(503, "The dashboard is read-only right now.")
@@ -103,7 +105,8 @@ def mark_lot(ro_id: int, request: Request, operation: str = Form(...), db: Sessi
         raise HTTPException(422, "Unknown action.")
     if not shop_board.set_here(db, user, ro_id, operation == "here"):
         raise HTTPException(404, "That job isn't open.")
-    return RedirectResponse("/board/manage?saved=lot#lot", status_code=303)
+    where = {"home": f"/dashboard#job-{ro_id}", "job": f"/ro/{ro_id}"}.get(back, "/board/manage?saved=lot#lot")
+    return RedirectResponse(where, status_code=303)
 
 
 @router.post("/board/goal")
