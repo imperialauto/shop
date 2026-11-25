@@ -4,18 +4,18 @@ One place for status-driven automations so they don't overlap. Each handler gets
 inside its own savepoint, so one failing never blocks the status change or the other handlers.
 
 - complete: the ready-for-pickup text (app.pickup_texts).
-- delivered: free for the review request and repeat-customer offers. The Google review request
-  still runs from repair_orders.update_status behind REVIEW_REQUESTS_ENABLED; move it here when
-  that work is built, so a customer never gets two texts at pickup.
+- delivered: the Google review request for the day after pickup (app.review_requests). Payments
+  recorded after pickup schedule it from app.routes.invoices. The pickup-ready text goes out on
+  complete and never asks for a review, so a customer gets one text at each step.
 """
 from sqlalchemy.orm import Session
 
-from app import pickup_texts
+from app import pickup_texts, review_requests
 from app.models import RepairOrder
 
 HANDLERS = {
     "complete": [pickup_texts.queue],
-    "delivered": [],
+    "delivered": [review_requests.schedule],
 }
 
 

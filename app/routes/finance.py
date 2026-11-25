@@ -77,10 +77,10 @@ def saved_pay_order() -> dict:
     return {scope: [str(n).lower()[:80] for n in value.get(scope, []) if isinstance(n, str)][:200] for scope in SCOPES}
 
 
-def profit_goal() -> int:
-    """Monthly profit goal in whole dollars, 0 when he hasn't set one."""
+def profit_goal(key: str = "monthly_profit_goal") -> int:
+    """A profit goal in whole dollars, 0 when he hasn't set one."""
     try:
-        value = int(float(settings_store.raw("monthly_profit_goal") or "0"))
+        value = int(float(settings_store.raw(key) or "0"))
     except ValueError:
         return 0
     return value if 0 <= value <= 1_000_000 else 0
@@ -237,7 +237,8 @@ def finance_home(request: Request, window: int = 14, db: Session = Depends(get_d
     last_updated = max((a.as_of for a in accounts), default=None)
     order = saved_pay_order()
     pay = {scope: plan.pay_order(_pay_list(sums[scope]), order.get(scope), sums[scope].cash, today) for scope in SCOPES}
-    goal_month = profit_goal()
+    goal_regular, goal_summer = profit_goal(), profit_goal("summer_profit_goal")
+    goal_month, summer_now = plan.goal_for(today, goal_regular, goal_summer)
     to_confirm = sorted((b for b in bills if b.status == "open" and plan.is_unconfirmed(b)), key=lambda b: b.due_date)
     check_dates = sorted((b for b in bills if b.status == "paid" and plan.paid_date_guessed(b)), key=lambda b: b.due_date)
     paid_recently = sorted((b for b in bills if b.status == "paid" and b.paid_on and b.paid_on >= today - timedelta(days=14)),
@@ -271,7 +272,9 @@ def finance_home(request: Request, window: int = 14, db: Session = Depends(get_d
         "paid_recently": paid_recently[:6],
         "on_time": plan.on_time(bills, today),
         "pay": pay,
-        "profit": plan.profit_plan(business.short, sums["days_open"], goal_month, today),
+        "profit": {**plan.profit_plan(business.short, sums["days_open"], goal_month, today),
+                   "regular": goal_regular, "summer": goal_summer, "summer_now": summer_now,
+                   "summer_label": plan.SUMMER_LABEL},
         "to_confirm": to_confirm,
         "check_dates": check_dates,
         "days_late": plan.days_late,
@@ -538,16 +541,28 @@ async def order(request: Request, db: Session = Depends(get_db)):
 @router.post("/profit")
 async def profit(request: Request, db: Session = Depends(get_db)):
     def work(form, user, today):
-        text = str(form.get("profit", "")).strip()
-        try:
-            value = plan.cents(text or "0") // 100
-        except ValueError:
-            return "", ["The profit goal has to be a dollar amount."]
-        if not 0 <= value <= 1_000_000:
-            return "", ["The profit goal has to be between $0 and $1,000,000."]
-        settings_store.save(db, "monthly_profit_goal", str(value), user.username)
+        values = {}
+        for field, key in (("profit", "monthly_profit_goal"), ("summer", "summer_profit_goal")):
+            if field not in form:
+                continue
+            text = str(form.get(field, "")).strip()
+            try:
+                value = plan.cents(text or "0") // 100
+            except ValueError:
+                return "", ["The profit goal has to be a dollar amount."]
+            if not 0 <= value <= 1_000_000:
+                return "", ["The profit goal has to be between $0 and $1,000,000."]
+            values[key] = value
+        for key, value in values.items():
+            settings_store.save(db, key, str(value), user.username)
         settings_store.clear_cache()
-        return (f"Monthly profit goal set to ${value:,}." if value else "Profit goal cleared."), []
+        regular, summer = values.get("monthly_profit_goal"), values.get("summer_profit_goal")
+        parts = []
+        if regular is not None:
+            parts.append(f"Monthly profit goal set to ${regular:,}." if regular else "Profit goal cleared.")
+        if summer is not None:
+            parts.append(f"Summer goal ({plan.SUMMER_LABEL}) set to ${summer:,}." if summer else "Summer goal cleared.")
+        return " ".join(parts) or "Nothing changed.", []
     return await _save(request, db, work)
 
 

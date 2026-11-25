@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app import business_settings as store
 from app.auth import get_current_user
 from app.database import get_db
-from app import oil_reminders, pricing
+from app import oil_reminders, pricing, review_requests
 from app.public_site import BOOKABLE_SERVICES, VEHICLE_CLASSES
 from app.routes.invoices import METHOD_LABELS, enabled_methods
 
@@ -60,6 +60,8 @@ def current() -> dict:
         "task_followup_days": store.task_followup_days(),
         "task_followup_max": store.TASK_FOLLOWUP_MAX,
         "automatic_customer_followups": (store.raw("automatic_customer_followups") or "").strip().lower() == "true",
+        "automatic_review_text": (store.raw("automatic_review_text") or "").strip().lower() == "true",
+        "google_review_link": (store.raw("google_review_link") or "").strip() or review_requests.DEFAULT_LINK,
         "automatic_deposit_text": (store.raw("automatic_deposit_text") or "").strip().lower() == "true",
         "automatic_pickup_text": (store.raw("automatic_pickup_text") or "").strip().lower() == "true",
         "automatic_oil_reminders": (store.raw("automatic_oil_reminders") or "").strip().lower() == "true",
@@ -142,6 +144,12 @@ def parse(form) -> dict:
         ))
     if "automatic_customer_followups_shown" in form:
         alerts["automatic_customer_followups"] = str(form.get("automatic_customer_followups") == "on").lower()
+    if "automatic_review_text_shown" in form:
+        link = form.get("google_review_link", "").strip()
+        if link and not review_requests.valid_link(link):
+            raise Invalid("Google review link: paste the link from Ask for reviews on your Google Business Profile. It starts with https://g.page/r/")
+        alerts["automatic_review_text"] = str(form.get("automatic_review_text") == "on").lower()
+        alerts["google_review_link"] = link
     if "automatic_deposit_text_shown" in form:
         alerts["automatic_deposit_text"] = str(form.get("automatic_deposit_text") == "on").lower()
     if "automatic_pickup_text_shown" in form:

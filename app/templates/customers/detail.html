@@ -21,6 +21,7 @@
     <a href="/customers/{{ customer.id }}/edit" class="btn-secondary">Edit</a>
     <a href="/ro/new?customer_id={{ customer.id }}" class="btn-primary">+ New RO</a>
     <a href="/vehicles/new?customer_id={{ customer.id }}" class="btn-secondary">+ Add Vehicle</a>
+    {% if can_text %}{% if review_done %}<span class="badge text-stone-400" title="The Google review text won't go to them">Review: asked or done</span>{% else %}<form method="post" action="/customers/{{ customer.id }}/reviewed" style="display:inline"><button class="btn-secondary" title="They already left a Google review, or shouldn't be asked">Already reviewed</button></form>{% endif %}{% endif %}
   </div>
 </div>
 
@@ -109,7 +110,7 @@
         <td class="text-stone-400">{{ ro.vehicle.label }}</td>
         <td class="text-stone-300 max-w-xs truncate">{{ ro.concern or '—' }}</td>
         <td><span class="badge badge-{{ ro.status }}">{{ ro.status.replace('_',' ').title() }}</span></td>
-        <td class="text-stone-500 text-xs">{{ ro.created_at.strftime('%m/%d/%y') }}</td>
+        <td class="text-stone-500 text-xs">{{ (ro.created_at|shop_time).strftime('%m/%d/%y') }}</td>
       </tr>
       {% endfor %}
     </tbody>

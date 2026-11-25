@@ -73,7 +73,7 @@
           </span>
         </td>
         <td class="text-stone-400">{{ ro.assigned_tech.full_name if ro.assigned_tech else '—' }}</td>
-        <td class="text-stone-500 text-xs">{{ ro.created_at.strftime('%m/%d/%y') }}</td>
+        <td class="text-stone-500 text-xs">{{ (ro.created_at|shop_time).strftime('%m/%d/%y') }}</td>
       </tr>
       {% endfor %}
     </tbody>

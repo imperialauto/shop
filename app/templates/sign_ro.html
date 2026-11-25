@@ -77,7 +77,7 @@
 
   {% if ro.signed_at and not pending %}
   <div class="already-signed" style="margin-top:20px;">
-    ✓ Already signed by {{ ro.approved_by }} on {{ ro.signed_at.strftime('%B %d, %Y') }}
+    ✓ Already signed by {{ ro.approved_by }} on {{ (ro.signed_at|shop_time).strftime('%B %d, %Y') }}
   </div>
   {% elif not pending %}
   <div class="card" style="margin-top:20px;">No estimate is ready for approval.</div>
@@ -124,7 +124,7 @@
             <div style="font-size:11.5px; color:var(--imp-muted); margin-top:1px;">{{ li.item_type | title }} × {{ li.quantity }}{% if li.approval == 'approved' %} · Approved{% elif li.approval == 'declined' %} · Declined{% endif %}</div>
             {% if li.approval == 'pending' %}
             <div style="display:flex; gap:8px; margin-top:8px;">
-              <label style="flex:1; min-height:44px; display:flex; align-items:center; gap:6px; background:var(--imp-surface); border-radius:8px; padding:0 10px;"><input type="radio" name="line_{{ li.id }}" value="approved" data-amount="{{ '%.2f'|format(li.total) }}" data-line="{{ li.id }}" required> Approve</label>
+              <label style="flex:1; min-height:44px; display:flex; align-items:center; gap:6px; background:var(--imp-surface); border-radius:8px; padding:0 10px;"><input type="radio" name="line_{{ li.id }}" value="approved" data-amount="{{ '%.2f'|format(li.total) }}" data-taxable="{{ 1 if li.item_type == 'part' else 0 }}" data-line="{{ li.id }}" required> Approve</label>
               <label style="flex:1; min-height:44px; display:flex; align-items:center; gap:6px; background:var(--imp-surface); border-radius:8px; padding:0 10px;"><input type="radio" name="line_{{ li.id }}" value="declined"> Decline</label>
             </div>
             {% endif %}
@@ -135,10 +135,10 @@
       </tbody>
     </table>
     <div class="total-row">
-      <span class="total-label">Total you approve</span>
+      <span class="total-label">Total you approve{% if tax_rate %}, with tax{% endif %}</span>
       <span class="total-amount" id="approved-total">${{ "%.2f"|format(subtotal) }}</span>
     </div>
-    <p style="font-size:12px; color:var(--imp-muted); margin-top:8px;">Review the itemized charges and any applicable taxes before authorizing. Declined items are not performed or charged.</p>
+    <p style="font-size:12px; color:var(--imp-muted); margin-top:8px;">{% if tax_rate %}Includes {{ '%g'|format(tax_rate * 100) }}% sales tax on parts. {% endif %}Review the itemized charges before authorizing. Declined items are not performed or charged.</p>
   </div>
 
     <div class="card">
@@ -251,10 +251,14 @@
     var radios = document.querySelectorAll('input[type=radio][name^="line_"]');
     if (!label || !radios.length) return;
     var optional = {{ '{' }}{% for li in pending if li.description and li.description.strip().upper().startswith('OPTIONAL') %}"{{ li.id }}": true{% if not loop.last %}, {% endif %}{% endfor %}{{ '}' }};
-    var fixed = {{ '%.2f'|format(ro.line_items|selectattr('approval', 'equalto', 'approved')|map(attribute='total')|sum) }};
+    var fixed = {{ '%.2f'|format(fixed_total) }}, fixedTaxable = {{ '%.2f'|format(fixed_taxable) }}, rate = {{ tax_rate }};
     function update() {
-      var sum = fixed;
-      document.querySelectorAll('input[type=radio][value=approved]:checked').forEach(function (r) { sum += parseFloat(r.dataset.amount); });
+      var sum = fixed, taxable = fixedTaxable;
+      document.querySelectorAll('input[type=radio][value=approved]:checked').forEach(function (r) {
+        sum += parseFloat(r.dataset.amount);
+        if (r.dataset.taxable === '1') taxable += parseFloat(r.dataset.amount);
+      });
+      sum += Math.round(taxable * rate * 100) / 100;
       label.textContent = '$' + sum.toFixed(2);
     }
     radios.forEach(function (r) { r.addEventListener('change', update); });

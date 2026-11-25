@@ -123,6 +123,22 @@ SHOP_TAX_RATE = 0.092  # 7915 N Glen Harbor Blvd: AZTaxes address lookup Nov 24 
 # Parts only: separately stated repair labor is not taxed (TPR 93-31).
 
 
+def totals_for(billable) -> tuple[float, float, float, float]:
+    """(subtotal, tax rate, tax on parts, total), rounded to cents."""
+    subtotal = round(sum(li.total for li in billable), 2)
+    tax_amount = round(sum(li.total for li in billable if li.item_type == "part") * SHOP_TAX_RATE, 2)
+    return subtotal, SHOP_TAX_RATE, tax_amount, round(subtotal + tax_amount, 2)
+
+
+def refresh_draft(db, invoice, ro) -> None:
+    """Re-total a draft invoice from the job's billable lines. Only drafts: a sent, signed or paid
+    invoice is what the customer saw and stays as it is. Caller commits."""
+    if invoice.status != "draft" or invoice.customer_signed_at:
+        return
+    invoice.subtotal, invoice.tax_rate, invoice.tax_amount, invoice.total = totals_for(
+        [li for li in ro.line_items if li.billable])
+
+
 @router.post("/create/{ro_id}")
 def create_invoice(request: Request, ro_id: int, db: Session = Depends(get_db)):
     user = require_user(request, db)
@@ -139,10 +155,7 @@ def create_invoice(request: Request, ro_id: int, db: Session = Depends(get_db)):
     if not billable:
         return RedirectResponse(f"/ro/{ro_id}", status_code=303)
 
-    subtotal = sum(li.total for li in billable)
-    tax_rate = SHOP_TAX_RATE
-    tax_amount = round(sum(li.total for li in billable if li.item_type == "part") * tax_rate, 2)
-    total = subtotal + tax_amount
+    subtotal, tax_rate, tax_amount, total = totals_for(billable)
 
     invoice = Invoice(
         repair_order_id=ro_id,
@@ -182,15 +195,30 @@ def view_invoice(request: Request, invoice_id: int, db: Session = Depends(get_db
 
 
 def _settle(invoice, picked_up=False):
-    """Paid in full (payments plus any waived amount) closes the invoice; anything owed reopens it."""
+    """Paid in full (payments plus any waived amount) closes the invoice; anything owed reopens it.
+    Returns the job when this call marked it picked up."""
     if _balance(invoice) <= 0:
         invoice.status = "paid"
         # Paid in full at the counter: one tap also closes the job, but only once the work is complete.
         ro = invoice.repair_order
         if picked_up and ro is not None and ro.status == "complete":
             ro.status = "delivered"
+            return ro
     elif invoice.status == "paid" or invoice.payments:
         invoice.status = "sent"
+    return None
+
+
+def _schedule_review(db, ro):
+    """Owner's setting: the Google review text goes out the day after pickup (app/review_requests.py)."""
+    if ro is None:
+        return
+    from app import review_requests
+    try:
+        with db.begin_nested():
+            review_requests.schedule(db, ro)
+    except Exception as exc:  # a review text must never stop a payment from saving
+        print(f"review_schedule_unavailable job={ro.id} {type(exc).__name__}")
 
 
 @router.post("/{invoice_id}/add-payment")
@@ -223,7 +251,7 @@ def add_payment(
     if paid_at is not None:
         payment.paid_at = paid_at
     invoice.payments.append(payment)
-    _settle(invoice, picked_up == "on")
+    _schedule_review(db, _settle(invoice, picked_up == "on"))
     db.commit()
     return RedirectResponse(f"/invoices/{invoice_id}", status_code=302)
 
@@ -256,7 +284,7 @@ def waive_balance(
     invoice.waived_reason = reason.strip()[:500] or None
     invoice.waived_by = user.username[:64]
     invoice.waived_at = datetime.now(timezone.utc)
-    _settle(invoice, picked_up == "on")
+    _schedule_review(db, _settle(invoice, picked_up == "on"))
     db.commit()
     return RedirectResponse(f"/invoices/{invoice_id}", status_code=302)
 

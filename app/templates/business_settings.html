@@ -91,6 +91,15 @@
     <p class="text-sm text-stone-400 mt-2">This field controls when conversations appear in the task board. Confirmed off-site estimates appear after two days.</p>
   </section>
   <section class="card">
+    <h2 class="font-bold mb-2">Google review text</h2>
+    <input type="hidden" name="automatic_review_text_shown" value="1">
+    <label><input type="checkbox" name="automatic_review_text" {% if settings.automatic_review_text %}checked{% endif %}> Text a Google review request the day after pickup</label>
+    <label for="google-review-link" class="block mt-3">Google review link</label>
+    <input id="google-review-link" name="google_review_link" type="url" value="{{ settings.google_review_link }}"
+           placeholder="https://g.page/r/..." class="form-input" style="max-width:420px">
+    <p class="text-sm text-stone-400 mt-2">Once per customer, ever. Goes out during shop hours the day after a job is marked picked up, after the bill is paid, and only for pickups in the last 7 days. If they texted you since pickup, a balance was waived, or their texts can't be checked, the draft waits for your YES. Mark a customer as already reviewed on their page and they're never asked. It never offers a discount for a review; Google doesn't allow that.</p>
+  </section>
+  <section class="card">
     <h2 class="font-bold mb-2">Deposit text</h2>
     <input type="hidden" name="automatic_deposit_text_shown" value="1">
     <label><input type="checkbox" name="automatic_deposit_text" {% if settings.automatic_deposit_text %}checked{% endif %}> Text the deposit request when a customer approves on their link</label>
@@ -141,7 +150,7 @@
 </form>
 <div class="card max-w-3xl mt-6">
   <h2 class="font-bold mb-2">Change history</h2>
-  {% for c in history %}<div class="text-sm py-1 border-b border-stone-800">{{ c.changed_at.strftime('%b %d, %I:%M %p') }} UTC · {{ c.changed_by }} changed {{ c.key.replace('_', ' ') }}</div>
+  {% for c in history %}<div class="text-sm py-1 border-b border-stone-800">{{ (c.changed_at|shop_time).strftime('%b %d, %I:%M %p') }} · {{ c.changed_by }} changed {{ c.key.replace('_', ' ') }}</div>
   {% else %}<p class="text-sm text-stone-400">No changes yet. Values come from the Railway settings until saved here.</p>{% endfor %}
 </div>
 {% endblock %}
