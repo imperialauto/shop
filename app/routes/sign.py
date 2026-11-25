@@ -87,6 +87,8 @@ async def sign_ro_submit(request: Request, token: str, db: Session = Depends(get
     for li in pending:
         li.approval, li.decided_at = decisions[li.id], now
         li.approval_source, li.approval_recorded_by = "link", None
+    from app import discounts
+    discounts.follow_decisions(ro)  # declined everything: the shop's discounts go with it
     ro.signature_data = signature_data
     ro.approved_by = (approved_by or "Customer")[:128]
     ro.signed_at = datetime.utcnow()

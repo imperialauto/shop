@@ -87,9 +87,9 @@
         <tr>
           <td class="td-desc">
             {{ li.description }}
-            <div style="font-size:11.5px; color:var(--imp-muted); margin-top:1px;">{{ li.item_type | title }} × {{ li.quantity }}</div>
+            <div style="font-size:11.5px; color:var(--imp-muted); margin-top:1px;">{% if li.item_type == 'discount' %}Discount{% else %}{{ li.item_type | title }} × {{ li.quantity }}{% endif %}</div>
           </td>
-          <td class="td-right">${{ "%.2f"|format(li.total) }}</td>
+          <td class="td-right">{{ li.total|money }}</td>
         </tr>
         {% endfor %}
       </tbody>
