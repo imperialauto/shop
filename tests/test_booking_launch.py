@@ -174,7 +174,7 @@ class WebsiteActivityTests(Fixture):
     def test_connector_offers_it_read_only(self):
         from app import agent_connector
         scope, _, _, _, read_only = agent_connector.TOOLS["list_website_activity"]
-        self.assertEqual((scope, read_only), ("customers:read", True))
+        self.assertEqual((scope, read_only), ("appointments:read", True))
 
 
 if __name__ == "__main__":

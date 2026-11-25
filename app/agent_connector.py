@@ -433,7 +433,7 @@ TOOLS = {
                               "(approval link or text yes), newest first, with customer, vehicle, the lines and totals. "
                               "Read only; nothing is sent to anyone.", _Decisions,
                               lambda db, key, a: agent_api.recent_decisions(db, a.since, a.include_staff), True),
-    "list_website_activity": ("customers:read", "Bookings, estimate requests and roadside requests that came in from "
+    "list_website_activity": ("appointments:read", "Bookings, estimate requests and roadside requests that came in from "
                               "the public website, newest first: reference, kind, urgent flag, when it came in, customer, "
                               "vehicle, what they asked for, the visit time for a booking, whether it still needs the owner, "
                               "whether it got the launch offer and whether a confirmation text went out. Read only; nothing "
