@@ -474,22 +474,19 @@ def parts_coming(db: Session) -> list[dict]:
 
 
 def sales_today(db: Session, now: datetime) -> dict:
-    """Money recorded as received today (Phoenix day), against the daily goal."""
+    """Money in today (Phoenix day) against the same target Home shows, so the TV and the dashboard always agree:
+    job payments, job deposits not on an invoice yet (Zelle and the rest), and money marked "Got it"."""
+    from app.routes.finance import home_goal, phoenix_today, sales_in  # late import: finance pulls in the web routes
+    day = now.astimezone(PHOENIX).date() if now.tzinfo else now.date()
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    # paid_at is saved as UTC without a zone.
-    since = start.astimezone(timezone.utc).replace(tzinfo=None)
+    since = start.astimezone(timezone.utc).replace(tzinfo=None)  # paid_at is saved as UTC without a zone
     until = (start + timedelta(days=1)).astimezone(timezone.utc).replace(tzinfo=None)
-    total = db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(
-        Payment.paid_at >= since, Payment.paid_at < until).scalar() or 0
-    count = db.query(Payment).filter(Payment.paid_at >= since, Payment.paid_at < until).count()
-    # Deposits taken on a job before it has an invoice (Zelle and the rest) are money in too. Once a deposit moves
-    # onto an invoice it is a Payment with the same day, so only the ones not carried yet are added here.
-    deposits = db.query(JobDeposit).filter(JobDeposit.received_at >= since, JobDeposit.received_at < until,
-                                           JobDeposit.removed_at.is_(None), JobDeposit.payment_id.is_(None))
-    total = float(total) + float(deposits.with_entities(func.coalesce(func.sum(JobDeposit.amount), 0)).scalar() or 0)
-    count += deposits.count()
-    goal = daily_goal()
-    total = round(float(total), 2)
+    total = sales_in(db, day, day + timedelta(days=1))
+    count = (db.query(Payment).filter(Payment.paid_at >= since, Payment.paid_at < until).count()
+             + db.query(JobDeposit).filter(JobDeposit.received_at >= since, JobDeposit.received_at < until,
+                                           JobDeposit.removed_at.is_(None), JobDeposit.payment_id.is_(None)).count())
+    home = home_goal(db) if day == phoenix_today() else None
+    goal = home["target"] if home else daily_goal()
     return {"total": total, "goal": goal, "count": count,
             "percent": max(0, min(100, int(total * 100 / goal))) if goal else 0,
             "left": round(max(goal - total, 0), 2), "hit": total >= goal}
