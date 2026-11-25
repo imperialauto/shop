@@ -118,6 +118,8 @@ def _who(customer) -> str:
 
 def _job(order, *, time_label=None, mobile=False):
     label, rank = STAGES.get(order.status, (order.status.replace("_", " ").capitalize(), 9))
+    if order.status == "approval_received" and not any(li.approval == "approved" for li in order.line_items):
+        label = "Customer declined, call them"  # every quoted line was declined: nothing to start
     tech = order.assigned_tech
     return {
         "id": order.id,

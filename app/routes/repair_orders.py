@@ -471,16 +471,32 @@ def add_line_item(
     user = require_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=302)
+    ro = db.query(RepairOrder).filter(RepairOrder.id == ro_id).first()
+    if not ro:
+        raise HTTPException(404, "Job not found.")
+    if not description.strip():
+        return RedirectResponse(f"/ro/{ro_id}?line_error=description#line-items", status_code=303)
+    # A discount goes in as a misc line with a negative price; nothing else may be negative.
+    if not (quantity > 0) or (unit_price < 0 and item_type != "misc"):
+        return RedirectResponse(f"/ro/{ro_id}?line_error=amount#line-items", status_code=303)
+    invoice = next((inv for inv in ro.invoices if inv.status != "void"), None)
+    if invoice and (invoice.status != "draft" or invoice.customer_signed_at):
+        return RedirectResponse(f"/ro/{ro_id}?line_error=invoiced#line-items", status_code=303)
     li = LineItem(
         repair_order_id=ro_id,
-        description=description,
+        description=description.strip(),
         item_type=item_type,
         quantity=quantity,
         unit_price=unit_price,
     )
     db.add(li)
+    db.flush()
+    if invoice:  # a draft invoice keeps up with the job, so a late line is billed
+        from app.routes.invoices import refresh_draft
+        db.refresh(ro)
+        refresh_draft(db, invoice, ro)
     db.commit()
-    return RedirectResponse(f"/ro/{ro_id}", status_code=302)
+    return RedirectResponse(f"/ro/{ro_id}" + ("?line_added=invoice#line-items" if invoice else ""), status_code=302)
 
 
 
