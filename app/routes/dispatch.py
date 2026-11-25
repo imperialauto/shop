@@ -780,8 +780,16 @@ def tick(request: Request, background: BackgroundTasks, owner_texts: bool = True
         except (SQLAlchemyError, HTTPException, ValueError) as exc:
             db.rollback()
             print(f"declined_followup_unavailable {type(exc).__name__}")
+    confirmations = []
+    if not request.app.state.read_only:
+        from app import booking_confirmations
+        try:  # website booking confirmations: off unless the owner turned them on
+            confirmations = booking_confirmations.due(db, now)
+        except (SQLAlchemyError, HTTPException, ValueError) as exc:
+            db.rollback()
+            print(f"booking_confirmations_unavailable {type(exc).__name__}")
     return {"ownerPhone": OWNER_PHONE or None, "messages": messages,
-            "customerReplies": replies, "customerFollowups": followups}
+            "customerReplies": replies, "customerFollowups": followups, "bookingConfirmations": confirmations}
 
 
 class FollowupCheck(BaseModel):
