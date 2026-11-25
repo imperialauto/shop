@@ -93,6 +93,11 @@ class ShopBoardTests(unittest.TestCase):
         self.assertEqual([(c["day"], c["time"], c["who"], c["vehicle"]) for c in coming],
                          [("Today", "2:30 PM", "Pat", "2016 Ford Focus")])
 
+    def test_a_visit_whose_time_is_over_drops_off_coming_in(self):
+        with self.Session() as db:
+            later = shop_board.coming_in(db, datetime(2026, 11, 23, 15, 31, tzinfo=PHOENIX))
+        self.assertEqual(later, [])
+
     def test_money_in_today_uses_the_phoenix_day_and_the_goal(self):
         with self.Session() as db:
             sales = shop_board.sales_today(db, NOW)

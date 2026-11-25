@@ -423,6 +423,7 @@ def coming_in(db: Session, now: datetime) -> list[dict]:
         Appointment.status.in_(("tentative", "confirmed")),
         Appointment.starts_at >= max(now - timedelta(hours=2), start).astimezone(timezone.utc),
         Appointment.starts_at < (start + timedelta(days=2)).astimezone(timezone.utc),
+        Appointment.ends_at > now.astimezone(timezone.utc),  # a visit whose time is over isn't coming in any more
     ).order_by(Appointment.starts_at).limit(20).all()
     out, seen = [], set()
     for visit in visits:
