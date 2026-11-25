@@ -124,6 +124,22 @@ SHOP_TAX_RATE = 0.092  # 7915 N Glen Harbor Blvd: AZTaxes address lookup Nov 24 
 # Parts only: separately stated repair labor is not taxed (TPR 93-31).
 
 
+def totals_for(billable) -> tuple[float, float, float, float]:
+    """(subtotal, tax rate, tax on parts, total), rounded to cents."""
+    subtotal = round(sum(li.total for li in billable), 2)
+    tax_amount = round(sum(li.total for li in billable if li.item_type == "part") * SHOP_TAX_RATE, 2)
+    return subtotal, SHOP_TAX_RATE, tax_amount, round(subtotal + tax_amount, 2)
+
+
+def refresh_draft(db, invoice, ro) -> None:
+    """Re-total a draft invoice from the job's billable lines. Only drafts: a sent, signed or paid
+    invoice is what the customer saw and stays as it is. Caller commits."""
+    if invoice.status != "draft" or invoice.customer_signed_at:
+        return
+    invoice.subtotal, invoice.tax_rate, invoice.tax_amount, invoice.total = totals_for(
+        [li for li in ro.line_items if li.billable])
+
+
 @router.post("/create/{ro_id}")
 def create_invoice(request: Request, ro_id: int, db: Session = Depends(get_db)):
     user = require_user(request, db)
@@ -142,10 +158,7 @@ def create_invoice(request: Request, ro_id: int, db: Session = Depends(get_db)):
     referrals.apply_to_job(db, ro, user.username)  # $25 referral discount and store credit, when on
     billable = [li for li in ro.line_items if li.billable]
 
-    subtotal = sum(li.total for li in billable)
-    tax_rate = SHOP_TAX_RATE
-    tax_amount = round(sum(li.total for li in billable if li.item_type == "part") * tax_rate, 2)
-    total = subtotal + tax_amount
+    subtotal, tax_rate, tax_amount, total = totals_for(billable)
 
     invoice = Invoice(
         repair_order_id=ro_id,

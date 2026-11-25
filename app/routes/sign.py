@@ -23,14 +23,22 @@ templates = Jinja2Templates(
 
 def _sign_page(request, ro, error=None, status=200):
     pending = [li for li in ro.line_items if li.approval == "pending"]
+    from app.routes.invoices import SHOP_TAX_RATE
     subtotal = sum(li.total for li in ro.line_items if li.approval in ("approved", "pending"))
+    # Same math as the deposit text and the invoice: tax on parts only.
+    subtotal = round(subtotal + round(sum(li.total for li in ro.line_items
+                                          if li.approval in ("approved", "pending") and li.item_type == "part")
+                                      * SHOP_TAX_RATE, 2), 2)
+    fixed = [li for li in ro.line_items if li.approval == "approved"]
     from app import security_controls
     terms = None
     if security_controls.value("terms_on_approval_page"):
         terms = [p.strip() for p in security_controls.value("terms_text").split("\n\n") if p.strip()]
     return templates.TemplateResponse("sign_ro.html", {
         "request": request, "ro": ro, "subtotal": subtotal, "pending": pending, "error": error, "terms": terms,
-        "options": approval_options.groups(pending),
+        "options": approval_options.groups(pending), "tax_rate": SHOP_TAX_RATE,
+        "fixed_total": round(sum(li.total for li in fixed), 2),
+        "fixed_taxable": round(sum(li.total for li in fixed if li.item_type == "part"), 2),
     }, status_code=status, headers=PRIVATE_PAGE)
 
 
