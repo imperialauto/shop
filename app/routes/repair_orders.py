@@ -222,7 +222,14 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         "flags": job_flags.for_job(db, ro),
         "parts_card": parts_tracking.card(db, ro, user.role),
         "canned_jobs": canned_jobs.menu(),
+        "job_timer": _job_timer().for_job(db, ro, user),
     })
+
+
+def _job_timer():
+    from app import job_timer
+
+    return job_timer
 
 
 def _deposits():

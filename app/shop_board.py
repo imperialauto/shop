@@ -35,6 +35,8 @@ from app.ro_status_policy import CLOSED_STATUSES, is_open
 
 log = logging.getLogger(__name__)
 GOAL_KEY = "daily_sales_goal"
+GOAL_MODE_KEY = "daily_goal_mode"  # "fixed" (the goal above) or "bills" (what the bills need a day, when more than 0)
+GOAL_MODES = ("fixed", "bills")
 CLOCK_KEY = "board_job_clock"  # time actually worked per job, started and stopped on the phone page
 TIMER_KEY = "board_timers"  # running job and test timers shown big on the TV
 TIMER_MAX_MINUTES = 480
@@ -224,30 +226,100 @@ def book_hours(db: Session, ro_id: int) -> float:
     return round(sum(max(0.0, line.quantity or 0.0) for line in lines if line.approval != "declined"), 1)
 
 
-def job_clocks(db: Session) -> dict:
-    """{ro_id: {"on": datetime started or None, "spent": seconds already worked}}."""
-    row = db.get(business_settings.BusinessSetting, CLOCK_KEY)
+# Each job's clock is kept per worker, so two people on one car each count, and the hours compare with book
+# labor (person-hours). {"<ro_id>": {"by": {"<who>": {"on": iso or null, "spent": seconds}},
+#                                    "days": {"YYYY-MM-DD": seconds closed that Phoenix day}}}
+# <who> is "u<user id>" for a signed-in worker, or "shop" for the assistant and for clocks saved before
+# clocks were per worker. A job keeps its clock for CLOCK_KEEP_DAYS after pickup so the job page can still
+# show clocked against billed hours.
+SHOP_CLOCK = "shop"
+CLOCK_KEEP_DAYS = 45
+
+
+def _parse_clock(value) -> dict | None:
+    if not isinstance(value, dict):
+        return None
+
+    def entry(raw):
+        on = datetime.fromisoformat(raw["on"]) if raw.get("on") else None
+        if on is not None and on.tzinfo is None:
+            on = on.replace(tzinfo=timezone.utc)
+        return {"on": on, "spent": max(0, int(raw.get("spent") or 0))}
+
     try:
-        data = json.loads(row.value if row is not None and row.value else "{}")
+        if isinstance(value.get("by"), dict):
+            by = {str(k)[:24]: entry(v) for k, v in value["by"].items() if isinstance(v, dict)}
+        else:  # saved before clocks were per worker
+            by = {SHOP_CLOCK: entry(value)}
+        days = {str(k)[:10]: max(0, int(v or 0)) for k, v in (value.get("days") or {}).items()}
+    except (TypeError, ValueError, AttributeError):
+        return None
+    running = [w["on"] for w in by.values() if w["on"]]
+    return {"on": min(running) if running else None, "spent": sum(w["spent"] for w in by.values()),
+            "by": by, "days": days}
+
+
+def job_clocks(db: Session, text: str | None = None) -> dict:
+    """{ro_id: {"on": earliest running start or None, "spent": closed seconds, "by": per worker, "days": per day}}."""
+    if text is None:
+        row = db.get(business_settings.BusinessSetting, CLOCK_KEY)
+        text = row.value if row is not None else None
+    try:
+        data = json.loads(text or "{}")
     except (TypeError, ValueError):
         data = {}
     out = {}
     for key, value in (data.items() if isinstance(data, dict) else []):
-        if not str(key).isdigit() or not isinstance(value, dict):
-            continue
-        try:
-            on = datetime.fromisoformat(value["on"]) if value.get("on") else None
-            out[int(key)] = {"on": on, "spent": max(0, int(value.get("spent") or 0))}
-        except (TypeError, ValueError):
-            continue
+        clock = _parse_clock(value) if str(key).isdigit() else None
+        if clock is not None:
+            out[int(key)] = clock
     return out
 
 
-def worked_seconds(clock: dict | None, now: datetime) -> int:
+def _entry_seconds(entry: dict, now: datetime) -> int:
+    running = int((now - entry["on"]).total_seconds()) if entry["on"] else 0
+    return entry["spent"] + max(0, running)
+
+
+def worked_seconds(clock: dict | None, now: datetime, who: str | None = None) -> int:
+    """Time worked on a job, every worker together (person-time), or one worker's when `who` is given."""
     if not clock:
         return 0
-    running = int((now - clock["on"]).total_seconds()) if clock["on"] else 0
-    return clock["spent"] + max(0, running)
+    by = clock.get("by") or {SHOP_CLOCK: {"on": clock["on"], "spent": clock["spent"]}}
+    if who is not None:
+        return _entry_seconds(by[who], now) if who in by else 0
+    return sum(_entry_seconds(entry, now) for entry in by.values())
+
+
+def _split_by_day(start: datetime, end: datetime) -> dict:
+    """Seconds from start to end, split at Phoenix midnights: {"YYYY-MM-DD": seconds}."""
+    out = {}
+    current = start.astimezone(PHOENIX)
+    end = end.astimezone(PHOENIX)
+    while current < end:
+        midnight = (current + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        stop = min(end, midnight)
+        key = current.strftime("%Y-%m-%d")
+        out[key] = out.get(key, 0) + int((stop - current).total_seconds())
+        current = stop
+    return out
+
+
+def clocked_seconds_on(clocks: dict, day, now: datetime) -> int:
+    """Seconds clocked on every job on one Phoenix day, running clocks included up to now."""
+    key = day.strftime("%Y-%m-%d")
+    total = 0
+    for clock in clocks.values():
+        total += clock["days"].get(key, 0)
+        for entry in clock["by"].values():
+            if entry["on"] is not None:
+                total += _split_by_day(entry["on"], now).get(key, 0)
+    return total
+
+
+def worker_key(user) -> str:
+    """Whose clock a change is: a signed-in worker's own, or the shared one for the assistant ("agent:7")."""
+    return SHOP_CLOCK if isinstance(user, str) else f"u{user.id}"
 
 
 def _time_vs_book(db: Session, order, clock: dict | None, now: datetime) -> dict:
@@ -257,22 +329,51 @@ def _time_vs_book(db: Session, order, clock: dict | None, now: datetime) -> dict
             "over_book": bool(book and worked > book)}
 
 
-def set_clock(db: Session, user: User, ro_id: int, on: bool, now: datetime | None = None) -> bool:
-    """Start or stop the work clock on a job. Changes only what the board shows, never the job."""
+def _locked_clock_text(db: Session) -> str | None:
+    """The saved clocks, with the row locked until commit on Postgres, so two people tapping at once don't
+    overwrite each other's clock."""
+    row = (db.query(business_settings.BusinessSetting)
+           .filter(business_settings.BusinessSetting.key == CLOCK_KEY).with_for_update().first())
+    return row.value if row is not None else None
+
+
+def _clock_json(clock: dict) -> dict:
+    return {"by": {who: {"on": e["on"].isoformat() if e["on"] else None, "spent": e["spent"]}
+                   for who, e in sorted(clock["by"].items())},
+            "days": dict(sorted(clock["days"].items()))}
+
+
+def set_clock(db: Session, user: User, ro_id: int, on: bool, now: datetime | None = None,
+              only_mine: bool = False) -> bool:
+    """Start or stop the work clock on a job. Changes only the clock, never the job.
+
+    Starting starts the worker's own clock (the shared one for the assistant). Stopping stops the worker's own
+    clock when only_mine (the job page), otherwise every clock running on the job (the phone page and the
+    assistant, which stop the job). A picked-up job can still be stopped but not started."""
     order = db.get(RepairOrder, ro_id)
-    if order is None or order.status == "delivered":
+    if order is None or (on and order.status == "delivered"):
         return False
     now = (now or now_local()).astimezone(timezone.utc)
-    clocks = job_clocks(db)
-    clock = clocks.setdefault(ro_id, {"on": None, "spent": 0})
-    if on and clock["on"] is None:
-        clock["on"] = now
-    elif not on and clock["on"] is not None:
-        clock["spent"] = worked_seconds(clock, now)
-        clock["on"] = None
-    open_ids = {o.id for o in db.query(RepairOrder.id).filter(RepairOrder.status != "delivered")}
-    value = json.dumps({str(k): {"on": v["on"].isoformat() if v["on"] else None, "spent": v["spent"]}
-                        for k, v in sorted(clocks.items()) if k in open_ids})
+    clocks = job_clocks(db, _locked_clock_text(db))
+    clock = clocks.setdefault(ro_id, {"on": None, "spent": 0, "by": {}, "days": {}})
+    me = worker_key(user)
+    if on:
+        entry = clock["by"].setdefault(me, {"on": None, "spent": 0})
+        if entry["on"] is None:
+            entry["on"] = now
+    else:
+        for who, entry in clock["by"].items():
+            if entry["on"] is None or (only_mine and who != me):
+                continue
+            for day, seconds in _split_by_day(entry["on"], now).items():
+                clock["days"][day] = clock["days"].get(day, 0) + seconds
+            entry["spent"] = _entry_seconds(entry, now)
+            entry["on"] = None
+    keep_after = (now - timedelta(days=CLOCK_KEEP_DAYS)).replace(tzinfo=None)
+    kept = {o.id for o in db.query(RepairOrder.id).filter(
+        (RepairOrder.status != "delivered") | (RepairOrder.updated_at >= keep_after))}
+    value = json.dumps({str(k): _clock_json(v) for k, v in sorted(clocks.items())
+                        if k in kept or any(e["on"] for e in v["by"].values())})
     if business_settings.save(db, CLOCK_KEY, value, _actor(user)):
         db.commit()
         business_settings.clear_cache()
@@ -689,14 +790,24 @@ def _close_alert_item(db: Session, task: ImperialTask, actor: str) -> None:
         audit(db, item.id, actor[:64], "board_done")
 
 
-def save_goal(db: Session, user: User, value: str) -> int:
+def goal_mode() -> str:
+    """Which goal Home, the scoreboard and the TV measure against: "fixed" (default) or "bills"."""
+    return "bills" if (business_settings.raw(GOAL_MODE_KEY) or "").strip().lower() == "bills" else "fixed"
+
+
+def save_goal(db: Session, user: User, value: str, mode: str | None = None) -> int:
     try:
         goal = int(float((value or "").replace("$", "").replace(",", "").strip()))
     except ValueError:
         raise ValueError("Enter the daily goal as a dollar amount, like 500.") from None
     if not 1 <= goal <= GOAL_MAX:
         raise ValueError("Enter a daily goal between $1 and $100,000.")
-    if business_settings.save(db, GOAL_KEY, str(goal), f"owner:{user.id}"):
+    if mode is not None and mode not in GOAL_MODES:
+        raise ValueError("Pick the fixed goal or what the bills need.")
+    changed = business_settings.save(db, GOAL_KEY, str(goal), f"owner:{user.id}")
+    if mode is not None:
+        changed = business_settings.save(db, GOAL_MODE_KEY, mode, f"owner:{user.id}") or changed
+    if changed:
         db.commit()
         business_settings.clear_cache()
     return goal
