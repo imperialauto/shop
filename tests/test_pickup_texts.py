@@ -129,8 +129,13 @@ class PickupTextTests(unittest.TestCase):
             self.assertEqual(db.get(RepairOrder, job).status, "complete")
         self.assertEqual(self.pickups(job), [])
 
-    def test_delivered_hook_is_left_free_for_the_review_work(self):
-        self.assertEqual(job_events.HANDLERS["delivered"], [])
+    def test_pickup_hooks_send_one_text_each(self):
+        from app import review_requests
+        self.assertEqual(job_events.HANDLERS["complete"], [pickup_texts.queue])
+        self.assertEqual(job_events.HANDLERS["delivered"], [review_requests.schedule])
+        job = self.job()
+        self.move(job, "complete", terms=True)
+        self.assertNotIn("review", self.pickups(job)[0][1].lower())
 
 
 if __name__ == "__main__":
