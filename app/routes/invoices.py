@@ -4,7 +4,7 @@ from app.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Invoice, RepairOrder, Payment
-from app import referrals
+from app import next_visit, referrals
 from app.auth import get_current_user
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -154,6 +154,7 @@ def create_invoice(request: Request, ro_id: int, db: Session = Depends(get_db)):
         return RedirectResponse(f"/invoices/{existing.id}", status_code=303)
     if not any(li.billable for li in ro.line_items):
         return RedirectResponse(f"/ro/{ro_id}", status_code=303)
+    next_visit.apply(db, ro, user.username)  # 10% off labor from their last paid job, when on
     referrals.apply_to_job(db, ro, user.username)  # $25 referral discount and store credit, when on
     billable = [li for li in ro.line_items if li.billable]
 

@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Customer, RepairOrder, Vehicle
 from app.auth import get_current_user
-from app import customer_file, name_finder, quo_import, referrals, review_requests, tags
+from app import customer_file, name_finder, next_visit, quo_import, referrals, review_requests, tags
+from datetime import datetime, timezone
 from app.appointments import PHOENIX
 import os, secrets
 
@@ -182,6 +183,7 @@ def view_customer(request: Request, customer_id: int, db: Session = Depends(get_
         "tasks": tasks, "can_text": user.role in ("owner", "admin", "office"), "sending_paused": _paused(db, is_paused),
         "referral": _paused(db, lambda d: referrals.summary(d, customer)) if referrals.enabled() else None,
         "referral_error": request.query_params.get("referral_error"),
+        "next_visit": _paused(db, lambda d: next_visit.open_offer(d, customer.id, datetime.now(timezone.utc))) if next_visit.enabled() else None,
         "review_done": _paused(db, lambda d: review_requests.asked_before(d, customer.id)),
         "tag_list": tags.names_for(db, "customer", [customer.id]).get(customer.id, []), "tag_known": tags.known(db),
     })

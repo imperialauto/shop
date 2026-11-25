@@ -60,6 +60,7 @@ def current() -> dict:
         "task_followup_days": store.task_followup_days(),
         "task_followup_max": store.TASK_FOLLOWUP_MAX,
         "automatic_customer_followups": (store.raw("automatic_customer_followups") or "").strip().lower() == "true",
+        "next_visit_offer": (store.raw("next_visit_offer") or "").strip().lower() == "true",
         "automatic_review_text": (store.raw("automatic_review_text") or "").strip().lower() == "true",
         "google_review_link": (store.raw("google_review_link") or "").strip() or review_requests.DEFAULT_LINK,
         "automatic_deposit_text": (store.raw("automatic_deposit_text") or "").strip().lower() == "true",
@@ -144,6 +145,8 @@ def parse(form) -> dict:
         ))
     if "automatic_customer_followups_shown" in form:
         alerts["automatic_customer_followups"] = str(form.get("automatic_customer_followups") == "on").lower()
+    if "next_visit_offer_shown" in form:
+        alerts["next_visit_offer"] = str(form.get("next_visit_offer") == "on").lower()
     if "automatic_review_text_shown" in form:
         link = form.get("google_review_link", "").strip()
         if link and not review_requests.valid_link(link):
