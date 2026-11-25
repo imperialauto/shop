@@ -153,7 +153,8 @@ def render(request: Request, name: str, status_code: int = 200, form_page: bool 
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    return render(request, "site/home.html", active="home", bookable=bookable_services())
+    from app.gallery import home_photos
+    return render(request, "site/home.html", active="home", bookable=bookable_services(), work_photos=home_photos())
 
 
 @router.get("/services", response_class=HTMLResponse)

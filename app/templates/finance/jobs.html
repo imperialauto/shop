@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Job profit — Imperial Auto Care{% endblock %}
+{% macro usd(v) %}{% if v is none %}—{% else %}{% if v < 0 %}-{% endif %}${{ '{:,.2f}'.format(v|abs) }}{% endif %}{% endmacro %}
+{% macro pct(v) %}{% if v is none %}—{% else %}{{ '{:.0%}'.format(v) }}{% endif %}{% endmacro %}
+{% block content %}
+<style>
+  .os-tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:16px; }
+  .os-tile { background:var(--imp-surface); border:1px solid var(--imp-line); border-radius:12px; padding:12px 14px; }
+  .os-tile .k { font-size:12px; color:var(--imp-muted); text-transform:uppercase; letter-spacing:.06em; }
+  .os-tile .v { font-size:22px; font-weight:700; color:var(--imp-ink); margin-top:2px; }
+  .os-table th, .os-table td { padding:8px 6px; border-bottom:1px solid var(--imp-line); vertical-align:top; }
+  .os-table th { font-size:12px; color:var(--imp-muted); font-weight:600; }
+  .os-flag { color:#F29C8F; } .good { color:#8FD19E; }
+</style>
+<div class="flex items-center gap-3 mb-2"><a href="/finance/" class="text-stone-400 hover:text-gold-300 text-sm">← Money</a></div>
+<h2 class="text-xl mb-1">Job profit · owner only</h2>
+<p class="text-sm text-stone-400 mb-4">Every open job, plus jobs closed in the last 30 days. Tap a job for line-by-line cost, profit and where to get each part.</p>
+
+<div class="os-tiles">
+  <div class="os-tile"><div class="k">Approved, still open</div><div class="v">{{ summary.jobs }}</div></div>
+  <div class="os-tile"><div class="k">Their sales</div><div class="v">{{ usd(summary.revenue) }}</div></div>
+  <div class="os-tile"><div class="k">Their gross profit</div><div class="v">{{ usd(summary.profit) }}</div></div>
+  <div class="os-tile"><div class="k">No deposit yet</div><div class="v {{ 'os-flag' if summary.deposits_missing else '' }}">{{ summary.deposits_missing }}</div></div>
+  <div class="os-tile"><div class="k">Parts missing a cost</div><div class="v {{ 'os-flag' if summary.missing_costs else '' }}">{{ summary.missing_costs }}</div></div>
+</div>
+
+<div class="card">
+<div class="overflow-x-auto"><table class="w-full text-sm os-table">
+  <thead><tr><th class="text-left">Job</th><th class="text-right">Customer pays</th><th class="text-right">Profit</th><th class="text-right">Margin</th><th class="text-left">Needs a look</th></tr></thead>
+  <tbody>
+  {% for s in sheets %}
+    <tr>
+      <td><a href="/finance/jobs/{{ s.ro.id }}" style="color:var(--imp-gold)">#{{ s.ro.id }} {{ s.ro.customer.first_name }} {{ s.ro.customer.last_name }}</a><div class="text-xs text-stone-400">{{ s.ro.vehicle.label }} · {{ s.ro.status|replace('_',' ')|title }}</div></td>
+      <td class="text-right">{{ usd(s.main.total) }}</td>
+      <td class="text-right">{{ usd(s.main.profit) }}</td>
+      <td class="text-right {{ 'good' if s.main.margin is not none and s.main.margin >= margin_target else 'os-flag' }}">{{ pct(s.main.margin) }}</td>
+      <td class="text-xs">{% for f in s.job_flags %}<div class="os-flag">{{ f }}</div>{% else %}<span class="text-stone-400">Nothing</span>{% endfor %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="text-stone-400">No jobs with lines yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<p class="text-xs text-stone-400 mt-2">Tax at {{ '%.1f'|format(tax_rate * 100) }}% on parts, the Arizona rate for the shop's address. Margin target {{ pct(margin_target) }}.</p>
+</div>
+{% endblock %}

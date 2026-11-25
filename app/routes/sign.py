@@ -6,7 +6,7 @@ from app.database import get_db
 from app.models import RepairOrder, Invoice
 from datetime import datetime, timezone
 
-from app import approval_links, deposit_requests, next_visit, referrals, website_alerts
+from app import approval_links, approval_options, deposit_requests, next_visit, referrals, website_alerts
 import os
 import secrets
 from app.security_controls import link_expired
@@ -30,6 +30,7 @@ def _sign_page(request, ro, error=None, status=200):
         terms = [p.strip() for p in security_controls.value("terms_text").split("\n\n") if p.strip()]
     return templates.TemplateResponse("sign_ro.html", {
         "request": request, "ro": ro, "subtotal": subtotal, "pending": pending, "error": error, "terms": terms,
+        "options": approval_options.groups(pending),
     }, status_code=status, headers=PRIVATE_PAGE)
 
 
@@ -59,6 +60,10 @@ async def sign_ro_submit(request: Request, token: str, db: Session = Depends(get
     decisions = {li.id: form.get(f"line_{li.id}") for li in pending}
     if any(choice not in ("approved", "declined") for choice in decisions.values()):
         return _sign_page(request, ro, "Choose Approve or Decline for each item.", 422)
+    if len(approval_options.groups(pending)) > 1:
+        mixed = approval_options.mixed_error(pending, decisions)
+        if mixed:
+            return _sign_page(request, ro, mixed, 422)
     if not signature_data or signature_data in ("data:,", ""):
         return _sign_page(request, ro, "Please draw your signature before submitting.", 422)
     from app import security_controls

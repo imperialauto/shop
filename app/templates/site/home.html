@@ -35,6 +35,25 @@
   </div>
 </section>
 
+{% if work_photos %}
+<section class="section">
+  <div class="wrap">
+    <div class="eyebrow">Real work</div>
+    <h2>From our shop floor</h2>
+    <p style="max-width:680px">Diesel trucks, DPS6 transmissions, engine work and mobile calls. These are real jobs from our Glendale shop.</p>
+    <div class="gallery gallery-strip">
+      {% for photo in work_photos %}
+      <figure class="gallery-item">
+        <a href="/site/our-work"><img src="/static/gallery/thumb-{{ photo.file }}" width="{{ photo.thumb_width }}" height="{{ photo.thumb_height }}" alt="{{ photo.caption }}" loading="lazy" decoding="async"></a>
+        <figcaption>{{ photo.caption }}</figcaption>
+      </figure>
+      {% endfor %}
+    </div>
+    <p style="margin-top:20px"><a class="more" href="/site/our-work">See more of our work →</a></p>
+  </div>
+</section>
+{% endif %}
+
 <section class="section alt">
   <div class="wrap">
     <div class="eyebrow">How it works</div>

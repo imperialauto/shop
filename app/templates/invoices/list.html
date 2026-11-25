@@ -35,7 +35,7 @@
             {{ inv.status.title() }}
           </span>
         </td>
-        <td class="text-stone-500 text-xs">{{ inv.created_at.strftime('%m/%d/%y') }}</td>
+        <td class="text-stone-500 text-xs">{{ (inv.created_at|shop_time).strftime('%m/%d/%y') }}</td>
       </tr>
       {% endfor %}
     </tbody>
