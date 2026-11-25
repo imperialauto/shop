@@ -26,10 +26,39 @@ router = APIRouter()
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), '..', 'templates'))
 
 @router.get('/calendar', response_class=HTMLResponse)
-def calendar_page(request: Request, db: Session = Depends(get_db)):
+def calendar_page(request: Request, ro: str = "", day: str = "", length: int = 1, bay: str = "",
+                  where: str = "shop", travel: int = 30, booked: str = "", db: Session = Depends(get_db)):
+    """The Calendar tab. With ?ro=ID (the job page's Schedule button) it opens the time picker for that job."""
     user = get_current_user(request, db)
-    return templates.TemplateResponse('calendar.html', {'request': request, 'user': user,
-                                                        'may_mark_missed': user.role in ('owner', 'admin', 'office')})
+    from app import calendar_view
+    now = datetime.now(timezone.utc)
+    may_change = user.role != "tech"  # techs can look; the permission gate refuses their changes
+    may_mark_missed = user.role in ('owner', 'admin', 'office')
+    ro = ro.strip()
+    context = {'request': request, 'user': user, 'may_change': may_change,
+               'sections': calendar_view.calendar_sections(db, now, may_change, may_mark_missed),
+               'schedule': None, 'schedule_problem': '', 'ro_query': ro[:12], 'booked': None}
+    if ro and may_change:
+        order = db.get(RepairOrder, int(ro)) if ro.isdigit() and len(ro) < 10 else None
+        if order is None:
+            context['schedule_problem'] = f"There's no job #{ro[:12]}. Check the number on the job page."
+        else:
+            try:
+                hours, buffer = configured_hours(), shop_buffer_minutes()
+            except HTTPException as exc:
+                hours, buffer = {}, 0
+                context['schedule_problem'] = str(exc.detail)
+            if not hours and not context['schedule_problem']:
+                context['schedule_problem'] = "Shop hours aren't set, so no times can be booked. Set them in Settings first."
+            if hours:
+                context['schedule'] = calendar_view.schedule_view(
+                    db, order, now, hours, buffer, day=day, length=length, bay=bay, where=where, travel=travel)
+    if booked.isdigit() and len(booked) < 10:
+        item = db.get(Appointment, int(booked))
+        if item is not None:
+            context['booked'] = {'id': item.id, 'job_id': item.repair_order_id, 'status': item.status,
+                                 'when': calendar_view.local(item.starts_at).strftime("%a %b %-d, %-I:%M %p")}
+    return templates.TemplateResponse('calendar.html', context)
 
 MAX_TRAVEL_MINUTES = 240
 ACTIVE_STATUSES = ("tentative", "confirmed")
@@ -47,8 +76,13 @@ def shop_buffer_minutes() -> int:
     return value
 
 
+def _utc(value: datetime) -> datetime:
+    """Stored times are UTC; a driver that drops the zone (SQLite) gets it back here."""
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
 def as_window(item: Appointment) -> AppointmentWindow:
-    return AppointmentWindow(item.starts_at, item.ends_at, item.resource_id,
+    return AppointmentWindow(_utc(item.starts_at), _utc(item.ends_at), item.resource_id,
                              item.travel_before_minutes or 0, item.buffer_after_minutes or 0)
 
 
