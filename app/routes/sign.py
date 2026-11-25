@@ -21,6 +21,24 @@ templates = Jinja2Templates(
 
 # ── Estimate / RO approval signing ─────────────────────────────────────────
 
+def _customer_photos(ro):
+    """Only files the office marked for the customer. A photo tied to an item on this page shows under
+    that item; the rest (whole job, or a line not on this page) show together in one gallery."""
+    from sqlalchemy.orm import object_session
+    from app.routes import ro_evidence
+    db = object_session(ro)
+    if db is None:
+        return {}, []
+    shown = {li.id for li in ro.line_items if li.approval in ("approved", "pending")}
+    by_line, gallery = {}, []
+    for f in ro_evidence.attachments_for(db, ro.id, customer_only=True):
+        if f.line_item_id in shown:
+            by_line.setdefault(f.line_item_id, []).append(f)
+        else:
+            gallery.append(f)
+    return by_line, gallery
+
+
 def _sign_page(request, ro, error=None, status=200):
     pending = [li for li in ro.line_items if li.approval == "pending"]
     from app.routes.invoices import SHOP_TAX_RATE
@@ -34,8 +52,10 @@ def _sign_page(request, ro, error=None, status=200):
     terms = None
     if security_controls.value("terms_on_approval_page"):
         terms = [p.strip() for p in security_controls.value("terms_text").split("\n\n") if p.strip()]
+    line_photos, job_photos = _customer_photos(ro)
     return templates.TemplateResponse("sign_ro.html", {
         "request": request, "ro": ro, "subtotal": subtotal, "pending": pending, "error": error, "terms": terms,
+        "line_photos": line_photos, "job_photos": job_photos,
         "options": approval_options.groups(pending), "tax_rate": SHOP_TAX_RATE,
         "fixed_total": round(sum(li.total for li in fixed), 2),
         "fixed_taxable": round(sum(li.total for li in fixed if li.item_type == "part"), 2),

@@ -48,12 +48,28 @@ def greeting_for(ro: RepairOrder) -> str:
     return first
 
 
+PHOTOS_LINE = "Photos from the inspection are included."
+
+
+def photos_note(ro: RepairOrder) -> str:
+    """The photos sentence for the approval text, only when a photo on this job is marked for the customer."""
+    from sqlalchemy.orm import object_session
+    from app.models import RoAttachment
+    db = object_session(ro)
+    if db is None or ro.id is None:
+        return ""
+    shared = (db.query(RoAttachment.id).filter(RoAttachment.repair_order_id == ro.id,
+                                               RoAttachment.visibility == "customer",
+                                               RoAttachment.content_type.like("image/%")).first())
+    return f" {PHOTOS_LINE}" if shared else ""
+
+
 def message_for(ro: RepairOrder, offer_snap: bool = False) -> str:
     v = ro.vehicle
     car = " ".join(str(x) for x in (v.year, v.make, v.model) if x) if v else "vehicle"
     first = greeting_for(ro)
     text = (f"Hi {first}, your estimate for the {car} is ready. Open your vehicle status and tap Review & Approve: "
-            f"{base_url()}/status/{ro.public_token} Review the itemized charges and any applicable tax before approving. "
+            f"{base_url()}/status/{ro.public_token}{photos_note(ro)} Review the itemized charges and any applicable tax before approving. "
             "Reply here with any questions. - Imperial Auto Care")
     return snap_offer.add(text, offer_snap)
 

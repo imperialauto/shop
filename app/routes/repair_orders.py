@@ -189,10 +189,12 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         .order_by(Communication.created_at.asc())
         .all()
     )
+    from app import job_texts  # the read-only "Texts with ..." card
     return templates.TemplateResponse("repair_orders/detail.html", {
         "request": request, "user": user, "ro": ro, "techs": techs,
         "statuses": ro_status_policy.manual_status_options(ro, user.role, RO_STATUSES), "subtotal": subtotal, "comms": comms,
         "sourced_parts": sourced_parts,
+        "texts": job_texts.for_job(db, ro),
         "next_step": next_action.for_job(db, ro, user.role),
         "tag_list": tags.names_for(db, "job", [ro.id]).get(ro.id, []), "tag_known": tags.known(db),
         "customer_tag_list": tags.names_for(db, "customer", [ro.customer_id]).get(ro.customer_id, []),
