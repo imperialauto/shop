@@ -82,6 +82,11 @@ STAGES = {
 }
 
 
+def _actor(user) -> str:
+    """Who changed a board setting: a signed-in user, or a plain actor string such as "agent:7" for the assistant."""
+    return user if isinstance(user, str) else f"user:{user.id}"
+
+
 def now_local() -> datetime:
     return datetime.now(PHOENIX)
 
@@ -251,7 +256,7 @@ def set_clock(db: Session, user: User, ro_id: int, on: bool, now: datetime | Non
     open_ids = {o.id for o in db.query(RepairOrder.id).filter(RepairOrder.status != "delivered")}
     value = json.dumps({str(k): {"on": v["on"].isoformat() if v["on"] else None, "spent": v["spent"]}
                         for k, v in sorted(clocks.items()) if k in open_ids})
-    if business_settings.save(db, CLOCK_KEY, value, f"user:{user.id}"):
+    if business_settings.save(db, CLOCK_KEY, value, _actor(user)):
         db.commit()
         business_settings.clear_cache()
     return True
@@ -330,7 +335,7 @@ def set_here(db: Session, user: User, ro_id: int, here: bool, now: datetime | No
     open_ids = {o.id for o in db.query(RepairOrder.id).filter(RepairOrder.status != "delivered")}
     value = json.dumps({"here": {str(k): v for k, v in sorted(marks["here"].items()) if k in open_ids},
                         "away": sorted(i for i in marks["away"] if i in open_ids)})
-    if business_settings.save(db, LOT_KEY, value, f"user:{user.id}"):
+    if business_settings.save(db, LOT_KEY, value, _actor(user)):
         db.commit()
         business_settings.clear_cache()
     return True
@@ -358,7 +363,7 @@ def _timer_rows(db: Session) -> list[dict]:
 def _save_timers(db: Session, user: User, rows: list[dict]) -> None:
     value = json.dumps([{"id": t["id"], "label": t["label"], "minutes": t["minutes"], "ends": t["ends"].isoformat()}
                         for t in rows])
-    if business_settings.save(db, TIMER_KEY, value, f"user:{user.id}"):
+    if business_settings.save(db, TIMER_KEY, value, _actor(user)):
         db.commit()
         business_settings.clear_cache()
 
