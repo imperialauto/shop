@@ -192,10 +192,11 @@ def last_update(db: Session) -> tuple[datetime | None, str]:
 
 
 def jobs_due(db: Session) -> list:
-    """Unpaid balances on job invoices marked sent: total less payments and anything waived."""
+    """Unpaid balances on job invoices (made or sent): total less payments and anything waived.
+    Matches the Invoices page's "still owed", so the two pages agree."""
     invoices = (db.query(Invoice)
                 .options(joinedload(Invoice.payments), joinedload(Invoice.repair_order).joinedload(RepairOrder.customer))
-                .filter(Invoice.status == "sent").all())
+                .filter(Invoice.status.in_(("draft", "sent"))).all())
     due = []
     for invoice in invoices:
         left = (invoice.total or 0) - sum(p.amount or 0 for p in invoice.payments) - (invoice.waived_amount or 0)
@@ -207,6 +208,7 @@ def jobs_due(db: Session) -> list:
         name = f"{customer.first_name or ''} {customer.last_name or ''}".strip() if customer else "Customer not linked"
         paid = sum(p.amount or 0 for p in invoice.payments)
         label = f"{name} · RO #{ro.id}" if ro else name
+        label += " · not sent yet" if invoice.status == "draft" else ""
         due.append(plan.JobDue(label=label + (" · deposit in" if paid else ""), amount_cents=cents_left,
                                sent_on=_local_day(invoice.created_at) or phoenix_today(), ro_id=ro.id if ro else None))
     return due
