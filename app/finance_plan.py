@@ -502,6 +502,17 @@ def move(names: list[str], name: str, direction: str) -> list[str]:
     return order
 
 
+SUMMER_MONTHS = range(5, 10)  # May through September
+SUMMER_LABEL = "May to Sept"
+
+
+def goal_for(today: date, regular: int, summer: int) -> tuple:
+    """The profit goal in force this month and whether it is the summer one."""
+    if summer and today.month in SUMMER_MONTHS:
+        return summer, True
+    return regular, False
+
+
 def profit_plan(short_cents: int, days_open: int, profit_goal: int, today: date) -> dict:
     """Daily target for the bills in the window plus a monthly profit goal spread over the month's open days."""
     month_start = today.replace(day=1)

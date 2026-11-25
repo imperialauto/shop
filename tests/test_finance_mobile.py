@@ -377,6 +377,22 @@ if __name__ == "__main__":
         self.assertEqual(tech.post("/finance/profit", data={"profit": "100"}).status_code, 403)
         self.assertEqual(tech.post("/finance/order", data={"scope": "business", "name": "Power", "direction": "up"}).status_code, 403)
 
+    def test_summer_goal_saves_and_shows(self):
+        owner = self.sign_in()
+        owner.post("/finance/paste", data={"figures": "bill | Power | 100 | 11/30 | utilities"})
+        saved = owner.post("/finance/profit", data={"profit": "3000", "summer": "5,000"})
+        self.assertIn("Summer+goal", saved.headers["location"])
+        self.assertEqual(store.raw("summer_profit_goal"), "5000")
+        self.assertEqual(store.raw("monthly_profit_goal"), "3000")
+        page = owner.get("/finance/").text
+        self.assertIn("May to Sept uses the summer goal of $5,000", page)
+        self.assertIn("value=\"3000\"", page)
+        owner.post("/finance/profit", data={"profit": "3000"})
+        self.assertEqual(store.raw("summer_profit_goal"), "5000")
+        bad = owner.post("/finance/profit", data={"profit": "3000", "summer": "lots"})
+        self.assertIn("problem=", bad.headers["location"])
+        self.assertEqual(store.raw("summer_profit_goal"), "5000")
+
     def test_paid_with_a_day_shows_how_late(self):
         owner = self.sign_in()
         owner.post("/finance/paste", data={"figures": "bill | Power | 120 | 11/4 | utilities | monthly"})
@@ -545,6 +561,13 @@ class PayOrderTests(unittest.TestCase):
         self.assertEqual(plan.move(["a", "b"], "a", "up"), ["a", "b"])
         self.assertEqual(plan.move(["a", "b"], "b", "down"), ["a", "b"])
         self.assertEqual(plan.move(["a", "b"], "c", "up"), ["a", "b"])
+
+    def test_summer_months_use_the_summer_goal(self):
+        self.assertEqual(plan.goal_for(date(2027, 4, 30), 3000, 5000), (3000, False))
+        self.assertEqual(plan.goal_for(date(2027, 5, 1), 3000, 5000), (5000, True))
+        self.assertEqual(plan.goal_for(date(2027, 9, 30), 3000, 5000), (5000, True))
+        self.assertEqual(plan.goal_for(date(2027, 10, 1), 3000, 5000), (3000, False))
+        self.assertEqual(plan.goal_for(date(2027, 7, 1), 3000, 0), (3000, False))
 
     def test_profit_goal_spreads_over_the_month(self):
         target = plan.profit_plan(1200 * 100, 12, 0, TODAY)
