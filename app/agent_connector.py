@@ -43,7 +43,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeSerializer, URLS
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session
 
-from app import agent_keys, board_agent, shop_board
+from app import agent_keys, board_agent, change_review, shop_board, website_alerts
 from app.auth import get_current_user
 from app.config import SECRET_KEY
 from app.database import get_db
@@ -356,6 +356,11 @@ class _Decisions(BaseModel):
     include_staff: bool = Field(default=False, description="Also list yes/no recorded by shop staff in person or by phone.")
 
 
+class _WebsiteActivity(BaseModel):
+    since: datetime | None = Field(default=None, description="ISO time to look back to, e.g. 2026-11-25T09:00:00-07:00. "
+                                   "Blank means the last 24 hours; at most 14 days back.")
+
+
 class _SendApproval(BaseModel):
     job_id: int = Field(gt=0)
     offer_snap: bool = Field(default=False, description="Add the line offering Snap Finance.")
@@ -500,6 +505,12 @@ TOOLS = {
                               "(approval link or text yes), newest first, with customer, vehicle, the lines and totals. "
                               "Read only; nothing is sent to anyone.", _Decisions,
                               lambda db, key, a: agent_api.recent_decisions(db, a.since, a.include_staff), True),
+    "list_website_activity": ("appointments:read", "Bookings, estimate requests and roadside requests that came in from "
+                              "the public website, newest first: reference, kind, urgent flag, when it came in, customer, "
+                              "vehicle, what they asked for, the visit time for a booking, whether it still needs the owner, "
+                              "whether it got the launch offer and whether a confirmation text went out. Read only; nothing "
+                              "is sent to anyone.", _WebsiteActivity,
+                              lambda db, key, a: website_alerts.recent(db, a.since), True),
     "list_appointments": ("appointments:read", "The appointment calendar.", _Empty,
                           lambda db, key, a: agent_api.list_appointments(db, key), True),
     "book_appointment": ("appointments:write", "Book a tentative appointment for a job (open_job first if there is none), "
@@ -550,6 +561,11 @@ TOOLS = {
                               _SendApproval, lambda db, key, a: agent_api.send_approval(
                                   a.job_id, agent_api.SendApprovalIn(offer_snap=a.offer_snap, message=a.message), db, key),
                               False),
+    "list_change_decisions": ("changes:read", "The owner's decisions on the Changes page: for each code change "
+                              "(GitHub pull request number) whether he approved it or said not now, the exact commit "
+                              "he saw, when, and his note. Approved only means approved at that commit; a later "
+                              "update needs his yes again. Read only.", _Empty,
+                              lambda db, key, a: {"decisions": change_review.decision_list()}, True),
     "confirm_appointment": ("appointments:confirm", "Confirm a tentative appointment, only after the owner has said yes. "
                             "It then shows on his calendar feed and adds his reminder task. Nothing is sent to the customer.",
                             _Appointment, lambda db, key, a: agent_api.confirm_appointment(a.appointment_id, db, key), False),

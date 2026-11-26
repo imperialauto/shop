@@ -11,6 +11,7 @@ const { isAppDefectReport, defectReply, historyForFocus, guardAnswer, whichJobRe
 const { callContext } = require("./callIntake");
 const { verifyApprovedReplyContext } = require("./replyContext");
 const { sendCustomerFollowup } = require("./customerFollowups");
+const { sendBookingConfirmation } = require("./bookingConfirmations");
 
 function enabled(name) {
   return process.env[name] === "true";
@@ -47,9 +48,12 @@ async function sendAutoReply({ autoReply, messageId, phone, quo, shopClient }) {
 
 async function deliverOwnerMessages({ quo, shopClient }) {
   const ownerTexts = enabled("OWNER_TEXTS_ENABLED");
-  if (!ownerTexts && !enabled("CUSTOMER_FOLLOWUP_WORKER_ENABLED")) return { sent: 0 };
+  if (!ownerTexts && !enabled("CUSTOMER_FOLLOWUP_WORKER_ENABLED") && !enabled("BOOKING_CONFIRMATIONS_ENABLED")) return { sent: 0 };
   const tick = ownerTexts ? await shopClient.dispatchTick() : await shopClient.dispatchTick({ ownerTexts: false });
-  const { ownerPhone, messages = [], customerReplies = [], customerFollowups = [] } = tick;
+  const { ownerPhone, messages = [], customerReplies = [], customerFollowups = [], bookingConfirmations = [] } = tick;
+  for (const confirmation of bookingConfirmations) {
+    await sendBookingConfirmation({ confirmation, quo, shopClient });
+  }
   let sent = 0;
   for (const reply of customerReplies) {
     await sendApprovedReply({ reply, ownerPhone, quo, shopClient });

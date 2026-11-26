@@ -18,6 +18,7 @@
 <body>
 <a class="skip" href="#main">Skip to content</a>
 {% if not indexable %}<div class="preview-bar">Preview of the new website. The current site stays live until launch.</div>{% endif %}
+{% if launch_offer %}<div class="offer-bar" role="note"><strong>Launch offer:</strong> {{ launch_offer.percent }}% off labor for our first {{ launch_offer.limit }} online bookings. <a href="/site/book">Book online</a><span class="offer-fine"> {{ launch_offer.left }} left. Labor only, one per customer.</span></div>{% endif %}
 <header class="site-header">
   <div class="wrap">
     <a class="brand" href="/site/"><span class="brand-name">Imperial Auto Care</span><span class="brand-sub">Glendale, Arizona</span></a>
