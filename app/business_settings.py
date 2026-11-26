@@ -32,6 +32,8 @@ KEYS = {
     "automatic_oil_reminders": "AUTOMATIC_OIL_REMINDERS",
     "oil_reminder_months": "OIL_REMINDER_MONTHS",
     "automatic_declined_followup": "AUTOMATIC_DECLINED_FOLLOWUP",
+    "automatic_declined_reminder": "AUTOMATIC_DECLINED_REMINDER",
+    "canned_jobs": "CANNED_JOBS_JSON",
     "automatic_diag_credit_reminder": "AUTOMATIC_DIAG_CREDIT_REMINDER",
     "automatic_snap_link": "AUTOMATIC_SNAP_LINK",
     "snap_apply_link": "SNAP_APPLY_LINK",
@@ -45,6 +47,9 @@ KEYS = {
     "appointment_feed": "APPOINTMENT_FEED_SETTING",
     # Money to bring in each day: shared by the Shop TV board (/board/manage) and the Money page.
     "daily_sales_goal": "DAILY_SALES_GOAL",
+    # Which daily goal Home, the scoreboard and the TV use: "fixed" (daily_sales_goal, the default) or "bills"
+    # (what the bills need a day when that is more than zero). Set on /board/manage.
+    "daily_goal_mode": "DAILY_GOAL_MODE",
     "finance_pay_order": "FINANCE_PAY_ORDER_JSON",
     "monthly_profit_goal": "MONTHLY_PROFIT_GOAL",
     # Profit goal for May through September; 0 means use the monthly goal all year.
@@ -53,6 +58,10 @@ KEYS = {
     "board_on_lot": "BOARD_ON_LOT_JSON",
     "board_timers": "BOARD_TIMERS_JSON",
     "board_job_clock": "BOARD_JOB_CLOCK_JSON",
+    # Website launch offer (app/launch_offer.py): {"on": false} turns it off.
+    "launch_offer": "LAUNCH_OFFER_JSON",
+    # "true" texts a booking confirmation to website customers who chose text (app/booking_confirmations.py).
+    "booking_confirmation_texts": "BOOKING_CONFIRMATION_TEXTS",
     # Owner's yes / not now on each code change, set on the Changes page (app/change_review.py).
     "change_approvals": "CHANGE_APPROVALS_JSON",
 }

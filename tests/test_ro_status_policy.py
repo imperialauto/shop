@@ -59,8 +59,12 @@ class StatusPolicyUnitTests(unittest.TestCase):
             self.order("complete", ("approved",)), "delivered", "tech")[0], 403)
         self.assertIsNone(status_error(
             self.order("complete", ("approved",)), "delivered", "owner"))
+        # Work the customer approved in person can be finished straight from approval received
+        # (job 3 was stuck here with no way forward).
+        self.assertIsNone(status_error(
+            self.order("approval_received", ("approved",)), "complete", "owner"))
         self.assertEqual(status_error(
-            self.order("approval_received", ("approved",)), "complete", "owner")[0], 409)
+            self.order("waiting_approval", ("pending",)), "complete", "owner")[0], 409)
         self.assertIsNone(status_error(
             self.order("in_progress", ("approved",)), "complete", "tech"))
 

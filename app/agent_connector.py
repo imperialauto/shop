@@ -43,7 +43,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeSerializer, URLS
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session
 
-from app import agent_keys, board_agent, change_review, shop_board
+from app import agent_keys, board_agent, change_review, shop_board, website_alerts
 from app.auth import get_current_user
 from app.config import SECRET_KEY
 from app.database import get_db
@@ -67,6 +67,7 @@ ALLOWED_REDIRECTS = (
     "https://claude.com/api/mcp/auth_callback",
 )
 CODE_SECONDS = 300
+MCP_CONTENT = "__mcp_content__"  # a tool returning {MCP_CONTENT: [...]} sends those MCP content blocks as is
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 
 _clients = URLSafeSerializer(SECRET_KEY, salt="imperial-agent-oauth-client")
@@ -327,6 +328,16 @@ class _JobStatus(agent_api.JobStatusIn):
     job_id: int = Field(gt=0)
 
 
+class _LineEdit(agent_api.LineUpdate):
+    job_id: int = Field(gt=0)
+    line_id: int = Field(gt=0, description="The line's id from get_job.")
+
+
+class _LineRemove(BaseModel):
+    job_id: int = Field(gt=0)
+    line_id: int = Field(gt=0, description="The line's id from get_job.")
+
+
 class _Deposit(agent_api.DepositIn):
     job_id: int = Field(gt=0)
 
@@ -345,12 +356,21 @@ class _Decisions(BaseModel):
     include_staff: bool = Field(default=False, description="Also list yes/no recorded by shop staff in person or by phone.")
 
 
+class _WebsiteActivity(BaseModel):
+    since: datetime | None = Field(default=None, description="ISO time to look back to, e.g. 2026-11-25T09:00:00-07:00. "
+                                   "Blank means the last 24 hours; at most 14 days back.")
+
+
 class _SendApproval(BaseModel):
     job_id: int = Field(gt=0)
     offer_snap: bool = Field(default=False, description="Add the line offering Snap Finance.")
     message: str | None = Field(default=None, max_length=1200,
                                 description="Wording of the text, signed as the owner would. Blank uses the dashboard's "
                                 "standard approval text.")
+
+
+class _CloseOut(agent_api.CloseOutIn):
+    job_id: int = Field(gt=0)
 
 
 class _Appointment(BaseModel):
@@ -369,6 +389,33 @@ def _call_update_customer(db, key, a: _CustomerUpdate):
     data = a.model_dump(exclude_unset=True)
     customer_id = data.pop("customer_id")
     return agent_api.update_customer(customer_id, agent_api.CustomerUpdate(**data), db, key)
+
+
+def _call_edit_line(db, key, a: _LineEdit):
+    data = a.model_dump(exclude_unset=True)
+    job_id, line_id = data.pop("job_id"), data.pop("line_id")
+    return agent_api.update_line(job_id, line_id, agent_api.LineUpdate(**data), db, key)
+
+
+def _call_estimate_pdf(db, key, a: _Job):
+    """The PDF itself as an embedded file, plus the job page's print link for the owner's own browser."""
+    from app import approval_links, estimate_pdf
+    from app.models import RepairOrder
+
+    ro = db.get(RepairOrder, a.job_id)
+    if ro is None:
+        raise HTTPException(404, "Job not found.")
+    pdf = estimate_pdf.build(ro)
+    link = f"{approval_links.base_url()}/ro/{ro.id}/estimate.pdf"
+    info = {"job_id": ro.id, "filename": estimate_pdf.filename(ro), "bytes": len(pdf),
+            "print_link": link, "totals": estimate_pdf.totals(ro),
+            "note": "The print link opens the PDF on the dashboard (staff sign-in needed) to print from the browser. "
+                    "Nothing was sent to anyone."}
+    return {MCP_CONTENT: [
+        {"type": "text", "text": json.dumps(jsonable_encoder(info), default=str)},
+        {"type": "resource", "resource": {"uri": link, "mimeType": "application/pdf",
+                                          "blob": base64.b64encode(pdf).decode("ascii")}},
+    ]}
 
 
 def _call_search(db, key, a: _Search):
@@ -416,10 +463,38 @@ TOOLS = {
                            lambda db, key, a: agent_api.add_lines(a.job_id, a.lines, db, key), False),
     "set_job_status": ("estimates:write", "Move a job (repair order) to another column on the job board: "
                        + ", ".join(agent_api.AGENT_STATUSES) + ". Same checks as the job page, so In Progress and "
-                       "Waiting Parts need an approved line. Not Complete or Picked up (those can text the customer). "
+                       "Parts ordered (waiting_parts, also accepted as parts_ordered) need an approved line, and Complete "
+                       "(ready for pickup, also accepted as ready_for_pickup) needs approved work. cancelled (also "
+                       "closed, duplicate, not_going_ahead) closes a duplicate job or a quote the customer passed on; "
+                       "it leaves the board and can be reopened by moving it back to intake. "
+                       "Marking Complete here sends no pickup text. Not Picked up (that can text the customer). "
                        "Optional short note on why or the next step goes in the change log. Nothing is sent to anyone.",
                        _JobStatus, lambda db, key, a: agent_api.set_job_status(
                            a.job_id, agent_api.JobStatusIn(status=a.status, note=a.note), db, key), False),
+    "edit_estimate_line": ("estimates:write", "Change an estimate line on a job: description, item_type, quantity, "
+                           "unit_price or taxable. Only the fields sent change; totals come back recalculated and the "
+                           "change is logged on the job. Works on an open job with no invoice, except discount lines "
+                           "and lines marked done. If the customer was already asked about the line (waiting, approved "
+                           "or declined), it goes back to waiting on them and their approval page shows what changed; "
+                           "lines nobody touched keep their approval. Nothing is sent to anyone: texting the changes "
+                           "is send_approval_request, only when the owner says so.", _LineEdit,
+                           _call_edit_line, False),
+    "remove_estimate_line": ("estimates:write", "Remove an estimate line from a job. Same limits as "
+                             "edit_estimate_line. A line the customer approved or was asked about shows to them as "
+                             "removed until they next answer. Totals come back recalculated and the removal is logged "
+                             "on the job. Nothing is sent to anyone.", _LineRemove,
+                             lambda db, key, a: agent_api.remove_line(a.job_id, a.line_id, db, key), False),
+    "close_out_job": ("estimates:write", "Only when the owner says a job is done: record the customer's in-person "
+                      "or phone approval of the listed lines, mark the work done, and move the job to Complete, or "
+                      "Picked up when picked_up is true. Unlisted lines that were never agreed are marked not agreed "
+                      "and not billed. No text goes to the customer (no pickup text, no review request) and no "
+                      "invoice is made.", _CloseOut,
+                      lambda db, key, a: agent_api.close_out(a.job_id, agent_api.CloseOutIn(
+                          approved_line_ids=a.approved_line_ids, picked_up=a.picked_up, source=a.source, note=a.note),
+                          db, key), False),
+    "get_estimate_pdf": ("estimates:read", "A job's estimate as a printable PDF (recommended repair, optional add-ons, "
+                         "parts-only tax, 50% deposit, terms), returned as a file, plus the dashboard link that opens "
+                         "it for printing. Read only; nothing is sent to anyone.", _Job, _call_estimate_pdf, True),
     "record_deposit": ("estimates:write", "Record a deposit a customer already paid on a job (amount, how they paid, "
                        "the day it came in). It shows on the job page and moves onto the invoice when the invoice is "
                        "made. Refuses more than is left on the job, and the same amount, method and day twice without a "
@@ -430,6 +505,12 @@ TOOLS = {
                               "(approval link or text yes), newest first, with customer, vehicle, the lines and totals. "
                               "Read only; nothing is sent to anyone.", _Decisions,
                               lambda db, key, a: agent_api.recent_decisions(db, a.since, a.include_staff), True),
+    "list_website_activity": ("appointments:read", "Bookings, estimate requests and roadside requests that came in from "
+                              "the public website, newest first: reference, kind, urgent flag, when it came in, customer, "
+                              "vehicle, what they asked for, the visit time for a booking, whether it still needs the owner, "
+                              "whether it got the launch offer and whether a confirmation text went out. Read only; nothing "
+                              "is sent to anyone.", _WebsiteActivity,
+                              lambda db, key, a: website_alerts.recent(db, a.since), True),
     "list_appointments": ("appointments:read", "The appointment calendar.", _Empty,
                           lambda db, key, a: agent_api.list_appointments(db, key), True),
     "book_appointment": ("appointments:write", "Book a tentative appointment for a job (open_job first if there is none), "
@@ -472,7 +553,9 @@ TOOLS = {
                            _AppointmentChange, _call_appointment_change, False),
     "send_approval_request": ("estimates:send", "Text the customer their approval link for a job from the shop line, "
                               "the same as the owner pressing Ask for approval on the dashboard, so the text is logged on "
-                              "the job. Only when the owner has asked for it to go. Optional message is the text's wording; "
+                              "the job. Only when the owner has asked for it to go. If lines changed after the customer answered, "
+                              "it texts just the changes (\"we updated your estimate\") and approved lines stay approved. "
+                              "Optional message is the text's wording; "
                               "the job's link is added if it isn't in it. Won't send twice: refuses if their link already "
                               "went out (from anywhere) and they haven't replied since, or if texting is paused.",
                               _SendApproval, lambda db, key, a: agent_api.send_approval(
@@ -509,7 +592,10 @@ def _call_tool(db, key, params: dict) -> dict:
         return _text({"error": f"This connection is not allowed to {agent_keys.SCOPES[scope].lower()}."}, True)
     try:
         args = model.model_validate(params.get("arguments") or {})
-        return _text(run(db, key, args))
+        result = run(db, key, args)
+        if isinstance(result, dict) and MCP_CONTENT in result:
+            return {"content": result[MCP_CONTENT], "isError": False}
+        return _text(result)
     except ValidationError as exc:
         return _text({"error": "Check the details sent.", "problems": json.loads(exc.json(include_url=False))}, True)
     except HTTPException as exc:

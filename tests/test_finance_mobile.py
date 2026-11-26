@@ -15,7 +15,7 @@ from app.auth import hash_password
 from app.database import Base, get_db
 from app.finance_model import FinanceAccount, FinanceBill, FinanceChange, FinanceIncoming
 from app.main import app
-from app.models import Customer, Invoice, Payment, RepairOrder, User, Vehicle
+from app.models import Customer, Invoice, JobDeposit, Payment, RepairOrder, User, Vehicle
 from app.routes import finance
 from app.routes.finance import month_boundaries
 
@@ -329,10 +329,6 @@ class FinancePageTests(unittest.TestCase):
         self.assertEqual(month_boundaries("2026-12"), (datetime(2026, 12, 1, 7), datetime(2027, 1, 1, 7)))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
     def test_pay_order_ranks_bills_and_he_can_move_one(self):
         owner = self.sign_in()
         owner.post("/finance/paste", data={"figures": (
@@ -577,3 +573,181 @@ class PayOrderTests(unittest.TestCase):
         target = plan.profit_plan(1200 * 100, 12, 2500, TODAY)
         self.assertEqual(target["profit_per_day"], round(2500 * 100 / target["open_days_month"]))
         self.assertEqual(target["total_per_day"], target["bills_per_day"] + target["profit_per_day"])
+
+
+
+class MissedPeriodTests(unittest.TestCase):
+    def rent(self, due, status="open", repeats="monthly"):
+        return FinanceBill(name="Rent", scope="personal", amount_cents=100000, due_date=due, status=status,
+                           repeats=repeats, category="rent")
+
+    def test_every_unpaid_month_up_to_today_is_owed(self):
+        sums = plan.totals([], [self.rent(date(2026, 9, 1))], [], TODAY, 14)["personal"]  # today Nov 21, through Dec 4
+        self.assertEqual(sums.overdue, 300000)  # Sep 1, Oct 1 and Nov 1
+        self.assertEqual([(b.due_date, getattr(b, "missed", False)) for b in sums.overdue_bills],
+                         [(date(2026, 9, 1), False), (date(2026, 10, 1), True), (date(2026, 11, 1), True)])
+        self.assertEqual(sums.due_in_window, 100000)  # Dec 1
+
+    def test_a_month_already_paid_or_entered_isnt_counted_again(self):
+        bills = [self.rent(date(2026, 9, 1)), self.rent(date(2026, 10, 1), status="paid"), self.rent(date(2026, 11, 1))]
+        sums = plan.totals([], bills, [], TODAY, 14)["personal"]
+        self.assertEqual(sums.overdue, 200000)  # Sep and Nov, not the paid October
+        self.assertEqual(sums.due_in_window, 100000)
+
+    def test_weekly_bills_count_each_missed_week(self):
+        sums = plan.totals([], [self.rent(date(2026, 11, 1), repeats="weekly")], [], TODAY, 7)["personal"]
+        self.assertEqual(sums.overdue, 300000)  # Nov 1, 8, 15
+        self.assertEqual(sums.due_in_window, 100000)  # Nov 22
+
+    def test_recorded_payments_count_as_shop_cash_only_when_balances_exist(self):
+        bill = FinanceBill(name="Power", scope="business", amount_cents=50000, due_date=date(2026, 11, 25),
+                           status="open", repeats="once", category="utilities")
+        shop = FinanceAccount(name="Shop checking", scope="business", balance_cents=10000, held_cents=0, active=True)
+        before = plan.totals([shop], [bill], [], TODAY, 14)["business"]
+        after = plan.totals([shop], [bill], [], TODAY, 14, recorded_in=30000)["business"]
+        self.assertEqual((before.cash, before.short), (10000, 40000))
+        self.assertEqual((after.cash, after.short, after.recorded_in), (40000, 10000, 30000))
+        self.assertEqual(plan.totals([], [bill], [], TODAY, 14, recorded_in=30000)["business"].cash, 0)
+
+
+class MoneySyncTests(unittest.TestCase):
+    setUp = FinancePageTests.setUp
+    tearDown = FinancePageTests.tearDown
+    sign_in = FinancePageTests.sign_in
+
+    def job(self, db, status="paid"):
+        customer = Customer(first_name="Pat", last_name="Sample"); db.add(customer); db.flush()
+        vehicle = Vehicle(customer_id=customer.id); db.add(vehicle); db.flush()
+        ro = RepairOrder(customer_id=customer.id, vehicle_id=vehicle.id); db.add(ro); db.flush()
+        invoice = Invoice(repair_order_id=ro.id, total=300.0, status=status); db.add(invoice); db.flush()
+        return ro, invoice
+
+    def shop_totals(self):
+        with self.Session() as db:
+            accounts, bills = db.query(FinanceAccount).all(), db.query(FinanceBill).all()
+            return finance.money_totals(db, accounts, bills, db.query(FinanceIncoming).all(), TODAY, 14)["business"]
+
+    def test_a_recorded_payment_never_makes_the_target_worse(self):
+        owner = self.sign_in()
+        with self.Session() as db:
+            ro, invoice = self.job(db)
+            db.add(Payment(invoice_id=invoice.id, amount=999.0, method="cash", paid_at=datetime(2026, 11, 1)))  # before: in the balance
+            db.commit()
+        owner.post("/finance/paste", data={"figures": "balance | Shop checking | 100\nbill | Power | 500 | 11/25 | utilities"})
+        self.assertEqual(self.shop_totals().short, 40000)
+        with self.Session() as db:
+            ro, invoice = self.job(db)
+            db.add(Payment(invoice_id=invoice.id, amount=300.0, method="zelle", paid_at=datetime.utcnow()))
+            db.add(JobDeposit(repair_order_id=ro.id, amount=50.0, method="zelle", received_at=datetime.utcnow()))
+            db.add(JobDeposit(repair_order_id=ro.id, amount=70.0, method="cash", received_at=datetime.utcnow(),
+                              removed_at=datetime.utcnow()))  # taken back off: not money
+            db.commit()
+        shop = self.shop_totals()
+        self.assertEqual((shop.recorded_in, shop.cash, shop.short), (35000, 45000, 5000))
+        page = owner.get("/finance/").text
+        self.assertIn("Job payments since then", page)
+        self.assertIn("+$350.00", page)
+        owner.post("/finance/paste", data={"figures": "balance | Shop checking | 450"})  # he types it again: nothing doubled
+        shop = self.shop_totals()
+        self.assertEqual((shop.recorded_in, shop.cash, shop.short), (0, 45000, 5000))
+
+    def test_a_bank_file_balance_still_counts_payments_after_its_last_day(self):
+        owner = self.sign_in()
+        owner.post("/finance/paste", data={"figures": "balance | Shop checking | 100"})
+        with self.Session() as db:
+            account = db.query(FinanceAccount).one().id
+        csv_text = "Date,Description,Amount,Running Bal.\n11/20/2026,ZELLE FROM PAT,500.00,\"612.40\"\n"
+        owner.post("/finance/statement", data={"account": str(account)}, files={"file": ("a.csv", csv_text.encode(), "text/csv")})
+        with self.Session() as db:
+            self.assertEqual(finance.balances_read_at(db.query(FinanceAccount).all()), datetime(2026, 11, 21, 7))
+
+    def test_paid_and_got_it_move_the_as_of_day_but_not_the_read_time(self):
+        owner = self.sign_in()
+        owner.post("/finance/paste", data={"figures": "balance | Shop checking | 500\nbill | Power | 120 | 11/25 | utilities\n"
+                                                      "owed | Pat Sample | 300 | 11/24"})
+        with self.Session() as db:
+            account = db.query(FinanceAccount).one()
+            account.as_of = date(2026, 11, 10)
+            db.commit()
+            shop, read_at = account.id, finance.balances_read_at([account])
+            bill, item = db.query(FinanceBill).one().id, db.query(FinanceIncoming).one().id
+        owner.post(f"/finance/bills/{bill}/paid", data={"account": str(shop)})
+        with self.Session() as db:
+            row = db.get(FinanceAccount, shop)
+            self.assertEqual((row.as_of, row.balance_cents), (TODAY, 38000))
+            self.assertEqual(finance.balances_read_at([row]), read_at)
+            row.as_of = date(2026, 11, 10)
+            db.commit()
+        owner.post(f"/finance/incoming/{item}/got", data={"account": str(shop)})
+        with self.Session() as db:
+            self.assertEqual(db.get(FinanceAccount, shop).as_of, TODAY)
+
+    def test_updated_stamp_follows_the_latest_change(self):
+        owner = self.sign_in()
+        self.assertIn("Updated never", owner.get("/finance/").text)
+        owner.post("/finance/paste", data={"figures": "balance | Shop checking | 100"})
+        self.assertIn("balances typed", owner.get("/finance/").text)
+        owner.post("/finance/paste", data={"figures": "bill | Power | 500 | 11/25 | utilities"})
+        self.assertIn("bills changed", owner.get("/finance/").text)
+        with self.Session() as db:
+            ro, invoice = self.job(db)
+            db.add(Payment(invoice_id=invoice.id, amount=300.0, method="zelle", paid_at=datetime.utcnow()))
+            db.commit()
+            ro_id = ro.id
+        self.assertIn("job payment recorded", owner.get("/finance/").text)
+        with self.Session() as db:
+            db.add(JobDeposit(repair_order_id=ro_id, amount=50.0, method="zelle"))
+            db.commit()
+        page = owner.get("/finance/").text
+        self.assertIn("job deposit recorded", page)
+        with self.Session() as db:  # the nightly roll-forward isn't someone touching the money
+            db.add(FinanceChange(actor=finance.SYSTEM_ACTOR, action="bill_rolled", detail="x"))
+            db.commit()
+        self.assertIn("job deposit recorded", owner.get("/finance/").text)
+
+    def test_repeating_bills_roll_forward_on_their_own(self):
+        owner = self.sign_in()
+        owner.post("/finance/paste", data={"figures": "bill | Rent | 1000 | 9/1 | personal | rent | monthly\n"
+                                                      "bill | Owner pay | 200 | 11/7 | weekly\n"
+                                                      "bill | Software | 30 | 11/30 | software | monthly\n"
+                                                      "bill | One off | 50 | 10/1"})
+        with self.Session() as db:
+            self.assertEqual(finance.roll_repeating_bills(db, TODAY), 5)
+            db.commit()
+            rows = {(b.name, b.due_date): b.status for b in db.query(FinanceBill).all()}
+            self.assertEqual(sorted(d for n, d in rows if n == "Rent"),
+                             [date(2026, 9, 1), date(2026, 10, 1), date(2026, 11, 1), date(2026, 12, 1)])
+            self.assertEqual(sorted(d for n, d in rows if n == "Owner pay"),
+                             [date(2026, 11, 7), date(2026, 11, 14), date(2026, 11, 21)])
+            self.assertEqual(sorted(d for n, d in rows if n == "Software"), [date(2026, 11, 30)])  # not due yet
+            self.assertEqual(sorted(d for n, d in rows if n == "One off"), [date(2026, 10, 1)])
+            self.assertEqual(set(rows.values()), {"open"})  # nothing is ever marked paid
+            self.assertEqual(db.query(FinanceChange).filter_by(actor="system", action="bill_rolled").count(), 5)
+            self.assertEqual(finance.roll_repeating_bills(db, TODAY), 0)  # running again adds nothing
+        page = owner.get("/finance/").text
+        self.assertIn("81 days late", page)  # Sep 1 rent still open and late
+        with self.Session() as db:  # a chain he ended with a one-time last row stops
+            db.add(FinanceBill(name="Gym", scope="personal", amount_cents=100, due_date=date(2026, 10, 1), repeats="monthly"))
+            db.add(FinanceBill(name="Gym", scope="personal", amount_cents=100, due_date=date(2026, 11, 1), repeats="once"))
+            db.commit()
+            self.assertEqual(finance.roll_repeating_bills(db, TODAY), 0)
+
+    def test_the_scheduler_runs_the_roll_forward_nightly(self):
+        import asyncio
+        from app import scheduler as jobs
+        self.sign_in().post("/finance/paste", data={"figures": "bill | Rent | 1000 | 11/1 | rent | monthly"})
+        with patch("app.database.SessionLocal", self.Session):
+            asyncio.run(jobs.finance_rollover_job())
+        with self.Session() as db:
+            self.assertEqual(sorted(b.due_date for b in db.query(FinanceBill).all()), [date(2026, 11, 1), date(2026, 12, 1)])
+        with patch.object(jobs.scheduler, "start"):
+            jobs.start_scheduler()
+        try:
+            job = jobs.scheduler.get_job("finance_rollover_job")
+            self.assertEqual((str(job.trigger.fields[5]), str(job.trigger.fields[6])), ("0", "15"))  # hour, minute
+        finally:
+            jobs.scheduler.remove_all_jobs()
+
+
+if __name__ == "__main__":
+    unittest.main()

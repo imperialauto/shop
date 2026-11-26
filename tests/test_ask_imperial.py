@@ -323,6 +323,7 @@ class StaleDraftTests(AskImperialTests):
         owner = self.staff("owner")
         self.assertEqual(owner.post("/ro/1/request-approval").status_code, 409)
         self.assertEqual(owner.post("/ro/1/text-link-now").status_code, 409)
+        self.assertEqual(owner.post("/ro/1/resend-link").status_code, 409)
         # Exactly one actionable advisor item
         self.assertEqual(len([t for t in self.advisor_tasks() if t.status == "open"]), 1)
         # Same screen: revise, labor verified, apply

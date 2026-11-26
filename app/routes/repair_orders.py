@@ -1,16 +1,20 @@
 from html import escape
 from fastapi import APIRouter, Request, Depends, Form, HTTPException, BackgroundTasks
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from app.ro_status_policy import CLOSED_STATUSES
 from app.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.database import get_db
 from app.models import RepairOrder, Customer, Vehicle, User, LineItem, Communication, PartsOrder
 from app.auth import get_current_user
-from app import tags, approval_links, customer_file, ro_delete, cycle_time, customer_followups, job_events, next_action, ro_status_policy, snap_offer, website_alerts
+from app import job_flags
+from app import tags, approval_links, customer_file, ro_delete, cycle_time, customer_followups, estimate_pdf, job_closeout, job_events, line_changes, next_action, ro_status_policy, snap_offer, website_alerts
+from app import canned_jobs
 from app.dispatch_model import DispatchAudit, DispatchItem, DispatchOutbound
 from app.sending_pause import DASHBOARD_REPLY, is_paused
 from app.routes import local_node
+from app import parts_tracking
 import os, secrets
 from datetime import datetime, timezone
 
@@ -38,12 +42,13 @@ COMMON_CONCERNS = [
 RO_STATUSES = [
     ("intake", "Intake"),
     ("diagnosing", "Diagnosing"),
-    ("waiting_parts", "Waiting Parts"),
+    ("waiting_parts", "Parts ordered"),
     ("in_progress", "In Progress"),
     ("waiting_approval", "Waiting Approval"),
     ("approval_received", "Approval Received"),
     ("complete", "Complete"),
-    ("delivered", "Delivered"),
+    ("delivered", "Picked up"),
+    ("cancelled", "Closed, not going ahead"),
 ]
 
 
@@ -73,7 +78,7 @@ def get_next_action(ro, open_parts_count=0, has_unpaid_invoice=False):
         return "Review signed scope before work" if ro.signed_at else "Waiting on customer signature"
     if ro.status == "complete":
         return "Review payment balance" if has_unpaid_invoice else "Review pickup"
-    return "Delivered" if ro.status == "delivered" else "Review job"
+    return {"delivered": "Picked up", "cancelled": "Closed"}.get(ro.status, "Review job")
 
 
 @router.get("/board", response_class=HTMLResponse)
@@ -81,10 +86,10 @@ def board_view(request: Request, db: Session = Depends(get_db)):
     user = require_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=302)
-    ros = db.query(RepairOrder).filter(RepairOrder.status != "delivered").order_by(RepairOrder.created_at.asc()).all()
+    ros = db.query(RepairOrder).filter(RepairOrder.status.notin_(CLOSED_STATUSES)).order_by(RepairOrder.created_at.asc()).all()
     ids = [ro.id for ro in ros]
     counts = dict(db.query(PartsOrder.repair_order_id, func.count(PartsOrder.id)).filter(PartsOrder.repair_order_id.in_(ids), PartsOrder.status == "ordered").group_by(PartsOrder.repair_order_id).all()) if ids else {}
-    columns = {key: [] for key, _ in RO_STATUSES if key != "delivered"}
+    columns = {key: [] for key, _ in RO_STATUSES if key not in CLOSED_STATUSES}
     for ro in ros:
         step = next_action.for_job(db, ro, user.role)  # same answer as the job page, one source
         ro.next_action = f"{step['who']}: {step['title']}" if step else get_next_action(ro, counts.get(ro.id, 0), any(i.status != "paid" for i in ro.invoices))
@@ -100,7 +105,7 @@ def list_ros(request: Request, db: Session = Depends(get_db), status: str = "ope
 
     query = db.query(RepairOrder)
     if status == "open":
-        query = query.filter(RepairOrder.status != "delivered")
+        query = query.filter(RepairOrder.status.notin_(CLOSED_STATUSES))
     elif status in dict(RO_STATUSES):
         query = query.filter(RepairOrder.status == status)
     if search:
@@ -189,10 +194,12 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         .order_by(Communication.created_at.asc())
         .all()
     )
+    from app import job_texts  # the read-only "Texts with ..." card
     return templates.TemplateResponse("repair_orders/detail.html", {
         "request": request, "user": user, "ro": ro, "techs": techs,
         "statuses": ro_status_policy.manual_status_options(ro, user.role, RO_STATUSES), "subtotal": subtotal, "comms": comms,
         "sourced_parts": sourced_parts,
+        "texts": job_texts.for_job(db, ro),
         "next_step": next_action.for_job(db, ro, user.role),
         "tag_list": tags.names_for(db, "job", [ro.id]).get(ro.id, []), "tag_known": tags.known(db),
         "customer_tag_list": tags.names_for(db, "customer", [ro.customer_id]).get(ro.customer_id, []),
@@ -211,7 +218,21 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         "deposit_methods": _deposit_methods() if user.role in ("owner", "admin", "office") else [],
         "deposit_method_labels": _method_labels(),
         "today": _today(),
+        "changes": line_changes.summary(ro),
+        "has_changes": line_changes.has_changes(ro),
+        "closeout_problem": job_closeout.problem(ro),
+        "flags": job_flags.for_job(db, ro),
+        "parts_card": parts_tracking.card(db, ro, user.role),
+        "canned_jobs": canned_jobs.menu(),
+        "approval_send": _approval_send(db, ro, user),
+        "job_timer": _job_timer().for_job(db, ro, user),
     })
+
+
+def _job_timer():
+    from app import job_timer
+
+    return job_timer
 
 
 def _deposits():
@@ -274,6 +295,22 @@ def update_status(
     return RedirectResponse({"my-day": "/my-day", "home": "/dashboard"}.get(back, f"/ro/{ro_id}"), status_code=302)
 
 
+@router.get("/{ro_id}/estimate.pdf")
+def estimate_pdf_download(request: Request, ro_id: int, db: Session = Depends(get_db)):
+    """The job's estimate as a PDF, opened in the browser so it can be printed. Read only."""
+    user = require_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    if user.role not in ("owner", "admin", "office"):
+        raise HTTPException(403, "Office access required.")
+    ro = db.get(RepairOrder, ro_id)
+    if ro is None:
+        raise HTTPException(404)
+    return Response(estimate_pdf.build(ro), media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{estimate_pdf.filename(ro)}"',
+                             "Cache-Control": "no-store"})
+
+
 @router.post("/{ro_id}/request-approval")
 def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db),
                      offer_snap: str = Form(default="")):
@@ -330,9 +367,23 @@ def _refuse_stale_assist_draft(db: Session, ro: RepairOrder, user):
         raise HTTPException(status_code=409, detail=blocked)
 
 
-def _send_link(db: Session, ro: RepairOrder, user, offer_snap: str):
+def _approval_send(db: Session, ro: RepairOrder, user) -> dict | None:
+    """The newest approval text's real state and the link to copy, for the owner's job page."""
+    if user.role not in SENDERS:
+        return None
+    try:
+        last = approval_links.last_send(db, ro)
+    except Exception:  # the job page still loads
+        db.rollback()
+        last = None
+    return {"last": last, "sign_link": approval_links.sign_link(ro)}
+
+
+def _send_link(db: Session, ro: RepairOrder, user, offer_snap: str, resend: bool = False):
     asked = sum(1 for li in ro.line_items if li.approval is None)
-    state, item = approval_links.send_now(db, ro, user.username, user.id, offer_snap=snap_offer.checked(offer_snap))
+    state, item = approval_links.send_now(db, ro, user.username, user.id, offer_snap=snap_offer.checked(offer_snap),
+                                          resend=resend,
+                                          audit_detail=f"owner pressed Send it again, job {ro.id}" if resend else None)
     if state in ("sending", "already") and item is not None:
         state = f"{state}{item.id}"
     return RedirectResponse(f"/ro/{ro.id}?asked={asked}&link={state}#line-items", status_code=303)
@@ -356,6 +407,24 @@ def text_link_now(request: Request, ro_id: int, db: Session = Depends(get_db), o
         raise HTTPException(status_code=404)
     _refuse_stale_assist_draft(db, ro, user)
     return _send_link(db, ro, user, offer_snap)
+
+
+@router.post("/{ro_id}/resend-link")
+def resend_link(request: Request, ro_id: int, db: Session = Depends(get_db), offer_snap: str = Form(default="")):
+    """The owner's "Send it again": texts the approval link even though an earlier one shows as sent
+    (for when it never reached them). Never doubles a text the shop line is still sending."""
+    user = require_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    if user.role not in SENDERS:
+        raise HTTPException(403, "Only the owner can text the customer from here.")
+    ro = db.get(RepairOrder, ro_id)
+    if not ro:
+        raise HTTPException(status_code=404)
+    if ro.status in ("delivered", "cancelled"):
+        raise HTTPException(409, "This job is closed.")
+    _refuse_stale_assist_draft(db, ro, user)
+    return _send_link(db, ro, user, offer_snap, resend=True)
 
 
 IN_PERSON_SOURCES = {"in_person": "in person", "phone": "by phone"}
@@ -393,12 +462,38 @@ async def approve_in_person(request: Request, ro_id: int, db: Session = Depends(
         li.approval, li.decided_at = "approved", now
         li.approval_source, li.approval_recorded_by = source, user.username[:64]
     if not any(li.approval == "pending" for li in ro.line_items):
-        if ro.status == "waiting_approval":
+        if ro.status in ("intake", "diagnosing", "waiting_approval"):
             ro.status = "approval_received"
         # Nothing is left for the customer to answer, so the queued approval text must not go out.
         approval_links.close_for(db, ro, actor=user.username, action="approved_in_person")
+    line_changes.answered(ro)
     db.commit()
     return RedirectResponse(f"/ro/{ro_id}?approved_in_person={len(chosen)}", status_code=303)
+
+
+@router.post("/{ro_id}/close-out")
+async def close_out_job(request: Request, ro_id: int, db: Session = Depends(get_db)):
+    """Owner: done (and picked up) in one step for work agreed in person. Texts nobody."""
+    user = require_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    if user.role != "owner":
+        raise HTTPException(403, "Only the owner can close out a job this way.")
+    ro = db.query(RepairOrder).filter(RepairOrder.id == ro_id).with_for_update().first()
+    if not ro:
+        raise HTTPException(404)
+    form = await request.form()
+    try:
+        ids = [int(v) for v in form.getlist("line_ids")]
+    except ValueError:
+        raise HTTPException(422, "Pick the items from the list.") from None
+    try:
+        job_closeout.close_out(db, ro, user.username, ids, picked_up=form.get("picked_up") == "1",
+                               source=form.get("source", "in_person"), note=str(form.get("note", ""))[:200])
+    except job_closeout.CloseOutError as exc:
+        raise HTTPException(exc.status, exc.message) from None
+    db.commit()
+    return RedirectResponse(f"/ro/{ro_id}?closed_out={ro.status}", status_code=303)
 
 
 @router.post("/{ro_id}/estimate-location")
@@ -510,16 +605,20 @@ def line_item_revision(li):
     return hashlib.sha256(json.dumps(values).encode()).hexdigest()
 
 
-def editable_line_item(db, ro_id, li_id):
+def editable_line_item(db, ro_id, li_id, sent_ok=False):
+    """The line, locked for the change. Lines already sent to the customer only where sent_ok (edits:
+    the line goes back to waiting on them). Never on a picked-up job, an invoiced job, a discount
+    line or a line marked done."""
     li = db.query(LineItem).filter(
         LineItem.id == li_id, LineItem.repair_order_id == ro_id
     ).with_for_update().first()
     if li is None:
         raise HTTPException(404, "Line item not found.")
-    if li.approval is not None:
-        raise HTTPException(409, "This item has entered customer approval. Add a revised item for approval.")
-    if li.repair_order.invoices:
-        raise HTTPException(409, "An invoice already exists for this job. Review the invoice before changing charges.")
+    if li.approval is not None and not sent_ok:
+        raise HTTPException(409, "This item was already sent to the customer. Edit it instead, or the owner can remove it.")
+    problem = line_changes.edit_problem(li)
+    if problem and not (li.approval is None and li.completed_at and not sent_ok):
+        raise HTTPException(problem.status, problem.message)
     return li
 
 
@@ -530,7 +629,7 @@ def edit_line_item_page(request: Request, ro_id: int, li_id: int, db: Session = 
         return RedirectResponse("/login", status_code=302)
     if user.role not in ("owner", "admin", "office"):
         raise HTTPException(403, "Office access required.")
-    li = editable_line_item(db, ro_id, li_id)
+    li = editable_line_item(db, ro_id, li_id, sent_ok=True)
     return templates.TemplateResponse("repair_orders/edit_line_item.html", {
         "request": request, "user": user, "li": li,
         "ro_id": ro_id, "revision": line_item_revision(li),
@@ -544,6 +643,8 @@ def edit_line_item(
     quantity: float = Form(...), unit_price: float = Form(...),
     revision: str = Form(...),
 ):
+    """Saves a line. A line the customer was already asked about (waiting, approved or declined) goes
+    back to waiting on them, with what they saw kept to show as "Changed". Nothing is texted."""
     import math
 
     user = require_user(request, db)
@@ -558,15 +659,17 @@ def edit_line_item(
         raise HTTPException(422, "Quantity must be positive and unit price must be zero or greater.")
     if not math.isfinite(quantity * unit_price):
         raise HTTPException(422, "The line total is too large.")
-    li = editable_line_item(db, ro_id, li_id)
+    li = editable_line_item(db, ro_id, li_id, sent_ok=True)
     if not secrets.compare_digest(revision, line_item_revision(li)):
         raise HTTPException(409, "This item changed after you opened it. Reload the editor before saving.")
-    li.description = description
-    li.item_type = item_type
-    li.quantity = quantity
-    li.unit_price = unit_price
+    try:
+        result = line_changes.revise(db, li, user.username, description=description, item_type=item_type,
+                                     quantity=quantity, unit_price=unit_price)
+    except line_changes.LineChangeError as exc:
+        raise HTTPException(exc.status, exc.message) from None
     db.commit()
-    return RedirectResponse(f"/ro/{ro_id}#line-items", status_code=303)
+    note = "?line_changed=back" if result["back_to_customer"] else "?line_changed=restored" if result["restored"] else ""
+    return RedirectResponse(f"/ro/{ro_id}{note}#line-items", status_code=303)
 
 
 @router.post("/{ro_id}/delete-line-item/{li_id}")
@@ -584,17 +687,16 @@ def delete_line_item(request: Request, ro_id: int, li_id: int, db: Session = Dep
     return RedirectResponse(f"/ro/{ro_id}", status_code=302)
 
 
-REMOVED_STATE = {"pending": "waiting on customer", "approved": "approved", "declined": "declined"}
-
-
 @router.post("/{ro_id}/remove-line/{li_id}")
 def remove_sent_line(request: Request, ro_id: int, li_id: int, db: Session = Depends(get_db),
                      confirm: str = Form("")):
     """Owner-only removal of a line that was already sent for approval (waiting, approved or declined).
 
     Unsent lines keep the ordinary office delete. Nothing is sent to the customer. A line that is
-    marked done, or an approved line on a job with an invoice, is never removed here, so a bill
-    can't silently change. Every removal is written to the audit log with what the line was.
+    marked done, or any line on a job with an invoice, is never removed here, so a bill can't
+    silently change. Every removal is written to the audit log with what the line was, and a line
+    the customer approved or was asked about shows as "Removed" on their approval page until they
+    next answer.
     """
     user = require_user(request, db)
     if not user:
@@ -608,24 +710,10 @@ def remove_sent_line(request: Request, ro_id: int, li_id: int, db: Session = Dep
     ).with_for_update().first()
     if li is None:
         raise HTTPException(404, "Line item not found.")
-    if li.approval is None:
-        raise HTTPException(409, "This line wasn't sent for approval. Use the regular delete.")
-    if li.completed_at:
-        raise HTTPException(409, "This line is marked done. Reopen it first if it really should be removed.")
-    ro = li.repair_order
-    if li.approval == "approved" and any(inv.status != "void" for inv in ro.invoices):
-        raise HTTPException(409, "This approved line is on a job with an invoice. Void or fix the invoice first.")
-    state = REMOVED_STATE.get(li.approval, li.approval)
-    detail = f"Job #{ro_id}: removed line '{li.description}' ${li.total:,.2f} ({state})"
-    db.delete(li)
-    db.flush()
-    db.refresh(ro)
-    if not any(x.approval == "pending" for x in ro.line_items):
-        # Nothing is left for the customer to answer, so a queued approval text must not go out.
-        approval_links.close_for(db, ro, actor=user.username, action="line_removed")
-        if ro.status == "waiting_approval" and any(x.approval == "approved" for x in ro.line_items):
-            ro.status = "approval_received"
-    db.add(DispatchAudit(item_id=None, actor=user.username[:64], action="line_removed", detail=detail[:255]))
+    try:
+        line_changes.remove_sent(db, li, user.username)
+    except line_changes.LineChangeError as exc:
+        raise HTTPException(exc.status, exc.message) from None
     db.commit()
     return RedirectResponse(f"/ro/{ro_id}?line_removed=1#line-items", status_code=303)
 

@@ -1,0 +1,14 @@
+{
+  "_note": "Synthetic test thread. Not a real customer.",
+  "customer": {"first_name": "Testy"},
+  "vehicle": {"label": "2009 BMW 535i"},
+  "conversation": [
+    {"direction": "outbound", "body": "Hey Testy, working on it today. - Jae"},
+    {"direction": "inbound", "body": "can I pick it up today?"}
+  ],
+  "job": {"id": 9002, "status": "complete", "total": 840.0, "deposits_paid": 420,
+          "approvals": {"pending": 0, "approved": 2, "declined": 0, "not_sent": 0},
+          "parts": [], "status_link": null,
+          "invoice": {"status": "sent", "total": 840.0, "paid": 420.0, "balance": 420.0},
+          "appointment": null, "promised_at": null}
+}

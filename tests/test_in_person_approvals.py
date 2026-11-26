@@ -86,7 +86,7 @@ class InPersonApprovalTests(unittest.TestCase):
 
     def test_owner_marks_lines_approved_in_person_without_texting(self):
         page = self.owner.get(f"/ro/{self.job}").text
-        self.assertIn("Customer already said yes in person or by phone?", page)
+        self.assertIn("Customer said yes in person or by phone", page)
         response = self.approve(self.owner, self.ids("Headlight labor", "H11 bulb", "Valve covers"))
         self.assertEqual(response.status_code, 303)
         self.assertIn("approved_in_person=3", response.headers["location"])

@@ -46,7 +46,7 @@ def manage(request: Request, saved: str = "", error: str = "", db: Session = Dep
     user = get_current_user(request, db)
     return templates.TemplateResponse("shop_board_manage.html", {
         "request": request, "user": user, "board": shop_board.snapshot(db, user),
-        "goal": shop_board.daily_goal(), "presets": TIMER_PRESETS, "saved": saved, "error": error[:200], "lot": _lot(db),
+        "goal": shop_board.daily_goal(), "goal_mode": shop_board.goal_mode(), "presets": TIMER_PRESETS, "saved": saved, "error": error[:200], "lot": _lot(db),
         "read_only": request.app.state.read_only,
     })
 
@@ -94,8 +94,10 @@ def change_todo(task_id: int, request: Request, operation: str = Form(...), db: 
 
 
 @router.post("/board/lot/{ro_id}")
-def mark_lot(ro_id: int, request: Request, operation: str = Form(...), db: Session = Depends(get_db)):
-    """Here or gone: changes only which cars the TV lists, never the job itself."""
+def mark_lot(ro_id: int, request: Request, operation: str = Form(...), back: str = Form(""),
+             db: Session = Depends(get_db)):
+    """Here or gone: changes only which cars the TV lists, never the job itself.
+    Pressed on Home or the job page, it goes back there (back=home or back=job)."""
     user = get_current_user(request, db)
     if request.app.state.read_only:
         raise HTTPException(503, "The dashboard is read-only right now.")
@@ -103,16 +105,18 @@ def mark_lot(ro_id: int, request: Request, operation: str = Form(...), db: Sessi
         raise HTTPException(422, "Unknown action.")
     if not shop_board.set_here(db, user, ro_id, operation == "here"):
         raise HTTPException(404, "That job isn't open.")
-    return RedirectResponse("/board/manage?saved=lot#lot", status_code=303)
+    where = {"home": f"/dashboard#job-{ro_id}", "job": f"/ro/{ro_id}"}.get(back, "/board/manage?saved=lot#lot")
+    return RedirectResponse(where, status_code=303)
 
 
 @router.post("/board/goal")
-def save_goal(request: Request, goal: str = Form(""), db: Session = Depends(get_db)):
+def save_goal(request: Request, goal: str = Form(""), mode: str = Form(""), db: Session = Depends(get_db)):
+    """The daily goal in dollars and, when sent, which goal Home and the TV use: "fixed" or "bills"."""
     user = get_current_user(request, db)
     if user.role != "owner":
         raise HTTPException(403, "Only the owner sets the daily goal.")
     try:
-        shop_board.save_goal(db, user, goal)
+        shop_board.save_goal(db, user, goal, mode=mode or None)
     except ValueError as exc:
         return _back(error=str(exc))
     return _back(saved="goal")
@@ -161,3 +165,16 @@ def job_clock(ro_id: int, request: Request, operation: str = Form(...), db: Sess
     if not shop_board.set_clock(db, user, ro_id, operation == "start"):
         raise HTTPException(404, "That job isn't open.")
     return RedirectResponse("/board/manage?saved=clock#lot", status_code=303)
+
+
+@router.post("/ro/{ro_id}/clock")
+def my_job_clock(ro_id: int, request: Request, operation: str = Form(...), db: Session = Depends(get_db)):
+    """The job page's Start / Stop: clocks the signed-in worker (techs included) in or out on this job only."""
+    user = get_current_user(request, db)
+    if request.app.state.read_only:
+        raise HTTPException(503, "The dashboard is read-only right now.")
+    if operation not in ("start", "stop"):
+        raise HTTPException(422, "Unknown action.")
+    if not shop_board.set_clock(db, user, ro_id, operation == "start", only_mine=True):
+        raise HTTPException(404, "That job isn't open.")
+    return RedirectResponse(f"/ro/{ro_id}?clock={operation}#job-timer", status_code=303)

@@ -69,6 +69,7 @@ def current() -> dict:
         "oil_reminder_months": oil_reminders.months(),
         "automatic_declined_followup": (store.raw("automatic_declined_followup") or "").strip().lower() == "true",
         "automatic_diag_credit_reminder": (store.raw("automatic_diag_credit_reminder") or "").strip().lower() == "true",
+        "automatic_declined_reminder": (store.raw("automatic_declined_reminder") or "").strip().lower() == "true",
         "automatic_snap_link": (store.raw("automatic_snap_link") or "").strip().lower() == "true",
         "buffer": store.raw("shop_buffer_minutes") or "60",
         "lead": store.raw("booking_lead_minutes") or "120",
@@ -163,6 +164,8 @@ def parse(form) -> dict:
                                                     "Oil reminder months", 1, 24))
     if "automatic_declined_followup_shown" in form:
         alerts["automatic_declined_followup"] = str(form.get("automatic_declined_followup") == "on").lower()
+    if "automatic_declined_reminder_shown" in form:
+        alerts["automatic_declined_reminder"] = str(form.get("automatic_declined_reminder") == "on").lower()
     if "automatic_diag_credit_reminder_shown" in form:
         alerts["automatic_diag_credit_reminder"] = str(form.get("automatic_diag_credit_reminder") == "on").lower()
     if "automatic_snap_link_shown" in form:

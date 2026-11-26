@@ -1,0 +1,41 @@
+{# Read-only conversation with the customer, from texts saved on the dashboard. Never calls Quo. #}
+{% macro bubble(c) -%}
+{% set out = c.direction == 'outbound' %}
+<li class="flex {{ 'justify-end' if out else 'justify-start' }}" data-direction="{{ 'outbound' if out else 'inbound' }}">
+  <div style="max-width:min(85%, 28rem);">
+    <div class="text-xs text-stone-500 mb-0.5 {{ 'text-right' if out else '' }}">
+      {{ 'Shop' if out else texts.name }}{% if c.created_at %} · {{ (c.created_at|shop_time).strftime('%b %-d, %-I:%M %p') }}{% endif %}
+      {% if c.channel and c.channel != 'sms' %} · {{ c.channel|title }}{% endif %}
+      {% if c.repair_order_id == ro.id %} · <span class="text-gold-400" data-this-job>This job</span>
+      {% elif c.repair_order_id %} · <a href="/ro/{{ c.repair_order_id }}" class="underline">Job #{{ c.repair_order_id }}</a>{% endif %}
+    </div>
+    <div class="px-3 py-2 rounded-2xl text-sm leading-snug whitespace-pre-line
+      {{ 'bg-yellow-500 text-stone-900 rounded-br-sm' if out else 'bg-stone-700 text-stone-100 rounded-bl-sm' }}"
+      style="overflow-wrap:anywhere;">{{ c.body or '' }}</div>
+  </div>
+</li>
+{%- endmacro %}
+<div class="card mb-4" id="texts">
+  <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
+    <h3 class="text-xs text-stone-400 uppercase tracking-wide">Texts with {{ texts.name }}</h3>
+    <span class="text-xs text-stone-500">{% if texts.total %}{{ texts.total }} total{% if texts.this_job %} · {{ texts.this_job }} on this job{% endif %}{% endif %}
+      {% if ro.customer.phone %}{% if texts.total %} · {% endif %}<a href="tel:{{ ro.customer.phone }}" class="text-gold-400 hover:underline">{{ ro.customer.phone }}</a>{% endif %}</span>
+  </div>
+  {% if texts.total %}
+  <div class="max-h-96 overflow-y-auto pr-1" id="texts-thread">
+    {% if texts.older %}
+    <details class="mb-2">
+      <summary class="text-xs text-stone-400 underline cursor-pointer" style="min-height:44px; display:flex; align-items:center;">Show all {{ texts.total }} texts</summary>
+      <ul class="flex flex-col gap-2 mt-2" style="list-style:none; padding:0;">{% for c in texts.older %}{{ bubble(c) }}{% endfor %}</ul>
+    </details>
+    {% endif %}
+    <ul class="flex flex-col gap-2" style="list-style:none; padding:0;">{% for c in texts.recent %}{{ bubble(c) }}{% endfor %}</ul>
+  </div>
+  <script>
+    (function () { var t = document.getElementById('texts-thread'); if (t) t.scrollTop = t.scrollHeight; })();
+  </script>
+  <p class="text-stone-500 text-xs mt-2">Read only. Nothing here sends a text.</p>
+  {% else %}
+  <p class="text-stone-500 text-sm">No texts with {{ texts.name }} saved yet.</p>
+  {% endif %}
+</div>

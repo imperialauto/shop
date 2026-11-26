@@ -9,7 +9,16 @@ This module has no side effects, database writes, or outbound messaging.
 from app.models import RepairOrder
 
 
-FINISH_FROM = frozenset(("diagnosing", "in_progress", "waiting_parts", "complete"))
+# A job in one of these is finished with: picked up, or closed as not going ahead (a duplicate or a
+# quote the customer passed on). Everything else is an open job.
+CLOSED_STATUSES = ("delivered", "cancelled")
+
+
+def is_open(ro) -> bool:
+    return (getattr(ro, "status", None) or "intake") not in CLOSED_STATUSES
+
+
+FINISH_FROM = frozenset(("diagnosing", "approval_received", "in_progress", "waiting_parts", "complete"))
 
 
 def status_error(ro: RepairOrder, target: str, role: str) -> tuple[int, str] | None:
@@ -19,6 +28,17 @@ def status_error(ro: RepairOrder, target: str, role: str) -> tuple[int, str] | N
 
     if role == "tech" and target in ("waiting_approval", "approval_received", "delivered"):
         return 403, "Customer approvals and vehicle release are handled by the office."
+
+    if target == "cancelled":
+        if role != "owner":
+            return 403, "Only the owner can close a job as not going ahead."
+        if ro.status == "delivered":
+            return 409, "This job was picked up. It can't be closed as not going ahead."
+        if any(inv.status != "void" for inv in getattr(ro, "invoices", []) or []):
+            return 409, "This job has an invoice. Void it first if the job really isn't going ahead."
+        return None
+    if ro.status == "cancelled" and role != "owner":
+        return 403, "Only the owner can reopen a job that was closed as not going ahead."
 
     lines = ro.line_items
     approved = any(line.approval == "approved" for line in lines)
