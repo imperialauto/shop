@@ -49,11 +49,9 @@
     <a class="queue-filter" href="{{ queue_path|default('/dashboard') }}?view={{ key }}" style="font-size:12px; text-decoration:none; padding:4px 10px; border-radius:999px; {{ 'background:var(--imp-gold); color:var(--imp-on-gold); font-weight:700;' if key == dispatch_view else 'color:var(--imp-muted);' }}"{% if key == dispatch_view %} aria-current="true"{% endif %}>{{ label }}</a>
     {% endfor %}
   </nav>
-  {% for row in dispatch_items %}{% set item = row.item %}
-  {% include "_dispatch_row.html" %}
-  {% else %}
-  <div style="padding:16px; color:var(--imp-muted); font-size:13px;">Nothing here.</div>
-  {% endfor %}
+  <div data-queue-refresh="/dispatch/queue-rows?view={{ dispatch_view }}&back={{ (queue_back|default('/dashboard'))|urlencode }}">
+  {% include "_dispatch_rows.html" %}
+  </div>
   {% for feed in dispatch_health %}
   <div style="padding:8px 16px; font-size:12px; color:{{ 'var(--imp-danger)' if feed.problem else 'var(--imp-muted)' }}; border-top:1px solid var(--imp-line);">
     {{ feed.source|capitalize }}: {% if feed.problem %}needs attention, {{ feed.failures }} failures in a row{% else %}healthy{% endif %}{% if feed.last_success_at %}, last success {{ (feed.last_success_at|shop_time).strftime('%b %d %H:%M') }}{% endif %}

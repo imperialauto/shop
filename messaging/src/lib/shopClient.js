@@ -253,9 +253,10 @@ async function checkCustomerFollowup({ key, customerId, phone, messageId, callId
   });
 }
 
-async function dispatchOutbound({ key, status }) {
+async function dispatchOutbound({ key, status, messageId }) {
   try {
-    return await request("/internal/dispatch/outbound", { method: "POST", body: JSON.stringify({ key, status }) });
+    const body = messageId ? { key, status, messageId } : { key, status };
+    return await request("/internal/dispatch/outbound", { method: "POST", body: JSON.stringify(body) });
   } catch (err) {
     console.error("shopClient.dispatchOutbound failed:", err.message);
     return { recorded: false };

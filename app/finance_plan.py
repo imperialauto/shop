@@ -13,6 +13,7 @@ from app.finance_model import BILL_CATEGORIES, NOTE_PAID_GUESS, NOTE_UNCONFIRMED
 CLOSED_WEEKDAYS = {6}  # Sunday
 DEFAULT_DAILY_GOAL = 500
 WINDOWS = (7, 14, 30)
+MAX_PERIODS = 120  # how many missed periods of one repeating bill are counted or filled in, at most
 JOB_LATE_DAYS = 30
 
 
@@ -152,6 +153,7 @@ class ScopeTotals:
     incoming: list = field(default_factory=list)
     jobs_due: list = field(default_factory=list)   # unpaid balances on sent job invoices
     jobs_in: int = 0                               # the part of expected_in that comes from jobs
+    recorded_in: int = 0                           # job payments and deposits recorded since balances were typed
 
     @property
     def main_account_id(self):
@@ -169,7 +171,9 @@ class ScopeTotals:
         return max(self.owed - self.cash - self.expected_in, 0)
 
 
-def totals(accounts, bills, incoming, today: date, window_days: int, jobs=()) -> dict:
+def totals(accounts, bills, incoming, today: date, window_days: int, jobs=(), recorded_in: int = 0) -> dict:
+    """recorded_in: job payments and deposits recorded since the shop balances were last typed. They count as
+    shop cash on hand until he types a balance again, so recording a payment never makes the target worse."""
     end = today + timedelta(days=window_days - 1)
     out = {scope: ScopeTotals() for scope in SCOPES}
     for account in accounts:
@@ -179,7 +183,11 @@ def totals(accounts, bills, incoming, today: date, window_days: int, jobs=()) ->
         t.accounts.append(account)
         t.cash += account.balance_cents - account.held_cents
         t.held += account.held_cents
-    entered = {(b.name.lower(), b.due_date) for b in bills if b.status == "open"}
+    if out["business"].accounts and recorded_in:
+        out["business"].cash += recorded_in
+        out["business"].recorded_in = recorded_in
+    # Every bill row already on file, paid or skipped too, so a projected period is never counted twice.
+    entered = {(b.name.lower(), b.due_date) for b in bills}
     for bill in sorted(bills, key=lambda b: (b.due_date, b.name)):
         if bill.status != "open":
             continue
@@ -196,17 +204,24 @@ def totals(accounts, bills, incoming, today: date, window_days: int, jobs=()) ->
             t.monthly_costs += bill.amount_cents
         elif bill.repeats == "weekly":
             t.monthly_costs += round(bill.amount_cents * 52 / 12)
-        # A repeating bill comes due again inside a long window (rent in the 30-day view): count those too.
-        following = next_due(bill.due_date, bill.repeats)
-        while following is not None and following <= end:
-            if following >= today and (bill.name.lower(), following) not in entered:
-                t.due_in_window += bill.amount_cents
-                t.window_bills.append(SimpleNamespace(
+        # A repeating bill comes due again: every period it missed up to today is owed too, and so is any
+        # period that falls inside a long window (rent in the 30-day view).
+        following, steps = next_due(bill.due_date, bill.repeats), 0
+        while following is not None and following <= end and steps < MAX_PERIODS:
+            if (bill.name.lower(), following) not in entered:
+                ghost = SimpleNamespace(
                     id=None, name=bill.name, scope=bill.scope, category=bill.category, amount_cents=bill.amount_cents,
-                    due_date=following, repeats=bill.repeats, projected=True))
+                    due_date=following, repeats=bill.repeats, note=bill.note, projected=True, missed=following < today)
+                if following < today:
+                    t.overdue += bill.amount_cents
+                    t.overdue_bills.append(ghost)
+                else:
+                    t.due_in_window += bill.amount_cents
+                    t.window_bills.append(ghost)
                 entered.add((bill.name.lower(), following))
-            following = next_due(following, bill.repeats)
+            following, steps = next_due(following, bill.repeats), steps + 1
     for t in out.values():
+        t.overdue_bills.sort(key=lambda b: (b.due_date, b.name))
         t.window_bills.sort(key=lambda b: (b.due_date, b.name))
     for item in sorted(incoming, key=lambda i: (i.expected_date is None, i.expected_date or today, i.source)):
         if item.status != "expected":

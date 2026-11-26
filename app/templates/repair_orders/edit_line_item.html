@@ -4,6 +4,9 @@
 <div style="max-width:640px;margin:0 auto">
   <a href="/ro/{{ ro_id }}#line-items" class="btn-secondary" style="display:inline-flex;align-items:center;min-height:44px">Back to RO #{{ ro_id }}</a>
   <h1 class="text-xl font-bold my-4">Edit line item</h1>
+  {% if li.approval %}
+  <p class="text-sm text-amber-300 mb-3" role="note">The customer was already asked about this item ({{ {'approved': 'approved', 'pending': 'waiting on them', 'declined': 'declined'}[li.approval] }}). Saving a change puts it back to waiting on them. Nothing is texted until you press Send changes on the job.</p>
+  {% endif %}
   <form method="post" class="card" action="/ro/{{ ro_id }}/edit-line-item/{{ li.id }}">
     <input type="hidden" name="revision" value="{{ revision }}">
     <label for="edit-description" class="form-label">Description</label>

@@ -1,0 +1,6 @@
+{# The Needs-you rows alone. Rendered inside a page and by GET /dispatch/queue-rows for the live refresh. #}
+{% for row in dispatch_items %}{% set item = row.item %}
+{% include "_dispatch_row.html" %}
+{% else %}
+<div class="queue-empty" style="padding:16px; color:var(--imp-muted); font-size:13px;">Nothing here.</div>
+{% endfor %}

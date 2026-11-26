@@ -234,7 +234,7 @@ def require_open_order(db, order_id):
     from app.models import RepairOrder
 
     order = db.get(RepairOrder, order_id)
-    if order is None or order.status == "delivered":
+    if order is None or order.status in ("delivered", "cancelled"):
         raise HTTPException(422, "Enter an open repair order number.")
 
 

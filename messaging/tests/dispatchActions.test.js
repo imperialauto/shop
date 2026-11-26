@@ -12,7 +12,7 @@ function fixture({ newest = "m1", sendError = false, tick = [] } = {}) {
   const quo = {
     listMessages: async () => ({ data: [{ id: "old", createdAt: "2026-11-01" }, { id: newest, createdAt: "2026-11-02" }] }),
     listCalls: async () => ({ data: [] }),
-    sendMessage: async (m) => { if (sendError) throw new Error("timeout"); sends.push(m); },
+    sendMessage: async (m) => { if (sendError) throw new Error("timeout"); sends.push(m); return { id: `AC${sends.length}` }; },
   };
   const shopClient = {
     dispatchOutbound: async (o) => { outcomes.push(o); return { recorded: true }; },
@@ -61,7 +61,18 @@ test("YES sends the approved reply and confirms to the owner", async () => {
   const action = await handleIntakeResult({ result: { customerReply: reply }, messageId: "o1", phone: OWNER, ...f });
   assert.deepEqual(f.sends, [{ to: PHONE, content: "We can help." }, { to: OWNER, content: "Sent #5 to the customer." }]);
   assert.equal(f.outcomes[0].status, "sent");
+  assert.equal(f.outcomes[0].messageId, "AC1");
   assert.equal(action.customerSent, true);
+});
+
+test("a send Quo doesn't confirm with a message id is reported as failed, not sent", async () => {
+  process.env.OWNER_TEXTS_ENABLED = "true";
+  const f = fixture();
+  f.quo.sendMessage = async (m) => { f.sends.push(m); return {}; };
+  f.shopClient.logCommunication = async () => ({});
+  await handleIntakeResult({ result: { customerReply: reply }, messageId: "o1", phone: OWNER, ...f });
+  assert.equal(f.outcomes[0].status, "failed");
+  assert.equal(f.outcomes[0].messageId, undefined);
 });
 
 test("YES stops if anything newer is in the thread", async () => {
@@ -194,7 +205,7 @@ test("a distinct approved selling price can still be sent after private-cost scr
            text: "Can I get a quote?" }],
     }),
     listCalls: async () => ({ data: [] }),
-    sendMessage: async (msg) => sent.push(msg),
+    sendMessage: async (msg) => { sent.push(msg); return { id: `AC${sent.length}` }; },
   };
   const shopClient = {
     dispatchOutbound: async (r) => outcomes.push(r),

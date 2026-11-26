@@ -4,6 +4,8 @@ Jobs:
   - followup_job: daily 9am Phoenix time — texts customers whose estimates are 3+ days old and unscheduled
   - bank_pull_job: 6:30am, 12:30pm and 5:30pm Phoenix time — pulls linked banks into the Money page
     (only once Plaid keys are set; BANK_FEED_AUTO_PULL=false turns it off). Reads banks, sends nothing.
+  - finance_rollover_job: daily 12:15am Phoenix time — adds the next weekly/monthly bill on the Money page once
+    a due day passes (owner's own figures only; sends nothing, never marks a bill paid)
 """
 
 import json
@@ -85,8 +87,27 @@ async def bank_pull_job():
         print(f"[BankFeed] Pull failed: {type(e).__name__}")
 
 
+async def finance_rollover_job():
+    """Rolls repeating Money-page bills forward. Earlier unpaid periods stay open and show as late."""
+    from sqlalchemy.exc import SQLAlchemyError
+    from app.database import SessionLocal
+    from app.routes.finance import phoenix_today, roll_repeating_bills
+
+    db = SessionLocal()
+    try:
+        added = roll_repeating_bills(db, phoenix_today())
+        db.commit()
+        print(f"[Finance] Repeating bills rolled forward — {added} added")
+    except SQLAlchemyError as e:
+        db.rollback()
+        print(f"[Finance] Roll-forward skipped: {e.__class__.__name__}")
+    finally:
+        db.close()
+
+
 def start_scheduler():
     scheduler.add_job(followup_job, "cron", hour=9, minute=0, id="followup_job", replace_existing=True)
     scheduler.add_job(bank_pull_job, "cron", hour="6,12,17", minute=30, id="bank_pull_job", replace_existing=True)
+    scheduler.add_job(finance_rollover_job, "cron", hour=0, minute=15, id="finance_rollover_job", replace_existing=True)
     scheduler.start()
-    print("[Scheduler] Started — follow-up job runs daily at 9:00 AM Phoenix time")
+    print("[Scheduler] Started — follow-up job daily at 9:00 AM, bill roll-forward daily at 12:15 AM Phoenix time")

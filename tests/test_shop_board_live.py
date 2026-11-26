@@ -133,7 +133,9 @@ class BoardLiveTests(unittest.TestCase):
                                 last_message_id="m3"))
             db.commit()
             waiting = shop_board.waiting_on_you(db)
-        self.assertEqual(waiting, {"texts": 1, "calls": 1, "estimates": 3, "total": 5})
+        # Estimates = open jobs with a line waiting on the customer's yes (job 12). Jobs 7 and 11 sit in
+        # waiting_approval with nothing pending, so nobody is actually waiting on those customers.
+        self.assertEqual(waiting, {"texts": 1, "calls": 1, "estimates": 1, "total": 3})
 
     def test_parts_on_order_show_without_prices(self):
         with self.Session() as db:
@@ -187,12 +189,16 @@ class BoardLiveTests(unittest.TestCase):
         self.assertNotIn("Overheating", panel)
 
     def test_waiting_on_customer_lists_approval_jobs_with_how_long(self):
+        three_days = (NOW - timedelta(days=3)).astimezone(timezone.utc).replace(tzinfo=None)
         with self.Session() as db:
-            db.get(RepairOrder, 11).updated_at = (NOW - timedelta(days=3)).astimezone(timezone.utc).replace(tzinfo=None)
+            db.add(LineItem(repair_order_id=11, description="Brakes", approval="pending", created_at=three_days))
+            db.add(LineItem(repair_order_id=7, description="Old quote", approval="pending", created_at=three_days))
+            db.get(LineItem, 1).created_at = (NOW - timedelta(hours=5)).astimezone(timezone.utc).replace(tzinfo=None)
             db.commit()
             rows = shop_board.waiting_on_customer(db, NOW)
-        self.assertEqual([(r["id"], r["who"]) for r in rows], [(11, "Sam")])  # one per car: the newer Fusion job
-        self.assertEqual(rows[0]["wait"], "3 days")
+        # One per car (the newer Fusion job 11), plus job 12's pending head gasket line.
+        self.assertEqual([(r["id"], r["who"]) for r in rows], [(11, "Sam"), (12, "")])
+        self.assertEqual((rows[0]["wait"], rows[1]["wait"]), ("3 days", "5 hr"))
 
     def test_job_clock_shows_time_worked_against_book_time(self):
         with self.Session() as db:

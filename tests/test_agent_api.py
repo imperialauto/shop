@@ -285,21 +285,37 @@ class JobStatusTests(_Setup):
             self.assertEqual(db.get(RepairOrder, ro_id).status, "intake")
             self.assertEqual(db.query(AgentAction).count(), 0)
 
-    def test_complete_and_picked_up_stay_with_the_office(self):
+    def test_ready_for_pickup_sends_no_pickup_text(self):
         from app.dispatch_model import DispatchItem, DispatchOutbound
         _, headers = self.issue()
         ro_id = self.make_job(status="in_progress", approval="approved")
-        for target in ("complete", "delivered", "Complete"):
-            response = self.move(headers, ro_id, target)
-            self.assertEqual(response.status_code, 409, target)
-        done = self.make_job(status="complete", approval="approved")
-        self.assertEqual(self.move(headers, done, "in_progress").status_code, 409)
+        with patch("app.pickup_texts.enabled", return_value=True), \
+                patch("app.customer_file._bridge", side_effect=AssertionError("no Quo call")):
+            response = self.move(headers, ro_id, "Ready for pickup", note="Focus done, road tested")
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual((body["status"], body["previous_status"], body["changed"]), ("complete", "in_progress", True))
+        self.assertIn("No pickup text", body["note"])
         with self.Session() as db:
-            self.assertEqual(db.get(RepairOrder, ro_id).status, "in_progress")
-            self.assertEqual(db.get(RepairOrder, done).status, "complete")
-            self.assertEqual(db.query(AgentAction).count(), 0)
+            self.assertEqual(db.get(RepairOrder, ro_id).status, "complete")
+            self.assertEqual(db.query(AgentAction).one().summary, "in_progress -> complete; Focus done, road tested")
             self.assertEqual(db.query(DispatchItem).count(), 0)
             self.assertEqual(db.query(DispatchOutbound).count(), 0)
+            self.assertEqual(db.query(Communication).count(), 0)
+
+    def test_complete_needs_approved_work_and_picked_up_stays_with_the_office(self):
+        _, headers = self.issue()
+        waiting = self.make_job(status="waiting_approval", approval="pending")
+        self.assertEqual(self.move(headers, waiting, "complete").status_code, 409)
+        ro_id = self.make_job(status="in_progress", approval="approved")
+        for target in ("delivered", "picked up", "Picked-Up"):
+            self.assertEqual(self.move(headers, ro_id, target).status_code, 409, target)
+        gone = self.make_job(status="delivered", approval="approved")
+        self.assertEqual(self.move(headers, gone, "complete").status_code, 409)
+        with self.Session() as db:
+            self.assertEqual(db.get(RepairOrder, ro_id).status, "in_progress")
+            self.assertEqual(db.get(RepairOrder, gone).status, "delivered")
+            self.assertEqual(db.query(AgentAction).count(), 0)
 
     def test_unknown_status_missing_job_and_scope(self):
         _, headers = self.issue()

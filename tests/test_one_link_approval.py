@@ -104,7 +104,7 @@ class OneLinkTests(unittest.TestCase):
     def test_second_press_before_anything_changes_does_not_text_twice(self):
         self.text_now()
         r = self.text_now()
-        self.assertIn("link=already", r.headers["location"])
+        self.assertIn("link=in_flight", r.headers["location"])  # the first is still going out
         self.assertEqual(len(self.outbound()), 1)
 
     def test_new_customer_message_after_send_allows_a_fresh_link(self):
@@ -160,7 +160,7 @@ class OneLinkTests(unittest.TestCase):
         self.assertEqual(self.outbound(), [("dashboard_reply", "queued", item.id)])
         with patch.object(customer_file, "_bridge", thread):
             again = self.client().post("/ro/5/request-approval")
-        self.assertIn("link=already", again.headers["location"])
+        self.assertIn("link=in_flight", again.headers["location"])
         self.assertEqual(len(self.outbound()), 1)
 
     def test_office_ask_for_approval_still_waits_for_the_owner(self):
@@ -237,7 +237,7 @@ class OneLinkTests(unittest.TestCase):
 
     def test_photos_default_to_customer_for_the_office_and_stay_internal_for_techs(self):
         page = self.client("owner").get("/ro/5").text
-        self.assertIn('<option value="customer" selected>', page)
+        self.assertIn('name="visibility" value="customer" checked', page)  # Show customer starts ticked
         self.client("owner").post("/ro/5/attachments", files={"files": ("a.png", PNG, "image/png")}, data={"visibility": "customer"})
         self.client("tech").post("/ro/5/attachments", files={"files": ("b.png", PNG, "image/png")})
         with self.Session() as db:

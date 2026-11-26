@@ -13,7 +13,9 @@ from app.auth import hash_password, verify_password, login_user, logout_user, ge
 from app.routes import customers, vehicles, repair_orders, invoices, ai_assist, webhooks, estimate_gen, sign, internal_messaging, alert_center, appointments, my_day, business_settings_page, dispatch, imperial_tasks, dev_work, live, finance, finance_bank, owner_estimates, owner_setup, public_site, staff
 from app.routes import account_security, local_node, security_center, ro_evidence, agent_api, shop_board
 from app.routes import tags as tag_routes
+from app.routes import changes as change_routes
 from app.routes import job_deposit_routes
+from app.routes import canned_jobs_page
 from app import agent_keys, agent_connector, appointment_feed
 from app.scheduler import start_scheduler
 
@@ -54,6 +56,8 @@ app.include_router(vehicles.router, prefix="/vehicles", tags=["vehicles"])
 app.include_router(local_node.staff_router, prefix="/ro", tags=["local_node"])
 app.include_router(ro_evidence.router, prefix="/ro", tags=["repair_orders"])
 app.include_router(job_deposit_routes.router, prefix="/ro", tags=["repair_orders"])
+app.include_router(__import__("app.routes.parts_tracking", fromlist=["router"]).router, prefix="/ro", tags=["repair_orders"])
+app.include_router(canned_jobs_page.router, tags=["repair_orders"])
 app.include_router(repair_orders.router, prefix="/ro", tags=["repair_orders"])
 app.include_router(tag_routes.router, prefix="/tags", tags=["tags"])
 app.include_router(ro_evidence.public_router, tags=["public"])
@@ -72,6 +76,7 @@ app.include_router(appointment_feed.owner_router, tags=["calendar_feed"])
 app.include_router(security_center.router, tags=["settings"])
 app.include_router(alert_center.router, tags=["alerts"])
 app.include_router(my_day.router, tags=["my_day"])
+app.include_router(change_routes.router, tags=["changes"])
 app.include_router(shop_board.router, tags=["shop_board"])
 app.include_router(public_site.router, tags=["public_site"])
 app.include_router(legacy_redirects.router, tags=["public_site"])
@@ -148,13 +153,15 @@ def read_only_exempt(request: Request) -> bool:
         return True  # the stop switch must work even while read-only
     if request.url.path == "/site/status":
         return True  # looks up a status link and writes nothing
-    if request.url.path in ("/settings/business", "/alerts", "/settings/security-privacy"):
+    if request.url.path in ("/settings/business", "/settings/canned-jobs", "/alerts", "/settings/security-privacy"):
         return True  # owner configuration, audited, checks for the owner itself
     if request.url.path.startswith("/settings/users/"):
         return True  # logins only; these routes check for the owner themselves
     if (request.method == "POST" and request.url.path.startswith("/finance/")
             and not request.url.path.startswith("/finance/jobs/")):  # job sourcing records are shop data
         return True  # owner's own money figures only, audited; these routes check for the owner themselves
+    if request.method == "POST" and request.url.path.startswith("/changes/"):
+        return True  # owner's yes/not now on a code change, kept with history in business_settings; owner-only route
     # The one-time owner claim has its own strong Railway secret + CSRF
     # checks and only updates the sole user credential, not customer data.
     if (request.url.path == "/owner-setup"
@@ -552,6 +559,11 @@ def dashboard(request: Request, view: str = "", db: Session = Depends(get_db)):
     if context["board"]["show_money"]:
         from app.routes.finance import home_goal
         context["goal_bar"] = home_goal(db)
+        try:  # one "money in today" number on Home: the scoreboard's (payments, deposits, money marked Got it)
+            from app.scoreboard import scoreboard
+            context["scoreboard"] = scoreboard(db)
+        except Exception:  # Home still loads; the strip falls back to the goal bar
+            context["scoreboard"] = None
     context["queue_total"] = len(context["dispatch_items"])
     context["dispatch_items"] = context["dispatch_items"][:HOME_QUEUE_ROWS]
     return templates.TemplateResponse("dashboard.html", context)
@@ -573,12 +585,42 @@ def dashboard_inbox(request: Request, view: str = "open", db: Session = Depends(
     return templates.TemplateResponse("inbox.html", context)
 
 
+def _home_jobs(db: Session) -> tuple[list, dict, dict, int]:
+    """Open jobs for Home, one row per customer's vehicle.
+
+    A customer with two open jobs on the same car shows once, as the newest job, with the others linked
+    from that row. Cars at the shop come first. Returns (shown jobs, {job id: [other open jobs]},
+    {job id: car is here}, number of open jobs)."""
+    from sqlalchemy.exc import SQLAlchemyError
+    from app import shop_board
+    from app.models import RepairOrder
+    from app.ro_status_policy import CLOSED_STATUSES
+
+    jobs = db.query(RepairOrder).filter(RepairOrder.status.notin_(CLOSED_STATUSES)).order_by(RepairOrder.id.desc()).all()
+    try:
+        marks = shop_board.lot_marks(db)
+    except SQLAlchemyError:
+        db.rollback()
+        marks = {"here": {}, "away": set()}
+    newest, others = {}, {}
+    for ro in jobs:  # newest first, so the first job seen for a car is the one shown
+        key = (ro.customer_id, ro.vehicle_id)
+        if key in newest:
+            others[newest[key].id].append(ro)
+        else:
+            newest[key] = ro
+            others[ro.id] = []
+    here = {ro.id: shop_board.car_here(ro, marks) for ro in newest.values()}
+    shown = sorted(newest.values(), key=lambda ro: (not here[ro.id], -ro.id))[:HOME_JOB_ROWS]
+    return shown, {ro.id: others[ro.id] for ro in shown}, here, len(jobs)
+
+
 def _home_context(request: Request, db: Session, user: User, view: str) -> dict:
     from datetime import datetime
     from app.appointments import PHOENIX
-    from app.models import RepairOrder
-    open_ros = db.query(RepairOrder).filter(RepairOrder.status != "delivered").order_by(RepairOrder.created_at.desc()).limit(HOME_JOB_ROWS).all()
-    open_count = db.query(RepairOrder).filter(RepairOrder.status != "delivered").count()
+    open_ros, job_others, car_here, open_count = _home_jobs(db)
+    from app import job_flags
+    home_flags = job_flags.open_jobs_with_flags(db, 8)
     queue = dispatch.dashboard_context(db, view)
     for row in queue.get("dispatch_items", []):
         # Days a conversation has waited on the shop; red on Home past LATE_DAYS.
@@ -600,6 +642,9 @@ def _home_context(request: Request, db: Session, user: User, view: str) -> dict:
         "next_steps": steps,
         "job_tags": tag_store.names_for(db, "job", [ro.id for ro in open_ros]),
         "job_days": job_days,  # days a job has sat on the shop's next step
+        "job_others": job_others,  # the customer's other open jobs on the same car, folded into one row
+        "car_here": car_here,  # job id: the car is at the shop (the TV board's Here / Not here)
+        "home_flags": home_flags,
         "late_days": next_action.LATE_DAYS,
         "can_text": user.role in ("owner", "admin", "office"),
         "open_count": open_count,

@@ -5,6 +5,18 @@
 <div class="flex items-center gap-3 mb-2">
   <a href="/ro/" class="text-stone-400 hover:text-gold-300 text-sm">← Repair Orders</a>
   {% if user.role == 'owner' %}<a href="/finance/jobs/{{ ro.id }}" class="text-sm" style="color:var(--imp-gold)" id="owner-sheet-link">Owner sheet: profit and parts</a>{% endif %}
+  {# Car here: the same mark as Home and the shop TV board. Changes only what they show, never the job. #}
+  {% if ro.status not in ('delivered', 'cancelled') %}{% set here = car_here(ro) %}
+  <span id="car-here" style="margin-left:auto">
+    {% if user.role != 'tech' and not request.app.state.read_only %}
+    <form method="post" action="/board/lot/{{ ro.id }}" style="margin:0">
+      <input type="hidden" name="back" value="job">
+      {% if here %}<button class="btn-secondary" style="min-height:44px; color:#7BE0A0; border-color:rgba(123,224,160,.55)" name="operation" value="gone" title="Tap if the car has left">✓ Car here</button>
+      {% else %}<button class="btn-secondary" style="min-height:44px; border-style:dashed" name="operation" value="here" title="Tap when the car is dropped off">Not here yet</button>{% endif %}
+    </form>
+    {% else %}<span class="text-sm" style="{{ 'color:#7BE0A0' if here else 'color:var(--imp-muted)' }}">{{ '✓ Car here' if here else 'Not here yet' }}</span>{% endif %}
+  </span>
+  {% endif %}
 </div>
 
 {% if next_step %}
@@ -22,6 +34,15 @@
   {% else %}
   <a href="{{ next_step.href }}" class="btn-primary" style="min-height:48px">{{ next_step.button }}</a>
   {% endif %}
+</div>
+{% endif %}
+
+{% if flags %}
+<div class="card mb-4" id="job-flags" role="status" style="border-color:rgba(251,191,36,.6); background:rgba(251,191,36,.07);">
+  <p class="text-xs uppercase tracking-wide text-amber-300" style="margin:0">Doesn't add up · {{ flags|length }}</p>
+  <ul style="margin:6px 0 0; padding-left:18px;">
+    {% for f in flags %}<li class="text-sm {{ 'text-amber-200' if f.severity == 'warn' else 'text-stone-300' }}" data-flag="{{ f.code }}" style="margin:2px 0;">{{ f.message }}</li>{% endfor %}
+  </ul>
 </div>
 {% endif %}
 
@@ -56,6 +77,28 @@
     {% endif %}
   </div>
 </div>
+
+{% include "repair_orders/_timer.html" %}
+{% if request.query_params.get('closed_out') %}<p class="text-sm text-green-400 mb-3" role="status">Job marked {{ 'picked up' if request.query_params.get('closed_out') == 'delivered' else 'complete' }}. Nothing was texted to the customer.</p>{% endif %}
+{% if user.role == 'owner' and not closeout_problem %}
+{% set work_lines = ro.line_items|rejectattr('item_type', 'equalto', 'discount')|rejectattr('approval', 'equalto', 'declined')|list %}
+<details class="card mb-4" id="close-out">
+  <summary class="btn-primary cursor-pointer" style="min-height:44px;display:inline-flex;align-items:center">Done and picked up</summary>
+  <form method="post" action="/ro/{{ ro.id }}/close-out" class="mt-3 space-y-2">
+    <p class="text-sm text-stone-300">Tick what the customer agreed to. Ticked items are recorded as approved and marked done. Unticked items are marked not agreed and aren't billed.</p>
+    {% for li in work_lines %}
+    <label class="flex items-center gap-2 text-sm" style="min-height:44px"><input type="checkbox" name="line_ids" value="{{ li.id }}" checked> {{ li.description }} · {{ li.total|money }}{% if li.approval == 'approved' %} <span class="text-green-400 text-xs">(already approved)</span>{% endif %}</label>
+    {% endfor %}
+    <div class="flex flex-wrap gap-4 text-sm">
+      <label class="flex items-center gap-2" style="min-height:44px"><input type="radio" name="source" value="in_person" checked> Agreed in person</label>
+      <label class="flex items-center gap-2" style="min-height:44px"><input type="radio" name="source" value="phone"> By phone</label>
+      <label class="flex items-center gap-2" style="min-height:44px"><input type="checkbox" name="picked_up" value="1" checked> Car is picked up</label>
+    </div>
+    <p class="text-stone-500 text-xs">No text goes to the customer: no pickup text and no review request. No invoice is made; create one if they still owe.</p>
+    <div class="text-right"><button type="submit" class="btn-primary" style="min-height:44px">Close out job</button></div>
+  </form>
+</details>
+{% endif %}
 
 <div class="grid grid-cols-3 gap-4 mb-4">
   <!-- Customer & Vehicle -->
@@ -188,9 +231,8 @@
     {% if progress.total %}<span class="ml-2 normal-case {{ 'text-green-400' if progress.all_done else 'text-stone-300' }}" id="work-progress">{{ progress.done }} of {{ progress.total }} done{% if progress.all_done %} · all work done. Set the job status when it's ready{% endif %}</span>{% endif %}
   </h3>
   {% set qp = request.query_params %}
-  {% if qp.get('upload') == 'failed' %}<p class="text-sm text-red-400 mb-2" role="alert">Nothing was saved: {{ qp.get('why') }}. Try again with a photo (JPG, PNG, WebP, HEIC) or PDF under 10 MB.</p>
-  {% elif qp.get('upload') %}<p class="text-sm text-green-400 mb-2" role="status">Saved {{ qp.get('upload') }} file{{ 's' if qp.get('upload') != '1' }} to this job.{% if qp.get('why') %} Not saved: {{ qp.get('why') }}.{% endif %}</p>{% endif %}
-  {% if qp.get('line_error') == 'amount' %}<p class="text-sm text-amber-300 mb-2" role="alert">Nothing was added: the quantity has to be more than 0, and only a misc (discount) line can have a negative price.</p>
+  {% if qp.get('line_error') == 'amount' %}<p class="text-sm text-amber-300 mb-2" role="alert">Nothing was added: the quantity has to be more than 0, and only a misc line can have a negative price. For money off, pick Discount and type the amount off.</p>
+  {% elif qp.get('line_error') == 'discount_too_big' %}<p class="text-sm text-amber-300 mb-2" role="alert">Nothing was added: the discounts would be more than the job's charges.</p>
   {% elif qp.get('line_error') == 'description' %}<p class="text-sm text-amber-300 mb-2" role="alert">Nothing was added: give the line a description.</p>
   {% elif qp.get('line_error') == 'invoiced' %}<p class="text-sm text-amber-300 mb-2" role="alert">Nothing was added: this job's invoice was already sent, signed or paid. Void it and create a new one to add charges.</p>
   {% elif qp.get('line_added') == 'invoice' %}<p class="text-sm text-green-400 mb-2" role="status">Line added, and the draft invoice total was updated to match.</p>{% endif %}
@@ -211,11 +253,11 @@
     <tbody>
       {% for li in ro.line_items %}
       <tr>
-        <td>{{ li.description }}{% if li.approval == 'pending' %} <span class="text-yellow-400 text-xs">Waiting on customer</span>{% elif li.approval == 'approved' %} <span class="text-green-400 text-xs">{% if li.approval_source == 'in_person' %}Approved in person{% elif li.approval_source == 'phone' %}Approved by phone{% elif li.approval_source == 'text' %}Approved by text{% else %}Approved{% endif %}{% if li.approval_recorded_by %} · recorded by {{ li.approval_recorded_by }}{% endif %}</span>{% elif li.approval == 'declined' %} <span class="text-red-400 text-xs">Declined, not billed</span>{% endif %}</td>
+        <td>{{ li.description }}{% if li.approval == 'pending' %} <span class="text-yellow-400 text-xs">Waiting on customer</span>{% elif li.approval == 'approved' %} <span class="text-green-400 text-xs">{% if li.approval_source == 'in_person' %}Approved in person{% elif li.approval_source == 'phone' %}Approved by phone{% elif li.approval_source == 'text' %}Approved by text{% else %}Approved{% endif %}{% if li.approval_recorded_by %} · recorded by {{ li.approval_recorded_by }}{% endif %}</span>{% elif li.approval == 'declined' %} <span class="text-red-400 text-xs">Declined, not billed</span>{% endif %}{% if li.id in changes.changed_ids %}{% for c in changes.changed if c.line.id == li.id %} <span class="text-amber-300 text-xs">Changed, was {{ c.was.total|money }} ({{ c.was_label }})</span>{% endfor %}{% elif li.id in changes.new_ids %} <span class="text-amber-300 text-xs">New since they answered</span>{% endif %}</td>
         <td class="text-stone-400">{{ li.item_type }}</td>
         <td class="text-right text-stone-400">{{ li.quantity }}</td>
-        <td class="text-right text-stone-400">${{ "%.2f"|format(li.unit_price) }}</td>
-        <td class="text-right font-semibold">${{ "%.2f"|format(li.total) }}</td>
+        <td class="text-right text-stone-400">{{ li.unit_price|money }}</td>
+        <td class="text-right font-semibold{% if li.total < 0 %} text-green-400{% endif %}">{{ li.total|money }}</td>
         <td id="work-{{ li.id }}">
           {% if li.completed_at %}
           <span class="text-green-400 text-xs">✓ Done{% if li.completed_by %} · {{ li.completed_by }}{% endif %}</span>
@@ -229,7 +271,7 @@
           {% else %}<span class="text-stone-500 text-xs">{{ 'Not approved' if li.approval == 'declined' else 'Waiting on approval' }}</span>{% endif %}
         </td>
         <td>
-          {% if user.role in ("owner", "admin", "office") and li.approval is none and not ro.invoices %}
+          {% if user.role in ("owner", "admin", "office") and li.item_type != 'discount' and not li.completed_at and ro.status not in ('delivered', 'cancelled') and not ro.invoices|selectattr('status', 'ne', 'void')|list %}
           <a href="/ro/{{ ro.id }}/edit-line-item/{{ li.id }}" class="btn-secondary text-xs" style="display:inline-flex;align-items:center;min-height:44px" aria-label="Edit {{ li.description }}">Edit</a>
           {% endif %}
           {% if user.role in ("owner", "admin", "office") and li.approval is none and not ro.invoices and not li.completed_at %}
@@ -249,6 +291,9 @@
     </tbody>
   </table>
   <div class="text-right text-gold-300 font-bold">Subtotal: ${{ "%.2f"|format(subtotal) }}</div>
+  {% if user.role != 'tech' and ro.line_items %}
+  <div class="text-right mt-2"><a href="/ro/{{ ro.id }}/estimate.pdf" target="_blank" rel="noopener" class="btn-secondary inline-flex items-center" style="min-height:44px" id="print-estimate">Print estimate (PDF)</a></div>
+  {% endif %}
   {% if user.role != 'tech' %}
   <form method="post" action="/ro/{{ ro.id }}/estimate-location" class="mt-3 flex flex-wrap items-center gap-2">
     <input type="hidden" name="offsite" value="{{ 'no' if offsite_estimate else 'yes' }}">
@@ -259,8 +304,9 @@
   {% set link = request.query_params.get('link', '') %}
   {% if link.startswith('queued') %}<p class="text-sm text-green-400 mt-2">Approval text is waiting for you as #{{ link[6:] }}. Reply YES {{ link[6:] }} to the alert, or approve it on the dashboard, to text the customer their link. Nothing has been sent yet.</p>
   {% elif link == 'no_phone' %}<p class="text-sm text-amber-300 mt-2">This customer has no mobile number, so no text was queued. <a class="underline" href="/customers/{{ ro.customer_id }}/edit">Add one</a>, then tap the button again. Their link: <span class="text-stone-200 break-all">{{ public_base() }}/sign/ro/{{ ro.public_token }}</span></p>
-  {% elif link.startswith('sending') %}<p class="text-sm text-green-400 mt-2">Texting their link now from the shop line. It shows their estimate, photos and inspection in one place, where they approve or decline each item.</p>
-  {% elif link.startswith('already') %}<p class="text-sm text-stone-300 mt-2">Their link already went out and they haven't texted since, so it wasn't sent again.</p>
+  {% elif link.startswith('sending') %}<p class="text-sm text-green-400 mt-2">Handed to the shop line. It shows as sent here once Quo confirms it went out.</p>
+  {% elif link.startswith('already') %}<p class="text-sm text-stone-300 mt-2">Quo confirmed their link went out and they haven't texted since, so it wasn't sent again. If they say they never got it, use Send it again.</p>
+  {% elif link == 'in_flight' %}<p class="text-sm text-stone-300 mt-2">The last text is still with the shop line, so nothing new was sent. Check back in a few minutes.</p>
   {% elif link == 'texted' %}<p class="text-sm text-stone-300 mt-2">Their link was already texted from the shop line and they haven't replied since, so it wasn't sent again.</p>
   {% elif link == 'paused' %}<p class="text-sm text-amber-300 mt-2">Texting is stopped. Resume it on the dashboard, then tap Text link now again. Nothing was sent.</p>
   {% elif link == 'nothing' %}<p class="text-sm text-stone-300 mt-2">Nothing is waiting on the customer, so no link was sent.</p>
@@ -274,8 +320,8 @@
   {% elif approve_error == 'invoiced' %}<p role="alert" class="text-sm text-amber-300 mt-2">This job already has an invoice without those items. Void the invoice first, then mark them approved.</p>{% endif %}
   {% set open_to_approve = ro.line_items|rejectattr('approval', 'equalto', 'approved')|list %}
   {% if open_to_approve %}
-  <details class="mt-3" {% if approve_error %}open{% endif %}>
-    <summary class="text-sm text-stone-300 cursor-pointer" style="min-height:44px;display:flex;align-items:center;justify-content:flex-end">Customer already said yes in person or by phone?</summary>
+  <details class="mt-3" {% if approve_error or not pending %}open{% endif %} id="approve-in-person">
+    <summary class="btn-secondary cursor-pointer" style="min-height:44px;display:inline-flex;align-items:center">Customer said yes in person or by phone</summary>
     <form method="post" action="/ro/{{ ro.id }}/approve-in-person" class="mt-2 space-y-2">
       {% for li in open_to_approve %}
       <label class="flex items-center gap-2 text-sm" style="min-height:44px"><input type="checkbox" name="line_ids" value="{{ li.id }}" checked> {{ li.description }} · ${{ "%.2f"|format(li.total) }}{% if li.approval == 'declined' %} <span class="text-red-400 text-xs">(declined before)</span>{% endif %}</label>
@@ -289,12 +335,42 @@
     </form>
   </details>
   {% endif %}
+  {% if request.query_params.get('line_changed') == 'back' %}<p class="text-sm text-amber-300 mt-2">Saved. That item is back to waiting on the customer. Nothing was texted. Press Send changes when you're ready.</p>
+  {% elif request.query_params.get('line_changed') == 'restored' %}<p class="text-sm text-green-400 mt-2">Saved. It's back to what the customer last answered, so their answer stands.</p>
+  {% elif request.query_params.get('line_removed') %}<p class="text-sm text-green-400 mt-2">Line removed. Nothing was texted.</p>{% endif %}
+  {% if has_changes %}
+  <div class="mt-3 rounded border border-amber-700 p-3 text-sm text-stone-200" id="changes-panel">
+    Changed since {{ ro.customer.first_name or 'the customer' }} last answered: {{ changes.changed|length }} changed, {{ changes.new|length }} new{% if changes.removed %}, {{ changes.removed|length }} removed{% endif %}.
+    {% if changes.kept %}{{ changes.kept }} approved item{{ 's' if changes.kept != 1 }} stay approved.{% endif %}
+    Their link shows only what changed.
+  </div>
+  {% endif %}
   {% if can_text_link and (undecided or pending) %}
   <form method="post" action="/ro/{{ ro.id }}/text-link-now" class="mt-3 text-right">
     <label style="margin-right:10px;display:inline-flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" name="offer_snap" value="1"> Offer Snap Finance</label>
-    <button type="submit" class="btn-primary" style="min-height:44px">Text {{ ro.customer.first_name or 'customer' }} their approval link now</button>
+    <button type="submit" class="btn-primary" style="min-height:44px">{% if has_changes %}Send changes to {{ ro.customer.first_name or 'customer' }} for approval{% else %}Text {{ ro.customer.first_name or 'customer' }} their approval link now{% endif %}</button>
     <p class="text-stone-500 text-xs mt-1">Sends from the shop line to {{ ro.customer.phone or 'their number' }}. One link shows the estimate, photos and inspection, and they approve or decline each item there.</p>
   </form>
+  {% endif %}
+  {% if approval_send and (approval_send.last or approval_send.sign_link) %}{% set a = approval_send %}
+  <div class="mt-3 rounded border border-stone-700 p-3 text-sm" id="approval-text">
+    {% if a.last %}
+    <p>{% if a.last.state == 'sent' %}<span class="text-green-400">Approval text sent</span>, confirmed by Quo {{ a.last.at|shop_time if a.last.at else '' }}.
+       {% elif a.last.state == 'waiting' %}<span class="text-stone-300">Approval text is with the shop line</span>, not confirmed yet.
+       {% else %}<span class="text-amber-300">Approval text not sent:</span> {{ a.last.why }}.{% endif %}</p>
+    {% if a.last.state != 'waiting' %}
+    <form method="post" action="/ro/{{ ro.id }}/resend-link" class="mt-2" data-confirm="Text {{ ro.customer.first_name or 'the customer' }} their approval link again from the shop line?">
+      <button type="submit" class="btn-secondary" style="min-height:44px">Send it again</button>
+    </form>
+    {% endif %}
+    {% endif %}
+    {% if a.sign_link %}
+    <div class="mt-2 flex flex-wrap items-center gap-2">
+      <input type="text" readonly value="{{ a.sign_link }}" aria-label="Approval link" class="flex-1 min-w-0 text-xs" id="sign-link-{{ ro.id }}" onfocus="this.select()">
+      <button type="button" class="btn-secondary" style="min-height:44px" onclick="navigator.clipboard&&navigator.clipboard.writeText(document.getElementById('sign-link-{{ ro.id }}').value).then(()=>{this.textContent='Copied'})">Copy link</button>
+    </div>
+    {% endif %}
+  </div>
   {% endif %}
   {% if can_text_link %}
   {# The owner's button above already texts the link; the queue buttons are for office staff. #}
@@ -370,6 +446,7 @@
         <option value="part">Part</option>
         <option value="sublet">Sublet</option>
         <option value="misc">Misc</option>
+        <option value="discount">Discount ($ off)</option>
       </select>
     </div>
     <div>
@@ -396,6 +473,7 @@
       <span class="text-stone-600 text-xs">← searches vehicle + description</span>
     </div>
   </form>
+  {% include "repair_orders/_canned.html" %}
 </div>
 
 <div class="card mb-4" id="inspection">
@@ -427,55 +505,9 @@
   <p class="text-stone-500 text-xs mt-1">Areas left on Not checked don't show. Saving changes no prices and texts nobody.</p>
 </div>
 
-<div class="card mb-4" id="evidence">
-  <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Photos &amp; files</h3>
-  <form method="post" action="/ro/{{ ro.id }}/attachments" enctype="multipart/form-data" class="grid gap-2" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); align-items:end;">
-    <div>
-      <label class="form-label" for="ev-files">Add photos or PDF</label>
-      <input id="ev-files" type="file" name="files" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf" multiple required class="form-input" style="min-height:44px" />
-    </div>
-    <div>
-      <label class="form-label" for="ev-line">For line (optional)</label>
-      <select id="ev-line" name="line_item_id" class="form-select" style="min-height:44px">
-        <option value="">Whole job</option>
-        {% for li in ro.line_items %}<option value="{{ li.id }}">{{ li.description[:60] }}</option>{% endfor %}
-      </select>
-    </div>
-    {% if user.role in ("owner", "admin", "office") %}
-    <div>
-      <label class="form-label" for="ev-vis">Who can see it</label>
-      <select id="ev-vis" name="visibility" class="form-select" style="min-height:44px">
-        <option value="customer" selected>Customer too (status page)</option>
-        <option value="internal">Shop only</option>
-      </select>
-    </div>
-    {% endif %}
-    <div><button type="submit" class="btn-secondary" style="min-height:44px">Upload</button></div>
-  </form>
-  <p class="text-stone-500 text-xs mt-1">JPG, PNG, WebP, HEIC or PDF, up to 10 MB each. Uploading doesn't change the job, its prices, or the invoice.</p>
-  {% if attachments %}
-  {% set line_names = {} %}{% for li in ro.line_items %}{% set _ = line_names.update({li.id: li.description}) %}{% endfor %}
-  <ul class="mt-3 grid gap-3" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); list-style:none; padding:0;">
-    {% for a in attachments %}
-    <li class="text-xs" id="file-{{ a.id }}">
-      <a href="/ro/{{ ro.id }}/attachments/{{ a.id }}" target="_blank" rel="noopener">
-        {% if a.content_type in ('image/jpeg', 'image/png', 'image/webp') %}<img src="/ro/{{ ro.id }}/attachments/{{ a.id }}" alt="{{ a.filename }}" loading="lazy" style="width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:6px;">
-        {% else %}<span class="block p-4 text-center" style="border:1px solid var(--imp-line,#444); border-radius:6px;">{{ 'PDF' if a.content_type == 'application/pdf' else 'HEIC photo' }}</span>{% endif %}
-      </a>
-      <div class="text-stone-300 mt-1" style="overflow-wrap:anywhere;">{{ a.filename }}</div>
-      <div class="text-stone-500">{{ line_names.get(a.line_item_id, 'Whole job') }} · {{ a.uploaded_by }}</div>
-      <div class="{{ 'text-green-400' if a.visibility == 'customer' else 'text-stone-500' }}">{{ 'Customer can see' if a.visibility == 'customer' else 'Shop only' }}</div>
-      {% if user.role in ("owner", "admin", "office") %}
-      <form method="post" action="/ro/{{ ro.id }}/attachments/{{ a.id }}/visibility">
-        <input type="hidden" name="visibility" value="{{ 'internal' if a.visibility == 'customer' else 'customer' }}">
-        <button type="submit" class="underline text-stone-400" style="min-height:44px">{{ 'Make shop only' if a.visibility == 'customer' else 'Show customer' }}</button>
-      </form>
-      {% endif %}
-    </li>
-    {% endfor %}
-  </ul>
-  {% else %}<p class="text-stone-500 text-sm mt-3">No photos or files on this job yet.</p>{% endif %}
-</div>
+{% include "repair_orders/_photos_card.html" %}
+
+{% include "repair_orders/_parts_card.html" %}
 
 {% if sourced_parts %}
 <!-- Internal parts cost is not an approved customer selling price. -->
@@ -509,47 +541,7 @@
 </div>
 {% endif %}
 
-<!-- Communications -->
-<div class="card mb-4">
-  <div class="flex items-center justify-between mb-3">
-    <h3 class="text-xs text-stone-400 uppercase tracking-wide">Message History</h3>
-    {% if ro.customer.phone %}
-    <a href="tel:{{ ro.customer.phone }}" class="text-xs text-gold-400 hover:underline">
-      📞 {{ ro.customer.phone }}
-    </a>
-    {% endif %}
-  </div>
-
-  {% if comms %}
-  <div class="flex flex-col gap-2 max-h-96 overflow-y-auto pr-1" id="comms-thread">
-    {% for comm in comms %}
-    <div class="flex {% if comm.direction == 'outbound' %}justify-end{% else %}justify-start{% endif %}">
-      <div class="max-w-xs lg:max-w-md">
-        {# Channel badge above bubble #}
-        <div class="text-xs text-stone-500 mb-0.5 {% if comm.direction == 'outbound' %}text-right{% endif %}">
-          {{ comm.channel | upper }} · {{ (comm.created_at|shop_time).strftime('%b %d, %I:%M %p') }}
-        </div>
-        <div class="px-3 py-2 rounded-2xl text-sm leading-snug
-          {% if comm.direction == 'outbound' %}
-            bg-yellow-500 text-stone-900 rounded-br-sm
-          {% else %}
-            bg-stone-700 text-stone-100 rounded-bl-sm
-          {% endif %}">
-          {{ comm.body }}
-        </div>
-      </div>
-    </div>
-    {% endfor %}
-  </div>
-  <script>
-    // Auto-scroll to bottom of thread on load
-    const thread = document.getElementById('comms-thread');
-    if (thread) thread.scrollTop = thread.scrollHeight;
-  </script>
-  {% else %}
-  <p class="text-stone-500 text-sm">No messages yet. Messages from the SMS intake bot will appear here.</p>
-  {% endif %}
-</div>
+{% include "repair_orders/_texts_card.html" %}
 
 {% if user.role == 'owner' %}
 <details class="card mt-4 border border-red-900/60">

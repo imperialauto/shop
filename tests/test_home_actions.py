@@ -52,7 +52,9 @@ class HomeActionTests(unittest.TestCase):
         db.close()
         self.assertFalse(goal["bills"])
         self.assertEqual(goal["target"], goal["goal"])
-        self.assertIn("Bills covered", self.client.get("/dashboard").text)
+        html = self.client.get("/dashboard").text
+        self.assertIn("Money in today", html)
+        self.assertIn("Week $", html)  # scoreboard line: the week so far against the goal
 
     def test_job_row_has_one_tap_step_and_turns_red_after_two_days(self):
         html = self.client.get("/dashboard").text
@@ -60,7 +62,9 @@ class HomeActionTests(unittest.TestCase):
         self.assertIn('data-confirm="Ask for approval for job #1?', html)
         self.assertIn('class="h-row h-job late"', html)
         self.assertIn("3 days", html)
-        self.assertIn('href="/customers/1#reply-text"', html)
+        # One next-step button per job row; texting the customer lives on their file, not on every row.
+        self.assertNotIn('href="/customers/1#reply-text"', html)
+        self.assertIn('action="/board/lot/1"', html)  # the car-here toggle
 
     def test_status_step_comes_back_home(self):
         r = self.client.post("/ro/1/update-status?back=home", data={"status": "intake"},

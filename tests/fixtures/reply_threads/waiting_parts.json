@@ -1,0 +1,14 @@
+{
+  "_note": "Synthetic test thread. Not a real customer.",
+  "customer": {"first_name": "Testy"},
+  "vehicle": {"label": "2015 Ford F-250"},
+  "conversation": [
+    {"direction": "outbound", "body": "Hi Testy, got the injector ordered. I'll keep you posted. - Jae"},
+    {"direction": "outbound", "body": "Hi Testy, quick update: still waiting on that part. - Jae"},
+    {"direction": "inbound", "body": "when will it be done?"}
+  ],
+  "job": {"id": 9001, "status": "waiting_parts", "total": 1234.5, "deposits_paid": 600,
+          "approvals": {"pending": 0, "approved": 3, "declined": 0, "not_sent": 0},
+          "parts": [{"description": "fuel injector", "status": "ordered", "eta": null}],
+          "status_link": null, "invoice": null, "appointment": null, "promised_at": null}
+}

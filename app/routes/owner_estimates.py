@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
+from app.ro_status_policy import CLOSED_STATUSES
 from app import owner_sheet
 from app.auth import get_current_user
 from app.database import get_db
@@ -39,11 +40,11 @@ def job_list(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse("/login", status_code=302)
     since = datetime.utcnow() - timedelta(days=30)
     ros = (db.query(RepairOrder)
-           .filter((RepairOrder.status != "delivered") | (RepairOrder.updated_at >= since))
+           .filter((RepairOrder.status.notin_(CLOSED_STATUSES)) | (RepairOrder.updated_at >= since))
            .order_by(RepairOrder.id.desc()).limit(60).all())
     sheets = [owner_sheet.build(db, ro) for ro in ros]
     sheets = [s for s in sheets if s["main"].revenue or s["optional"]]
-    open_approved = [s for s in sheets if s["approved"] and s["ro"].status != "delivered"]
+    open_approved = [s for s in sheets if s["approved"] and s["ro"].status not in CLOSED_STATUSES]
     summary = {
         "jobs": len(open_approved),
         "revenue": round(sum(s["main"].revenue for s in open_approved), 2),

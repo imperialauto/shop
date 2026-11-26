@@ -11,8 +11,9 @@ Deliberately limited:
   already been asked to approve or that is invoiced, except one thing behind its own
   scope (estimates:send): texting a job's approval link, through the same send as the
   owner's Ask for approval button, so it is logged on the job and never sent twice;
-* a job's status can be moved on the board, but never to Complete or Picked up,
-  because those can text the customer (pickup text, review request);
+* a job's status can be moved on the board, including to Complete (ready for pickup),
+  but the status-driven texts (pickup text) are not fired from here, and Picked up
+  (delivered) stays with the office because it can send the review request;
 * every change is written to agent_actions in the same transaction.
 Read-only (recovery) mode still blocks every write, as for staff.
 """
@@ -24,7 +25,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app import agent_keys, next_action, ro_status_policy, website_alerts
+from app import line_changes, agent_keys, estimate_pdf, next_action, ro_status_policy, website_alerts
 from app.agent_keys import AgentKey
 from app.appointment_model import Appointment
 from app.database import get_db
@@ -94,13 +95,16 @@ def customer_json(c: Customer, detail: bool = False) -> dict:
 
 def line_json(li: LineItem) -> dict:
     return {"id": li.id, "description": li.description, "item_type": li.item_type, "quantity": li.quantity,
-            "unit_price": li.unit_price, "taxable": li.taxable, "approval": li.approval, "total": li.total}
+            "unit_price": li.unit_price, "taxable": li.taxable, "approval": li.approval, "total": li.total,
+            "changed_from": (lambda w: {"total": w.get("total"), "description": w.get("description"),
+                                        "approval": w.get("approval")} if w else None)(line_changes.was(li))}
 
 
 def job_json(ro: RepairOrder) -> dict:
     return {"id": ro.id, "customer_id": ro.customer_id, "vehicle_id": ro.vehicle_id, "status": ro.status,
             "concern": ro.concern, "tech_notes": ro.tech_notes, "mileage_in": ro.mileage_in,
-            "invoiced": bool(ro.invoices), "lines": [line_json(li) for li in ro.line_items]}
+            "invoiced": bool(ro.invoices), "lines": [line_json(li) for li in ro.line_items],
+            "totals": estimate_pdf.totals(ro)}
 
 
 # ---------------------------------------------------------------- inputs
@@ -148,10 +152,39 @@ class VehicleIn(BaseModel):
 
 class LineIn(BaseModel):
     description: str = Field(min_length=1, max_length=2000)
-    item_type: str = Field(default="labor", pattern="^(labor|part|sublet|misc)$")
+    item_type: str = Field(default="labor", pattern="^(labor|part|sublet|misc|discount)$",
+                           description="labor, part, sublet, misc, or discount. A discount is money off the job: "
+                           "give unit_price as the positive amount off (75 for $75 off). It is saved as a "
+                           "negative, untaxed line the shop has already approved, so the customer sees it as "
+                           "money off on the approval page and invoice.")
     quantity: float = Field(default=1.0, gt=0, le=10_000)
     unit_price: float = Field(default=0.0, ge=0, le=1_000_000)
     taxable: bool = True
+
+
+class LineUpdate(BaseModel):
+    """Only the fields sent change."""
+    description: str | None = Field(default=None, min_length=1, max_length=2000)
+    item_type: str | None = Field(default=None, pattern="^(labor|part|sublet|misc)$")
+    quantity: float | None = Field(default=None, gt=0, le=10_000)
+    unit_price: float | None = Field(default=None, ge=0, le=1_000_000)
+    taxable: bool | None = None
+
+    _clean = field_validator("description", mode="before")(_blank_to_none)
+
+
+def _add_line(db: Session, ro: RepairOrder, line: LineIn, actor: str) -> None:
+    if line.item_type == "discount":
+        from app import discounts
+        try:
+            discounts.add(db, ro, line.description, line.unit_price * line.quantity, actor)
+        except discounts.DiscountError as exc:
+            if str(exc) == "too_big":
+                raise HTTPException(422, "The discounts would be more than the job's charges.") from None
+            raise HTTPException(422, "A discount needs a description and an amount off above 0.") from None
+        return
+    db.add(LineItem(repair_order_id=ro.id, **line.model_dump()))
+    db.flush()
 
 
 class CustomerUpdate(BaseModel):
@@ -175,17 +208,24 @@ class JobIn(BaseModel):
     mileage_in: int | None = Field(default=None, ge=0, le=5_000_000)
 
 
-# Board columns the assistant may move a job to. Complete and Delivered (picked up) are left out
-# on purpose: app.job_events can text the customer from them, so the office does those on the dashboard.
+# Board columns the assistant may move a job to. Complete (ready for pickup) is allowed, but
+# app.job_events is not fired, so no pickup text goes out from here. Delivered (picked up) is left
+# out on purpose: it can send the review request, so the office does it on the dashboard.
 AGENT_STATUSES = {
     "intake": "Intake",
     "diagnosing": "Diagnosing",
-    "waiting_parts": "Waiting Parts",
+    "waiting_parts": "Parts ordered",
     "in_progress": "In Progress",
     "waiting_approval": "Waiting Approval",
     "approval_received": "Approval Received",
+    "complete": "Complete",  # the board's ready-for-pickup column
+    "cancelled": "Closed, not going ahead",  # a duplicate or a quote the customer passed on; reopen any time
 }
-OFFICE_ONLY_STATUSES = ("complete", "delivered")
+STATUS_ALIASES = {"ready_for_pickup": "complete", "ready": "complete", "completed": "complete", "done": "complete",
+                  "picked_up": "delivered", "parts_ordered": "waiting_parts", "ordered_parts": "waiting_parts",
+                  "canceled": "cancelled", "closed": "cancelled", "not_going_ahead": "cancelled",
+                  "duplicate": "cancelled"}
+OFFICE_ONLY_STATUSES = ("delivered",)
 
 
 class JobStatusIn(BaseModel):
@@ -411,8 +451,9 @@ def create_estimate(payload: EstimateIn, db: Session = Depends(get_db),
                     key: AgentKey = Depends(agent("estimates:write"))):
     """Start a job with draft estimate lines. Nothing is sent; staff send it for approval."""
     ro = _new_job(db, payload.customer_id, payload.vehicle_id, payload.concern, payload.mileage_in)
-    for line in payload.lines:
-        db.add(LineItem(repair_order_id=ro.id, **line.model_dump()))
+    for line in sorted(payload.lines, key=lambda x: x.item_type == "discount"):
+        _add_line(db, ro, line, f"assistant:{key.name}"[:64])
+        db.refresh(ro)
     agent_keys.record(db, key, "estimate.create", "repair_order", ro.id,
                       f"{len(payload.lines)} line(s); {(payload.concern or '')[:200]}")
     db.commit()
@@ -430,10 +471,13 @@ def add_lines(ro_id: int, lines: list[LineIn], db: Session = Depends(get_db),
         raise HTTPException(404, "Job not found.")
     if ro.invoices:
         raise HTTPException(409, "This job already has an invoice. Staff must review charges.")
-    if ro.status in ("complete", "delivered"):
+    if ro.status in ("complete", "delivered", "cancelled"):
         raise HTTPException(409, "This job is finished. Staff must review charges.")
-    for line in lines:
-        db.add(LineItem(repair_order_id=ro.id, **line.model_dump()))
+    actor = f"assistant:{key.name}"[:64]
+    # Charges first, so a discount sent with them is measured against them.
+    for line in sorted(lines, key=lambda x: x.item_type == "discount"):
+        _add_line(db, ro, line, actor)
+        db.refresh(ro)
     agent_keys.record(db, key, "estimate.add_lines", "repair_order", ro.id,
                       "; ".join(line.description[:60] for line in lines))
     db.commit()
@@ -452,15 +496,16 @@ def set_job_status(ro_id: int, payload: JobStatusIn, db: Session = Depends(get_d
     """Move a job to another board column, with the same checks as the job page's status menu.
     Nothing is sent to the customer."""
     target = (payload.status or "").strip().lower().replace(" ", "_").replace("-", "_")
+    target = STATUS_ALIASES.get(target, target)
     if target in OFFICE_ONLY_STATUSES:
-        raise HTTPException(409, "Complete and Picked up can text the customer, so the office marks those on the dashboard.")
+        raise HTTPException(409, "Picked up can text the customer a review request, so the office marks it on the dashboard.")
     if target not in AGENT_STATUSES:
         raise HTTPException(422, "Unknown status. Use one of: " + ", ".join(AGENT_STATUSES) + ".")
     ro = db.get(RepairOrder, ro_id)
     if ro is None:
         raise HTTPException(404, "Job not found.")
     if ro.status in OFFICE_ONLY_STATUSES:
-        raise HTTPException(409, f"This job is already {ro.status}. The office moves finished jobs on the dashboard.")
+        raise HTTPException(409, "This job is already picked up. The office moves picked-up jobs on the dashboard.")
     blocked = ro_status_policy.status_error(ro, target, "owner")
     if blocked:
         raise HTTPException(*blocked)
@@ -475,7 +520,129 @@ def set_job_status(ro_id: int, payload: JobStatusIn, db: Session = Depends(get_d
         db.refresh(ro)
     data = job_json(ro)
     data.update(previous_status=before, changed=target != before, next_step=_next_step(db, ro))
+    if target == "complete" and target != before:
+        data["note"] = "Marked ready for pickup. No pickup text was sent; the customer hasn't been told."
     return data
+
+
+def _editable_line(db: Session, ro_id: int, line_id: int) -> LineItem:
+    """Same rules as the job page's line editor: any line on an open job with no invoice, except
+    discount lines and lines marked done. A line the customer was already asked about goes back to
+    waiting on them when it changes (see app.line_changes); nothing is texted from here."""
+    li = db.get(LineItem, line_id)
+    if li is None or li.repair_order_id != ro_id:
+        raise HTTPException(404, "That line isn't on this job.")
+    ro = li.repair_order
+    if ro.status in ("complete", "delivered", "cancelled"):
+        raise HTTPException(409, "This job is finished or closed. Staff must review charges.")
+    problem = line_changes.edit_problem(li)
+    if problem:
+        raise HTTPException(problem.status, problem.message)
+    return li
+
+
+def _line_brief(li: LineItem) -> str:
+    return f"{li.description[:50]} {li.quantity:g} x ${li.unit_price:,.2f} ({li.item_type}{'' if li.taxable else ', no tax'})"
+
+
+@router.patch("/jobs/{ro_id}/lines/{line_id}")
+def update_line(ro_id: int, line_id: int, payload: LineUpdate, db: Session = Depends(get_db),
+                key: AgentKey = Depends(agent("estimates:write"))):
+    """Change an estimate line. A line the customer was already asked about (waiting, approved or
+    declined) goes back to waiting on them, and their approval page shows it as changed. Totals come
+    back recalculated. Nothing is sent to anyone: the owner texts the changes from the job page or
+    with send_approval_request."""
+    li = _editable_line(db, ro_id, line_id)
+    changes = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
+    if not changes:
+        raise HTTPException(422, "Send at least one of description, item_type, quantity, unit_price or taxable.")
+    before = _line_brief(li)
+    try:
+        result = line_changes.revise(db, li, f"assistant:{key.key_prefix}", **changes)
+    except line_changes.LineChangeError as exc:
+        raise HTTPException(exc.status, exc.message) from None
+    after = _line_brief(li)
+    if result["changed"]:
+        agent_keys.record(db, key, "estimate.edit_line", "repair_order", ro_id, f"line {li.id}: {before} -> {after}"[:500])
+        db.commit()
+    db.refresh(li.repair_order)
+    data = job_json(li.repair_order)
+    data.update(changed=result["changed"], line=line_json(li))
+    if result["back_to_customer"]:
+        data["note"] = ("The customer had already been asked about this line, so it's back to waiting on them. "
+                        "Nothing was texted. Send the changes when the owner says to.")
+    elif result["restored"]:
+        data["note"] = "Back to what the customer last answered, so their answer stands again."
+    return data
+
+
+@router.delete("/jobs/{ro_id}/lines/{line_id}")
+def remove_line(ro_id: int, line_id: int, db: Session = Depends(get_db),
+                key: AgentKey = Depends(agent("estimates:write"))):
+    """Take a line off. A line the customer was asked about shows to them as removed until they next
+    answer. Totals come back recalculated. Nothing is sent to anyone."""
+    li = _editable_line(db, ro_id, line_id)
+    ro = li.repair_order
+    removed = line_json(li)
+    agent_keys.record(db, key, "estimate.remove_line", "repair_order", ro_id, f"line {li.id}: {_line_brief(li)}"[:500])
+    if li.approval is None:
+        db.delete(li)
+    else:
+        try:
+            line_changes.remove_sent(db, li, f"assistant:{key.key_prefix}")
+        except line_changes.LineChangeError as exc:
+            raise HTTPException(exc.status, exc.message) from None
+    db.commit()
+    db.refresh(ro)
+    data = job_json(ro)
+    data.update(removed=removed)
+    return data
+
+
+class CloseOutIn(BaseModel):
+    approved_line_ids: list[int] = Field(default_factory=list, description=(
+        "Lines the customer agreed to in person or by phone. Lines not listed that were never agreed are "
+        "marked not agreed and aren't billed. Lines already approved stay approved."))
+    picked_up: bool = Field(default=True, description="True: the car is picked up. False: done, waiting for pickup.")
+    source: str = Field(default="in_person", description="in_person or phone.")
+    note: str | None = Field(default=None, max_length=200)
+
+
+@router.post("/jobs/{ro_id}/close-out")
+def close_out(ro_id: int, payload: CloseOutIn, db: Session = Depends(get_db),
+              key: AgentKey = Depends(agent("estimates:write"))):
+    """Owner's close-out: record the in-person approval, mark the work done, and move the job to
+    Complete or Picked up in one step. No text goes to the customer (no pickup text, no review
+    request), and no invoice is made. Use only when the owner says the job is done."""
+    from app import job_closeout
+    ro = db.get(RepairOrder, ro_id)
+    if ro is None:
+        raise HTTPException(404, "Job not found.")
+    try:
+        result = job_closeout.close_out(db, ro, f"assistant:{key.key_prefix}", payload.approved_line_ids,
+                                        picked_up=payload.picked_up, source=payload.source, note=payload.note or "")
+    except job_closeout.CloseOutError as exc:
+        raise HTTPException(exc.status, exc.message) from None
+    agent_keys.record(db, key, "job.close_out", "repair_order", ro.id,
+                      f"{result['previous']} -> {result['status']}; approved {result['approved']}, not agreed {result['declined']}"[:500])
+    db.commit()
+    db.refresh(ro)
+    data = job_json(ro)
+    data.update(result=result, note="Closed out. Nothing was texted to the customer and no invoice was made.")
+    return data
+
+
+@router.get("/jobs/{ro_id}/estimate.pdf")
+def estimate_pdf_file(ro_id: int, db: Session = Depends(get_db), key: AgentKey = Depends(agent("estimates:read"))):
+    """The job's estimate as a printable PDF. Read only."""
+    from fastapi.responses import Response
+
+    ro = db.get(RepairOrder, ro_id)
+    if ro is None:
+        raise HTTPException(404, "Job not found.")
+    return Response(estimate_pdf.build(ro), media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{estimate_pdf.filename(ro)}"',
+                             "Cache-Control": "no-store"})
 
 
 @router.post("/jobs/{ro_id}/deposits")
@@ -581,11 +748,15 @@ def update_job_notes(ro_id: int, payload: JobNotesIn, db: Session = Depends(get_
 class SendApprovalIn(BaseModel):
     offer_snap: bool = False
     message: str | None = Field(default=None, max_length=1200)
+    resend: bool = Field(default=False, description="Only when the owner says the earlier text never reached "
+                                                     "the customer: sends the link again even if one shows as sent.")
 
 
 SEND_NOTES = {
     "sending": "Handed to the shop line. It shows on the job once Quo sends it; the owner gets the usual Sent notice.",
-    "already": "Not sent: their link already went out from the dashboard and they haven't texted since.",
+    "already": "Not sent: Quo confirmed their link went out and they haven't texted since. If the owner says it never "
+               "reached them, call again with resend.",
+    "in_flight": "Not sent: the last approval text is still with the shop line. Check again in a few minutes.",
     "texted": "Not sent: a text after their last message already has this job's link.",
     "paused": "Not sent: texting is paused on the dashboard.",
     "no_phone": "Not sent: the customer has no mobile number on file.",
@@ -603,16 +774,21 @@ def send_approval(ro_id: int, payload: SendApprovalIn, db: Session = Depends(get
     ro = db.get(RepairOrder, ro_id)
     if ro is None:
         raise HTTPException(404, "Job not found.")
-    if ro.status == "delivered":
-        raise HTTPException(409, "This job is already picked up.")
+    if ro.status in ("delivered", "cancelled"):
+        raise HTTPException(409, "This job is closed (picked up or not going ahead).")
     actor = f"Claude connector {key.key_prefix}"[:64]
     message = (payload.message or "").strip() or None
     state, item = approval_links.send_now(db, ro, actor, key.created_by_user_id, offer_snap=payload.offer_snap,
-                                          text=message, audit_detail=f"Claude connector, job {ro.id}")
+                                          text=message, resend=payload.resend,
+                                          audit_detail=f"Claude connector{' resend' if payload.resend else ''}, job {ro.id}")
     if state == "sending":
         agent_keys.record(db, key, "approval.send", "repair_order", ro.id, f"approval text #{item.id}")
         db.commit()
     db.refresh(ro)
+    last = approval_links.last_send(db, ro)
     return {"state": state, "sent": state == "sending", "note": SEND_NOTES[state],
+            "last_text": ({"state": last["state"], "at": last["at"].isoformat() if last.get("at") else None,
+                           "why": last.get("why")} if last else None),
+            "sign_link": approval_links.sign_link(ro),
             "queue_item": item.id if item is not None else None,
             "text": item.draft_reply if state == "sending" else None, "job": job_json(ro)}

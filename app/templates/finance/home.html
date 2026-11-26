@@ -7,7 +7,7 @@
 <div class="fin-row{% if late %} late{% endif %}">
   <div class="fin-row-main">
     <h3>{{ b.name }}</h3>
-    <p>{% if b.projected %}Next one due {{ b.due_date.strftime('%a %b %-d') }}{% elif late %}Was due {{ b.due_date.strftime('%b %-d') }} · {{ (today - b.due_date).days }} day{{ '' if (today - b.due_date).days == 1 else 's' }} late{% else %}Due {{ b.due_date.strftime('%a %b %-d') }}{% endif %} · {{ b.category|capitalize }}{% if b.repeats != 'once' %} · {{ b.repeats }}{% endif %}{% if not b.projected and is_unconfirmed(b) %} · <span class="fin-flag">Not confirmed</span>{% endif %}</p>
+    <p>{% if b.projected and b.missed %}Was due {{ b.due_date.strftime('%b %-d') }} · <span class="fin-flag">{{ (today - b.due_date).days }} day{{ '' if (today - b.due_date).days == 1 else 's' }} late, not marked paid</span>{% elif b.projected %}Next one due {{ b.due_date.strftime('%a %b %-d') }}{% elif late %}Was due {{ b.due_date.strftime('%b %-d') }} · {{ (today - b.due_date).days }} day{{ '' if (today - b.due_date).days == 1 else 's' }} late{% else %}Due {{ b.due_date.strftime('%a %b %-d') }}{% endif %} · {{ b.category|capitalize }}{% if b.repeats != 'once' %} · {{ b.repeats }}{% endif %}{% if not b.projected and is_unconfirmed(b) %} · <span class="fin-flag">Not confirmed</span>{% endif %}</p>
   </div>
   <div class="fin-row-side">
     <div class="amount">{{ usd(b.amount_cents) }}</div>
@@ -26,7 +26,7 @@
   <div class="fin-rank" aria-label="Pay {{ r.rank }}{{ 'st' if r.rank == 1 else 'nd' if r.rank == 2 else 'rd' if r.rank == 3 else 'th' }}">{{ r.rank }}</div>
   <div class="fin-row-main">
     <h3>{{ b.name }}</h3>
-    <p>{% if b.projected %}Next one due {{ b.due_date.strftime('%a %b %-d') }}{% elif r.past_due %}Was due {{ b.due_date.strftime('%b %-d') }} · <span class="fin-flag">{{ (today - b.due_date).days }} day{{ '' if (today - b.due_date).days == 1 else 's' }} late</span>{% else %}Due {{ b.due_date.strftime('%a %b %-d') }}{% endif %}{% if r.moved %} · moved up by you{% endif %}</p>
+    <p>{% if b.projected and b.missed %}Was due {{ b.due_date.strftime('%b %-d') }} · <span class="fin-flag">{{ (today - b.due_date).days }} day{{ '' if (today - b.due_date).days == 1 else 's' }} late, not marked paid</span>{% elif b.projected %}Next one due {{ b.due_date.strftime('%a %b %-d') }}{% elif r.past_due %}Was due {{ b.due_date.strftime('%b %-d') }} · <span class="fin-flag">{{ (today - b.due_date).days }} day{{ '' if (today - b.due_date).days == 1 else 's' }} late</span>{% else %}Due {{ b.due_date.strftime('%a %b %-d') }}{% endif %}{% if r.moved %} · moved up by you{% endif %}</p>
     <p class="fin-cover">{% if r.covered %}<span class="ok">Covered by cash on hand</span>{% else %}Needs {{ usd(r.short) }} more{% endif %}</p>
   </div>
   <div class="fin-row-side">
@@ -155,7 +155,8 @@
     <div>
       <div class="page-title">Money</div>
       <p class="fin-sub">Shop money for the next {{ window }} days, through {{ end.strftime('%a %b %-d') }}.
-        {% if last_updated %}Balances last updated {{ last_updated.strftime('%b %-d') }}.{% else %}No balances entered yet.{% endif %}</p>
+        {% if last_updated %}Balances as of {{ last_updated.strftime('%b %-d') }}.{% else %}No balances entered yet.{% endif %}</p>
+      <p class="fin-sub fin-updated"><strong>Updated {% if updated %}{{ updated.strftime('%b %-d, %-I:%M %p') }}{% else %}never{% endif %}</strong>{% if updated_what %} · {{ updated_what }}{% endif %}</p>
     </div>
     <nav class="fin-window" aria-label="How far ahead to look">
       {% for w in windows %}<a href="/finance/?window={{ w }}" class="{{ 'on' if w == window else '' }}">{{ w }} days</a>{% endfor %}
@@ -415,6 +416,8 @@
         <div class="fin-row"><div class="fin-row-main"><h3>{{ a.name }}</h3><p>{% if a.id in bank_fed_ids %}From the bank, {% else %}As of {% endif %}{{ a.as_of.strftime('%b %-d') }}{% if a.held_cents %} · {{ usd(a.held_cents) }} held for a customer{% endif %}</p></div>
           <div class="fin-row-side"><div class="amount">{{ usd(a.balance_cents) }}</div></div></div>
         {% else %}<p class="cap">No balances yet. Add them under Update.</p>{% endfor %}
+        {% if business.recorded_in %}<div class="fin-row"><div class="fin-row-main"><h3>Job payments since then</h3><p>Recorded on jobs after you last typed a balance. Counted as cash until you type it again.</p></div>
+          <div class="fin-row-side"><div class="amount">+{{ usd(business.recorded_in) }}</div></div></div>{% endif %}
       </section>
 
       <section class="card fin-card" aria-labelledby="fin-personal-h">

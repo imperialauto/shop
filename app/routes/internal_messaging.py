@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 import os
 import secrets
 
+from app.ro_status_policy import CLOSED_STATUSES
 from app.database import get_db
 from app.models import Customer, Vehicle, RepairOrder, Invoice, Communication
 
@@ -93,7 +94,7 @@ def get_messaging_context(
 
     open_ro = (
         db.query(RepairOrder)
-        .filter(RepairOrder.customer_id == customer.id, RepairOrder.status != "delivered")
+        .filter(RepairOrder.customer_id == customer.id, RepairOrder.status.notin_(CLOSED_STATUSES))
         .order_by(RepairOrder.created_at.desc())
         .first()
     )
@@ -231,7 +232,7 @@ def log_communication(
 
     open_ro = (
         db.query(RepairOrder)
-        .filter(RepairOrder.customer_id == customer.id, RepairOrder.status != "delivered")
+        .filter(RepairOrder.customer_id == customer.id, RepairOrder.status.notin_(CLOSED_STATUSES))
         .order_by(RepairOrder.created_at.desc())
         .first()
     )
