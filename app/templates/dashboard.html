@@ -356,7 +356,7 @@
 
       {% if imperial_task_snapshot is defined and imperial_task_snapshot.enabled %}
       <section aria-label="Saved Imperial tasks">
-        <h3>Saved tasks <a href="/dashboard/tasks?scope=review">Review →</a></h3>
+        <h3>Saved tasks<a href="/dashboard/tasks?scope=review" style="margin-left:8px">Review →</a></h3>
         {% if imperial_task_snapshot.error %}
         <p class="h-warn">{{ imperial_task_snapshot.error }}</p>
         {% elif imperial_task_snapshot.tasks %}
