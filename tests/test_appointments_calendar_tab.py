@@ -124,6 +124,7 @@ class SlotLabelTests(_Calendar):
         self.assertIn("Testa Example", page.text)
         self.assertNotIn("data-action=", page.text)
         self.assertNotIn("Book a time for job", page.text)
+        self.assertNotIn('id="appointment-form"', page.text)
 
 
 class PickerTests(_Calendar):
@@ -138,9 +139,11 @@ class PickerTests(_Calendar):
         self.assertIn(f'data-start="{phoenix_tomorrow_at(8).isoformat()}"', html)
         self.assertIn(f'data-start="{phoenix_tomorrow_at(17).isoformat()}"', html)  # last one-hour start
         self.assertNotIn(f'data-start="{phoenix_tomorrow_at(18).isoformat()}"', html)
-        # The old always-on form with typed dates and a typed bay is gone
-        self.assertNotIn('type="datetime-local"', html)
-        self.assertNotIn('name="resource_id"', html)
+        # Tapping a time comes first; a typed exact time is the fallback, and the bay is never typed
+        self.assertLess(html.index("2. Tap a time"), html.index("Or type an exact time"))
+        self.assertIn(f'name="repair_order_id" value="{self.ids.job}"', html)
+        self.assertIn('type="hidden" name="resource_id"', html)
+        self.assertNotIn('placeholder="bay-1"', html)
 
     def test_taken_times_and_buffer_are_not_offered(self):
         self.add(self.ids.other, phoenix_tomorrow_at(10))  # blocks 10-11, plus an hour's buffer to noon

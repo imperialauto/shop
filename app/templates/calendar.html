@@ -79,6 +79,9 @@
   .slots button { min-height: 44px; }
   .jump { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0 0 16px; font-size: 14px; color: var(--imp-muted); }
   .jump input { width: 110px; }
+  .exact { margin-top: 14px; }
+  .exact-rows { margin-top: 8px; font-size: 14px; }
+  .exact-rows td { padding: 4px 10px 4px 0; }
   @media (max-width: 520px) { .appt-time { width: 70px; font-size: 13px; } }
 </style>
 <div class="page-header"><div class="page-title">Calendar</div></div>
@@ -155,6 +158,22 @@
     {% if s.booked_that_day %}
     <p class="muted" style="margin-top:12px">Already booked that day: {% for b in s.booked_that_day %}{{ b.time }} {{ b.who }} (job #{{ b.job_id }}){% if not loop.last %}; {% endif %}{% endfor %}</p>
     {% endif %}
+    <div class="exact" id="exact-time">
+      <p class="day-head">Or type an exact time</p>
+      <form id="appointment-form" class="picker-opts">
+        <input type="hidden" name="repair_order_id" value="{{ s.order_id }}">
+        <input type="hidden" name="resource_id" value="{{ s.bay }}">
+        <input type="hidden" name="location" value="{{ s.where }}">
+        <input type="hidden" name="travel_minutes" value="{{ s.travel if s.where == 'mobile' else 0 }}">
+        <label>Start <input name="starts_at" type="datetime-local" class="form-input" required></label>
+        <label>End <input name="ends_at" type="datetime-local" class="form-input" required></label>
+        <button type="submit" class="btn-secondary">Save this time</button>
+      </form>
+      <p id="booking-message" role="status" aria-live="polite"></p>
+      <table class="exact-rows"><tbody id="calendar-rows">
+        {% for e in s.existing %}<tr><td>{{ e.when }}</td><td>#{{ s.order_id }}</td><td>{{ e.status }}</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
     <p class="muted" style="margin-top:12px">Saves as <b>tentative</b>. Nothing is texted to the customer.
       {% if s.where == 'shop' and s.buffer %}The bay stays blocked {{ s.buffer }} minutes after the visit.{% elif s.where == 'mobile' %}Drive time is blocked before the visit.{% endif %}
       <a href="/appointments/calendar">Close</a></p>
@@ -235,6 +254,35 @@
       document.querySelectorAll('[data-start]').forEach(b => b.disabled = false);
     }
   }));
+  const exact = document.getElementById('appointment-form');
+  if (exact) {
+    const said = document.getElementById('booking-message'), rows = document.getElementById('calendar-rows');
+    const asPhoenix = v => v + ':00-07:00'; // Arizona does not observe daylight saving.
+    const phoenixTime = iso => new Intl.DateTimeFormat('en-US', {timeZone: 'America/Phoenix', dateStyle: 'medium', timeStyle: 'short'}).format(new Date(iso));
+    exact.elements.starts_at.addEventListener('change', () => {
+      const value = exact.elements.starts_at.value;
+      if (!value || exact.elements.ends_at.value) return;
+      const [date, clock] = value.split('T');
+      const hour = Number(clock.slice(0, 2)) + {{ schedule.length|tojson }};
+      if (hour < 24) exact.elements.ends_at.value = date + 'T' + String(hour).padStart(2, '0') + clock.slice(2);
+    });
+    exact.addEventListener('submit', async e => {
+      e.preventDefault(); said.textContent = '';
+      const v = Object.fromEntries(new FormData(exact));
+      try {
+        const made = await post('/appointments/', {repair_order_id: Number(v.repair_order_id), resource_id: v.resource_id,
+          starts_at: asPhoenix(v.starts_at), ends_at: asPhoenix(v.ends_at), location: v.location,
+          travel_minutes: Number(v.travel_minutes || 0)});
+        said.textContent = 'Tentative appointment saved. Nothing was texted to the customer.';
+        const tr = document.createElement('tr');
+        for (const text of [phoenixTime(asPhoenix(v.starts_at)), '#' + made.repair_order_id, made.status]) {
+          const td = document.createElement('td'); td.textContent = text; tr.appendChild(td);
+        }
+        rows.appendChild(tr);
+        exact.elements.starts_at.value = ''; exact.elements.ends_at.value = '';
+      } catch (err) { said.textContent = err.message; }
+    });
+  }
   {% endif %}
   if (location.hash.startsWith('#appt-')) { const el = document.getElementById(location.hash.slice(1)); if (el) el.open = true; }
 })();

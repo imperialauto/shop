@@ -333,7 +333,6 @@
           <a href="/board/manage">Shop board phone page</a>
           <a href="/dashboard/inbox">Needs you (all)</a>
           <a href="/tags/">Tags</a>
-          {% if imperial_task_snapshot is defined and imperial_task_snapshot.enabled %}<a href="/dashboard/tasks">Master Tasks</a><a href="/my-day#my-to-do">My To-do</a>{% endif %}
           <a href="/live/control">LIVE Control</a>
         </nav>
       </section>
@@ -409,6 +408,12 @@
       {% endif %}
     </div>
   </details>
+
+  {% if imperial_task_snapshot is defined and imperial_task_snapshot.enabled %}
+  <nav class="h-links" aria-label="Tasks" style="margin-top:12px">
+    <a href="/dashboard/tasks">Master Tasks</a><a href="/my-day#my-to-do">My To-do</a>
+  </nav>
+  {% endif %}
 </div>
 
 <script>
