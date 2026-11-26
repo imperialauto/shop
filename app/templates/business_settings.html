@@ -138,6 +138,12 @@
     <p class="text-sm text-stone-400 mt-2">Never sends on its own. The draft waits on the dashboard for your Send, so you can edit it and tick Offer Snap Finance if it fits. One per job. Skipped for anyone who opted out, has a job open or booked, or got a text in the last 3 days. Quotes nobody answered are covered by the customer follow-up texts above.</p>
   </section>
   <section class="card">
+    <h2 class="font-bold mb-2">Declined work reminder (a month or two later)</h2>
+    <input type="hidden" name="automatic_declined_reminder_shown" value="1">
+    <label><input type="checkbox" name="automatic_declined_reminder" {% if settings.automatic_declined_reminder %}checked{% endif %}> Draft a reminder 30 to 60 days after a customer passes on work</label>
+    <p class="text-sm text-stone-400 mt-2">Never sends on its own. The draft waits on the dashboard for your Send. Each declined item is drafted once, ever, and work they had done here since is left out. Skipped for anyone who opted out, has a job open or booked, or got a text in the last 3 days.</p>
+  </section>
+  <section class="card">
     <h2 class="font-bold mb-2">Diag credit reminder</h2>
     <input type="hidden" name="automatic_diag_credit_reminder_shown" value="1">
     <label><input type="checkbox" name="automatic_diag_credit_reminder" {% if settings.automatic_diag_credit_reminder %}checked{% endif %}> Draft a reminder 2 days after a diagnostic-only visit that the $75 still goes toward the repair</label>

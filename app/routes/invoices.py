@@ -3,7 +3,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Invoice, RepairOrder, Payment
+from app.models import Invoice, LineItem, RepairOrder, Payment
 from app import next_visit, referrals
 from app.auth import get_current_user
 from datetime import date, datetime, time, timedelta, timezone
@@ -116,8 +116,93 @@ def list_invoices(request: Request, db: Session = Depends(get_db)):
     user = require_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=302)
-    invoices = db.query(Invoice).order_by(Invoice.created_at.desc()).all()
-    return templates.TemplateResponse("invoices/list.html", {"request": request, "user": user, "invoices": invoices})
+    show_void = request.query_params.get("void") == "1"
+    return templates.TemplateResponse("invoices/list.html", {
+        "request": request, "user": user, "show_void": show_void, **invoice_board(db, show_void)})
+
+
+def _vehicle_label(vehicle) -> str:
+    return " ".join(str(x) for x in (vehicle.year, vehicle.make, vehicle.model) if x) if vehicle else ""
+
+
+def _row(invoice) -> dict:
+    ro = invoice.repair_order
+    customer = ro.customer if ro else None
+    paid = invoice.paid_total
+    balance = invoice.balance
+    if invoice.status == "void":
+        label = "Void"
+    elif balance < 0:
+        label = "Overpaid"  # more came in than the invoice total: worth a look
+    elif balance == 0:
+        label = "Paid" if invoice.status == "paid" else "Nothing owed, not closed"
+    elif invoice.status == "draft":
+        label = "Draft, not sent"
+    elif paid > 0 or (invoice.waived_amount or 0) > 0:
+        label = "Partly paid"
+    elif invoice.status == "paid":
+        label = "Marked paid, money still owed"  # shouldn't happen; shown so it gets looked at
+    else:
+        label = "Sent, unpaid"
+    return {
+        "invoice": invoice, "job_id": invoice.repair_order_id,
+        "customer": " ".join(x for x in ((customer.first_name or ""), (customer.last_name or "")) if x) if customer else "",
+        "vehicle": _vehicle_label(ro.vehicle if ro else None),
+        "total": round(invoice.total or 0, 2), "paid": paid, "balance": balance, "label": label,
+        "date": invoice.created_at,
+    }
+
+
+def invoice_board(db, show_void: bool = False) -> dict:
+    """Every invoice, split by what is still owed, plus approved work on open jobs that has no invoice.
+    Reads only: nothing is created or changed here."""
+    from sqlalchemy.orm import joinedload
+    from app import job_deposits
+    from app.ro_status_policy import is_open
+    from app.routes.repair_orders import RO_STATUSES
+    status_labels = dict(RO_STATUSES)
+    invoices = (db.query(Invoice)
+                .options(joinedload(Invoice.payments),
+                         joinedload(Invoice.repair_order).joinedload(RepairOrder.customer),
+                         joinedload(Invoice.repair_order).joinedload(RepairOrder.vehicle))
+                .order_by(Invoice.created_at.desc(), Invoice.id.desc()).all())
+    unpaid, paid, void = [], [], []
+    for invoice in invoices:
+        row = _row(invoice)
+        if invoice.status == "void":
+            void.append(row)
+        elif row["balance"] > 0 or invoice.status in ("draft", "sent"):
+            unpaid.append(row)
+        else:
+            paid.append(row)
+    unpaid.sort(key=lambda r: r["date"] or datetime.min)  # oldest money owed first
+
+    invoiced_jobs = {inv.repair_order_id for inv in invoices if inv.status != "void"}
+    not_invoiced = []
+    jobs = (db.query(RepairOrder)
+            .options(joinedload(RepairOrder.line_items), joinedload(RepairOrder.customer),
+                     joinedload(RepairOrder.vehicle), joinedload(RepairOrder.deposits))
+            .filter(RepairOrder.id.in_(db.query(LineItem.repair_order_id).filter(LineItem.approval == "approved")))
+            .order_by(RepairOrder.id).all())
+    for ro in jobs:
+        if ro.id in invoiced_jobs or not is_open(ro):
+            continue
+        billable = [li for li in ro.line_items if li.billable]
+        total = totals_for(billable)[3]
+        deposits = job_deposits.unapplied_total(ro)
+        not_invoiced.append({
+            "job_id": ro.id, "status": status_labels.get(ro.status, (ro.status or "").replace("_", " ").capitalize()),
+            "customer": " ".join(x for x in ((ro.customer.first_name or ""), (ro.customer.last_name or "")) if x) if ro.customer else "",
+            "vehicle": _vehicle_label(ro.vehicle), "total": total, "deposits": deposits,
+            "left": round(total - deposits, 2),
+        })
+
+    return {
+        "unpaid": unpaid, "paid": paid, "void": void if show_void else [], "void_count": len(void),
+        "owed": round(sum(max(r["balance"], 0) for r in unpaid), 2),
+        "not_invoiced": not_invoiced,
+        "not_invoiced_total": round(sum(max(r["left"], 0) for r in not_invoiced), 2),
+    }
 
 
 SHOP_TAX_RATE = 0.092  # 7915 N Glen Harbor Blvd: AZTaxes address lookup Nov 24 2026, Auto Repair: Maricopa 017 6.3 (state+county) + Glendale GE 017 2.9. The one rate everywhere.

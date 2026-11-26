@@ -2,47 +2,111 @@
 {% block title %}Invoices — Imperial Auto Care{% endblock %}
 {% block content %}
 
-<div class="flex items-center justify-between mb-6">
-  <h1 class="text-2xl font-bold text-yellow-400">Invoices</h1>
-</div>
-
-<div class="card">
-  {% if invoices %}
+{% macro invoice_rows(rows, show_status=True) %}
+  <div class="overflow-x-auto">
   <table>
     <thead>
       <tr>
-        <th>Invoice #</th>
-        <th>RO #</th>
+        <th>Job</th>
         <th>Customer</th>
+        <th>Vehicle</th>
         <th class="text-right">Total</th>
-        <th>Status</th>
+        <th class="text-right">Paid</th>
+        <th class="text-right">Balance due</th>
+        {% if show_status %}<th>Status</th>{% endif %}
         <th>Date</th>
       </tr>
     </thead>
     <tbody>
-      {% for inv in invoices %}
-      <tr class="cursor-pointer" onclick="window.location='/invoices/{{ inv.id }}'">
-        <td class="text-gold-400 font-mono">#{{ inv.id }}</td>
-        <td class="text-stone-400"><a href="/ro/{{ inv.repair_order_id }}" class="hover:text-gold-400">#{{ inv.repair_order_id }}</a></td>
-        <td>{{ inv.repair_order.customer.first_name }} {{ inv.repair_order.customer.last_name }}</td>
-        <td class="text-right font-semibold">${{ "%.2f"|format(inv.total) }}</td>
+      {% for r in rows %}
+      <tr class="cursor-pointer" onclick="window.location='/invoices/{{ r.invoice.id }}'">
+        <td class="font-mono"><a href="/invoices/{{ r.invoice.id }}" class="text-gold-400" onclick="event.stopPropagation()">Job #{{ r.job_id }}</a></td>
+        <td>{{ r.customer or '—' }}</td>
+        <td class="text-stone-400">{{ r.vehicle or '—' }}</td>
+        <td class="text-right">{{ r.total|money }}</td>
+        <td class="text-right text-stone-400">{{ r.paid|money }}</td>
+        <td class="text-right font-semibold {% if r.balance > 0 %}text-yellow-400{% elif r.balance < 0 %}text-red-300{% endif %}">{{ r.balance|money }}</td>
+        {% if show_status %}
         <td>
           <span class="badge-status
-            {% if inv.status == 'paid' %}bg-green-900 text-green-300
-            {% elif inv.status == 'sent' %}bg-blue-900 text-blue-300
-            {% elif inv.status == 'void' %}bg-red-900 text-red-300
-            {% else %}bg-gray-700 text-gray-300{% endif %}">
-            {{ inv.status.title() }}
-          </span>
+            {% if r.label == 'Paid' %}bg-green-900 text-green-300
+            {% elif r.label == 'Partly paid' %}bg-yellow-900 text-yellow-300
+            {% elif r.label == 'Sent, unpaid' %}bg-blue-900 text-blue-300
+            {% elif r.label in ('Overpaid', 'Marked paid, money still owed', 'Nothing owed, not closed', 'Void') %}bg-red-900 text-red-300
+            {% else %}bg-gray-700 text-gray-300{% endif %}">{{ r.label }}</span>
         </td>
-        <td class="text-stone-500 text-xs">{{ (inv.created_at|shop_time).strftime('%m/%d/%y') }}</td>
+        {% endif %}
+        <td class="text-stone-500 text-xs">{% if r.date %}{{ (r.date|shop_time).strftime('%m/%d/%y') }}{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
-  {% else %}
-  <p class="text-stone-500 text-sm">No invoices yet. Create one from an open repair order.</p>
-  {% endif %}
+  </div>
+{% endmacro %}
+
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-2xl font-bold text-yellow-400">Invoices</h1>
 </div>
+
+<div class="card mb-6" id="owed-summary">
+  <div class="text-sm text-stone-400">Still owed on invoices</div>
+  <div class="text-3xl font-bold text-yellow-400" data-owed="{{ '%.2f'|format(owed) }}">{{ owed|money }}</div>
+  <div class="text-sm text-stone-400">on {{ unpaid|length }} unpaid invoice{{ 's' if unpaid|length != 1 }}{% if not_invoiced %} · plus {{ not_invoiced_total|money }} of approved work not invoiced yet{% endif %}</div>
+</div>
+
+<h2 class="text-lg font-semibold text-yellow-400 mb-2" id="unpaid">Unpaid ({{ unpaid|length }})</h2>
+<div class="card mb-6">
+  {% if unpaid %}{{ invoice_rows(unpaid) }}{% else %}<p class="text-stone-500 text-sm">Nothing owed on any invoice.</p>{% endif %}
+</div>
+
+{% if not_invoiced %}
+<h2 class="text-lg font-semibold text-yellow-400 mb-1" id="not-invoiced">Not invoiced yet ({{ not_invoiced|length }})</h2>
+<p class="text-sm text-stone-400 mb-2">Open jobs with approved work and no invoice. Open the job and tap Create Invoice when it's ready to bill.</p>
+<div class="card mb-6">
+  <div class="overflow-x-auto">
+  <table>
+    <thead>
+      <tr>
+        <th>Job</th>
+        <th>Customer</th>
+        <th>Vehicle</th>
+        <th>Job status</th>
+        <th class="text-right">Approved total</th>
+        <th class="text-right">Deposits</th>
+        <th class="text-right">Left to bill</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in not_invoiced %}
+      <tr class="cursor-pointer" onclick="window.location='/ro/{{ r.job_id }}'">
+        <td class="font-mono"><a href="/ro/{{ r.job_id }}" class="text-gold-400" onclick="event.stopPropagation()">Job #{{ r.job_id }}</a></td>
+        <td>{{ r.customer or '—' }}</td>
+        <td class="text-stone-400">{{ r.vehicle or '—' }}</td>
+        <td class="text-stone-400">{{ r.status }}</td>
+        <td class="text-right">{{ r.total|money }}</td>
+        <td class="text-right text-stone-400">{{ r.deposits|money }}</td>
+        <td class="text-right font-semibold">{{ r.left|money }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+<h2 class="text-lg font-semibold text-green-300 mb-2" id="paid">Paid ({{ paid|length }})</h2>
+<div class="card mb-6">
+  {% if paid %}{{ invoice_rows(paid, show_status=False) }}{% else %}<p class="text-stone-500 text-sm">No paid invoices yet.</p>{% endif %}
+</div>
+
+{% if show_void %}
+<h2 class="text-lg font-semibold text-stone-400 mb-2" id="void">Void ({{ void|length }})</h2>
+<div class="card mb-2">
+  {% if void %}{{ invoice_rows(void, show_status=False) }}{% else %}<p class="text-stone-500 text-sm">No void invoices.</p>{% endif %}
+</div>
+<p class="text-xs"><a href="/invoices/" class="text-stone-500 hover:text-gold-300">Hide void invoices</a></p>
+{% elif void_count %}
+<p class="text-xs"><a href="/invoices/?void=1#void" class="text-stone-500 hover:text-gold-300">Show {{ void_count }} void invoice{{ 's' if void_count != 1 }}</a></p>
+{% endif %}
 
 {% endblock %}

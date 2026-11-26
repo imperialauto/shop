@@ -1,0 +1,18 @@
+{# Daily scoreboard for Home: money in today against the daily goal, the week so far, hours clocked today.
+   Context: scoreboard (app/scoreboard.py scoreboard(db)); owner-only, the caller checks the role. #}
+{% set s = scoreboard %}
+{% if s %}
+<a href="/finance/" class="h-card h-sales {% if s.hit %}hit{% endif %}" id="scoreboard" aria-label="Today's scoreboard" style="text-decoration:none;">
+  <div class="h-label">Today</div>
+  <div class="h-big">${{ '{:,.0f}'.format(s.today) }} <small>of ${{ '{:,.0f}'.format(s.goal) }} today</small></div>
+  <div class="h-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ s.percent }}"><i style="width: {{ s.percent }}%"></i></div>
+  <div class="left">{% if s.hit %}Goal hit{% else %}${{ '{:,.0f}'.format(s.left) }} to go{% endif %}</div>
+  <div class="h-sub">
+    Week so far ${{ '{:,.0f}'.format(s.week) }} of ${{ '{:,.0f}'.format(s.week_goal) }} ({{ s.days_so_far }} open day{{ 's' if s.days_so_far != 1 }})
+    {% if s.hours_today is not none %} · {{ '%.1f'|format(s.hours_today) }} h clocked today{% endif %}
+  </div>
+  <div class="h-sub">Goal: {% if s.source == 'bills' %}what the bills need a day (your fixed goal is ${{ '{:,.0f}'.format(s.fixed_goal) }}){% else %}your fixed ${{ '{:,.0f}'.format(s.fixed_goal) }} a day{% endif %}</div>
+</a>
+{% else %}
+<div class="h-card h-sales"><p class="h-warn">Today's money couldn't be loaded.</p></div>
+{% endif %}

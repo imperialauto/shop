@@ -78,6 +78,7 @@ async function deliverOwnerMessages({ quo, shopClient }) {
 // a reply sent from Quo, and a failed send is never retried automatically.
 async function sendApprovedReply({ reply, ownerPhone, quo, shopClient }) {
   let status = "skipped";
+  let messageId = null;
   let notice = `#${reply.itemId} was not sent. There's a newer message in that thread, so check Quo.`;
   try {
     // Always revalidate BOTH messages and calls immediately before any
@@ -108,6 +109,9 @@ Confirm the customer selling price and make a new draft.`;
         status = "failed";
         notice = `#${reply.itemId} failed to send. Please reply in Quo.`;
         const sent = await quo.sendMessage({ to: reply.phone, content: reply.text });
+        // Only Quo's own id for the text counts as sent; anything else is reported as not sent.
+        if (!sent || !sent.id) throw Error("Quo did not confirm the text");
+        messageId = String(sent.id);
         status = "sent";
         notice = `Sent #${reply.itemId} to the customer.`;
         await shopClient.logCommunication({
@@ -120,7 +124,7 @@ Confirm the customer selling price and make a new draft.`;
     console.error("Approved reply failed:", err.message);
     notice = `#${reply.itemId} NOT sent: the current customer or owner context could not be verified.`;
   }
-  await shopClient.dispatchOutbound({ key: reply.key, status });
+  await shopClient.dispatchOutbound(messageId ? { key: reply.key, status, messageId } : { key: reply.key, status });
   await quo.sendMessage({ to: ownerPhone, content: notice }).catch((err) => console.error("Owner notice failed:", err.message));
   return status === "sent";
 }

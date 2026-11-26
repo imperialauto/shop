@@ -1,0 +1,46 @@
+{# Job clock: the signed-in worker clocks in and out on this job; clocked hours against billed labor hours.
+   Context: job_timer (app/job_timer.py for_job), ro, request. #}
+{% set t = job_timer %}
+{% if t %}
+<section class="card mb-4" id="job-timer" aria-labelledby="job-timer-heading"
+         style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px;">
+  <div style="min-width:0">
+    <h2 id="job-timer-heading" class="text-xs uppercase tracking-wide" style="color:var(--imp-heading); margin:0">Job clock</h2>
+    <p class="font-semibold" style="margin:2px 0 0" id="job-timer-totals">
+      Clocked {{ '%.1f'|format(t.clocked) }} h · Billed {{ '%.1f'|format(t.billed) }} h
+      {% if t.over %}<span style="color:#f87171">· {{ '%.1f'|format(t.clocked - t.billed) }} h over</span>
+      {% elif t.billed and t.clocked %}<span class="text-stone-400">· {{ '%.1f'|format(t.left) }} h left</span>{% endif %}
+    </p>
+    {% if t.mine_on %}
+    <p class="text-sm" style="margin:2px 0 0; color:#4ade80" role="status">You're clocked in · <span id="job-timer-run" data-seconds="{{ t.mine_seconds }}">{{ '%d:%02d'|format(t.mine_seconds // 3600, (t.mine_seconds // 60) % 60) }}</span> on this job</p>
+    {% endif %}
+    {% if t.workers %}
+    <p class="text-xs text-stone-400" style="margin:2px 0 0">
+      {% for w in t.workers %}{{ 'You' if w.me else w.name }} {{ '%.1f'|format(w.hours) }} h{% if w.on %} (on){% endif %}{% if not loop.last %} · {% endif %}{% endfor %}
+    </p>
+    {% elif not t.billed %}
+    <p class="text-xs text-stone-400" style="margin:2px 0 0">No labor hours on this job yet.</p>
+    {% endif %}
+  </div>
+  {% if not request.app.state.read_only and (t.mine_on or t.can_start) %}
+  <form method="post" action="/ro/{{ ro.id }}/clock">
+    <input type="hidden" name="operation" value="{{ 'stop' if t.mine_on else 'start' }}">
+    <button type="submit" class="{{ 'btn-secondary' if t.mine_on else 'btn-primary' }}" style="min-height:48px; min-width:120px">{{ 'Stop clock' if t.mine_on else 'Start clock' }}</button>
+  </form>
+  {% endif %}
+</section>
+{% if t.mine_on %}
+<script>
+  (function () {
+    var el = document.getElementById('job-timer-run');
+    if (!el) return;
+    var base = parseInt(el.dataset.seconds, 10) || 0, t0 = Date.now();
+    function tick() {
+      var s = base + Math.floor((Date.now() - t0) / 1000);
+      el.textContent = Math.floor(s / 3600) + ':' + String(Math.floor(s / 60) % 60).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+    }
+    tick(); setInterval(tick, 1000);
+  })();
+</script>
+{% endif %}
+{% endif %}

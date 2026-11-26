@@ -219,7 +219,7 @@ class McpTests(_Flow):
         self.assertFalse(moved["isError"], moved)
         self.assertIn('"status": "diagnosing"', moved["content"][0]["text"])
         refused = self.rpc(headers, "tools/call", {"name": "set_job_status", "arguments": {
-            "job_id": ro_id, "status": "complete"}}).json()["result"]
+            "job_id": ro_id, "status": "delivered"}}).json()["result"]
         self.assertTrue(refused["isError"])
         with self.Session() as db:
             self.assertEqual(db.get(RepairOrder, ro_id).status, "diagnosing")
@@ -285,7 +285,7 @@ class SendApprovalToolTests(_Flow):
             self.assertEqual([a.action for a in db.query(AgentAction).all()], ["approval.send"])
             self.assertIn("Claude connector", db.query(DispatchAudit).filter_by(action="owner_approve").one().detail)
         error, again = self.send(headers)
-        self.assertEqual((again["state"], again["sent"]), ("already", False))
+        self.assertEqual((again["state"], again["sent"]), ("in_flight", False))
         self.assertEqual(len(self.outbound()), 1)
 
     def test_paused_texting_sends_nothing(self):

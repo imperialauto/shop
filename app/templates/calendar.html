@@ -1,88 +1,290 @@
 {% extends "base.html" %}
 {% block title %}Calendar — Imperial Auto Care{% endblock %}
+{% macro appt(r) %}
+<details class="appt" id="appt-{{ r.id }}" data-status="{{ r.status }}">
+  <summary>
+    <span class="appt-time">{{ r.time }}</span>
+    <span class="appt-main">
+      <span class="appt-who">{{ r.customer }}</span>
+      <span class="appt-car">{{ r.vehicle }}</span>
+      <span class="appt-what">{{ r.what }}</span>
+    </span>
+    <span class="pill pill-{{ r.status }}">{{ r.status_text }}</span>
+  </summary>
+  <div class="appt-body">
+    <dl class="appt-facts">
+      <div><dt>Phone</dt><dd>{% if r.phone_link %}<a href="{{ r.phone_link }}">{{ r.phone }}</a>{% elif r.phone %}{{ r.phone }}{% else %}Not on file{% endif %}</dd></div>
+      <div><dt>Where</dt><dd>{% if r.mobile %}Mobile visit · {{ r.travel }} min travel before{% else %}{{ r.bay }}{% endif %}</dd></div>
+      <div><dt>Job</dt><dd>#{{ r.job_id }}{% if r.job_status %} · {{ r.job_status }}{% endif %}</dd></div>
+      {% if r.booked_value %}<div><dt>Quoted</dt><dd>${{ '%.2f'|format(r.booked_value) }} (not paid yet)</dd></div>{% endif %}
+    </dl>
+    {% if r.concern %}<p class="appt-label">Concern</p><p class="appt-text">{{ r.concern }}</p>{% endif %}
+    {% if r.notes %}<p class="appt-label">Tech notes</p><p class="appt-text">{{ r.notes }}</p>{% endif %}
+    <a class="btn-primary appt-open" href="/ro/{{ r.job_id }}">Open job #{{ r.job_id }}</a>
+    {% if r.actions %}
+    <div class="appt-actions">
+      {% for action, text in r.actions %}
+      <button type="button" class="btn-secondary" data-appt="{{ r.id }}" data-action="{{ action }}">{{ text }}</button>
+      {% endfor %}
+    </div>
+    <p class="appt-error" role="alert"></p>
+    {% endif %}
+  </div>
+</details>
+{% endmacro %}
 {% block content %}
-<div class="page-header"><div class="page-title">Shop Calendar</div><a href="/ro/new" class="btn-primary">New repair order</a></div>
-<div class="page-body">
-  <div class="card" style="padding:18px;margin-bottom:16px">
-    <h2 style="margin:0 0 12px">Schedule a repair order</h2>
-    <form id="appointment-form" style="display:flex;flex-wrap:wrap;gap:12px;align-items:end">
-      <label>Repair order # <input name="repair_order_id" type="number" min="1" required></label>
-      <label>Technician / bay <input name="resource_id" maxlength="80" required placeholder="bay-1"></label>
-      <label>Start (Phoenix time) <input name="starts_at" type="datetime-local" required></label>
-      <label>End (Phoenix time) <input name="ends_at" type="datetime-local" required></label>
-      <label>Location <select name="location"><option value="shop">Shop</option><option value="mobile">Mobile</option></select></label>
-      <label>Travel minutes (mobile) <input name="travel_minutes" type="number" min="0" max="240" value="0"></label>
-      <button type="submit" class="btn-primary">Save tentative appointment</button>
+<style>
+  .cal { max-width: 760px; }
+  .cal h2 { font-size: 22px; margin: 0 0 4px; }
+  .cal .muted { color: var(--imp-muted); font-size: 14px; }
+  .cal .key { display: grid; gap: 6px; font-size: 14px; color: var(--imp-muted); margin: 0 0 18px; }
+  .cal .key b { color: var(--imp-ink); }
+  .pill { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; white-space: nowrap; align-self: flex-start; }
+  .pill-tentative { background: var(--imp-warn-tint); color: var(--imp-warn); }
+  .pill-confirmed { background: var(--imp-ok-tint); color: var(--imp-ok); }
+  .pill-completed { background: var(--imp-surface-2); color: var(--imp-muted); }
+  .pill-cancelled, .pill-missed { background: var(--imp-danger-tint); color: var(--imp-danger); }
+  .day-head { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--imp-muted); margin: 18px 0 8px; }
+  .appt { background: var(--imp-surface); border: 1px solid var(--imp-line); border-radius: 12px; margin-bottom: 8px; }
+  .appt[open] { border-color: var(--imp-gold-dark); }
+  .appt summary { list-style: none; display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; cursor: pointer; min-height: 44px; }
+  .appt summary::-webkit-details-marker { display: none; }
+  .appt-time { width: 92px; flex-shrink: 0; font-weight: 700; color: var(--imp-heading); font-size: 14px; }
+  .appt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .appt-who { font-weight: 700; color: var(--imp-ink); }
+  .appt-car { color: var(--imp-ink); font-size: 14px; }
+  .appt-what { color: var(--imp-muted); font-size: 13px; overflow-wrap: anywhere; }
+  .appt-body { padding: 0 14px 14px; border-top: 1px solid var(--imp-line); }
+  .appt-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 12px 0; }
+  .appt-facts dt { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--imp-muted); }
+  .appt-facts dd { margin: 2px 0 0; }
+  .appt-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--imp-muted); margin: 10px 0 2px; }
+  .appt-text { white-space: pre-wrap; margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+  .appt-open { margin-top: 14px; width: 100%; min-height: 44px; }
+  .appt-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .appt-actions button { flex: 1; min-height: 44px; }
+  .appt-error, .slot-error { color: var(--imp-danger); font-size: 14px; margin: 8px 0 0; }
+  .notice { background: var(--imp-ok-tint); color: var(--imp-ok); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; }
+  .notice.warn { background: var(--imp-warn-tint); color: var(--imp-warn); }
+  .picker { margin-bottom: 18px; }
+  .picker-job { font-size: 14px; margin: 0 0 12px; }
+  .picker-opts { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+  .picker-opts label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--imp-muted); flex: 1; min-width: 120px; }
+  .days { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 12px; }
+  .day-chip { flex: 0 0 auto; text-align: center; text-decoration: none; background: var(--imp-surface-2); border: 1.5px solid var(--imp-line); border-radius: 10px; padding: 8px 12px; color: var(--imp-ink); min-width: 70px; }
+  .day-chip small { display: block; color: var(--imp-muted); font-size: 11px; }
+  .day-chip.on { border-color: var(--imp-gold); background: var(--imp-gold-tint); }
+  .day-chip.full { opacity: .5; }
+  .slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+  .slots button { min-height: 44px; }
+  .jump { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0 0 16px; font-size: 14px; color: var(--imp-muted); }
+  .jump input { width: 110px; }
+  .exact { margin-top: 14px; }
+  .exact-rows { margin-top: 8px; font-size: 14px; }
+  .exact-rows td { padding: 4px 10px 4px 0; }
+  @media (max-width: 520px) { .appt-time { width: 70px; font-size: 13px; } }
+</style>
+<div class="page-header"><div class="page-title">Calendar</div></div>
+<div class="page-body cal">
+
+  {% if booked %}
+  <p class="notice" role="status">Booked {{ booked.when }} for job #{{ booked.job_id }} as {{ booked.status }}. Nothing was texted to the customer.</p>
+  {% endif %}
+
+  {% if schedule_problem %}
+  <p class="notice warn" role="alert">{{ schedule_problem }}</p>
+  {% endif %}
+
+  {% if schedule %}{% set s = schedule %}
+  <section class="card picker" id="picker" aria-labelledby="picker-title">
+    <h2 id="picker-title">Book a time for job #{{ s.order_id }}</h2>
+    <p class="picker-job"><b>{{ s.customer }}</b> · {{ s.vehicle }}<br><span class="muted">{{ s.what }}</span></p>
+    {% if s.existing %}
+    <p class="notice warn">This job is already booked: {% for e in s.existing %}{{ e.when }} ({{ e.status }}){% if not loop.last %}, {% endif %}{% endfor %}. Picking a time adds another visit.</p>
+    {% endif %}
+    <form method="get" action="/appointments/calendar" class="picker-opts" id="picker-opts">
+      <input type="hidden" name="ro" value="{{ s.order_id }}">
+      <input type="hidden" name="day" value="{{ s.day }}">
+      <label>How long
+        <select name="length" class="form-select">
+          {% for h in s.lengths %}<option value="{{ h }}" {% if h == s.length %}selected{% endif %}>{{ h }} hour{{ 's' if h > 1 }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Where
+        <select name="where" class="form-select">
+          <option value="shop" {% if s.where == 'shop' %}selected{% endif %}>At the shop</option>
+          <option value="mobile" {% if s.where == 'mobile' %}selected{% endif %}>Mobile visit</option>
+        </select>
+      </label>
+      {% if s.where == 'mobile' %}
+      <label>Drive time
+        <select name="travel" class="form-select">
+          {% for t in s.travel_choices %}<option value="{{ t }}" {% if t == s.travel %}selected{% endif %}>{{ t }} min</option>{% endfor %}
+        </select>
+      </label>
+      {% endif %}
+      {% if s.bays|length > 1 %}
+      <label>Bay
+        <select name="bay" class="form-select">
+          {% for value, name in s.bays %}<option value="{{ value }}" {% if value == s.bay %}selected{% endif %}>{{ name }}</option>{% endfor %}
+        </select>
+      </label>
+      {% else %}<input type="hidden" name="bay" value="{{ s.bay }}">{% endif %}
+      <noscript><button class="btn-secondary">Update</button></noscript>
     </form>
-    <p id="booking-message" role="status" aria-live="polite"></p>
-    <small>Booking is restricted to configured shop hours. Tentative appointments reserve a bay or technician until cancelled. Shop appointments also block one hour afterward, and mobile appointments block travel time beforehand.</small>
+
+    <p class="day-head" style="margin-top:4px">1. Pick a day</p>
+    <nav class="days" aria-label="Days">
+      {% for d in s.days %}
+      <a class="day-chip{% if d.iso == s.day %} on{% endif %}{% if not d.free %} full{% endif %}"
+         href="/appointments/calendar?ro={{ s.order_id }}&amp;day={{ d.iso }}&amp;length={{ s.length }}&amp;where={{ s.where }}&amp;travel={{ s.travel }}&amp;bay={{ s.bay|urlencode }}#picker"
+         {% if d.iso == s.day %}aria-current="date"{% endif %}>
+        {{ d.short }}<small>{{ d.date }}</small><small>{{ d.free }} open</small>
+      </a>
+      {% endfor %}
+    </nav>
+
+    <p class="day-head">2. Tap a time · {{ s.day_label }}</p>
+    {% if s.slots %}
+    <div class="slots">
+      {% for slot in s.slots %}
+      <button type="button" class="btn-secondary" data-start="{{ slot.starts_at }}" data-end="{{ slot.ends_at }}">{{ slot.label }}</button>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No open {{ s.length }}-hour time that day. Try another day or a shorter length.</p>
+    {% endif %}
+    <p class="slot-error" role="alert"></p>
+    {% if s.booked_that_day %}
+    <p class="muted" style="margin-top:12px">Already booked that day: {% for b in s.booked_that_day %}{{ b.time }} {{ b.who }} (job #{{ b.job_id }}){% if not loop.last %}; {% endif %}{% endfor %}</p>
+    {% endif %}
+    <div class="exact" id="exact-time">
+      <p class="day-head">Or type an exact time</p>
+      <form id="appointment-form" class="picker-opts">
+        <input type="hidden" name="repair_order_id" value="{{ s.order_id }}">
+        <input type="hidden" name="resource_id" value="{{ s.bay }}">
+        <input type="hidden" name="location" value="{{ s.where }}">
+        <input type="hidden" name="travel_minutes" value="{{ s.travel if s.where == 'mobile' else 0 }}">
+        <label>Start <input name="starts_at" type="datetime-local" class="form-input" required></label>
+        <label>End <input name="ends_at" type="datetime-local" class="form-input" required></label>
+        <button type="submit" class="btn-secondary">Save this time</button>
+      </form>
+      <p id="booking-message" role="status" aria-live="polite"></p>
+      <table class="exact-rows"><tbody id="calendar-rows">
+        {% for e in s.existing %}<tr><td>{{ e.when }}</td><td>#{{ s.order_id }}</td><td>{{ e.status }}</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+    <p class="muted" style="margin-top:12px">Saves as <b>tentative</b>. Nothing is texted to the customer.
+      {% if s.where == 'shop' and s.buffer %}The bay stays blocked {{ s.buffer }} minutes after the visit.{% elif s.where == 'mobile' %}Drive time is blocked before the visit.{% endif %}
+      <a href="/appointments/calendar">Close</a></p>
+  </section>
+  {% elif may_change %}
+  <form method="get" action="/appointments/calendar" class="jump">
+    <span>To book a time, open the job and tap <b>Schedule</b>, or enter the job #</span>
+    <input name="ro" class="form-input" inputmode="numeric" pattern="[0-9]*" placeholder="Job #" aria-label="Job number" value="{{ ro_query }}">
+    <button class="btn-secondary">Pick a time</button>
+  </form>
+  {% endif %}
+
+  <div class="key" id="key">
+    <div><span class="pill pill-tentative">Tentative</span> The time is held for the job, but the customer hasn't agreed to it yet.</div>
+    <div><span class="pill pill-confirmed">Confirmed</span> The customer agreed. Online bookings come in confirmed.</div>
+    {% if may_change %}<div>Tap a visit to see who, the phone number and the job. <b>Confirm</b> marks it confirmed and puts a reminder on your task list. It doesn't text the customer.</div>{% endif %}
   </div>
-  <div class="card" style="padding:18px">
-    <h2 style="margin:0 0 12px">Appointments</h2>
-    <p id="calendar-error" role="alert"></p>
-    <table><thead><tr><th>Start</th><th>End</th><th>RO</th><th>Resource</th><th>Status</th><th>Actions</th></tr></thead><tbody id="calendar-rows"></tbody></table>
-  </div>
+
+  <h2>Coming up{% if sections.upcoming_count %} <span class="muted">· {{ sections.upcoming_count }}{% if sections.tentative_count %}, {{ sections.tentative_count }} not confirmed{% endif %}</span>{% endif %}</h2>
+  {% for d in sections.upcoming %}
+  <p class="day-head">{{ d.label }}</p>
+  {% for r in d.rows %}{{ appt(r) }}{% endfor %}
+  {% else %}
+  <p class="muted">Nothing booked yet.</p>
+  {% endfor %}
+
+  {% if sections.open_past %}
+  <h2 style="margin-top:24px">Past visits to close out</h2>
+  <p class="muted">These times have passed. Mark each one done or cancelled so nothing is left hanging.</p>
+  {% for r in sections.open_past %}{{ appt(r) }}{% endfor %}
+  {% endif %}
+
+  {% if sections.closed %}
+  <details style="margin-top:24px">
+    <summary class="muted" style="cursor:pointer;min-height:44px;display:flex;align-items:center">Done and cancelled, last 2 weeks ({{ sections.closed|length }})</summary>
+    {% for r in sections.closed %}{{ appt(r) }}{% endfor %}
+  </details>
+  {% endif %}
 </div>
 <script>
 (() => {
-  const rows = document.getElementById('calendar-rows');
-  const error = document.getElementById('calendar-error');
-  const message = document.getElementById('booking-message');
-  const form = document.getElementById('appointment-form');
-  const presetRo = new URLSearchParams(location.search).get('ro');
-  if (presetRo) form.elements.repair_order_id.value = presetRo;
-  if (!form.elements.resource_id.value) form.elements.resource_id.value = 'Bay 1';
-  form.elements.starts_at.addEventListener('change', () => {
-    // Default to a one-hour job, stated in Phoenix wall-clock time.
-    const value = form.elements.starts_at.value;
-    if (!value || form.elements.ends_at.value) return;
-    const [date, clock] = value.split('T');
-    const hour = String(Number(clock.slice(0, 2)) + 1).padStart(2, '0');
-    if (Number(hour) < 24) form.elements.ends_at.value = `${date}T${hour}${clock.slice(2)}`;
-  });
-  const phoenixTime = iso => new Intl.DateTimeFormat('en-US', {timeZone:'America/Phoenix',dateStyle:'medium',timeStyle:'short'}).format(new Date(iso));
-  async function request(path, options={}) {
-    const response = await fetch(path, {credentials:'same-origin', ...options});
-    if (!response.ok) {
-      let detail = 'Request failed (' + response.status + ')';
-      try { const data = await response.json(); detail = typeof data.detail === 'string' ? data.detail : detail; } catch (_) {}
-      throw new Error(detail);
-    }
-    return response.json();
+  const WARN = {
+    cancel: 'Cancel this visit? It frees the time. Nothing is texted to the customer.',
+    missed: 'Mark this visit missed? If automatic customer follow-ups are on in Settings, the shop line may text the customer about rebooking a day later.'
+  };
+  async function post(path, body) {
+    const options = {method: 'POST', credentials: 'same-origin'};
+    if (body) { options.headers = {'Content-Type': 'application/json'}; options.body = JSON.stringify(body); }
+    const response = await fetch(path, options);
+    let data = null;
+    try { data = await response.json(); } catch (_) {}
+    if (!response.ok) throw new Error(data && typeof data.detail === 'string' ? data.detail : 'That did not save (' + response.status + ').');
+    return data;
   }
-  function cell(row, value) { const td=document.createElement('td'); td.textContent=String(value); row.appendChild(td); return td; }
-  async function load() {
-    error.textContent='';
+  document.querySelectorAll('[data-action]').forEach(btn => btn.addEventListener('click', async () => {
+    const action = btn.dataset.action, id = btn.dataset.appt;
+    if (WARN[action] && !window.confirm(WARN[action])) return;
+    const box = btn.closest('.appt-body').querySelector('.appt-error');
+    btn.disabled = true; box.textContent = '';
+    try { await post('/appointments/' + encodeURIComponent(id) + '/' + action); location.hash = 'appt-' + id; location.reload(); }
+    catch (e) { box.textContent = e.message; btn.disabled = false; }
+  }));
+  const opts = document.getElementById('picker-opts');
+  if (opts) opts.querySelectorAll('select').forEach(sel => sel.addEventListener('change', () => opts.submit()));
+  {% if schedule %}
+  const job = {{ schedule.order_id|tojson }}, bay = {{ schedule.bay|tojson }};
+  const where = {{ schedule.where|tojson }}, travel = {{ (schedule.travel if schedule.where == 'mobile' else 0)|tojson }};
+  const slotError = document.querySelector('.slot-error');
+  document.querySelectorAll('[data-start]').forEach(btn => btn.addEventListener('click', async () => {
+    document.querySelectorAll('[data-start]').forEach(b => b.disabled = true);
+    slotError.textContent = '';
     try {
-      const appointments=await request('/appointments/');
-      rows.replaceChildren();
-      for (const a of appointments) {
-        const tr=document.createElement('tr');
-        cell(tr,phoenixTime(a.starts_at)); cell(tr,phoenixTime(a.ends_at));
-        const ro=cell(tr,''); const link=document.createElement('a'); link.href='/ro/'+encodeURIComponent(a.repair_order_id); link.textContent='#'+a.repair_order_id; ro.appendChild(link);
-        cell(tr,a.resource_id); cell(tr,a.missed?'missed':a.status);
-        const actions=cell(tr,'');
-        const transitions=a.status==='tentative'?['confirm','cancel']:a.status==='confirmed'?['complete','cancel']:[];
-        if ({{ may_mark_missed|tojson }} && a.status==='confirmed' && Date.parse(a.ends_at) <= Date.now()) transitions.push('missed');
-        for(const action of transitions) {
-          const btn=document.createElement('button');btn.type='button';btn.textContent=action==='missed'?'Mark missed':action;btn.className='btn-secondary';
-          btn.addEventListener('click',async()=>{btn.disabled=true;try{await request('/appointments/'+a.id+'/'+action,{method:'POST'});await load();}catch(e){error.textContent=e.message;btn.disabled=false;}});
-          actions.appendChild(btn);
+      const made = await post('/appointments/', {repair_order_id: job, resource_id: bay, starts_at: btn.dataset.start,
+                                                 ends_at: btn.dataset.end, location: where, travel_minutes: travel});
+      location.href = '/appointments/calendar?booked=' + encodeURIComponent(made.id) + '#appt-' + encodeURIComponent(made.id);
+    } catch (e) {
+      slotError.textContent = e.message;
+      document.querySelectorAll('[data-start]').forEach(b => b.disabled = false);
+    }
+  }));
+  const exact = document.getElementById('appointment-form');
+  if (exact) {
+    const said = document.getElementById('booking-message'), rows = document.getElementById('calendar-rows');
+    const asPhoenix = v => v + ':00-07:00'; // Arizona does not observe daylight saving.
+    const phoenixTime = iso => new Intl.DateTimeFormat('en-US', {timeZone: 'America/Phoenix', dateStyle: 'medium', timeStyle: 'short'}).format(new Date(iso));
+    exact.elements.starts_at.addEventListener('change', () => {
+      const value = exact.elements.starts_at.value;
+      if (!value || exact.elements.ends_at.value) return;
+      const [date, clock] = value.split('T');
+      const hour = Number(clock.slice(0, 2)) + {{ schedule.length|tojson }};
+      if (hour < 24) exact.elements.ends_at.value = date + 'T' + String(hour).padStart(2, '0') + clock.slice(2);
+    });
+    exact.addEventListener('submit', async e => {
+      e.preventDefault(); said.textContent = '';
+      const v = Object.fromEntries(new FormData(exact));
+      try {
+        const made = await post('/appointments/', {repair_order_id: Number(v.repair_order_id), resource_id: v.resource_id,
+          starts_at: asPhoenix(v.starts_at), ends_at: asPhoenix(v.ends_at), location: v.location,
+          travel_minutes: Number(v.travel_minutes || 0)});
+        said.textContent = 'Tentative appointment saved. Nothing was texted to the customer.';
+        const tr = document.createElement('tr');
+        for (const text of [phoenixTime(asPhoenix(v.starts_at)), '#' + made.repair_order_id, made.status]) {
+          const td = document.createElement('td'); td.textContent = text; tr.appendChild(td);
         }
         rows.appendChild(tr);
-      }
-      if (!appointments.length) {const tr=document.createElement('tr');cell(tr,'No appointments yet.');rows.appendChild(tr);}
-    } catch(e) {error.textContent=e.message;}
+        exact.elements.starts_at.value = ''; exact.elements.ends_at.value = '';
+      } catch (err) { said.textContent = err.message; }
+    });
   }
-  form.addEventListener('submit',async e=>{
-    e.preventDefault();message.textContent='';
-    const values=Object.fromEntries(new FormData(form));
-    const asPhoenix = v => v + ':00-07:00'; // Arizona does not observe DST.
-    const payload={repair_order_id:Number(values.repair_order_id),resource_id:values.resource_id,starts_at:asPhoenix(values.starts_at),ends_at:asPhoenix(values.ends_at),location:values.location,travel_minutes:Number(values.travel_minutes||0)};
-    try {await request('/appointments/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});message.textContent='Tentative appointment saved.';const keepRo=form.elements.repair_order_id.value,keepBay=form.elements.resource_id.value;form.reset();form.elements.repair_order_id.value=keepRo;form.elements.resource_id.value=keepBay;await load();}
-    catch(e){message.textContent=e.message;}
-  });
-  load();
+  {% endif %}
+  if (location.hash.startsWith('#appt-')) { const el = document.getElementById(location.hash.slice(1)); if (el) el.open = true; }
 })();
 </script>
 {% endblock %}

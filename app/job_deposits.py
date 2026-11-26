@@ -82,7 +82,7 @@ def apply_to_invoice(db: Session, invoice: Invoice) -> int:
 def record_error(ro: RepairOrder, amount: float, method: str, reference: str, received_at: datetime) -> str | None:
     """Why this deposit can't be recorded, or None when it is fine."""
     from app.routes.invoices import enabled_methods, money_error, _shop_day
-    if ro.status == "delivered":
+    if ro.status in ("delivered", "cancelled"):
         return "This job is already picked up. Record money on its invoice instead."
     if method not in enabled_methods():
         return "Choose a valid payment method."

@@ -149,12 +149,17 @@
     <h2 class="font-bold mb-2" id="sb-goal-heading">Daily sales goal</h2>
     {% if board.sales %}<p class="sb-note mb-2">Today so far: ${{ '{:,.2f}'.format(board.sales.total) }} from {{ board.sales.count }} payment{{ '' if board.sales.count == 1 else 's' }} recorded.</p>{% endif %}
     {% if not read_only %}
-    <form method="post" action="/board/goal" class="sb-add">
+    <form method="post" action="/board/goal" class="sb-add" style="flex-wrap:wrap">
       <input name="goal" class="form-input" type="text" inputmode="decimal" aria-label="Daily goal in dollars" value="{{ goal }}" required>
       <button class="btn-secondary">Save</button>
+      <fieldset class="sb-note" style="flex-basis:100%; border:0; padding:0; margin:6px 0 0;">
+        <legend class="sb-note">Home and the TV measure today against</legend>
+        <label style="margin-right:14px;"><input type="radio" name="mode" value="fixed" {% if goal_mode != 'bills' %}checked{% endif %}> This daily goal</label>
+        <label><input type="radio" name="mode" value="bills" {% if goal_mode == 'bills' %}checked{% endif %}> What the bills need a day (when more than 0)</label>
+      </fieldset>
     </form>
     {% endif %}
-    <p class="sb-note mt-2">Counts payments recorded on invoices today, Phoenix time. Only shows on a screen signed in as the owner.</p>
+    <p class="sb-note mt-2">Counts payments recorded on invoices, deposits taken before an invoice, and money marked "Got it" on the Money page, today, Phoenix time. Only shows on a screen signed in as the owner.</p>
   </section>
   {% endif %}
 </div>

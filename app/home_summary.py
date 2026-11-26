@@ -10,11 +10,12 @@ from app.appointment_model import Appointment
 from app.appointments import PHOENIX
 from app.dispatch_model import DispatchItem
 from app.models import Invoice, LineItem, Payment, RepairOrder
+from app.ro_status_policy import CLOSED_STATUSES
 
 # Every non-delivered status must be represented. In particular, customer approval
 # does not mean work has started, and complete does not prove invoice/payment/pickup.
 STAGES = (("intake", "Intake"), ("diagnosing", "Diagnosing"), ("waiting_approval", "Waiting approval"),
-          ("approval_received", "Approval received"), ("waiting_parts", "Waiting parts"),
+          ("approval_received", "Approval received"), ("waiting_parts", "Parts ordered"),
           ("in_progress", "In progress"), ("complete", "Work complete"))
 
 
@@ -27,9 +28,11 @@ def summary(db: Session, user, now: datetime | None = None) -> dict:
         booked = db.query(Appointment).filter(Appointment.status.in_(("tentative", "confirmed")),
                                               Appointment.starts_at >= start.astimezone(timezone.utc),
                                               Appointment.starts_at < (start + timedelta(days=1)).astimezone(timezone.utc)).count()
-        counts = dict(db.query(RepairOrder.status, func.count()).filter(RepairOrder.status != "delivered").group_by(RepairOrder.status).all())
-        awaiting = {row[0] for row in db.query(LineItem.repair_order_id).filter(LineItem.approval == "pending").all()}
-        awaiting |= {row[0] for row in db.query(RepairOrder.id).filter(RepairOrder.status == "waiting_approval").all()}
+        counts = dict(db.query(RepairOrder.status, func.count()).filter(RepairOrder.status.notin_(CLOSED_STATUSES)).group_by(RepairOrder.status).all())
+        # Waiting on a customer = an open job with a line still waiting on their yes (as Home's list counts it).
+        # A job left in waiting_approval with nothing pending, or a closed job, isn't waiting on anyone.
+        awaiting = {row[0] for row in db.query(LineItem.repair_order_id).join(RepairOrder).filter(
+            LineItem.approval == "pending", RepairOrder.status.notin_(CLOSED_STATUSES)).all()}
         money = None
         if user.role == "owner":
             open_invoices = db.query(Invoice).filter(Invoice.status.in_(("draft", "sent"))).all()

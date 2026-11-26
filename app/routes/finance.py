@@ -2,7 +2,9 @@
 shop needs to make each day to cover it.
 
 Balances, bills and expected money are typed or pasted in by the owner (app/finance_model.py).
-Money in comes from payments recorded on jobs plus expected money marked as received here.
+Money in comes from payments recorded on jobs plus expected money marked as received here. Job payments and
+deposits recorded after the shop balances were last typed count as shop cash until he types a balance again.
+Repeating bills roll forward on their own each night (roll_repeating_bills, run by app/scheduler.py).
 Unpaid balances on sent job invoices count as money coming in. A bank's CSV download can update an
 account's balance; the file itself is read once and not kept. Nothing here changes invoices or
 payments, or sends anything.
@@ -64,6 +66,12 @@ def daily_goal() -> int:
     except ValueError:
         return plan.DEFAULT_DAILY_GOAL
     return value if 0 < value <= 100000 else plan.DEFAULT_DAILY_GOAL
+
+
+def goal_mode() -> str:
+    """"fixed": Home and the TV measure against the daily goal; "bills": against what the bills need a day
+    when that is more than zero. Fixed unless the owner picks bills on /board/manage."""
+    return "bills" if (settings_store.raw("daily_goal_mode") or "").strip().lower() == "bills" else "fixed"
 
 
 def saved_pay_order() -> dict:
@@ -131,11 +139,70 @@ def _local_day(value: datetime | None) -> date | None:
     return value.astimezone(PHOENIX).date()
 
 
+def _naive_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    return value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo else value
+
+
+def balances_read_at(accounts) -> datetime | None:
+    """When the shop balances were last typed in (naive UTC). Typing any shop balance, or a bank file's
+    balance, counts as a fresh read. Moving money for Paid or Got it doesn't change this time."""
+    times = [_naive_utc(a.updated_at) for a in accounts if a.active and a.scope == "business" and a.updated_at]
+    return max(times, default=None)
+
+
+def recorded_since(db: Session, since: datetime | None) -> int:
+    """Cents of job payments and open job deposits recorded after `since`. A deposit that moves onto an
+    invoice becomes a Payment dated when the deposit came in, so it is counted once either way."""
+    if since is None:
+        return 0
+    paid = (db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(Payment.paid_at > since).scalar())
+    deposits = (db.query(func.coalesce(func.sum(JobDeposit.amount), 0))
+                .filter(JobDeposit.received_at > since, JobDeposit.removed_at.is_(None),
+                        JobDeposit.payment_id.is_(None)).scalar())
+    return round((float(paid or 0) + float(deposits or 0)) * 100)
+
+
+def money_totals(db: Session, accounts, bills, incoming, today: date, window: int) -> dict:
+    """The one set of totals Home, the Money page and the pay order all use."""
+    return plan.totals(accounts, bills, incoming, today, window, jobs_due(db),
+                       recorded_in=recorded_since(db, balances_read_at(accounts)))
+
+
+CHANGE_LABELS = {"balance": "balances typed", "statement_balance": "bank file read", "balance_moved": "money moved",
+                 "received": "payment marked got it", "dropped": "money owed removed", "owed": "money owed changed",
+                 "pay_order": "pay order changed", "paid_date": "paid date changed"}
+
+
+def last_update(db: Session) -> tuple[datetime | None, str]:
+    """The latest of: a figure he changed here, a job payment or a deposit recorded. In Phoenix time.
+    The nightly roll-forward of repeating bills doesn't count, so the stamp means someone touched the money."""
+    found = []
+    change = (db.query(FinanceChange).filter(FinanceChange.actor != SYSTEM_ACTOR)
+              .order_by(FinanceChange.created_at.desc()).first())
+    if change is not None:
+        found.append((_naive_utc(change.created_at), CHANGE_LABELS.get(change.action, "bills changed")))
+    paid = db.query(func.max(Payment.paid_at)).scalar()
+    if paid is not None:
+        found.append((_naive_utc(paid), "job payment recorded"))
+    deposit = db.query(func.max(JobDeposit.created_at)).filter(JobDeposit.removed_at.is_(None)).scalar()
+    if deposit is not None:
+        found.append((_naive_utc(deposit), "job deposit recorded"))
+    now = datetime.utcnow()
+    found = [f for f in found if f[0] is not None and f[0] <= now + timedelta(minutes=5)]
+    if not found:
+        return None, ""
+    when, what = max(found, key=lambda f: f[0])
+    return when.replace(tzinfo=timezone.utc).astimezone(PHOENIX), what
+
+
 def jobs_due(db: Session) -> list:
-    """Unpaid balances on job invoices marked sent: total less payments and anything waived."""
+    """Unpaid balances on job invoices (made or sent): total less payments and anything waived.
+    Matches the Invoices page's "still owed", so the two pages agree."""
     invoices = (db.query(Invoice)
                 .options(joinedload(Invoice.payments), joinedload(Invoice.repair_order).joinedload(RepairOrder.customer))
-                .filter(Invoice.status == "sent").all())
+                .filter(Invoice.status.in_(("draft", "sent"))).all())
     due = []
     for invoice in invoices:
         left = (invoice.total or 0) - sum(p.amount or 0 for p in invoice.payments) - (invoice.waived_amount or 0)
@@ -147,6 +214,7 @@ def jobs_due(db: Session) -> list:
         name = f"{customer.first_name or ''} {customer.last_name or ''}".strip() if customer else "Customer not linked"
         paid = sum(p.amount or 0 for p in invoice.payments)
         label = f"{name} · RO #{ro.id}" if ro else name
+        label += " · not sent yet" if invoice.status == "draft" else ""
         due.append(plan.JobDue(label=label + (" · deposit in" if paid else ""), amount_cents=cents_left,
                                sent_on=_local_day(invoice.created_at) or phoenix_today(), ro_id=ro.id if ro else None))
     return due
@@ -180,15 +248,17 @@ def home_goal(db: Session) -> dict | None:
         accounts = db.query(FinanceAccount).all()
         bills = db.query(FinanceBill).all()
         incoming = db.query(FinanceIncoming).all()
-        sums = plan.totals(accounts, bills, incoming, today, 14, jobs_due(db))
+        sums = money_totals(db, accounts, bills, incoming, today, 14)
         came_in = sales_in(db, today, tomorrow, incoming)
     except SQLAlchemyError:
         db.rollback()
         return None
     need = plan.dollars(plan.per_day(sums["business"].short, sums["days_open"]))
     goal = daily_goal()
-    target = need if need > 0 else goal
+    use_bills = need > 0 and goal_mode() == "bills"
+    target = need if use_bills else goal
     return {"in": round(came_in, 2), "need": need, "goal": goal, "target": target, "bills": need > 0,
+            "source": "bills" if use_bills else "fixed",
             "days_open": sums["days_open"], "left": round(max(target - came_in, 0), 2), "hit": came_in >= target,
             "percent": max(0, min(100, int(came_in * 100 / target))) if target else 0}
 
@@ -212,11 +282,13 @@ def finance_home(request: Request, window: int = 14, db: Session = Depends(get_d
         accounts = db.query(FinanceAccount).order_by(FinanceAccount.scope, FinanceAccount.name).all()
         bills = db.query(FinanceBill).all()
         incoming = db.query(FinanceIncoming).all()
+        updated, updated_what = last_update(db)
     except SQLAlchemyError:
         db.rollback()
         ready, accounts, bills, incoming = False, [], [], []
+        updated, updated_what = None, ""
 
-    sums = plan.totals(accounts, bills, incoming, today, window, jobs_due(db))
+    sums = money_totals(db, accounts, bills, incoming, today, window)
     business, personal = sums["business"], sums["personal"]
     goal = daily_goal()
     money_in = {
@@ -281,6 +353,8 @@ def finance_home(request: Request, window: int = 14, db: Session = Depends(get_d
         "is_unconfirmed": plan.is_unconfirmed,
         "activity": _recent_payments(db, today - timedelta(days=30)),
         "last_updated": last_updated,
+        "updated": updated,
+        "updated_what": updated_what,
         "categories": BILL_CATEGORIES,
         "repeats": REPEATS,
         "scopes": SCOPES,
@@ -321,8 +395,41 @@ def _roll_forward(db: Session, bill: FinanceBill):
                            note=None if bill.note in MARKER_NOTES else bill.note))
 
 
-def _move(db: Session, account_id, scope: str, delta_cents: int, actor: str):
-    """Moves a paid bill or a received payment through one account of the same scope, so cash stays current."""
+SYSTEM_ACTOR = "system"
+
+
+def roll_repeating_bills(db: Session, today: date, actor: str = SYSTEM_ACTOR) -> int:
+    """Nightly: once a weekly or monthly bill's due day has passed, adds the next one, and every period it
+    missed up to today, so each unpaid period shows as its own late bill. Nothing is ever marked paid.
+    A bill whose latest row repeats "once" has stopped repeating. Returns how many bills were added.
+    The caller commits."""
+    chains = {}
+    for bill in db.query(FinanceBill).all():
+        chains.setdefault((bill.name.strip().lower(), bill.scope), []).append(bill)
+    added = 0
+    for rows in chains.values():
+        latest = max(rows, key=lambda b: (b.due_date, b.id or 0))
+        if latest.repeats not in ("weekly", "monthly") or latest.due_date >= today:
+            continue
+        on_file = {b.due_date for b in rows}
+        note = None if latest.note == NOTE_PAID_GUESS else latest.note
+        due, steps = latest.due_date, 0
+        while due < today and steps < plan.MAX_PERIODS:
+            due, steps = plan.next_due(due, latest.repeats), steps + 1
+            if due in on_file:
+                continue
+            db.add(FinanceBill(name=latest.name, scope=latest.scope, category=latest.category,
+                               amount_cents=latest.amount_cents, due_date=due, repeats=latest.repeats, note=note))
+            on_file.add(due)
+            added += 1
+            _log(db, actor, "bill_rolled", f"{latest.name} {plan.dollars(latest.amount_cents)} due {due} {latest.scope}")
+    db.flush()
+    return added
+
+
+def _move(db: Session, account_id, scope: str, delta_cents: int, actor: str, today: date):
+    """Moves a paid bill or a received payment through one account of the same scope, so cash stays current.
+    The account's "as of" day moves to today. Its updated_at is when he last typed the balance, and stays."""
     try:
         account = db.get(FinanceAccount, int(account_id))
     except (TypeError, ValueError):
@@ -330,7 +437,7 @@ def _move(db: Session, account_id, scope: str, delta_cents: int, actor: str):
     if account is None or account.scope != scope or not account.active:
         return None
     account.balance_cents += delta_cents
-    account.updated_at = datetime.now(timezone.utc)
+    account.as_of = today
     _log(db, actor, "balance_moved", f"{account.name} {plan.dollars(delta_cents)}")
     return account
 
@@ -460,7 +567,7 @@ async def bill_action(bill_id: int, action: str, request: Request, db: Session =
             if day is None:
                 return "", [problem]
             _mark_paid(db, bill, day, user.username)
-            account = _move(db, form.get("account"), bill.scope, -bill.amount_cents, user.username)
+            account = _move(db, form.get("account"), bill.scope, -bill.amount_cents, user.username, today)
             late = plan.days_late(bill)
             return (f"Marked {bill.name} paid{f' from {account.name}' if account else ''}"
                     + (f", {late} days late." if late else ".")), []
@@ -484,7 +591,7 @@ async def incoming_action(item_id: int, action: str, request: Request, db: Sessi
         item.received_on = today if action == "got" else None
         _log(db, user.username, item.status, f"{item.source} {plan.dollars(item.amount_cents)}")
         if action == "got":
-            account = _move(db, form.get("account"), item.scope, item.amount_cents, user.username)
+            account = _move(db, form.get("account"), item.scope, item.amount_cents, user.username, today)
             return f"Got {item.source}'s payment{f' into {account.name}' if account else ''}.", []
         return f"Took {item.source} off the list.", []
     return await _save(request, db, work)
@@ -525,7 +632,7 @@ async def order(request: Request, db: Session = Depends(get_db)):
             accounts = db.query(FinanceAccount).all()
             incoming = db.query(FinanceIncoming).all()
             window = int(form.get("window") or 14) if str(form.get("window") or "14").isdigit() else 14
-            sums = plan.totals(accounts, bills, incoming, today, window if window in plan.WINDOWS else 14)
+            sums = money_totals(db, accounts, bills, incoming, today, window if window in plan.WINDOWS else 14)
             current = plan.pay_order(_pay_list(sums[scope]), saved.get(scope), sums[scope].cash, today)["names"]
             if name not in current:
                 return "", ["That bill isn't in the pay order."]
@@ -605,7 +712,9 @@ async def statement(request: Request, account: str = Form(""), window: str = For
         if target is not None and found is not None:
             balance, through = found
             target.balance_cents, target.as_of = balance, through
-            target.updated_at = datetime.now(timezone.utc)
+            # The file's balance is as of its last day, so job payments after that day still count as cash.
+            day_after = datetime(through.year, through.month, through.day, tzinfo=PHOENIX) + timedelta(days=1)
+            target.updated_at = min(datetime.now(timezone.utc), day_after.astimezone(timezone.utc))
             _log(db, user.username, "statement_balance", f"{target.name} {plan.dollars(balance)} through {through}")
             notes.append(f"{target.name} is now {'-' if balance < 0 else ''}${abs(balance) / 100:,.2f}, as of {through.strftime('%b %-d')}.")
         elif target is not None:

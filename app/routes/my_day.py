@@ -16,7 +16,7 @@ from app.routes.repair_orders import RO_STATUSES, workers
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
-OPEN = [key for key, _ in RO_STATUSES if key not in ("delivered",)]
+OPEN = [key for key, _ in RO_STATUSES if key not in ("delivered", "cancelled")]
 
 
 def _local(value):

@@ -6,7 +6,7 @@ from app.database import get_db
 from app.models import RepairOrder, Invoice
 from datetime import datetime, timezone
 
-from app import approval_links, approval_options, deposit_requests, next_visit, referrals, website_alerts
+from app import line_changes, approval_links, approval_options, deposit_requests, next_visit, referrals, website_alerts
 import os
 import secrets
 from app.security_controls import link_expired
@@ -21,6 +21,24 @@ templates = Jinja2Templates(
 
 # ── Estimate / RO approval signing ─────────────────────────────────────────
 
+def _customer_photos(ro):
+    """Only files the office marked for the customer. A photo tied to an item on this page shows under
+    that item; the rest (whole job, or a line not on this page) show together in one gallery."""
+    from sqlalchemy.orm import object_session
+    from app.routes import ro_evidence
+    db = object_session(ro)
+    if db is None:
+        return {}, []
+    shown = {li.id for li in ro.line_items if li.approval in ("approved", "pending")}
+    by_line, gallery = {}, []
+    for f in ro_evidence.attachments_for(db, ro.id, customer_only=True):
+        if f.line_item_id in shown:
+            by_line.setdefault(f.line_item_id, []).append(f)
+        else:
+            gallery.append(f)
+    return by_line, gallery
+
+
 def _sign_page(request, ro, error=None, status=200):
     pending = [li for li in ro.line_items if li.approval == "pending"]
     from app.routes.invoices import SHOP_TAX_RATE
@@ -34,9 +52,12 @@ def _sign_page(request, ro, error=None, status=200):
     terms = None
     if security_controls.value("terms_on_approval_page"):
         terms = [p.strip() for p in security_controls.value("terms_text").split("\n\n") if p.strip()]
+    line_photos, job_photos = _customer_photos(ro)
     return templates.TemplateResponse("sign_ro.html", {
         "request": request, "ro": ro, "subtotal": subtotal, "pending": pending, "error": error, "terms": terms,
+        "line_photos": line_photos, "job_photos": job_photos,
         "options": approval_options.groups(pending), "tax_rate": SHOP_TAX_RATE,
+        "changes": line_changes.summary(ro),
         "fixed_total": round(sum(li.total for li in fixed), 2),
         "fixed_taxable": round(sum(li.total for li in fixed if li.item_type == "part"), 2),
     }, status_code=status, headers=PRIVATE_PAGE)
@@ -89,6 +110,7 @@ async def sign_ro_submit(request: Request, token: str, db: Session = Depends(get
         li.approval_source, li.approval_recorded_by = "link", None
     from app import discounts
     discounts.follow_decisions(ro)  # declined everything: the shop's discounts go with it
+    line_changes.answered(ro)
     ro.signature_data = signature_data
     ro.approved_by = (approved_by or "Customer")[:128]
     ro.signed_at = datetime.utcnow()
