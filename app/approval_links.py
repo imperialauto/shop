@@ -267,7 +267,11 @@ def send_now(db: Session, ro: RepairOrder, actor: str, actor_user_id: int, offer
     earlier = _rows_for(db, ro)
     _settle(db, earlier)
     db.commit()
-    if any(o.status in ("queued", "reserved") for o in earlier):
+    flying = [o.item_id for o in earlier if o.status in ("queued", "reserved")]
+    if flying and db.query(DispatchItem.id).filter(DispatchItem.id.in_(flying),
+                                                   DispatchItem.last_message_id == newest).first():
+        # Still going out at this same point in their thread. (One queued before they texted again is
+        # held back by the shop line's thread check, so a fresh link may go.)
         return "in_flight", None
     if resend:
         prefix = f"resend:{ro.id}:{newest}"[:150]

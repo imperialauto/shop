@@ -104,7 +104,7 @@ class OneLinkTests(unittest.TestCase):
     def test_second_press_before_anything_changes_does_not_text_twice(self):
         self.text_now()
         r = self.text_now()
-        self.assertIn("link=already", r.headers["location"])
+        self.assertIn("link=in_flight", r.headers["location"])  # the first is still going out
         self.assertEqual(len(self.outbound()), 1)
 
     def test_new_customer_message_after_send_allows_a_fresh_link(self):
@@ -160,7 +160,7 @@ class OneLinkTests(unittest.TestCase):
         self.assertEqual(self.outbound(), [("dashboard_reply", "queued", item.id)])
         with patch.object(customer_file, "_bridge", thread):
             again = self.client().post("/ro/5/request-approval")
-        self.assertIn("link=already", again.headers["location"])
+        self.assertIn("link=in_flight", again.headers["location"])
         self.assertEqual(len(self.outbound()), 1)
 
     def test_office_ask_for_approval_still_waits_for_the_owner(self):

@@ -285,7 +285,7 @@ class SendApprovalToolTests(_Flow):
             self.assertEqual([a.action for a in db.query(AgentAction).all()], ["approval.send"])
             self.assertIn("Claude connector", db.query(DispatchAudit).filter_by(action="owner_approve").one().detail)
         error, again = self.send(headers)
-        self.assertEqual((again["state"], again["sent"]), ("already", False))
+        self.assertEqual((again["state"], again["sent"]), ("in_flight", False))
         self.assertEqual(len(self.outbound()), 1)
 
     def test_paused_texting_sends_nothing(self):
