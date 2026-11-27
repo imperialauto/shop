@@ -35,3 +35,42 @@ def prefill(db, order: RepairOrder, line_slug: str, where: str) -> str:
         notes.append(f"Mobile service call ${pricing.rates()['service_call']:,.0f} plus travel (travel not set; confirm).")
     notes.append("Check the VIN, ALLDATA labor time and current parts prices before sending.")
     return " ".join(notes)
+
+
+OIL_CHANGE = "oil-change"
+OIL_QUART_PRICE = 10.99   # owner's per-quart price for full synthetic from shop stock (Nov 24)
+OIL_FILTER_PRICE = 12.99  # owner's price for an STP Extended Life filter (Nov 24)
+OIL_QUARTS = 5
+OIL_CHANGE_LINE = ("Full synthetic oil change special: labor and multi-point inspection. "
+                   f"Extra quarts are ${OIL_QUART_PRICE:.2f} each; a special filter is quoted before work.")
+OIL_LINE = "Full synthetic motor oil, per quart (oil change special)"
+FILTER_LINE = "Oil filter (oil change special)"
+
+
+def oil_change_line(db, order: RepairOrder, service) -> LineItem | None:
+    """A booked oil change special starts its job at the saved package price, split into lines.
+
+    The oil (5 qt at the per-quart price) and the filter are parts and taxed; the rest of the
+    package price is labor and untaxed, so tax goes on parts only, like any other job (owner's
+    choice, Nov 26). None of it is sent for approval; the owner checks oil capacity and filter first.
+    Returns the labor line. If the saved price is below the oil and filter, the whole price is one
+    taxed part line, so the package never shows a negative labor line."""
+    if service is None or service.slug != OIL_CHANGE or service.price is None:
+        return None
+    parts = round(OIL_QUARTS * OIL_QUART_PRICE + OIL_FILTER_PRICE, 2)
+    labor = round(service.price - parts, 2)
+    if labor < 0:
+        line = LineItem(repair_order_id=order.id, item_type="part", quantity=1, unit_price=service.price, taxable=True,
+                        description=OIL_CHANGE_LINE)
+        db.add(line)
+        return line
+    db.add_all([
+        LineItem(repair_order_id=order.id, item_type="part", quantity=OIL_QUARTS, unit_price=OIL_QUART_PRICE, taxable=True,
+                 description=OIL_LINE),
+        LineItem(repair_order_id=order.id, item_type="part", quantity=1, unit_price=OIL_FILTER_PRICE, taxable=True,
+                 description=FILTER_LINE),
+    ])
+    line = LineItem(repair_order_id=order.id, item_type="labor", quantity=1, unit_price=labor, taxable=False,
+                    description=OIL_CHANGE_LINE)
+    db.add(line)
+    return line

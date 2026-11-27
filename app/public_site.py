@@ -169,6 +169,8 @@ class BookableService:
     # Vehicle-class starting prices for a package (e.g. brakes): {"sedan": 349, ...}. Never a final price.
     tiers: tuple = ()
     per: str = ""  # unit the price covers, e.g. "axle"
+    # A special stays off the site until the owner saves its price. It is never "price on request".
+    needs_price: bool = False
 
     @property
     def price_label(self) -> str:
@@ -194,6 +196,10 @@ BOOKABLE_SERVICES: tuple[BookableService, ...] = (
     # by the shop before the price is final, so it is always shown as a starting price.
     BookableService("brake-pads-rotors", "Brake pads and rotors", "New pads and rotors on one axle. The final price is confirmed after we check parts for your exact vehicle.", 120,
                     price_type="starting", per="axle"),
+    # Owner asked for this special on 2026-11-22 (full synthetic, up to 5 qt, filter, inspection).
+    # Hidden until its price is saved in Settings, so the site never shows it unpriced.
+    BookableService("oil-change", "Full synthetic oil change", "Up to 5 quarts of full synthetic oil, a new oil filter and a free multi-point inspection. "
+                    "Plus tax on parts. Extra quarts are $10.99 each; a special filter is quoted before we start.", 30, needs_price=True),
 )
 
 VEHICLE_CLASSES = {"sedan": "Sedan or compact", "suv": "SUV or crossover", "pickup": "Pickup or large SUV"}
@@ -251,7 +257,8 @@ def approved_bookable_services() -> list[BookableService]:
     catalog = service_catalog()
     raw = os.getenv("PUBLIC_BOOKING_SERVICES")
     wanted = None if raw is None else {part.strip() for part in raw.split(",") if part.strip()}
-    return [_with_catalog(s, catalog.get(s.slug) or {}) for s in BOOKABLE_SERVICES if wanted is None or s.slug in wanted]
+    services = [_with_catalog(s, catalog.get(s.slug) or {}) for s in BOOKABLE_SERVICES if wanted is None or s.slug in wanted]
+    return [s for s in services if not (s.needs_price and s.price is None)]
 
 
 def _unpriced_preview() -> bool:
