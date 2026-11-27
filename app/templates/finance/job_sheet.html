@@ -57,6 +57,11 @@
   .os-form label { display:grid; gap:2px; font-size:12px; color:var(--imp-muted); }
   .os-form input { font-size:16px; padding:8px 10px; border-radius:8px; border:1px solid var(--imp-line); background:var(--imp-surface-2); color:var(--imp-ink); }
   .os-banner { border-color:rgba(242,156,143,.6) !important; }
+  .wi-grid { display:grid; gap:12px; max-width:560px; }
+  .wi-row { display:grid; gap:4px; }
+  .wi-label { display:flex; justify-content:space-between; font-size:13px; color:var(--imp-muted); }
+  .wi-label b { color:var(--imp-gold); font-weight:700; }
+  .wi-row input[type=range] { width:100%; accent-color:var(--imp-gold); height:28px; }
 </style>
 
 <div class="flex items-center gap-3 mb-2">
@@ -81,6 +86,82 @@
   <div class="os-tile"><div class="k">Profit per book hour</div><div class="v">{{ usd(s.profit_per_hour) }}</div></div>
   <div class="os-tile"><div class="k">Deposit (50%)</div><div class="v">{{ usd(s.deposit_due) }}</div><div class="text-xs {{ 'os-flag' if s.approved and s.paid < s.deposit_due else 'text-stone-400' }}">{{ usd(s.paid) }} recorded · {{ usd(s.balance) }} left</div></div>
 </div>
+
+{% set w = s.what_if %}
+<div class="card mb-4" id="what-if"
+     data-parts-rev="{{ w.parts_rev }}" data-parts-cost="{{ w.parts_cost }}" data-parts-taxed="{{ w.parts_taxed }}"
+     data-labor-rev="{{ w.labor_rev }}" data-labor-hours="{{ w.labor_hours }}" data-labor-rate="{{ w.labor_rate }}"
+     data-other-rev="{{ w.other_rev }}" data-other-cost="{{ w.other_cost }}" data-tax-rate="{{ w.tax_rate }}"
+     data-target="{{ s.margin_target }}">
+  <h3 class="card-title text-base mb-1">What if</h3>
+  <p class="text-xs text-stone-400 mb-3">Slide to see what a different price does to profit. Nothing here changes the estimate or reaches the customer.</p>
+  <div class="wi-grid">
+    <label class="wi-row">
+      <span class="wi-label">Parts price <b id="wi-parts-out">+0%</b></span>
+      <input type="range" id="wi-parts" min="-30" max="60" step="1" value="0" {% if not w.parts_rev %}disabled{% endif %} aria-label="Parts price change, percent">
+    </label>
+    <label class="wi-row">
+      <span class="wi-label">Labor rate <b id="wi-labor-out">{% if w.labor_hours %}${{ '%.0f'|format(w.labor_rate) }}/hr{% else %}no labor lines{% endif %}</b></span>
+      <input type="range" id="wi-labor" min="80" max="250" step="1" value="{{ '%.0f'|format(w.labor_rate or s.shop_rate) }}" {% if not w.labor_hours %}disabled{% endif %} aria-label="Labor rate, dollars per hour">
+    </label>
+    <label class="wi-row">
+      <span class="wi-label">Discount <b id="wi-disc-out">0%</b></span>
+      <input type="range" id="wi-disc" min="0" max="25" step="1" value="0" aria-label="Discount on the whole job, percent">
+    </label>
+  </div>
+  <div class="os-tiles" style="margin:12px 0 4px">
+    <div class="os-tile"><div class="k">Customer pays</div><div class="v" id="wi-total">—</div><div class="text-xs text-stone-400" id="wi-total-diff"></div></div>
+    <div class="os-tile"><div class="k">Gross profit</div><div class="v" id="wi-profit">—</div><div class="text-xs text-stone-400" id="wi-profit-diff"></div></div>
+    <div class="os-tile"><div class="k">Margin</div><div class="v" id="wi-margin">—</div><div class="text-xs text-stone-400">target {{ pct(s.margin_target) }}</div></div>
+    <div class="os-tile"><div class="k">Deposit (50%)</div><div class="v" id="wi-deposit">—</div></div>
+  </div>
+  {% if w.missing_costs %}<p class="text-xs os-flag">{{ w.missing_costs }} part{{ 's' if w.missing_costs != 1 else '' }} with no cost yet, so real profit is lower than shown.</p>{% endif %}
+  <button type="button" class="btn-secondary text-xs" id="wi-reset" style="margin-top:6px">Back to the estimate's prices</button>
+</div>
+<script>
+(function () {
+  var box = document.getElementById('what-if'); if (!box) return;
+  var d = function (k) { return parseFloat(box.dataset[k]) || 0; };
+  var P = { pr: d('partsRev'), pc: d('partsCost'), pt: d('partsTaxed'), lr: d('laborRev'), lh: d('laborHours'),
+            rate: d('laborRate'), or: d('otherRev'), oc: d('otherCost'), tax: d('taxRate'), target: d('target') };
+  var parts = document.getElementById('wi-parts'), labor = document.getElementById('wi-labor'), disc = document.getElementById('wi-disc');
+  var startLabor = labor.value, laborMoved = false;
+  var usd = function (v) { return (v < 0 ? '-' : '') + '$' + Math.abs(v).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}); };
+  var signed = function (v) { return (v >= 0 ? '+' : '-') + usd(Math.abs(v)).replace('-', ''); };
+  function calc(p, rate, off) {
+    var partsRev = P.pr * (1 + p / 100);
+    var laborRev = P.lh ? P.lh * rate : P.lr;
+    var keep = 1 - off / 100;
+    var revenue = (partsRev + laborRev + P.or) * keep;
+    var tax = P.pt * (1 + p / 100) * keep * P.tax;
+    var cost = P.pc + P.oc;
+    var profit = revenue - cost;
+    return { total: revenue + tax, profit: profit, margin: revenue > 0 ? profit / revenue : null };
+  }
+  var base = calc(0, P.rate, 0);
+  function draw() {
+    var p = +parts.value, rate = laborMoved ? +labor.value : P.rate, off = +disc.value;
+    document.getElementById('wi-parts-out').textContent = (p >= 0 ? '+' : '') + p + '%';
+    if (P.lh) document.getElementById('wi-labor-out').textContent = '$' + (laborMoved ? rate : Math.round(rate)) + '/hr';
+    document.getElementById('wi-disc-out').textContent = off + '%';
+    var r = calc(p, P.lh ? rate : P.rate, off);
+    document.getElementById('wi-total').textContent = usd(r.total);
+    document.getElementById('wi-total-diff').textContent = signed(r.total - base.total) + ' vs estimate';
+    var pe = document.getElementById('wi-profit');
+    pe.textContent = usd(r.profit);
+    document.getElementById('wi-profit-diff').textContent = signed(r.profit - base.profit) + ' vs estimate';
+    var me = document.getElementById('wi-margin');
+    me.textContent = r.margin === null ? '—' : Math.round(r.margin * 100) + '%';
+    var good = r.margin !== null && r.margin >= P.target;
+    pe.className = me.className = 'v ' + (good ? 'good' : 'bad');
+    document.getElementById('wi-deposit').textContent = usd(r.total * 0.5);
+  }
+  [parts, disc].forEach(function (el) { el.addEventListener('input', draw); });
+  labor.addEventListener('input', function () { laborMoved = true; draw(); });
+  document.getElementById('wi-reset').addEventListener('click', function () { parts.value = 0; labor.value = startLabor; laborMoved = false; disc.value = 0; draw(); });
+  draw();
+})();
+</script>
 
 <div class="card mb-4">
   <h3 class="card-title text-base mb-2">By service type</h3>
