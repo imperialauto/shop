@@ -20,6 +20,25 @@
   {% elif qp.get('receipt') == 'saved' %}<p class="text-sm text-green-400 mb-2" role="status">Receipt saved to this job.</p>{% endif %}
   {% if qp.get('other') %}<p class="text-sm text-amber-300 mb-2" role="alert">This receipt also shows {{ qp.get('other') }}, which is another job. Check it's on the right one{% if rc.can_view %}, and use Move if not{% endif %}.</p>{% endif %}
 
+  {% if rc.flags %}
+  <div class="mb-3 text-sm" role="alert" style="border:1px solid rgba(251,191,36,.35); border-radius:8px; padding:8px 10px;">
+    <div class="text-amber-300 font-semibold mb-1">{{ rc.flags|length }} part{{ 's' if rc.flags|length != 1 }} to check against this job</div>
+    <ul class="space-y-1">
+      {% for f in rc.flags %}
+      <li class="text-stone-300">{{ f.item.parts[0] if f.item.parts else 'Part' }} {{ f.item.name }}:
+        <span class="text-amber-300">{{ rc.status[f.status] }}</span>
+        {% if f.status == 'under_cost' %}(store &#36;{{ '%.2f'|format(f.item.cost) }} each, billed &#36;{{ '%.2f'|format(f.billed_unit) }}){% endif %}
+        {% if f.status == 'not_on_job' and f.item.total is not none %}(&#36;{{ '%.2f'|format(f.item.total) }} at the store){% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    <p class="text-stone-500 text-xs mt-1">A best guess from part numbers and descriptions. Nothing on the job was changed.</p>
+  </div>
+  {% endif %}
+  {% if rc.invoices %}
+  <p class="text-xs text-stone-400 mb-2">Store receipts &#36;{{ '%.2f'|format(rc.total or 0) }} · parts billed on this job &#36;{{ '%.2f'|format(rc.billed_parts or 0) }}</p>
+  {% endif %}
+
   {% if rc.rows %}
   <ul class="divide-y divide-stone-800 mb-3">
     {% for r in rc.rows %}
@@ -31,6 +50,24 @@
           · {{ (r.created_at|shop_time).strftime('%-m/%-d %-I:%M %p') }} by {{ r.uploaded_by }} · {{ rc.how.get(r.matched_by, '') }}
           {% if r.note %}<br>{{ r.note }}{% endif %}
         </div>
+        {% set inv = rc.invoices.get(r.id) %}
+        {% if inv %}
+        <div class="text-xs text-stone-400 mt-1">Invoice {{ inv.invoice_number or '?' }}{% if inv.order_date %} · {{ inv.order_date }}{% endif %}{% if inv.po %} · PO typed: {{ inv.po }}{% endif %}{% if inv.store_city %} · {{ inv.store_city }}{% endif %}</div>
+        {% if rc.out_of_area.get(r.id) %}<div class="text-xs text-amber-300 mt-1">Bought at a store out of state. Check this was the shop's purchase.</div>{% endif %}
+        <details class="mt-1">
+          <summary class="text-xs text-gold-400 cursor-pointer" style="min-height:32px; display:flex; align-items:center;">{{ inv['items']|length }} part{{ 's' if inv['items']|length != 1 }} bought: see cost against billed</summary>
+          <ul class="text-xs mt-1 space-y-2">
+            {% for c in rc.checks.get(r.id, []) %}
+            <li style="border-left:3px solid {{ '#4ade80' if c.status == 'billed' else '#fbbf24' }}; padding-left:8px;">
+              <div class="text-stone-200">{{ c.item.qty }} × {{ c.item.parts|join(' / ') }} · {{ c.item.name }}</div>
+              <div class="text-stone-400">Store &#36;{{ '%.2f'|format(c.item.cost or 0) }} each{% if c.item.core %} + &#36;{{ '%.2f'|format(c.item.core) }} core{% endif %} · &#36;{{ '%.2f'|format(c.item.total or 0) }}</div>
+              <div class="{{ 'text-green-400' if c.status == 'billed' else 'text-amber-300' }}">{{ rc.status[c.status] }}{% if c.line %}: looks like "{{ c.line.description }}" at &#36;{{ '%.2f'|format(c.billed_unit) }}{% if c.margin is not none %} (&#36;{{ '%.2f'|format(c.margin|abs) }} {{ 'over' if c.margin >= 0 else 'under' }} cost each){% endif %}{% endif %}</div>
+            </li>
+            {% endfor %}
+          </ul>
+          {% if inv.cores_open %}<p class="text-xs text-stone-400 mt-2">Cores AutoZone says are still owed (whole account): &#36;{{ '%.2f'|format(inv.cores_open_total or 0) }}, {{ inv.cores_open|map(attribute='part')|join(', ') }}</p>{% endif %}
+        </details>
+        {% endif %}
       </div>
       <details class="text-xs">
         <summary class="text-stone-500 cursor-pointer" style="min-height:32px">Move or remove</summary>
@@ -66,8 +103,8 @@
     </div>
     <p class="text-sm text-stone-400" id="receipt-sending" role="status" hidden>Uploading…</p>
   </form>
-  <p class="text-stone-500 text-xs mt-1">Fill in the store and total first, then pick the receipt. One at a time, 10 MB max. Saving a receipt changes no prices and texts nobody.
-    {% if rc.can_view %} Got a receipt and not sure which job? <a href="/ro/receipts" class="underline">Match it by PO</a>.{% endif %}</p>
+  <p class="text-stone-500 text-xs mt-1">Fill in the store and total first, then pick the receipt. One at a time, 10 MB max. AutoZone PDFs are read line by line. Saving a receipt changes no prices and texts nobody.
+    {% if rc.can_view %} Got receipts and not sure which job? <a href="/ro/receipts" class="underline">Match them by PO</a>, up to 15 at once.{% endif %}</p>
   <script>
     (function () {
       var form = document.getElementById('receipt-form');
