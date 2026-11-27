@@ -16,6 +16,8 @@ from app.routes import tags as tag_routes
 from app.routes import changes as change_routes
 from app.routes import job_deposit_routes
 from app.routes import canned_jobs_page
+from app.routes import instant_quote as instant_quote_routes
+from app.routes import instant_quote_page
 from app import agent_keys, agent_connector, appointment_feed
 from app.scheduler import start_scheduler
 
@@ -58,6 +60,7 @@ app.include_router(ro_evidence.router, prefix="/ro", tags=["repair_orders"])
 app.include_router(job_deposit_routes.router, prefix="/ro", tags=["repair_orders"])
 app.include_router(__import__("app.routes.parts_tracking", fromlist=["router"]).router, prefix="/ro", tags=["repair_orders"])
 app.include_router(canned_jobs_page.router, tags=["repair_orders"])
+app.include_router(instant_quote_page.router, tags=["repair_orders"])
 app.include_router(repair_orders.router, prefix="/ro", tags=["repair_orders"])
 app.include_router(tag_routes.router, prefix="/tags", tags=["tags"])
 app.include_router(ro_evidence.public_router, tags=["public"])
@@ -77,6 +80,7 @@ app.include_router(alert_center.router, tags=["alerts"])
 app.include_router(my_day.router, tags=["my_day"])
 app.include_router(change_routes.router, tags=["changes"])
 app.include_router(shop_board.router, tags=["shop_board"])
+app.include_router(instant_quote_routes.router, tags=["public_site"])
 app.include_router(public_site.router, tags=["public_site"])
 app.include_router(legacy_redirects.router, tags=["public_site"])
 app.include_router(ai_assist.router, prefix="/ai", tags=["ai"])
