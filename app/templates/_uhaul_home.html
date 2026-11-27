@@ -1,0 +1,25 @@
+{# U-Haul on Home: new requests to answer and jobs under way. Context: uhaul_home from app.uhaul.home_summary. #}
+{% if uhaul_home %}{% set u = uhaul_home %}
+<section class="card mb-4" id="uhaul-home" style="border-color:rgba(234,210,114,.6);" aria-label="U-Haul">
+  <div style="display:flex; justify-content:space-between; gap:8px; align-items:baseline; margin-bottom:4px;">
+    <p class="text-xs uppercase tracking-wide" style="margin:0; color:var(--imp-gold);">U-Haul{% if u.new_count %} · {{ u.new_count }} new{% endif %}{% if u.review_count %} · {{ u.review_count }} to bill out now{% endif %}</p>
+    <a href="/uhaul" class="text-xs text-stone-400">See all →</a>
+  </div>
+  {% for r in u.new %}
+  <div style="display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; padding:8px 0; {% if not loop.first %}border-top:1px solid rgba(255,255,255,.08);{% endif %}">
+    <a href="/uhaul/{{ r.id }}" style="flex:1 1 200px; min-width:0; color:var(--imp-gold); font-weight:600;">{{ 'Roadside' if r.kind == 'roadside' else 'Repair PO' }}: {% if r.kind == 'roadside' %}{{ r.customer_name or 'U-Haul customer' }}{% else %}{{ r.rpo_number }}{% endif %}</a>
+    {% if user.role != 'tech' %}
+    {% if r.offer_url %}<a class="btn-primary" href="{{ r.offer_url }}" target="_blank" rel="noopener noreferrer" style="min-height:44px; display:inline-flex; align-items:center;">Open offer ↗</a>{% endif %}
+    <a class="btn-secondary" href="/uhaul/{{ r.id }}#decide" style="min-height:44px; display:inline-flex; align-items:center;">Answer</a>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% for r in u.working %}{% set nx = {'accepted': ('en_route', 'Leaving now'), 'en_route': ('on_site', 'On site'), 'on_site': ('done', 'Work done')}.get(r.status) %}
+  <div style="display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; padding:8px 0; border-top:1px solid rgba(255,255,255,.08);">
+    <a href="/uhaul/{{ r.id }}" style="flex:1 1 200px; min-width:0;">{{ r.customer_name or r.rpo_number or 'U-Haul job' }}{% if r.repair_order_id %} · job #{{ r.repair_order_id }}{% endif %}</a>
+    {% if nx and not read_only %}<form method="post" action="/uhaul/{{ r.id }}/step?back=home" style="margin:0;"><input type="hidden" name="to" value="{{ nx[0] }}"><button class="btn-primary" type="submit" style="min-height:44px;">{{ nx[1] }}</button></form>{% endif %}
+  </div>
+  {% endfor %}
+  {% if u.billing_count %}<p class="text-sm text-stone-400" style="margin:6px 0 0;"><a href="/uhaul" class="underline">{{ u.billing_count }} to bill out</a></p>{% endif %}
+</section>
+{% endif %}

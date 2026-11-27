@@ -16,6 +16,7 @@ from app.routes import tags as tag_routes
 from app.routes import changes as change_routes
 from app.routes import job_deposit_routes
 from app.routes import canned_jobs_page
+from app.routes import uhaul as uhaul_routes
 from app import agent_keys, agent_connector, appointment_feed
 from app.scheduler import start_scheduler
 
@@ -82,6 +83,8 @@ app.include_router(public_site.router, tags=["public_site"])
 app.include_router(legacy_redirects.router, tags=["public_site"])
 app.include_router(ai_assist.router, prefix="/ai", tags=["ai"])
 app.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
+app.include_router(uhaul_routes.intake_router, prefix="/webhooks", tags=["webhooks"])
+app.include_router(uhaul_routes.router, prefix="/uhaul", tags=["uhaul"])
 app.include_router(estimate_gen.router, prefix="/estimates", tags=["estimates"])
 app.include_router(sign.router, prefix="/sign", tags=["sign"])
 # Internal service-to-service API for the standalone messaging module (see
@@ -566,6 +569,8 @@ def dashboard(request: Request, view: str = "", db: Session = Depends(get_db)):
             context["scoreboard"] = None
     context["queue_total"] = len(context["dispatch_items"])
     context["dispatch_items"] = context["dispatch_items"][:HOME_QUEUE_ROWS]
+    from app import uhaul
+    context["uhaul_home"] = uhaul.home_summary(db)
     return templates.TemplateResponse("dashboard.html", context)
 
 

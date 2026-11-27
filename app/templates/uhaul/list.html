@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}U-Haul — Imperial Auto Care{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title">U-Haul</div>
+    <div style="font-size:12px; color:var(--imp-muted); margin-top:3px;">Roadside offers and repair POs, from the email to the payment. Nothing here acts at U-Haul.</div>
+  </div>
+  <div style="margin-left:auto;"><a href="https://vendor.uhaul.com/" target="_blank" rel="noopener noreferrer" class="btn-secondary" style="min-height:44px; display:inline-flex; align-items:center;">Vendor portal ↗</a></div>
+</div>
+<div class="page-body uh" style="display:grid; gap:14px; max-width:880px;">
+<style>
+  .uh .uh-row { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; padding:10px 0; }
+  .uh .uh-row + .uh-row { border-top:1px solid var(--imp-line); }
+  .uh .uh-what { flex:1 1 240px; min-width:0; }
+  .uh .uh-what a.t { color:var(--imp-gold); font-weight:600; }
+  .uh .uh-sub { font-size:12.5px; color:var(--imp-muted); margin-top:2px; overflow-wrap:anywhere; }
+  .uh .uh-acts { display:flex; flex-wrap:wrap; gap:6px; }
+  .uh .uh-acts form { margin:0; }
+  .uh .uh-acts .btn-primary, .uh .uh-acts .btn-secondary { min-height:44px; display:inline-flex; align-items:center; justify-content:center; }
+  .uh h2 { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--imp-muted); margin:0 0 4px; display:flex; justify-content:space-between; gap:8px; }
+  .uh .uh-new { border-color: rgba(234,210,114,.6); }
+  .uh .uh-missed { color:#fbbf24; }
+  .uh .uh-grid { display:grid; gap:8px; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); }
+  @media (max-width: 640px) { .uh .uh-acts { width:100%; } .uh .uh-acts > * { flex:1 1 30%; } .uh .uh-acts .btn-primary, .uh .uh-acts .btn-secondary { width:100%; } }
+</style>
+
+{% if not ready %}
+  <div class="card" style="font-size:13px; color:var(--imp-muted);">U-Haul isn't switched on yet.</div>
+{% else %}
+  {% if note %}<div class="card text-sm text-green-400" role="status">{{ note }}</div>{% endif %}
+  {% if error %}<div class="card text-sm text-red-400" role="alert">{{ error }}</div>{% endif %}
+  {% if not intake_on and office %}<div class="card text-sm text-stone-400">U-Haul's emails aren't coming in on their own yet. Until the mailbox script is set up, add a call or PO below.</div>{% endif %}
+
+  <section class="card uh-new" id="new" aria-label="New requests">
+    <h2><span>New · {{ b.new|length }}</span>{% if b.missed_month %}<span class="uh-missed">{{ b.missed_month }} missed in 30 days</span>{% endif %}</h2>
+    {% for r in b.new %}
+    <div class="uh-row" id="req-{{ r.id }}">
+      <div class="uh-what">
+        <a class="t" href="/uhaul/{{ r.id }}">{{ kinds[r.kind] }}: {% if r.kind == 'roadside' %}{{ r.customer_name or 'U-Haul customer' }}{% else %}RPO {{ r.rpo_number }}{% endif %}</a>
+        <div class="uh-sub">{{ age(r.received_at, now) }}{% if r.resend_count %} · sent {{ r.resend_count + 1 }} times{% endif %}{% if r.equipment_number %} · {{ r.equipment_number }}{% endif %}{% if r.estimated_amount %} · est ${{ '%.2f'|format(r.estimated_amount) }}{% endif %}{% if r.reason %} · {{ r.reason.splitlines()[0][:90] }}{% endif %}</div>
+      </div>
+      {% if office %}
+      <div class="uh-acts">
+        {% if r.offer_url %}<a class="btn-primary" href="{{ r.offer_url }}" target="_blank" rel="noopener noreferrer">Open offer ↗</a>{% endif %}
+        <form method="post" action="/uhaul/{{ r.id }}/take"><button class="{{ 'btn-secondary' if r.offer_url else 'btn-primary' }}" type="submit">{{ 'I took it' if r.kind == 'roadside' else 'Open job' }}</button></form>
+        <form method="post" action="/uhaul/{{ r.id }}/pass?back=list"><button class="btn-secondary" type="submit">Pass</button></form>
+      </div>
+      {% endif %}
+    </div>
+    {% else %}
+    <p class="text-sm text-stone-500" style="margin:6px 0 0;">Nothing new.</p>
+    {% endfor %}
+    {% if b.new and office %}<p class="text-xs text-stone-500" style="margin:8px 0 0;">Accept or pass on U-Haul's page first. A roadside offer reads as missed after 15 minutes.</p>{% endif %}
+  </section>
+
+  {% if b.needs_review %}
+  <section class="card" style="border-color:rgba(248,113,113,.6);" aria-label="U-Haul wants these billed">
+    <h2><span class="text-red-300">U-Haul says bill these out · {{ b.needs_review|length }}</span></h2>
+    {% for r in b.needs_review %}
+    <div class="uh-row"><div class="uh-what"><a class="t" href="/uhaul/{{ r.id }}#sheet">RPO {{ r.rpo_number }}</a><div class="uh-sub">U-Haul: {{ r.review_reason }}</div></div></div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  <section class="card" aria-label="Jobs under way">
+    <h2><span>Under way · {{ b.working|length }}</span></h2>
+    {% for r in b.working %}{% set nx = next_step.get(r.status) %}
+    <div class="uh-row">
+      <div class="uh-what">
+        <a class="t" href="/uhaul/{{ r.id }}">{{ label[shown(r)] }} · {% if r.kind == 'roadside' %}{{ r.customer_name or 'Roadside' }}{% else %}RPO {{ r.rpo_number }}{% endif %}</a>
+        <div class="uh-sub">{% if r.repair_order_id %}<a href="/ro/{{ r.repair_order_id }}" class="underline">Job #{{ r.repair_order_id }}</a> · {% endif %}{{ r.equipment_number or '' }}</div>
+      </div>
+      {% if nx %}<div class="uh-acts"><form method="post" action="/uhaul/{{ r.id }}/step?back=list"><input type="hidden" name="to" value="{{ nx[0] }}"><button class="btn-primary" type="submit">{{ nx[1] }}</button></form></div>{% endif %}
+    </div>
+    {% else %}<p class="text-sm text-stone-500" style="margin:6px 0 0;">No U-Haul jobs under way.</p>{% endfor %}
+  </section>
+
+  <section class="card" aria-label="To bill out">
+    <h2><span>To bill out · {{ b.billing|length }}</span></h2>
+    {% for r in b.billing %}
+    <div class="uh-row"><div class="uh-what"><a class="t" href="/uhaul/{{ r.id }}#sheet">{{ label[r.status] }} · {% if r.rpo_number %}RPO {{ r.rpo_number }}{% else %}{{ r.customer_name or 'Roadside' }} · needs an RPO{% endif %}</a>
+      <div class="uh-sub">{% if r.repair_order_id %}Job #{{ r.repair_order_id }}{% endif %}{% if r.done_at %} · done {{ age(r.done_at, now) }}{% endif %}</div></div></div>
+    {% else %}<p class="text-sm text-stone-500" style="margin:6px 0 0;">Nothing waiting to bill.</p>{% endfor %}
+  </section>
+
+  <section class="card" id="payments" aria-label="Submitted and payments">
+    <h2><span>Submitted, waiting on payment · {{ b.submitted|length }}</span>{% if b.owed %}<span>${{ '{:,.2f}'.format(b.owed) }} due</span>{% endif %}</h2>
+    {% for r in b.submitted %}
+    <div class="uh-row"><div class="uh-what"><a class="t" href="/uhaul/{{ r.id }}">RPO {{ r.rpo_number }}</a>
+      <div class="uh-sub">Billed ${{ '%.2f'|format(r.submitted_amount or 0) }} · submitted {{ age(r.submitted_at, now) }}{% if r.payments %} · paid so far ${{ '%.2f'|format(r.payments|sum(attribute='amount')) }}{% endif %}</div></div></div>
+    {% else %}<p class="text-sm text-stone-500" style="margin:6px 0 0;">Nothing waiting on U-Haul.</p>{% endfor %}
+    {% if office %}
+    <details style="margin-top:10px;" {% if error %}open{% endif %}>
+      <summary class="text-sm text-gold-400 cursor-pointer" style="min-height:44px; display:flex; align-items:center;">Record a payment from RPO History</summary>
+      <form method="post" action="/uhaul/payments" class="space-y-2" style="margin-top:6px;">
+        <div class="uh-grid">
+          <div><label class="form-label" for="p-rpo">RPO number</label><input id="p-rpo" name="rpo_number" required class="form-input font-mono" maxlength="32" placeholder="478-00508DA" autocapitalize="characters" style="min-height:44px"></div>
+          <div><label class="form-label" for="p-amt">Amount paid</label><input id="p-amt" name="amount" required type="number" step="0.01" min="0.01" inputmode="decimal" class="form-input" style="min-height:44px"></div>
+          <div><label class="form-label" for="p-date">Date paid</label><input id="p-date" name="paid_on" type="date" class="form-input" style="min-height:44px"></div>
+          <div><label class="form-label" for="p-ref">Check or ref #</label><input id="p-ref" name="reference" maxlength="64" class="form-input" style="min-height:44px"></div>
+        </div>
+        <div class="text-right"><button class="btn-primary" type="submit" style="min-height:44px">Save payment</button></div>
+      </form>
+    </details>
+    {% if unmatched %}<p class="text-sm text-amber-300" style="margin:8px 0 0;">Payments with no matching request: {% for p in unmatched %}RPO {{ p.rpo_number }} ${{ '%.2f'|format(p.amount) }}{{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
+    {% endif %}
+  </section>
+
+  {% if office %}
+  <section class="card" id="add" aria-label="Add one by hand">
+    <details>
+      <summary class="text-sm text-gold-400 cursor-pointer" style="min-height:44px; display:flex; align-items:center;">Add a call or PO by hand</summary>
+      <form method="post" action="/uhaul/new" class="space-y-2" style="margin-top:6px;">
+        <div class="uh-grid">
+          <div><label class="form-label" for="n-kind">Kind</label><select id="n-kind" name="kind" class="form-input" style="min-height:44px"><option value="roadside">Roadside</option><option value="rpo">Repair PO</option></select></div>
+          <div><label class="form-label" for="n-name">U-Haul customer</label><input id="n-name" name="customer_name" maxlength="128" class="form-input" style="min-height:44px"></div>
+          <div><label class="form-label" for="n-hot">Hotline #</label><input id="n-hot" name="hotline_ref" maxlength="32" inputmode="numeric" class="form-input" style="min-height:44px"></div>
+          <div><label class="form-label" for="n-rpo">RPO number</label><input id="n-rpo" name="rpo_number" maxlength="32" class="form-input font-mono" placeholder="478-00508DA" autocapitalize="characters" style="min-height:44px"></div>
+          <div><label class="form-label" for="n-eq">Equipment #</label><input id="n-eq" name="equipment_number" maxlength="48" class="form-input" autocapitalize="characters" style="min-height:44px"></div>
+          <div><label class="form-label" for="n-est">Estimated amount</label><input id="n-est" name="estimated_amount" type="number" step="0.01" min="0" inputmode="decimal" class="form-input" style="min-height:44px"></div>
+        </div>
+        <div><label class="form-label" for="n-loc">Where</label><input id="n-loc" name="location" maxlength="600" class="form-input" style="min-height:44px"></div>
+        <div><label class="form-label" for="n-why">What's wrong</label><textarea id="n-why" name="reason" maxlength="2000" rows="2" class="form-input"></textarea></div>
+        <div class="text-right"><button class="btn-primary" type="submit" style="min-height:44px">Add it</button></div>
+      </form>
+    </details>
+  </section>
+  {% endif %}
+
+  {% if b.closed %}
+  <section class="card" aria-label="Closed">
+    <details><summary class="text-sm text-stone-400 cursor-pointer" style="min-height:44px; display:flex; align-items:center;">Closed, passed and missed · {{ b.closed|length }}</summary>
+    {% for r in b.closed %}
+    <div class="uh-row"><div class="uh-what"><a href="/uhaul/{{ r.id }}" class="text-sm">{{ label[shown(r)] }} · {% if r.kind == 'roadside' %}{{ r.customer_name or 'Roadside' }}{% else %}RPO {{ r.rpo_number }}{% endif %}</a><div class="uh-sub">{{ age(r.received_at, now) }}</div></div></div>
+    {% endfor %}
+    </details>
+  </section>
+  {% endif %}
+{% endif %}
+</div>
+{% endblock %}
