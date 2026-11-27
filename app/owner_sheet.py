@@ -119,6 +119,27 @@ def _section(name: str, lines: list, rate: float) -> Section:
     )
 
 
+def what_if(sec: Section, rate: float) -> dict:
+    """Numbers the owner sheet's sliders start from: parts and labor split out from everything else."""
+    parts = [ln for ln in sec.lines if ln.bucket == "parts"]
+    labor = [ln for ln in sec.lines if ln.bucket == "labor" and ln.item.item_type == "labor"]
+    rest = [ln for ln in sec.lines if ln not in parts and ln not in labor]
+    labor_hours = round(sum(ln.item.quantity or 0 for ln in labor), 2)
+    labor_rev = round(sum(ln.revenue for ln in labor), 2)
+    return {
+        "parts_rev": round(sum(ln.revenue for ln in parts), 2),
+        "parts_cost": round(sum(ln.cost or 0.0 for ln in parts), 2),
+        "parts_taxed": sec.parts_taxed,
+        "labor_rev": labor_rev,
+        "labor_hours": labor_hours,
+        "labor_rate": round(labor_rev / labor_hours, 2) if labor_hours else 0.0,
+        "other_rev": round(sum(ln.revenue for ln in rest), 2),
+        "other_cost": round(sum(ln.cost or 0.0 for ln in rest), 2),
+        "tax_rate": rate,
+        "missing_costs": sec.missing_costs,
+    }
+
+
 def build(db, ro: RepairOrder, margin_target: float = MARGIN_TARGET) -> dict:
     """Everything the owner sheet shows for one job."""
     rate = tax_rate()
@@ -186,6 +207,7 @@ def build(db, ro: RepairOrder, margin_target: float = MARGIN_TARGET) -> dict:
         "effective_rate": round(main_s.labor_dollars / main_s.hours, 2) if main_s.hours else None,
         "profit_per_hour": round(main_s.profit / main_s.hours, 2) if main_s.hours else None,
         "bucket_labels": BUCKET_LABELS,
+        "what_if": what_if(main_s, rate),
     }
 
 

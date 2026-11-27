@@ -118,6 +118,24 @@ class OwnerSheetTests(unittest.TestCase):
             s = owner_sheet.build(db, db.get(RepairOrder, 1))
             self.assertEqual(s["main"].missing_costs, 0)
 
+    def test_what_if_numbers_split_parts_labor_and_the_rest(self):
+        with self.Session() as db:
+            w = owner_sheet.build(db, db.get(RepairOrder, 1))["what_if"]
+        self.assertAlmostEqual(w["parts_rev"], 65.99 + 48.48)
+        self.assertAlmostEqual(w["parts_cost"], 47.69)  # oil has no cost yet
+        self.assertEqual(w["labor_hours"], 3.0)
+        self.assertAlmostEqual(w["labor_rate"], 150.0)
+        self.assertAlmostEqual(w["other_rev"], 45.0)   # shop supplies, untaxed
+        self.assertEqual(w["missing_costs"], 1)
+
+    def test_owner_sheet_has_the_what_if_sliders(self):
+        with self.as_user(1):
+            page = self.client.get("/finance/jobs/1")
+        self.assertEqual(page.status_code, 200)
+        for needle in ('id="what-if"', 'id="wi-parts"', 'id="wi-labor"', 'id="wi-disc"', 'data-labor-hours="3.0"',
+                       "Nothing here changes the estimate"):
+            self.assertIn(needle, page.text)
+
     def test_saving_cost_on_a_labor_line_is_refused(self):
         with self.as_user(1):
             r = self.client.post("/finance/jobs/1/lines/1/source", data={"cost": "10"}, follow_redirects=False)
