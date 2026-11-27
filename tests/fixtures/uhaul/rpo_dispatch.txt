@@ -1,0 +1,32 @@
+## U-Haul Down Equipment RPO
+*Message from U-Haul Repair Dispatch*
+
+* RPO: 478-00888BA
+* Estimated amount: $ 150
+
+Notes:
+
+AC blowing hot air
+
+*Equipment Info*
+
+* *Equipment #: 5108 DC 9999X*
+* Year/Make/Model: 2018 / Ford / E450
+* Vin: 1FDXE4FS5JDC99999 | Plate: ZZ11111 AZ 03/2027
+* Control #: *12345678* | Repair By: *06/19/2026*
+
+*Location Info*
+
+* *030000 - MADE-UP DEALER LLC*
+100 N EXAMPLE AVE / PHOENIX, AZ. 85037
+(555)555-0101
+
+*Reason Down*
+
+* ( A/C )
+Does it blow hot air?- Yes.
+Additional Notes.- AC not working, blows hot air.
+*Repair Dispatch Contact Info*
+For approvals, questions or status updates, please reply to 721_rdm@uhaul.com
+or Call 1-800-555-0100, extension 721302
+E-Vendor invoices: vendor.uhaul.com

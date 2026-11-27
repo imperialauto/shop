@@ -28,6 +28,8 @@ class Jinja2Templates(_Base):
         from app import discounts
         self.env.filters["money"] = discounts.money  # -$75.00 for a discount, never $-75.00
         self.env.globals["car_here"] = _car_here  # the job's car is at the shop, as the TV board counts it
+        from app import uhaul
+        self.env.globals["uhaul_on"] = uhaul.enabled  # the U-Haul page shows in the menu once switched on
 
     def TemplateResponse(self, *args, **kwargs):  # noqa: N802 - Starlette's name
         if args and isinstance(args[0], str):

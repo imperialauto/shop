@@ -1,0 +1,24 @@
+This has been resent to you because of the following reason :
+
+please bill out if done, rpo will be voided on 6/25 if not billed out
+
+U-Haul Repair Purchase Order: 478-007777Z
+Sent To: shop@example.com
+For Vendor #: 0000000
+Vendor Name: EXAMPLE VENDOR LLC
+From: 478000
+Issued On: 5/1/2026
+Status: OPEN
+Invoice #:
+Invoice Date: 1/1/1900
+Invoice Total: 0.0000
+Cause: Transmission Issues
+Remarks: FROM ROADSIDE - Transmission Issues Transmission Issues
+100 N Example Ave,Phoenix,AZ
+HotLine Ref #: 3000001
+Equipment #: JH0000C
+VIN#: 1FDNF6CN2MDF99999
+Year: 2021
+Make: FRD
+Plate #: ZZ22222
+Plate State: AZ

@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block title %}U-Haul {{ r.rpo_number or r.customer_name or r.id }} — Imperial Auto Care{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div style="min-width:0;">
+    <div class="page-title">{{ kinds[r.kind] }}: {% if r.kind == 'roadside' %}{{ r.customer_name or 'U-Haul customer' }}{% else %}RPO {{ r.rpo_number }}{% endif %}</div>
+    <div style="font-size:12px; color:var(--imp-muted); margin-top:3px;">{{ label[shown] }}{% if r.repair_order_id %} · <a href="/ro/{{ r.repair_order_id }}" class="underline">Job #{{ r.repair_order_id }}</a>{% if sheet %} · PO <span class="font-mono select-all">{{ sheet.po }}</span>{% endif %}{% endif %}</div>
+  </div>
+  <div style="margin-left:auto;"><a href="/uhaul" class="btn-secondary">← U-Haul</a></div>
+</div>
+<div class="page-body uh" style="display:grid; gap:14px; max-width:880px;">
+<style>
+  .uh dl { display:grid; grid-template-columns:minmax(110px,max-content) 1fr; gap:4px 12px; margin:0; font-size:14px; }
+  .uh dt { color:var(--imp-muted); }
+  .uh dd { margin:0; overflow-wrap:anywhere; white-space:pre-line; }
+  .uh h2 { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--imp-muted); margin:0 0 8px; }
+  .uh .uh-acts { display:flex; flex-wrap:wrap; gap:8px; }
+  .uh .uh-acts form { margin:0; }
+  .uh .uh-acts .btn-primary, .uh .uh-acts .btn-secondary { min-height:48px; display:inline-flex; align-items:center; justify-content:center; padding-left:18px; padding-right:18px; }
+  .uh .uh-grid { display:grid; gap:8px; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); }
+  .uh .uh-flag { font-size:13.5px; padding:6px 0; }
+  .uh .uh-flag + .uh-flag { border-top:1px solid var(--imp-line); }
+  .uh table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  .uh th, .uh td { text-align:left; padding:6px 6px; border-top:1px solid var(--imp-line); vertical-align:top; }
+  .uh th { color:var(--imp-muted); font-weight:500; font-size:12px; border-top:0; }
+  .uh .copy { background:none; border:1px solid var(--imp-line); color:var(--imp-muted); border-radius:6px; font-size:11px; padding:2px 8px; min-height:28px; cursor:pointer; margin-left:6px; }
+  .uh .uh-times li { display:flex; justify-content:space-between; gap:8px; padding:5px 0; font-size:14px; }
+  .uh .uh-times li + li { border-top:1px solid var(--imp-line); }
+  @media (max-width: 640px) {
+    .uh .uh-acts > * { flex:1 1 100%; } .uh .uh-acts .btn-primary, .uh .uh-acts .btn-secondary { width:100%; }
+    .uh table thead { display:none; } .uh table, .uh tbody, .uh tr, .uh td { display:block; width:100%; }
+    .uh tr { border-top:1px solid var(--imp-line); padding:6px 0; } .uh td { border:0; padding:2px 0; }
+    .uh td[data-k]::before { content: attr(data-k) ": "; color: var(--imp-muted); }
+  }
+</style>
+
+{% if note %}<div class="card text-sm text-green-400" role="status">{{ note }}</div>{% endif %}
+{% if error %}<div class="card text-sm text-red-400" role="alert">{{ error }}</div>{% endif %}
+{% if r.review_reason and shown not in ('paid', 'declined') %}<div class="card text-sm" style="border-color:rgba(248,113,113,.6);" role="alert"><b class="text-red-300">U-Haul resent this PO:</b> {{ r.review_reason }}</div>{% endif %}
+
+{# ------------------------------------------------ what to do now #}
+{% if office and r.status == 'new' %}
+<section class="card" style="border-color:rgba(234,210,114,.6);" id="decide">
+  <h2>{% if shown == 'missed' %}No answer for 15 minutes. It has likely gone to another vendor.{% else %}Answer U-Haul{% endif %}</h2>
+  {% if r.kind == 'roadside' %}<p class="text-sm text-stone-400" style="margin:0 0 10px;">Accept or pass on U-Haul's page, then tap what you did here. Taking it opens the job.</p>{% endif %}
+  <div class="uh-acts">
+    {% if r.offer_url %}<a class="btn-primary" href="{{ r.offer_url }}" target="_blank" rel="noopener noreferrer">Open offer on U-Haul ↗</a>{% endif %}
+    <form method="post" action="/uhaul/{{ r.id }}/take"><button class="{{ 'btn-secondary' if r.offer_url else 'btn-primary' }}" type="submit">{{ 'I took it' if r.kind == 'roadside' else 'Open the job' }}</button></form>
+    <form method="post" action="/uhaul/{{ r.id }}/pass"><button class="btn-secondary" type="submit">I passed</button></form>
+  </div>
+</section>
+{% endif %}
+
+{% if r.status in ('accepted', 'en_route', 'on_site', 'done', 'back') %}
+<section class="card" id="steps">
+  <h2>{{ label[r.status] }}</h2>
+  <div class="uh-acts">
+    {% if next_step %}<form method="post" action="/uhaul/{{ r.id }}/step"><input type="hidden" name="to" value="{{ next_step[0] }}"><button class="btn-primary" type="submit">{{ next_step[1] }}</button></form>{% endif %}
+    {% if r.status == 'accepted' %}<form method="post" action="/uhaul/{{ r.id }}/step"><input type="hidden" name="to" value="shop"><button class="btn-secondary" type="submit">Doing it at the shop (no trip)</button></form>{% endif %}
+    {% if r.status != 'accepted' %}<form method="post" action="/uhaul/{{ r.id }}/step"><input type="hidden" name="to" value="undo"><button class="btn-secondary" type="submit">Undo last step</button></form>{% endif %}
+  </div>
+  <ul class="uh-times" style="list-style:none; margin:10px 0 0; padding:0;">
+    <li><span class="text-stone-400">Left shop</span><span>{{ local(r.en_route_at) or '—' }}</span></li>
+    <li><span class="text-stone-400">On site</span><span>{{ local(r.on_site_at) or '—' }}</span></li>
+    <li><span class="text-stone-400">Work done</span><span>{{ local(r.done_at) or '—' }}</span></li>
+    <li><span class="text-stone-400">Back at shop</span><span>{{ local(r.back_at) or '—' }}</span></li>
+  </ul>
+  {% if r.repair_order_id %}<p class="text-xs text-stone-500" style="margin:8px 0 0;">Add the work and parts on <a href="/ro/{{ r.repair_order_id }}" class="underline">job #{{ r.repair_order_id }}</a>, and save part receipts there. The bill-out sheet below fills from it.</p>{% endif %}
+</section>
+{% endif %}
+
+{# ------------------------------------------------ what U-Haul sent #}
+<section class="card" id="details">
+  <h2>From U-Haul</h2>
+  <dl>
+    <dt>Came in</dt><dd>{{ local(r.received_at) }} ({{ age(r.received_at) }}){% if r.resend_count %} · sent {{ r.resend_count + 1 }} times{% endif %}</dd>
+    {% if r.sender %}<dt>From</dt><dd>{{ r.sender }}</dd>{% endif %}
+    {% if r.rpo_number %}<dt>RPO</dt><dd class="font-mono">{{ r.rpo_number }}</dd>{% endif %}
+    {% if r.hotline_ref %}<dt>Hotline #</dt><dd>{{ r.hotline_ref }}</dd>{% endif %}
+    {% if r.equipment_number %}<dt>Equipment</dt><dd>{{ r.equipment_number }}{% if r.year_make %} · {{ r.year_make }}{% endif %}</dd>{% endif %}
+    {% if r.vin %}<dt>VIN</dt><dd class="font-mono">{{ r.vin }}</dd>{% endif %}
+    {% if r.plate %}<dt>Plate</dt><dd>{{ r.plate }}</dd>{% endif %}
+    {% if r.estimated_amount %}<dt>U-Haul estimate</dt><dd>${{ '%.2f'|format(r.estimated_amount) }}</dd>{% endif %}
+    {% if r.repair_by %}<dt>Repair by</dt><dd>{{ r.repair_by.strftime('%m/%d/%Y') }}</dd>{% endif %}
+    {% if r.location %}<dt>Where</dt><dd>{{ r.location }}</dd>{% endif %}
+    {% if r.reason %}<dt>Reason</dt><dd>{{ r.reason }}</dd>{% endif %}
+    {% if r.rdm_email %}<dt>Repair dispatch</dt><dd>{{ r.rdm_email }}</dd>{% endif %}
+    {% if r.kind == 'roadside' and not r.offer_url and r.status == 'new' %}<dt>Offer</dt><dd class="text-stone-400">No U-Haul link came with this one. Open the email in the business inbox.</dd>{% endif %}
+  </dl>
+</section>
+
+{# ------------------------------------------------ the bill-out sheet #}
+{% if sheet %}
+<section class="card" id="sheet">
+  <h2>Bill-out sheet for the portal's Vendor RPO form</h2>
+  {% if sheet.flags %}
+  <div style="margin-bottom:10px;">
+    {% for f in sheet.flags %}<div class="uh-flag {{ 'text-amber-200' if f.block else 'text-stone-400' }}">{{ '⚠ ' if f.block else '• ' }}{{ f.text }}</div>{% endfor %}
+  </div>
+  {% else %}<p class="text-sm text-green-400" style="margin:0 0 10px;">Nothing missing.</p>{% endif %}
+
+  {% if r.kind == 'roadside' and not r.rpo_number %}
+  <h2 style="margin-top:12px;">First: Request RPO in the portal</h2>
+  <dl style="margin-bottom:12px;">{% for k, v in sheet.request_rpo.items() %}<dt>{{ k }}</dt><dd>{{ v }}{% if v != '—' %}<button type="button" class="copy" data-copy="{{ v }}">Copy</button>{% endif %}</dd>{% endfor %}</dl>
+  {% endif %}
+
+  <dl>{% for k, v in sheet.header.items() %}<dt>{{ k }}</dt><dd>{{ v }}{% if v != '—' %}<button type="button" class="copy" data-copy="{{ v }}">Copy</button>{% endif %}</dd>{% endfor %}
+    <dt>Vendor remarks</dt><dd>{{ sheet.remarks or '—' }}{% if sheet.remarks %}<button type="button" class="copy" data-copy="{{ sheet.remarks }}">Copy</button>{% endif %}</dd>
+  </dl>
+
+  <table style="margin-top:12px;" aria-label="Lines">
+    <thead><tr><th>#</th><th>Type</th><th>Code</th><th>What</th><th>Qty</th><th>Part #</th><th>Job amount</th></tr></thead>
+    <tbody>
+    {% for row in sheet.rows %}
+      <tr><td data-k="Line">{{ row.line }}</td><td data-k="Type">{{ row.type }}</td><td data-k="Code">{{ row.code or '—' }}{% if row.cause %} <span class="text-stone-500 text-xs">{{ row.cause }}</span>{% endif %}</td>
+        <td data-k="What">{{ row.what }}</td><td data-k="Qty">{{ row.qty }} {{ row.unit }}</td><td data-k="Part #">{{ row.part_number or '—' }}{% if row.unit_cost %} <span class="text-stone-500 text-xs">cost ${{ '%.2f'|format(row.unit_cost) }}</span>{% endif %}</td>
+        <td data-k="Job amount">{% if row.job_amount is defined %}${{ '%.2f'|format(row.job_amount) }}{% else %}—{% endif %}</td></tr>
+    {% else %}<tr><td colspan="7" class="text-stone-500">No lines yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <p class="text-xs text-stone-500" style="margin:6px 0 0;">U-Haul pays its own FMA rates, so the portal works out the money. Job amounts are the dashboard's, to compare. Job total ${{ '%.2f'|format(sheet.job_total) }}.</p>
+
+  <dl style="margin-top:12px;">
+    <dt>Condition</dt><dd>{{ sheet.condition or '—' }}{% if sheet.condition %}<button type="button" class="copy" data-copy="{{ sheet.condition }}">Copy</button>{% endif %}</dd>
+    <dt>Cause</dt><dd>{{ sheet.cause or '—' }}{% if sheet.cause %}<button type="button" class="copy" data-copy="{{ sheet.cause }}">Copy</button>{% endif %}</dd>
+    <dt>Correction</dt><dd>{{ sheet.correction or '—' }}{% if sheet.correction %}<button type="button" class="copy" data-copy="{{ sheet.correction }}">Copy</button>{% endif %}</dd>
+    <dt>Receipts</dt><dd>{% if sheet.receipts %}{{ sheet.receipts|length }} on the job to upload{% else %}None on the job{% endif %}</dd>
+  </dl>
+
+  {% if office and r.status not in ('submitted', 'paid') %}
+  <details style="margin-top:12px;" {% if error or (sheet.flags and r.status in ('done', 'back')) %}open{% endif %}>
+    <summary class="text-sm text-gold-400 cursor-pointer" style="min-height:44px; display:flex; align-items:center;">Fill in or fix the bill-out details</summary>
+    <form method="post" action="/uhaul/{{ r.id }}/billing" class="space-y-2" style="margin-top:6px;">
+      <div class="uh-grid">
+        <div><label class="form-label" for="b-rpo">RPO number</label><input id="b-rpo" name="rpo_number" value="{{ r.rpo_number or '' }}" maxlength="32" class="form-input font-mono" placeholder="478-00508DA" autocapitalize="characters" style="min-height:44px"></div>
+        <div><label class="form-label" for="b-hot">Hotline #</label><input id="b-hot" name="hotline_ref" value="{{ r.hotline_ref or '' }}" maxlength="32" inputmode="numeric" class="form-input" style="min-height:44px"></div>
+        <div><label class="form-label" for="b-eq">Equipment #</label><input id="b-eq" name="equipment_number" value="{{ r.equipment_number or '' }}" maxlength="48" class="form-input" style="min-height:44px"></div>
+        <div><label class="form-label" for="b-odo">Odometer</label><input id="b-odo" name="odometer" value="{{ r.odometer if r.odometer is not none else '' }}" type="number" min="0" inputmode="numeric" class="form-input" style="min-height:44px"></div>
+      </div>
+      <label class="text-sm" style="display:flex; gap:8px; align-items:center; min-height:44px;"><input type="checkbox" name="is_trailer" {% if r.is_trailer %}checked{% endif %} style="width:20px; height:20px;"> Trailer (odometer 0)</label>
+      <fieldset class="text-sm" style="border:0; padding:0; margin:0;">
+        <legend class="form-label">Bill travel by (U-Haul pays one, not both)</legend>
+        <label style="display:inline-flex; gap:6px; align-items:center; min-height:44px; margin-right:14px;"><input type="radio" name="travel_basis" value="hours" {% if r.travel_basis != 'miles' %}checked{% endif %}> Hours, port to port</label>
+        <label style="display:inline-flex; gap:6px; align-items:center; min-height:44px;"><input type="radio" name="travel_basis" value="miles" {% if r.travel_basis == 'miles' %}checked{% endif %}> Miles</label>
+      </fieldset>
+      <div><label class="form-label" for="b-mi">Round-trip miles (when billing by miles)</label><input id="b-mi" name="travel_miles" value="{{ r.travel_miles or '' }}" type="number" step="0.1" min="0" inputmode="decimal" class="form-input" style="min-height:44px; max-width:200px;"></div>
+      <div class="uh-grid">
+        <div><label class="form-label" for="t-er">Left shop</label><input id="t-er" name="en_route_at" type="datetime-local" value="{{ times.en_route }}" class="form-input" style="min-height:44px"></div>
+        <div><label class="form-label" for="t-os">On site</label><input id="t-os" name="on_site_at" type="datetime-local" value="{{ times.on_site }}" class="form-input" style="min-height:44px"></div>
+        <div><label class="form-label" for="t-dn">Work done</label><input id="t-dn" name="done_at" type="datetime-local" value="{{ times.done }}" class="form-input" style="min-height:44px"></div>
+        <div><label class="form-label" for="t-bk">Back at shop</label><input id="t-bk" name="back_at" type="datetime-local" value="{{ times.back }}" class="form-input" style="min-height:44px"></div>
+      </div>
+      <div><label class="form-label" for="b-con">Condition (what was wrong)</label><textarea id="b-con" name="condition" rows="2" maxlength="2000" class="form-input">{{ r.condition or '' }}</textarea></div>
+      <div><label class="form-label" for="b-cau">Cause</label><textarea id="b-cau" name="cause" rows="2" maxlength="2000" class="form-input">{{ r.cause or r.cause_text or '' }}</textarea></div>
+      <div><label class="form-label" for="b-cor">Correction (what was done)</label><textarea id="b-cor" name="correction" rows="2" maxlength="2000" class="form-input">{{ r.correction or '' }}</textarea></div>
+      <div><label class="form-label" for="b-rem">Vendor remarks (blank uses the times and job)</label><textarea id="b-rem" name="vendor_remarks" rows="2" maxlength="2000" class="form-input">{{ r.vendor_remarks or '' }}</textarea></div>
+      <div class="text-right"><button class="btn-primary" type="submit" style="min-height:44px">Save details</button></div>
+    </form>
+  </details>
+  {% endif %}
+
+  {% if office and r.status in ('done', 'back') %}
+  <div class="uh-acts" style="margin-top:12px;">
+    <form method="post" action="/uhaul/{{ r.id }}/ready"><button class="btn-primary" type="submit" {% if sheet.blocked %}disabled title="Fix the items marked ⚠ first" style="opacity:.55"{% endif %}>Sheet is ready to submit</button></form>
+  </div>
+  {% endif %}
+
+  {% if office and r.status == 'ready' %}
+  <form method="post" action="/uhaul/{{ r.id }}/submitted" class="space-y-2" style="margin-top:12px;">
+    <p class="text-sm text-stone-300" style="margin:0;">Type the sheet into the portal's Vendor RPO form, upload the receipts and submit there. Then record it here.</p>
+    <div class="uh-grid">
+      <div><label class="form-label" for="s-inv">Invoice # you used</label><input id="s-inv" name="invoice" value="{{ sheet.header['Invoice #'] }}" maxlength="32" class="form-input" style="min-height:44px"></div>
+      <div><label class="form-label" for="s-amt">Total the portal showed</label><input id="s-amt" name="amount" required type="number" step="0.01" min="0.01" inputmode="decimal" class="form-input" style="min-height:44px"></div>
+    </div>
+    <div class="uh-acts"><button class="btn-primary" type="submit">I submitted it</button></div>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+
+{# ------------------------------------------------ money #}
+{% if r.status in ('submitted', 'paid') %}
+<section class="card" id="money">
+  <h2>{{ 'Paid' if r.status == 'paid' else 'Waiting on U-Haul' }}</h2>
+  <dl>
+    <dt>Billed</dt><dd>${{ '%.2f'|format(r.submitted_amount or 0) }}{% if r.submitted_invoice %} · invoice {{ r.submitted_invoice }}{% endif %} · {{ local(r.submitted_at) }}</dd>
+    <dt>Paid</dt><dd>${{ '%.2f'|format(paid) }}{% for p in r.payments %}<br><span class="text-stone-400 text-sm">${{ '%.2f'|format(p.amount) }}{% if p.paid_on %} on {{ p.paid_on.strftime('%m/%d/%Y') }}{% endif %}{% if p.reference %} · ref {{ p.reference }}{% endif %}</span>{% endfor %}</dd>
+    {% if short %}<dt class="text-amber-300">Short</dt><dd class="text-amber-300">${{ '%.2f'|format(short) }} less than billed. Check the RPO in the portal or ask repair dispatch.</dd>{% endif %}
+  </dl>
+  {% if office and r.rpo_number %}
+  <form method="post" action="/uhaul/payments" class="space-y-2" style="margin-top:10px;">
+    <input type="hidden" name="rpo_number" value="{{ r.rpo_number }}"><input type="hidden" name="from" value="detail">
+    <div class="uh-grid">
+      <div><label class="form-label" for="d-amt">Amount paid</label><input id="d-amt" name="amount" required type="number" step="0.01" min="0.01" inputmode="decimal" class="form-input" style="min-height:44px"></div>
+      <div><label class="form-label" for="d-date">Date paid</label><input id="d-date" name="paid_on" type="date" value="{{ today }}" class="form-input" style="min-height:44px"></div>
+      <div><label class="form-label" for="d-ref">Check or ref #</label><input id="d-ref" name="reference" maxlength="64" class="form-input" style="min-height:44px"></div>
+    </div>
+    <div class="text-right"><button class="btn-secondary" type="submit" style="min-height:44px">Record payment</button></div>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+</div>
+<script>
+document.querySelectorAll('.uh .copy').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var t = b.getAttribute('data-copy') || '';
+    var done = function () { var o = b.textContent; b.textContent = 'Copied'; setTimeout(function () { b.textContent = o; }, 1200); };
+    if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t).then(done, function () {}); }
+  });
+});
+</script>
+{% endblock %}

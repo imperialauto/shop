@@ -1,0 +1,30 @@
+## U-Haul Down Equipment (Self-Dispatch)
+*Repair PO: *
+
+* RPO: 478-00999XX
+* Vendor Name: EXAMPLE VENDOR LLC
+* Action Date: 07/18/2026
+
+*Equipment Info*
+
+* *Equipment #: 3159 FS 9999A*
+* Year/Make: 2008 / UHI
+* Vin: 14HU071028TFS9999
+* Plate: ZZ0000 / OK
+
+*U-Haul Location Info*
+
+* *858000*
+* U-HAUL MADE-UP STORE
+* 100 EXAMPLE RD SURPRISE, AZ 85378
+* (555)555-0100
+
+*Reason Down*
+( *Rear Door )
+Does the rear door open and close?- No.
+Additional Notes.- Back door not closing correctly and is off alignment.
+*Repair Dispatch Contact Info*
+For approvals, questions or status updates, please reply to 858_rdm@uhaul.com
+or Call 1-800-555-0100, ext 858302
+*Related Photos:*
+*Total Photos Attached: 1*
