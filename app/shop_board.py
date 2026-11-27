@@ -345,11 +345,14 @@ def _clock_json(clock: dict) -> dict:
 
 def set_clock(db: Session, user: User, ro_id: int, on: bool, now: datetime | None = None,
               only_mine: bool = False) -> bool:
-    """Start or stop the work clock on a job. Changes only the clock, never the job.
+    """Start or stop the work clock on a job.
 
     Starting starts the worker's own clock (the shared one for the assistant). Stopping stops the worker's own
     clock when only_mine (the job page), otherwise every clock running on the job (the phone page and the
-    assistant, which stop the job). A picked-up job can still be stopped but not started."""
+    assistant, which stop the job). A picked-up job can still be stopped but not started.
+
+    Starting the clock on an approved job that hasn't started yet also moves it to In progress, so the TV and the
+    dashboard show the car being worked on without a second tap. Stopping never changes the job."""
     order = db.get(RepairOrder, ro_id)
     if order is None or (on and order.status == "delivered"):
         return False
@@ -374,9 +377,24 @@ def set_clock(db: Session, user: User, ro_id: int, on: bool, now: datetime | Non
         (RepairOrder.status != "delivered") | (RepairOrder.updated_at >= keep_after))}
     value = json.dumps({str(k): _clock_json(v) for k, v in sorted(clocks.items())
                         if k in kept or any(e["on"] for e in v["by"].values())})
-    if business_settings.save(db, CLOCK_KEY, value, _actor(user)):
+    started = on and _start_work(db, order, _actor(user))
+    if business_settings.save(db, CLOCK_KEY, value, _actor(user)) or started:
         db.commit()
         business_settings.clear_cache()
+    return True
+
+
+def _start_work(db: Session, order, actor: str) -> bool:
+    """Approved, ready to start -> In progress when someone starts the clock on it. Same guard as the status menu."""
+    from app.dispatch_model import DispatchAudit
+    from app.ro_status_policy import status_error
+
+    if order.status != "approval_received" or status_error(order, "in_progress", "owner") is not None:
+        return False
+    order.status = "in_progress"
+    db.add(DispatchAudit(item_id=None, actor=(actor or "staff")[:64], action="clock_started_job",
+                         detail=f"job {order.id} approval_received -> in_progress: work clock started"[:255]))
+    db.flush()
     return True
 
 
@@ -598,9 +616,15 @@ def coming_in(db: Session, now: datetime) -> list[dict]:
 
 
 def waiting_on_you(db: Session) -> dict:
-    """Counts only: customer texts and missed calls that need the owner, and estimates waiting on a customer's yes."""
+    """Counts only: customer texts and missed calls that need the owner, and estimates waiting on a customer's yes.
+
+    Leaves out the same items the Needs you page leaves out: ones about a job that no longer needs them (picked
+    up, closed, or finished and gone), so the TV and the dashboard count the same things."""
+    from app.routes.dispatch import _drop_stale  # late import: dispatch pulls in the web routes
+
     texts = calls = 0
-    for (reasons,) in db.query(DispatchItem.approval_reasons).filter(DispatchItem.status == NEEDS_OWNER):
+    items = _drop_stale(db, db.query(DispatchItem).filter(DispatchItem.status == NEEDS_OWNER).all())
+    for reasons in (item.approval_reasons for item in items):
         try:
             missed = "missed_call" in json.loads(reasons or "[]")
         except (TypeError, ValueError):

@@ -544,7 +544,8 @@ TOOLS = {
                      "only the TV, never the job.", board_agent.CarHere,
                      lambda db, key, a: board_agent.set_here(db, key, a), False),
     "set_job_clock": ("board", "Start or stop the work clock on a job, so the TV shows time worked against book time. "
-                      "Changes only the TV, never the job.", board_agent.JobClock,
+                      "Starting it on an approved job that hasn't started moves the job to In progress; stopping "
+                      "changes only the clock.", board_agent.JobClock,
                       lambda db, key, a: board_agent.set_clock(db, key, a), False),
     "update_job_notes": ("estimates:write", "Add a dated line to a job's tech notes and/or set its concern, as on the "
                          "job page. Nothing is sent to anyone.", _JobNotes, _call_job_notes, False),
