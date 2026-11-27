@@ -40,8 +40,9 @@ worker_router = APIRouter()
 staff_router = APIRouter()
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "..", "templates"))
 
-LEASE_SECONDS = 15 * 60
-OFFLINE_AFTER = timedelta(minutes=3)
+# QA can shorten the lease (LOCAL_NODE_LEASE_SECONDS) to prove restart recovery quickly.
+LEASE_SECONDS = max(15, min(int(os.getenv("LOCAL_NODE_LEASE_SECONDS", "900") or 900), 3600))
+OFFLINE_AFTER = timedelta(seconds=max(10, min(int(os.getenv("LOCAL_NODE_OFFLINE_SECONDS", "180") or 180), 3600)))
 APPROVER_ROLES = ("tech", "admin", "owner")
 WORKER_ID_PATTERN = r"^[A-Za-z0-9_-]{4,64}$"
 
@@ -213,7 +214,10 @@ def claim(payload: Claim, db: Session = Depends(get_db), _auth: bool = Depends(r
             "model": model_name(), "messages": guard.build_messages(snapshot),
             "format": guard.OUTPUT_SCHEMA, "options": {"temperature": 0.1, "num_ctx": 8192},
         }}
-    return {"task": None}
+    # Diagnostic reviews first; then Ask Imperial work, only to workers that post results to
+    # the path the task names (1.2.0+). Older workers would post them to the diagnostic route.
+    from app.routes import ask
+    return {"task": ask.claim_for_worker(db, payload.workerId, now)}
 
 
 LOST_LEASE = "This task is no longer leased to this worker."

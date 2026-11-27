@@ -327,6 +327,7 @@ def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db)
     ro = db.get(RepairOrder, ro_id)
     if not ro:
         raise HTTPException(status_code=404)
+    _refuse_stale_assist_draft(db, ro, user)
     if user.role in SENDERS:
         return _send_link(db, ro, user, offer_snap)
     fresh = [li for li in ro.line_items if li.approval is None]
@@ -355,6 +356,15 @@ def request_approval(request: Request, ro_id: int, db: Session = Depends(get_db)
 
 
 SENDERS = ("owner", "admin")
+
+
+def _refuse_stale_assist_draft(db: Session, ro: RepairOrder, user):
+    """Ask Imperial: no approval text goes out (owner send, office queue or Text link now) while
+    this job's estimate draft is out of date. No-op when Ask Imperial is off."""
+    from app import assist
+    blocked = assist.send_blocked(db, ro, user)
+    if blocked:
+        raise HTTPException(status_code=409, detail=blocked)
 
 
 def _approval_send(db: Session, ro: RepairOrder, user) -> dict | None:
@@ -395,6 +405,7 @@ def text_link_now(request: Request, ro_id: int, db: Session = Depends(get_db), o
     ro = db.get(RepairOrder, ro_id)
     if not ro:
         raise HTTPException(status_code=404)
+    _refuse_stale_assist_draft(db, ro, user)
     return _send_link(db, ro, user, offer_snap)
 
 
@@ -412,6 +423,7 @@ def resend_link(request: Request, ro_id: int, db: Session = Depends(get_db), off
         raise HTTPException(status_code=404)
     if ro.status in ("delivered", "cancelled"):
         raise HTTPException(409, "This job is closed.")
+    _refuse_stale_assist_draft(db, ro, user)
     return _send_link(db, ro, user, offer_snap, resend=True)
 
 

@@ -14,6 +14,7 @@ def database_audit(include_counts=True):
     dev_work_enabled = os.getenv("DEV_COORDINATOR_CAPTURE_ENABLED", "").strip().lower() == "true"
     leads_enabled = os.getenv("SERVICE_LEADS_ENABLED", "").strip().lower() == "true"
     local_node_enabled = os.getenv("LOCAL_NODE_ENABLED", "").strip().lower() == "true"
+    ask_enabled = os.getenv("ASK_IMPERIAL_ENABLED", "").strip().lower() == "true"
     agent_api_enabled = os.getenv("AGENT_API_ENABLED", "").strip().lower() == "true"
     referrals_enabled = os.getenv("REFERRALS_ENABLED", "").strip().lower() == "true"
     if leads_enabled:
@@ -39,6 +40,8 @@ def database_audit(include_counts=True):
                     continue  # WIP lead schema intentionally absent until approved migration
                 if not local_node_enabled and name in ("diagnostic_reviews", "diagnostic_review_events", "local_node_heartbeats"):
                     continue  # Local Node tables are uncreated until separately approved migration
+                if not ask_enabled and name in ("assist_requests", "assist_events", "assist_labor_evidence", "shop_rules"):
+                    continue  # Ask Imperial tables are uncreated until its migration is approved
                 if not agent_api_enabled and name in ("agent_keys", "agent_actions"):
                     continue  # Assistant key tables are uncreated until separately approved migration
                 if not referrals_enabled and name in ("referral_codes", "referrals", "customer_credits"):

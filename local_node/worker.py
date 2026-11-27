@@ -29,7 +29,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"  # 1.2.0: posts results to the path each task names (Ask Imperial tasks)
 log = logging.getLogger("imperial-local-node")
 
 DEFAULTS = {
@@ -151,13 +151,21 @@ class Backend:
     def claim(self):
         return self.call("POST", "/claim", {"workerId": self.worker_id}).get("task")
 
+    @staticmethod
+    def _path(task, kind):
+        # Diagnostic reviews keep their original route; other task types name theirs.
+        named = task.get(kind + "Path")
+        if named and named.startswith("/") and ".." not in named and "//" not in named:
+            return named
+        return f"/tasks/{task['taskId']}/{kind}"
+
     def result(self, task, model, output, duration_ms):
-        return self.call("POST", f"/tasks/{task['taskId']}/result", {
+        return self.call("POST", self._path(task, "result"), {
             "workerId": self.worker_id, "leaseToken": task["leaseToken"], "model": model,
             "output": output[:60000], "durationMs": duration_ms})
 
     def error(self, task, message, retryable=True):
-        return self.call("POST", f"/tasks/{task['taskId']}/error", {
+        return self.call("POST", self._path(task, "error"), {
             "workerId": self.worker_id, "leaseToken": task["leaseToken"],
             "error": message[:1000], "retryable": retryable})
 
@@ -204,7 +212,8 @@ def process_one(backend, ollama):
     if not task:
         return False
     model = task["model"]
-    log.info("task %s claimed (attempt %s, prompt %s)", task["taskId"], task.get("attempt"), task.get("promptVersion"))
+    log.info("task %s %s claimed (attempt %s, prompt %s)", task.get("taskType", "diagnostic"), task["taskId"],
+             task.get("attempt"), task.get("promptVersion"))
     started = time.monotonic()
     try:
         output = ollama.chat(model, task["messages"], task.get("format"), task.get("options"))

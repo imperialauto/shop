@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Ask Imperial — Imperial Auto Care{% endblock %}
+{% block content %}
+<style>
+  .ai { max-width: 720px; display: grid; gap: 14px; }
+  .ai-card { background: var(--imp-surface); border: 1px solid var(--imp-line); border-radius: var(--imp-radius-card); padding: 16px; display: grid; gap: 10px; overflow-wrap: anywhere; }
+  .ai-card.gold { border-color: rgba(234,210,114,.55); }
+  .ai-box textarea { width: 100%; min-height: 96px; resize: vertical; background: var(--imp-paper); color: var(--imp-ink); border: 1px solid var(--imp-line);
+                     border-radius: var(--imp-radius); padding: 12px; font: inherit; font-size: 17px; line-height: 1.4; }
+  .ai-box textarea:focus-visible { outline: 3px solid var(--imp-gold); outline-offset: 1px; }
+  .ai-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .ai-go { min-height: 52px; padding: 0 26px; border-radius: 999px; background: var(--imp-gold); color: var(--imp-on-gold); font-weight: 800; font-size: 16px; border: 0; cursor: pointer; }
+  .ai-alt { min-height: 48px; padding: 0 18px; border-radius: 999px; background: transparent; color: var(--imp-ink); border: 1px solid var(--imp-line); font-size: 14.5px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
+  .chip { min-height: 44px; padding: 0 14px; border-radius: 999px; background: var(--imp-surface-2); color: var(--imp-ink); border: 1px solid var(--imp-line); font-size: 14px; cursor: pointer; }
+  .ai-job { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; color: var(--imp-muted); }
+  .ai-job strong { color: var(--imp-heading); font-family: var(--imp-serif); font-size: 18px; }
+  .ai-label { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--imp-heading); margin: 0; }
+  .ai-big { font-size: 18px; font-weight: 700; margin: 0; }
+  .ai-muted { color: var(--imp-muted); font-size: 14px; margin: 0; }
+  .ai-err { color: var(--imp-danger); font-weight: 600; margin: 0; }
+  .ai-ok { color: var(--imp-ok); font-weight: 600; margin: 0; }
+  .ai-node { font-size: 13px; color: var(--imp-muted); display: flex; gap: 6px; align-items: center; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--imp-danger); display: inline-block; }
+  .dot.on { background: var(--imp-ok); }
+</style>
+<div class="page-header"><h1 class="page-title">Ask Imperial</h1></div>
+<div class="page-body ai">
+  {% set saved = request.query_params.get('saved') %}
+  {% if saved and saved.startswith('/') and not saved.startswith('//') %}
+  <div class="ai-card gold" role="status"><p class="ai-ok">Saved.</p><a class="ai-alt" href="{{ saved }}">Open what changed →</a></div>
+  {% endif %}
+
+  <form method="post" action="/ask" class="ai-card ai-box" aria-label="Ask Imperial">
+    {% if job %}
+    <div class="ai-job">Job: <strong>{{ job.label }}</strong> {{ job.customer }}{% if job.vehicle %} · {{ job.vehicle }}{% endif %}
+      <a class="ai-alt" style="min-height:36px" href="/ask">Any job</a></div>
+    <input type="hidden" name="ro" value="{{ job.roId }}">
+    {% endif %}
+    <label for="ask-text" class="ai-label">What do you need? Type, or tap the mic on your keyboard.</label>
+    <textarea id="ask-text" name="text" required maxlength="2000" autocapitalize="sentences" enterkeyhint="send"
+      placeholder="e.g. What's next on Antwon's Impala? · Note: headlight bulb installed · Estimate front brakes">{{ text or '' }}</textarea>
+    <div class="ai-row">
+      <button class="ai-go">Ask</button>
+      {% for q in ["What should I do next?", "Note: ", "Estimate "] %}
+      <button type="button" class="chip" data-fill="{{ q }}">{{ q.strip() if q.strip() != 'Note:' else 'Add a note' }}{% if q == 'Estimate ' %} a repair{% endif %}</button>
+      {% endfor %}
+    </div>
+    <div class="ai-node"><span class="dot{{ ' on' if node.online else '' }}"></span>{{ node.label }} · used for estimate drafts. Finding a job and notes work without it.</div>
+  </form>
+
+  {% if error %}<div class="ai-card" role="alert"><p class="ai-err">{{ error }}</p></div>{% endif %}
+
+  {% if choose %}
+  <div class="ai-card gold">
+    <p class="ai-big">Which job do you mean?</p>
+    {% for c in choose %}
+    <form method="post" action="/ask" class="ai-row">
+      <input type="hidden" name="text" value="{{ text }}"><input type="hidden" name="ro" value="{{ c.roId }}">
+      <button class="ai-alt" style="width:100%;justify-content:flex-start">{{ c.label }} · {{ c.customer }}{% if c.vehicle %} · {{ c.vehicle }}{% endif %}</button>
+    </form>
+    {% endfor %}
+    {% if missing_ros %}<p class="ai-muted">Not found: {% for n in missing_ros %}RO #{{ n }}{{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
+    <p class="ai-muted">Nothing was changed.</p>
+  </div>
+  {% endif %}
+
+  {% if answer %}
+  <div class="ai-card gold">
+    <p class="ai-label">{{ answer.job.label }} · {{ answer.job.customer }}{% if answer.job.vehicle %} · {{ answer.job.vehicle }}{% endif %} · {{ answer.job.status|replace('_', ' ') }}</p>
+    {% if answer.next %}
+    <p class="ai-big">Next: {{ answer.next.title }}</p>
+    <p class="ai-muted">{{ answer.next.who }}{% if answer.next.detail %} · {{ answer.next.detail }}{% endif %}</p>
+    {% else %}<p class="ai-big">Nothing is waiting on this job.</p>{% endif %}
+    <div class="ai-row"><a class="ai-go" style="display:inline-flex;align-items:center;text-decoration:none" href="/ro/{{ answer.job.roId }}#next-step">Open {{ answer.job.label }}</a></div>
+  </div>
+  {% endif %}
+
+  {% if preview %}
+  <div class="ai-card gold" aria-label="Check before saving">
+    <p class="ai-label">Check before saving</p>
+    {% if preview.job %}<p class="ai-muted">{{ preview.job.label }} · {{ preview.job.customer }}{% if preview.job.vehicle %} · {{ preview.job.vehicle }}{% endif %}</p>{% endif %}
+    <p class="ai-big">{{ preview.change }}</p>
+    {% if preview.visibility %}<p class="ai-muted">{{ preview.visibility }}</p>{% endif %}
+    {% if preview.action == 'note' %}
+    <form method="post" action="/ask/note" class="ai-row">
+      <input type="hidden" name="ro" value="{{ preview.job.roId }}"><input type="hidden" name="note" value="{{ preview.note }}">
+      <button class="ai-go">Save note</button><a class="ai-alt" href="/ask{% if job %}?ro={{ job.roId }}{% endif %}">Cancel</a>
+    </form>
+    {% elif preview.action == 'task' %}
+    <form method="post" action="/ask/task" class="ai-row">
+      <input type="hidden" name="task_id" value="{{ preview.taskId }}"><input type="hidden" name="operation" value="{{ preview.operation }}">
+      <button class="ai-go">Update task</button><a class="ai-alt" href="/ask">Cancel</a>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <p class="ai-muted">Ask Imperial never texts customers, confirms appointments, approves repairs or takes payments. Those stay on their own buttons.</p>
+</div>
+<script>
+  document.querySelectorAll("[data-fill]").forEach(function (chip) {
+    chip.addEventListener("click", function () {
+      var box = document.getElementById("ask-text");
+      box.value = chip.getAttribute("data-fill");
+      box.focus();
+      box.setSelectionRange(box.value.length, box.value.length);
+    });
+  });
+</script>
+{% endblock %}
