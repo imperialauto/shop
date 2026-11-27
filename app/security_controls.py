@@ -120,8 +120,8 @@ CONTROLS: tuple[Control, ...] = (
     Control("block_framing", "Browser protections", "Stop other sites showing our pages inside theirs",
             "Prevents click-jacking. The TikTok LIVE overlay is always allowed.",
             "bool", True, risky_off=True),
-    Control("permissions_policy", "Browser protections", "Turn off camera, microphone and payment access in pages",
-            "Pages can't ask for the camera, microphone or browser payment sheet. Location stays allowed for roadside requests.",
+    Control("permissions_policy", "Browser protections", "Turn off camera and payment access in pages",
+            "Pages can't ask for the camera or browser payment sheet. The microphone works on our own pages only, for Dictate. Location stays allowed for roadside requests.",
             "bool", True),
     # Customer pages and privacy
     Control("status_link_days_after_pickup", "Customer pages and privacy", "Customer status links stop working after pickup",
@@ -334,7 +334,7 @@ def apply_headers(response, path: str, secure: bool) -> None:
         response.headers.setdefault("X-Frame-Options", "DENY")
     if current["permissions_policy"]:
         response.headers.setdefault("Permissions-Policy",
-                                    "camera=(), microphone=(), payment=(), usb=(), geolocation=(self), interest-cohort=()")
+                                    "camera=(), microphone=(self), payment=(), usb=(), geolocation=(self), interest-cohort=()")
 
 
 def link_expired(ro, now=None) -> bool:

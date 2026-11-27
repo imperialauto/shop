@@ -1,3 +1,4 @@
+import math
 from html import escape
 from fastapi import APIRouter, Request, Depends, Form, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -272,7 +273,8 @@ def update_status(
     user = require_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=302)
-    ro = db.query(RepairOrder).filter(RepairOrder.id == ro_id).first()
+    # Lock the job row so a double tap can't both read the old status and send the pickup text twice.
+    ro = db.query(RepairOrder).filter(RepairOrder.id == ro_id).with_for_update().first()
     if not ro:
         raise HTTPException(status_code=404)
 
@@ -549,6 +551,10 @@ def add_line_item(
         raise HTTPException(404, "Job not found.")
     if not description.strip():
         return RedirectResponse(f"/ro/{ro_id}?line_error=description#line-items", status_code=303)
+    # "nan" and "inf" parse as numbers and would turn the invoice total into NaN.
+    if not (math.isfinite(quantity) and math.isfinite(unit_price) and math.isfinite(quantity * unit_price)):
+        return RedirectResponse(f"/ro/{ro_id}?line_error=amount#line-items", status_code=303)
+    unit_price = round(unit_price, 2)  # whole cents, so lines, subtotal and PDF agree
     invoice = next((inv for inv in ro.invoices if inv.status != "void"), None)
     if item_type == "discount":
         # The amount off, typed as a plain number (75 or -75 both mean $75 off). Approved by the shop,

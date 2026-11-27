@@ -25,7 +25,7 @@ input[type="checkbox"]:not(.plain):disabled { opacity: .5; cursor: not-allowed; 
 .chip-row::-webkit-scrollbar { display: none; }
 .qchip {
   white-space: nowrap; border: 1px solid #6E6380; background: var(--imp-surface, #241a30); color: var(--imp-ink, #fff);
-  border-radius: 999px; padding: 6px 12px; min-height: 34px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  border-radius: 999px; padding: 6px 14px; min-height: 44px; font-size: 13px; font-weight: 600; cursor: pointer;
 }
 .qchip:hover, .qchip.active { border-color: var(--imp-gold, #EAD272); color: var(--imp-gold, #EAD272); }
 .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--imp-line); color: var(--imp-muted); }

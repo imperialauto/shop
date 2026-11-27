@@ -230,7 +230,8 @@ def create_invoice(request: Request, ro_id: int, db: Session = Depends(get_db)):
     user = require_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=302)
-    ro = db.query(RepairOrder).filter(RepairOrder.id == ro_id).first()
+    # Lock the job so a double tap on Create invoice can't make two invoices.
+    ro = db.query(RepairOrder).filter(RepairOrder.id == ro_id).with_for_update().first()
     if not ro:
         raise HTTPException(status_code=404)
 
@@ -404,7 +405,8 @@ def mark_sent(request: Request, invoice_id: int, db: Session = Depends(get_db)):
     if not user:
         return RedirectResponse("/login", status_code=302)
     invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
-    if invoice:
+    # Only a draft becomes "sent"; this must never bring a paid or void invoice back to life.
+    if invoice and invoice.status == "draft":
         invoice.status = "sent"
         db.commit()
     return RedirectResponse(f"/invoices/{invoice_id}", status_code=302)

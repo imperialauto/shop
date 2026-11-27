@@ -285,3 +285,6 @@ class EstimateSession(Base):
     follow_up_sent = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+from app import invoice_sync  # noqa: E402,F401  (registers the draft-invoice re-total hook)

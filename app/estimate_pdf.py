@@ -12,7 +12,8 @@ Lines follow the dashboard's own conventions (notes/estimate-process.md):
 Tax is the dashboard's parts-only rate, the same one invoices and deposit texts use.
 """
 import io
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 from xml.sax.saxutils import escape
 
 from app.models import RepairOrder
@@ -92,7 +93,7 @@ def build(ro: RepairOrder, today: date | None = None) -> bytes:
     from reportlab.lib.units import inch
     from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-    today = today or date.today()
+    today = today or datetime.now(ZoneInfo("America/Phoenix")).date()
     purple, gold = colors.HexColor(PURPLE), colors.HexColor(GOLD)
     grey, shade = colors.HexColor("#57534e"), colors.HexColor("#f5f0ea")
     base = getSampleStyleSheet()["Normal"]

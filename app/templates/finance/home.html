@@ -429,11 +429,6 @@
 </div>
 <script>
 (function () {
-  document.querySelectorAll('form[data-confirm]').forEach(function (form) {
-    form.addEventListener('submit', function (event) {
-      if (!window.confirm(form.getAttribute('data-confirm'))) event.preventDefault();
-    });
-  });
   // The add form shows only the fields that fit what's being added.
   var form = document.getElementById('fin-add');
   if (!form) return;

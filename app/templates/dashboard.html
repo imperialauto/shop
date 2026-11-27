@@ -426,9 +426,6 @@
     function tick() { var n = new Date(); t.textContent = tf.format(n); d.textContent = df.format(n); }
     tick(); setInterval(tick, 15000);
   })();
-  // One-tap next steps ask once before they change anything.
-  document.querySelectorAll('form[data-confirm]').forEach(function (f) {
-    f.addEventListener('submit', function (e) { if (!window.confirm(f.dataset.confirm)) e.preventDefault(); });
-  });
+  // One-tap next steps ask once before they change anything (handled for every page in imperial-ui.js).
 </script>
 {% endblock %}

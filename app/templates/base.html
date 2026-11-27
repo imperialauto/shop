@@ -2,7 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#16111C" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Imperial" />
+  <meta name="format-detection" content="telephone=no" />
   <title>{% block title %}Imperial Auto Care{% endblock %}</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -19,6 +25,8 @@
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
   <style>
     * { box-sizing: border-box; }
+    html { -webkit-tap-highlight-color: transparent; }
+    a, button, input, select, textarea, label, summary { touch-action: manipulation; }
     body { background: var(--imp-paper); color: var(--imp-ink); font-family: var(--imp-sans); }
 
     /* ── Sidebar: deep purple, gold for the active page ─────────── */
@@ -117,7 +125,7 @@
     .divider { border: none; border-top: 1px solid var(--imp-line); margin: 16px 0; }
 
     /* ── Mobile header: purple bar ─────────────────── */
-    .mob-header { display: none; position: fixed; top: 0; left: 0; right: 0; height: 56px; background: var(--imp-header); border-bottom: 2px solid var(--imp-gold); z-index: 49; align-items: center; justify-content: space-between; padding: 0 16px; }
+    .mob-header { display: none; position: fixed; top: 0; left: 0; right: 0; height: calc(56px + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top) !important; background: var(--imp-header); border-bottom: 2px solid var(--imp-gold); z-index: 49; align-items: center; justify-content: space-between; padding: 0 16px; }
     .mob-brand { font-family: var(--imp-serif); font-size: 21px; font-weight: 700; color: var(--imp-gold); }
     .hamburger { background: none; border: none; cursor: pointer; padding: 6px; color: #EFE7F5; border-radius: 6px; }
     .hamburger:hover { background: rgba(255,255,255,0.08); }
@@ -130,7 +138,7 @@
       .sidebar.open { transform: translateX(0); }
       .sidebar-backdrop { display: block; opacity: 0; pointer-events: none; transition: opacity 0.25s; }
       .sidebar-backdrop.open { opacity: 1; pointer-events: all; }
-      .main-content { margin-left: 0 !important; padding-top: 56px; padding-bottom: calc(68px + env(safe-area-inset-bottom)); }
+      .main-content { margin-left: 0 !important; padding-top: calc(56px + env(safe-area-inset-top)); padding-bottom: calc(68px + env(safe-area-inset-bottom)); }
       .main-content:not(:has(.page-body)) { padding: 70px 14px calc(84px + env(safe-area-inset-bottom)); }
       .stat-row { grid-template-columns: repeat(2, 1fr); }
       .grid > * { grid-column: auto !important; min-width: 0; }

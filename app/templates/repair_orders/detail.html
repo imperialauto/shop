@@ -460,13 +460,13 @@
     <div class="col-span-5 flex gap-2 items-center flex-wrap">
       <button type="submit" class="btn-secondary text-xs">+ Add Line Item</button>
       <!-- AutoZone Pro Quick Lookup -->
-      <button type="button" id="azpro-btn"
-        onclick="(function(){
+      <button type="button" id="azpro-btn" data-veh="{{ ro.vehicle.label if ro.vehicle else '' }}"
+        onclick="(function(btn){
           var desc = document.getElementById('li-description').value.trim();
-          var veh = '{{ ro.vehicle.label }}';
+          var veh = btn.dataset.veh || '';
           var q = encodeURIComponent((veh + (desc ? ' ' + desc : '')).trim());
-          window.open('https://www.autozonepro.com/catalog/parts/search?searchTerm=' + q, '_blank');
-        })()"
+          window.open('https://www.autozonepro.com/catalog/parts/search?searchTerm=' + q, '_blank', 'noopener');
+        })(this)"
         style="background:#e60012; color:var(--imp-ink); border:none; border-radius:6px; padding:6px 12px; font-size:11.5px; font-weight:600; cursor:pointer; white-space:nowrap; display:flex; align-items:center; gap:5px;">
         <span>🔴</span> AutoZone Pro
       </button>
