@@ -47,6 +47,7 @@ class JobPoAndReceiptTests(_Setup):
     def setUp(self):
         super().setUp()
         parts_receipts._ready.clear()
+        parts_receipts._lines_ready.clear()
         with self.Session() as db:
             db.add(User(id=3, username="crew", password_hash=hash_password(PASSWORD), role="tech"))
             c = Customer(first_name="Pat", last_name="Example", phone="6025550100")
@@ -66,6 +67,7 @@ class JobPoAndReceiptTests(_Setup):
 
     def tearDown(self):
         parts_receipts._ready.clear()
+        parts_receipts._lines_ready.clear()
         super().tearDown()
 
     def receipts(self):
@@ -187,6 +189,7 @@ class JobPoAndReceiptTests(_Setup):
     def test_without_the_table_everything_else_still_works(self):
         PartsReceipt.__table__.drop(self.engine)
         parts_receipts._ready.clear()
+        parts_receipts._lines_ready.clear()
         page = self.owner.get("/ro/21")
         self.assertEqual(page.status_code, 200)
         self.assertIn("aren't switched on yet", page.text)
