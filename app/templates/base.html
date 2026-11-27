@@ -233,6 +233,12 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20"/><path d="M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
       Job profit
     </a>
+    {% if mail_enabled is defined and mail_enabled() %}
+    <a href="/mail" class="nav-item {% if request.url.path.startswith('/mail') %}active{% endif %}" onclick="closeSidebar()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 6l-10 7L2 6"/></svg>
+      Email
+    </a>
+    {% endif %}
     <a href="/alerts" class="nav-item {% if request.url.path.startswith('/alerts') %}active{% endif %}" onclick="closeSidebar()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
       Alert Center

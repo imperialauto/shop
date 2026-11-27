@@ -80,5 +80,9 @@ async def finance_rollover_job():
 def start_scheduler():
     scheduler.add_job(followup_job, "cron", hour=9, minute=0, id="followup_job", replace_existing=True)
     scheduler.add_job(finance_rollover_job, "cron", hour=0, minute=15, id="finance_rollover_job", replace_existing=True)
+    if os.getenv("MAIL_SYNC_ENABLED", "").strip().lower() == "true" and os.getenv("MAIL_INBOX_ENABLED", "").strip().lower() == "true":
+        from app.mail_sync import scheduled_sync
+        scheduler.add_job(scheduled_sync, "interval", seconds=60, id="mail_sync_job", replace_existing=True,
+                          max_instances=1, coalesce=True)
     scheduler.start()
     print("[Scheduler] Started — follow-up job daily at 9:00 AM, bill roll-forward daily at 12:15 AM Phoenix time")

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}New email — Imperial Auto Care{% endblock %}
+{% block content %}
+{% include "mail/_style.html" %}
+<div class="page-header">
+  <div><div class="page-title">New email</div><div style="font-size:12px; color:var(--imp-muted); margin-top:3px;">From {{ acct.address }}</div></div>
+  <div style="display:flex; gap:8px; margin-left:auto;"><a href="/mail" class="btn-secondary">← Email</a></div>
+</div>
+<div class="page-body ml-wrap" style="max-width:760px;">
+  {% if error %}<p class="ml-err" role="alert">{{ error }}</p>{% endif %}
+  <form class="card ml-form" method="post" action="/mail/compose" enctype="multipart/form-data" data-send-form>
+    <input type="hidden" name="send_key" value="{{ send_key }}">
+    {% if customer %}<input type="hidden" name="customer_id" value="{{ customer.id }}"><p class="ml-kv">For <a href="/customers/{{ customer.id }}">{{ customer.first_name }} {{ customer.last_name }}</a></p>{% endif %}
+    <label for="to">To</label>
+    <input class="form-input" id="to" name="to" value="{{ to }}" autocomplete="off" inputmode="email" required placeholder="name@example.com">
+    <details {% if cc %}open{% endif %}><summary style="cursor:pointer; color:var(--imp-link); font-size:13px; min-height:36px; display:flex; align-items:center;">Add Cc</summary>
+      <input class="form-input" name="cc" value="{{ cc }}" autocomplete="off" inputmode="email" aria-label="Cc">
+    </details>
+    <label for="subject">Subject</label>
+    <input class="form-input" id="subject" name="subject" value="{{ subject }}" required maxlength="300">
+    <div class="ml-starters" role="group" aria-label="Quick starts">
+      {% for label, text in starters %}<button type="button" class="qchip" data-starter="{{ text }}">{{ label }}</button>{% endfor %}
+    </div>
+    <label for="body">Message</label>
+    <textarea class="form-input" id="body" name="body" required>{{ body }}</textarea>
+    <label class="ml-check"><input type="checkbox" name="sign" value="1" checked> Add my signature (Jae, Imperial Auto Care, phone and site)</label>
+    <label for="files">Attach files</label>
+    <input class="form-input" id="files" type="file" name="files" multiple style="padding:8px;">
+    <div class="ml-actions">
+      <button class="btn-primary" data-send>Send</button>
+      <span style="font-size:12.5px; color:var(--imp-muted);">Nothing goes out until you press Send.</span>
+    </div>
+  </form>
+</div>
+<script>
+(function () {
+  document.querySelectorAll('[data-starter]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var box = document.getElementById('body');
+      box.value = box.value.trim() ? box.value.replace(/\s*$/, '') + '\n\n' + b.dataset.starter : b.dataset.starter;
+      box.focus();
+    });
+  });
+  document.querySelectorAll('[data-send-form]').forEach(function (form) {
+    form.addEventListener('submit', function () {
+      var b = form.querySelector('[data-send]');
+      if (b) { b.disabled = true; b.textContent = 'Sending…'; }
+    });
+  });
+})();
+</script>
+{% endblock %}

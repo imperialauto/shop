@@ -21,7 +21,9 @@
       <input type="hidden" name="next" value="{{ queue_back|default('/dashboard') }}">
       {% if item.summary %}<p class="q-msg">{{ item.summary }}</p>{% endif %}
       {% if not item.draft_reply and item.proposed_action %}<p class="q-msg">Next step: {{ item.proposed_action }}</p>{% endif %}
-      {% if web %}
+      {% if web and (item.quo_conversation_id or '').startswith('WEBMAIL') %}
+      <p class="q-msg"><a href="/mail/t/{{ item.quo_conversation_id[7:] }}" class="btn-primary" style="display:inline-flex; min-height:44px; align-items:center;">Open the email</a> Reply from Email. Nothing was sent.</p>
+      {% elif web %}
       <p class="q-msg">Website request: contact this customer by phone.</p>
       {% else %}
       {% if row.draft_state == 'retrying' %}<p class="pill pill-warn" style="display:inline-block; margin:0 0 6px;">AI draft didn't come through. Retrying automatically.</p>
