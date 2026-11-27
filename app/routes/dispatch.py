@@ -568,6 +568,9 @@ def _alert_text(db: Session, item: DispatchItem) -> str:
                 f"YES {item.id} texts it to them. NO {item.id} skips it.")
     if website_alerts.is_website(item) and item.category == "approval":
         return f"Estimate #{item.id} {name}: {said}\nOpen the job to start the approved work. DONE {item.id} when handled."
+    if (item.quo_conversation_id or "").startswith("WEBMAIL"):
+        head = "URGENT email" if item.urgency != "normal" else "Email"
+        return f"{head} #{item.id} {name}\n{said}\nOpen Email in the dashboard to reply. Nothing was sent. DONE {item.id} when handled."
     if website_alerts.is_website(item):
         phone = item.customer_phone or "no phone"
         if item.draft_reply == "":

@@ -1,7 +1,7 @@
 # Email inbox in the dashboard: plan (Nov 27, 2026)
 
-Design only. Nothing is built, connected or deployed. Database changes, connecting an account and
-deploys each wait for Jae's yes.
+Phase 1 is built on the test branch (PR 254). Nothing is connected, migrated or deployed. Database
+changes, connecting the mailbox and deploys each wait for Jae's yes. See "Phase 1 as built" below.
 
 ## Why
 Jae is turning off email notifications on his phone. Today the mail that matters (website leads,
@@ -33,7 +33,7 @@ dashboard, sort itself, and alert only when something needs him.
 
 ## Features
 ### Phase 1: a working inbox (replaces reading mail in Chrome)
-1. **Inbox page** `/dashboard/mail`: threads newest first, unread bold, full thread view, archive,
+1. **Inbox page** `/mail`: threads newest first, unread bold, full thread view, archive,
    mark read/unread, star, search (Gmail query passed through), attachments open/download.
 2. **Auto-sort tabs**: Leads, U-Haul, Bills, Parts & vendors, Other. Sender/subject rules first
    (noreply@roadside.uhaul.com, U-Haul repair dispatch, Squarespace forms, utility/insurer/lender
@@ -60,19 +60,50 @@ dashboard, sort itself, and alert only when something needs him.
 10. Instant push (Gmail watch + Pub/Sub). 11. Personal Gmail read-only via IMAP if wanted.
 12. Bulk unsubscribe/cleanup suggestions for junk senders. 13. Multi-shop accounts for the SaaS version.
 
+## Phase 1 as built (Nov 27, 2026)
+- **Pages** (owner only): `/mail` inbox with tabs, Inbox/Starred/Sent/All, search (dashboard copy, or
+  "Search all of Gmail"); `/mail/t/{id}` thread with reply, starters, signature, files (18 MB cap),
+  earlier quoted text folded, original layout in a sandboxed frame with remote images held back;
+  `/mail/compose`; `/mail/settings` to connect, check now and disconnect. "Email" appears in the owner
+  menu only when `MAIL_INBOX_ENABLED` is on.
+- **Sorting** is by sender/subject rules only (no AI fallback yet). Tabs live in the dashboard; they are
+  not copied to Gmail labels. Read/unread, archive and star are changed in Gmail first, then mirrored.
+  Moving a thread to another tab locks it there.
+- **Alerts**: new unread mail in Leads (including any known customer), urgent U-Haul (roadside, dispatch,
+  offer) and urgent bills (past due, cancel, shutoff) adds one Needs-you item per thread on Home, with an
+  "Open the email" link. Replying, archiving or sending from Gmail closes it. Old mail copied in on the
+  first connect (last 30 days) never alerts. These items never text a customer.
+- **Customers**: the sender's email matches a customer and their open job; Jae can link, change or unlink,
+  and optionally save the sender's address to a customer with none. Each message is also saved to
+  `communications` (channel email) so it shows on the customer file.
+- **Safety**: STOP ALL blocks email sends; a double tap sends once; a failed send keeps the draft; Gmail
+  refusing a change shows a message and changes nothing; read-only mode changes nothing in Gmail.
+- **Sync**: every 60 s when `MAIL_SYNC_ENABLED` is also on; full resync if Gmail's history point expired.
+- **Tested**: 40 unit tests, the migration twice on PostgreSQL in CI, and a walk of every page, link and
+  button as a phone and as a desktop on a pretend mailbox (no errors). Not yet seen on a real phone screen.
+
+### Turning it on (each step needs Jae's yes)
+1. Run `migrations/20261127_mail_inbox.sql` on the database (adds four new tables, changes nothing else).
+2. In the Workspace's Google Cloud project: enable the Gmail API, create an **Internal** OAuth consent
+   screen and a Web OAuth client with redirect URI `https://<dashboard domain>/mail/oauth/callback`.
+3. Railway variables: `GOOGLE_MAIL_CLIENT_ID`, `GOOGLE_MAIL_CLIENT_SECRET`, `MAIL_TOKEN_KEY` (a new
+   Fernet key), `MAIL_INBOX_ENABLED=true`, then after the first connect `MAIL_SYNC_ENABLED=true`.
+   Optional: `MAIL_ADDRESS` (sign-in hint), `MAIL_SENDER_NAME`, `MAIL_OAUTH_REDIRECT_URI`.
+4. Deploy, open Email > Settings > Connect, sign in as the business address and allow both boxes.
+
 ## Tables (phase 1, needs approval)
 - `mail_accounts`: address, provider, encrypted refresh token, history_id, last_sync_at, status.
 - `mail_threads`: account_id, gmail_thread_id, subject, last_from, last_at, unread, category,
   customer_id, repair_order_id.
 - `mail_messages`: thread_id, gmail_message_id (unique), from/to/cc, date, snippet, body_text,
-  body_html (sanitized on display), has_attachments.
+  body_html (shown only in a sandboxed frame), labels.
 - `mail_attachments`: message_id, gmail_attachment_id, filename, mime, size (bytes fetched on demand).
 
 ## What Jae has to do
 1. Fix the imperialautocarellc.com domain renewal in Squarespace (card failed Oct 24). If the domain
    lapses, business mail stops and none of this works.
-2. Say yes to building phase 1 on a test branch.
-3. Later: create the Internal OAuth app in his Workspace's Google Cloud project (can be done together
+2. ~~Say yes to building phase 1 on a test branch.~~ Done Nov 27.
+3. Create the Internal OAuth app in his Workspace's Google Cloud project (can be done together
    over Chrome) and approve the one sign-in.
 4. Approve the database migration and the deploy.
 

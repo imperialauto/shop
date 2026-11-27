@@ -1,0 +1,67 @@
+<style>
+  .ml-wrap { max-width: 980px; }
+  .ml-note { background: var(--imp-ok-tint); color: var(--imp-ok); border-radius: var(--imp-radius); padding: 10px 12px; margin: 0 0 12px; font-size: 14px; }
+  .ml-err { background: var(--imp-danger-tint); color: var(--imp-danger); border-radius: var(--imp-radius); padding: 10px 12px; margin: 0 0 12px; font-size: 14px; overflow-wrap: anywhere; }
+  .ml-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; margin: 0 0 10px; scrollbar-width: thin; }
+  .ml-tab { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--imp-line); color: var(--imp-muted); text-decoration: none; font-size: 14px; white-space: nowrap; }
+  .ml-tab.on { background: var(--imp-purple-soft); color: var(--imp-gold); border-color: var(--imp-purple-soft); font-weight: 600; }
+  .ml-tab b { background: var(--imp-gold); color: var(--imp-on-gold); border-radius: 999px; font-size: 11.5px; padding: 1px 7px; }
+  .ml-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 0 0 12px; }
+  .ml-bar form.ml-search { flex: 1 1 260px; display: flex; gap: 6px; }
+  .ml-bar .form-input { min-height: 44px; min-width: 0; }
+  .ml-list { border: 1px solid var(--imp-line); border-radius: var(--imp-radius-card); overflow: hidden; background: var(--imp-surface); }
+  .ml-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 12px 14px; border-top: 1px solid var(--imp-line); text-decoration: none; color: var(--imp-ink); min-height: 64px; }
+  .ml-row > * { min-width: 0; }
+  .ml-row:first-child { border-top: 0; }
+  .ml-row:hover { background: var(--imp-surface-2); }
+  .ml-from { font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ml-time { font-size: 12.5px; color: var(--imp-muted); white-space: nowrap; text-align: right; }
+  .ml-subj { grid-column: 1 / -1; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ml-snip { grid-column: 1 / -1; font-size: 13px; color: var(--imp-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ml-row.unread .ml-from, .ml-row.unread .ml-subj { font-weight: 700; }
+  .ml-row.unread { box-shadow: inset 3px 0 0 var(--imp-gold); }
+  .ml-tagl { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--imp-surface-2); color: var(--imp-muted); margin-right: 4px; vertical-align: 1px; font-weight: 500; }
+  .ml-tagl.hot { background: var(--imp-danger-tint); color: var(--imp-danger); }
+  .ml-tagl.cust { background: var(--imp-gold-tint); color: var(--imp-gold); }
+  .ml-empty { padding: 28px 14px; text-align: center; color: var(--imp-muted); }
+  .ml-pager { display: flex; justify-content: space-between; gap: 8px; margin: 12px 0; }
+  .ml-msg { border: 1px solid var(--imp-line); border-radius: var(--imp-radius-card); background: var(--imp-surface); padding: 14px; margin: 0 0 10px; }
+  .ml-msg.mine { border-color: var(--imp-purple-soft); }
+  .ml-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--imp-muted); margin: 0 0 8px; }
+  .ml-head strong { color: var(--imp-ink); font-size: 14.5px; }
+  .ml-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.5; }
+  .ml-quote summary, .ml-orig summary { cursor: pointer; color: var(--imp-link); font-size: 13px; min-height: 36px; display: flex; align-items: center; }
+  .ml-quote .ml-body { color: var(--imp-muted); font-size: 13.5px; }
+  .ml-orig iframe { width: 100%; height: 70vh; border: 0; border-radius: 8px; background: #fff; }
+  .ml-files { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .ml-file { display: inline-flex; align-items: center; min-height: 40px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--imp-line); color: var(--imp-link); text-decoration: none; font-size: 13.5px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ml-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; align-items: start; }
+  .ml-side .card { margin-bottom: 12px; }
+  .ml-side h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--imp-muted); margin: 0 0 8px; }
+  .ml-side form { margin: 0 0 8px; }
+  .ml-form label { display: block; font-size: 13px; color: var(--imp-muted); margin: 8px 0 4px; }
+  .ml-form .form-input { width: 100%; min-height: 44px; font-size: 16px; }
+  .ml-form div > .form-input { flex: 1 1 auto; min-width: 0; }
+  .ml-form textarea.form-input { min-height: 180px; line-height: 1.45; }
+  .ml-starters { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 4px; }
+  .ml-starters button { min-height: 40px; }
+  .ml-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  .ml-actions .btn-primary, .ml-actions .btn-secondary, .ml-bar .btn-secondary, .ml-bar .btn-primary { min-height: 44px; display: inline-flex; align-items: center; }
+  .ml-check { display: flex !important; align-items: center; gap: 8px; color: var(--imp-ink) !important; min-height: 40px; }
+  .ml-check input { width: 20px; height: 20px; }
+  .ml-warn { background: var(--imp-warn-tint); color: var(--imp-warn); border-radius: 8px; padding: 8px 10px; font-size: 13.5px; margin: 6px 0; }
+  .ml-match { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--imp-line); font-size: 14px; }
+  .ml-match form { margin: 0; flex: 0 0 auto; }
+  .ml-kv { font-size: 14px; margin: 0 0 6px; overflow-wrap: anywhere; }
+  .ml-kv a { color: var(--imp-link); }
+  @media (max-width: 860px) {
+    .ml-grid { grid-template-columns: 1fr; }
+    .ml-side { order: 2; }
+  }
+  @media (max-width: 640px) {
+    .ml-msg { padding: 12px; border-radius: 12px; }
+    .ml-row { padding: 12px; }
+    .ml-orig iframe { height: 60vh; }
+    .ml-actions .btn-primary { flex: 1 1 100%; justify-content: center; }
+  }
+</style>

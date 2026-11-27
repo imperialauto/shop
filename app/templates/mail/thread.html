@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}{{ thread.subject or 'Email' }} — Imperial Auto Care{% endblock %}
+{% block content %}
+{% include "mail/_style.html" %}
+<div class="page-header">
+  <div style="min-width:0;">
+    <div class="page-title" style="overflow-wrap:anywhere;">{{ thread.subject or '(no subject)' }}</div>
+    <div style="font-size:12px; color:var(--imp-muted); margin-top:3px;">{{ categories.get(thread.category, 'Other') }} · {{ thread.message_count }} message{{ '' if thread.message_count == 1 else 's' }}{% if not thread.in_inbox %} · Archived{% endif %}</div>
+  </div>
+  <div style="display:flex; gap:8px; flex-wrap:wrap; margin-left:auto;">
+    <a href="/mail{% if thread.category and thread.in_inbox %}?tab={{ thread.category }}{% endif %}" class="btn-secondary">← Email</a>
+  </div>
+</div>
+<div class="page-body ml-wrap">
+  {% if note %}<p class="ml-note" role="status">{{ note }}</p>{% endif %}
+  {% if flash_error %}<p class="ml-err" role="alert">{{ flash_error }}</p>{% endif %}
+  {% if error %}<p class="ml-err" role="alert">{{ error }}</p>{% endif %}
+  {% if read_error %}<p class="ml-err">Couldn't mark it read in Gmail: {{ read_error }}</p>{% endif %}
+  <div class="ml-grid">
+    <div class="ml-main">
+      {% for m, fresh, quoted in shown %}
+      <article class="ml-msg{% if m.outgoing %} mine{% endif %}" id="m{{ m.id }}">
+        <div class="ml-head">
+          <span style="min-width:0; overflow-wrap:anywhere;"><strong>{{ 'Me' if m.outgoing else (m.from_name or m.from_address) }}</strong>{% if not m.outgoing and m.from_name %} &lt;{{ m.from_address }}&gt;{% endif %}<br>to {{ m.to_addresses or '(no one)' }}{% if m.cc_addresses %} · cc {{ m.cc_addresses }}{% endif %}</span>
+          <span>{{ m.sent_at|mail_when }}</span>
+        </div>
+        <div class="ml-body">{{ fresh or m.snippet or '(no text)' }}</div>
+        {% if quoted %}<details class="ml-quote"><summary>Show earlier text</summary><div class="ml-body">{{ quoted }}</div></details>{% endif %}
+        {% if m.body_html %}
+        <details class="ml-orig"><summary>Show original layout</summary>
+          <p style="margin:4px 0 8px; font-size:12.5px; color:var(--imp-muted);">Outside pictures are held back so senders can't tell you opened it. <a href="#" style="color:var(--imp-link);" data-load-images="{{ m.id }}">Load pictures</a></p>
+          <iframe title="Original email" sandbox="allow-popups allow-popups-to-escape-sandbox" loading="lazy" data-src="/mail/m/{{ m.id }}/html"></iframe>
+        </details>
+        {% endif %}
+        {% if attachments.get(m.id) %}
+        <div class="ml-files">
+          {% for a in attachments[m.id] %}<a class="ml-file" href="/mail/a/{{ a.id }}" target="_blank" rel="noopener">📎 {{ a.filename }}{% if a.size %} · {{ (a.size / 1024)|round|int }} KB{% endif %}</a>{% endfor %}
+        </div>
+        {% endif %}
+      </article>
+      {% endfor %}
+
+      <form class="card ml-form" id="reply" method="post" action="/mail/t/{{ thread.id }}/reply" enctype="multipart/form-data" data-send-form>
+        <div class="card-title">Reply</div>
+        <input type="hidden" name="send_key" value="{{ send_key }}">
+        <label for="to">To</label>
+        <input class="form-input" id="to" name="to" value="{{ reply_to }}" autocomplete="off" inputmode="email" required>
+        {% if noreply %}<p class="ml-warn">This looks like an address that doesn't take replies. Check where the sender asks you to answer before sending.</p>{% endif %}
+        <details {% if reply_cc %}open{% endif %}><summary style="cursor:pointer; color:var(--imp-link); font-size:13px; min-height:36px; display:flex; align-items:center;">Add Cc</summary>
+          <input class="form-input" name="cc" value="{{ reply_cc }}" autocomplete="off" inputmode="email" aria-label="Cc">
+        </details>
+        <p style="margin:6px 0 0; font-size:13px; color:var(--imp-muted);">Subject: {{ subject }}</p>
+        <div class="ml-starters" role="group" aria-label="Quick starts">
+          {% for label, text in starters %}<button type="button" class="qchip" data-starter="{{ text }}">{{ label }}</button>{% endfor %}
+        </div>
+        <label for="body">Message</label>
+        <textarea class="form-input" id="body" name="body" required>{{ reply_body }}</textarea>
+        <label class="ml-check"><input type="checkbox" name="sign" value="1" checked> Add my signature (Jae, Imperial Auto Care, phone and site)</label>
+        <label for="files">Attach files</label>
+        <input class="form-input" id="files" type="file" name="files" multiple style="padding:8px;">
+        <div class="ml-actions">
+          <button class="btn-primary" data-send>Send as {{ acct.address }}</button>
+          <span style="font-size:12.5px; color:var(--imp-muted);">Nothing goes out until you press Send.</span>
+        </div>
+      </form>
+    </div>
+
+    <aside class="ml-side">
+      <div class="card">
+        <h3>This email</h3>
+        <div class="ml-actions" style="margin-top:0;">
+          {% if thread.in_inbox %}
+          <form method="post" action="/mail/t/{{ thread.id }}/archive"><input type="hidden" name="next" value="/mail"><button class="btn-secondary">Archive</button></form>
+          {% else %}
+          <form method="post" action="/mail/t/{{ thread.id }}/inbox"><button class="btn-secondary">Move to inbox</button></form>
+          {% endif %}
+          <form method="post" action="/mail/t/{{ thread.id }}/unread"><button class="btn-secondary">Mark unread</button></form>
+          <form method="post" action="/mail/t/{{ thread.id }}/star"><input type="hidden" name="on" value="{{ '0' if thread.starred else '1' }}"><button class="btn-secondary">{{ 'Unstar' if thread.starred else 'Star' }}</button></form>
+        </div>
+        <form method="post" action="/mail/t/{{ thread.id }}/category" class="ml-form">
+          <label for="cat">Tab</label>
+          <div style="display:flex; gap:6px;">
+            <select class="form-input" id="cat" name="category">{% for slug, label in categories.items() %}<option value="{{ slug }}"{% if slug == thread.category %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+            <button class="btn-secondary">Move</button>
+          </div>
+        </form>
+      </div>
+      <div class="card">
+        <h3>Customer and job</h3>
+        {% if customer %}
+        <p class="ml-kv"><a href="/customers/{{ customer.id }}">{{ customer.first_name }} {{ customer.last_name }}</a>{% if customer.phone %} · {{ customer.phone }}{% endif %}</p>
+        {% if job %}<p class="ml-kv"><a href="/ro/{{ job.id }}">Job #{{ job.id }}</a> · {{ job.status.replace('_', ' ') }}</p>{% endif %}
+        {% if jobs %}
+        <form method="post" action="/mail/t/{{ thread.id }}/link" class="ml-form">
+          <input type="hidden" name="customer_id" value="{{ customer.id }}">
+          <label for="job">Job</label>
+          <div style="display:flex; gap:6px;">
+            <select class="form-input" id="job" name="repair_order_id"><option value="none">No job</option>{% for j in jobs %}<option value="{{ j.id }}"{% if job and j.id == job.id %} selected{% endif %}>#{{ j.id }} · {{ j.status.replace('_', ' ') }}</option>{% endfor %}</select>
+            <button class="btn-secondary">Save</button>
+          </div>
+        </form>
+        {% endif %}
+        <form method="post" action="/mail/t/{{ thread.id }}/link"><input type="hidden" name="customer_id" value="none"><button class="btn-secondary" style="min-height:40px;">Unlink</button></form>
+        {% else %}
+        <p class="ml-kv" style="color:var(--imp-muted);">Not linked to a customer.</p>
+        {% endif %}
+        <form method="get" action="/mail/t/{{ thread.id }}" class="ml-form" role="search">
+          <label for="find">{{ 'Link someone else' if customer else 'Find a customer' }}</label>
+          <div style="display:flex; gap:6px;"><input class="form-input" id="find" name="find" value="{{ find }}" placeholder="Name, phone or email"><button class="btn-secondary">Find</button></div>
+        </form>
+        {% if find and not matches %}<p class="ml-kv" style="color:var(--imp-muted);">No customer matches “{{ find }}”.</p>{% endif %}
+        {% for c in matches %}
+        <div class="ml-match">
+          <span style="min-width:0; overflow-wrap:anywhere;">{{ c.first_name }} {{ c.last_name }}{% if c.phone %}<br><span style="color:var(--imp-muted); font-size:12.5px;">{{ c.phone }}</span>{% endif %}</span>
+          <form method="post" action="/mail/t/{{ thread.id }}/link">
+            <input type="hidden" name="customer_id" value="{{ c.id }}">
+            {% if sender and not c.email %}<input type="hidden" name="save_email" value="1">{% endif %}
+            <button class="btn-secondary" style="min-height:40px;">Link</button>
+          </form>
+        </div>
+        {% if sender and not c.email %}<p style="font-size:12px; color:var(--imp-muted); margin:0 0 6px;">Linking saves {{ sender }} on their file.</p>{% endif %}
+        {% endfor %}
+      </div>
+    </aside>
+  </div>
+</div>
+<script>
+(function () {
+  document.querySelectorAll('[data-starter]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var box = document.getElementById('body') || document.querySelector('textarea[name=body]');
+      box.value = box.value.trim() ? box.value.replace(/\s*$/, '') + '\n\n' + b.dataset.starter : b.dataset.starter;
+      box.focus();
+    });
+  });
+  document.querySelectorAll('details.ml-orig').forEach(function (d) {
+    d.addEventListener('toggle', function () {
+      var f = d.querySelector('iframe');
+      if (d.open && f && !f.src) { f.src = f.dataset.src; }
+    });
+  });
+  document.querySelectorAll('[data-load-images]').forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      e.preventDefault();
+      var f = a.closest('details').querySelector('iframe');
+      f.src = f.dataset.src + '?images=1';
+      a.remove();
+    });
+  });
+  document.querySelectorAll('[data-send-form]').forEach(function (form) {
+    form.addEventListener('submit', function () {
+      var b = form.querySelector('[data-send]');
+      if (b) { b.disabled = true; b.textContent = 'Sending…'; }
+    });
+  });
+})();
+</script>
+{% endblock %}

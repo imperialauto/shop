@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Email settings — Imperial Auto Care<script>
+document.querySelectorAll('form[data-confirm]').forEach(function (form) {
+  form.addEventListener('submit', function (event) {
+    if (!window.confirm(form.getAttribute('data-confirm'))) event.preventDefault();
+  });
+});
+</script>
+{% endblock %}
+{% block content %}
+{% include "mail/_style.html" %}
+<div class="page-header">
+  <div><div class="page-title">Email settings</div></div>
+  <div style="display:flex; gap:8px; margin-left:auto;">{% if acct %}<a href="/mail" class="btn-secondary">← Email</a>{% endif %}</div>
+</div>
+<div class="page-body ml-wrap" style="max-width:760px;">
+  {% if note %}<p class="ml-note" role="status">{{ note }}</p>{% endif %}
+  {% if error %}<p class="ml-err" role="alert">{{ error }}</p>{% endif %}
+  <div class="card" style="margin-bottom:12px;">
+    <div class="card-title">Mailbox</div>
+    {% if acct %}
+    <p class="ml-kv" style="margin-top:8px;"><strong>{{ acct.address }}</strong> · {{ {'connected': 'Connected', 'error': 'Needs attention', 'disconnected': 'Disconnected'}.get(acct.status, acct.status) }}</p>
+    {% if acct.last_error %}<p class="ml-err">{{ acct.last_error }}</p>{% endif %}
+    <p class="ml-kv" style="color:var(--imp-muted);">{% if acct.last_sync_at %}Last checked {{ acct.last_sync_at|mail_when }}. {% endif %}{{ stats.threads }} conversations, {{ stats.messages }} emails copied in.{% if not sync_on %} Automatic checks are off (MAIL_SYNC_ENABLED), so use Check now.{% else %} Checks every minute.{% endif %}</p>
+    <div class="ml-actions">
+      <form method="post" action="/mail/sync"><input type="hidden" name="next" value="/mail"><button class="btn-primary">Check now</button></form>
+      <a class="btn-secondary" href="/mail/connect">Sign in again</a>
+      <form method="post" action="/mail/disconnect" data-confirm="Disconnect {{ acct.address }}? Nothing in Gmail is deleted."><button class="btn-secondary">Disconnect</button></form>
+    </div>
+    {% elif missing %}
+    <p style="margin:8px 0 0; color:var(--imp-muted);">Before the mailbox can connect, these Railway variables are needed:</p>
+    <ul style="margin:6px 0 0 18px;">{% for m in missing %}<li>{{ m }}</li>{% endfor %}</ul>
+    <p style="margin:10px 0 0; color:var(--imp-muted); font-size:13.5px;">Google sign-in return address for the app setup: <code style="overflow-wrap:anywhere;">{{ redirect_uri }}</code></p>
+    {% else %}
+    <p style="margin:8px 0 0; color:var(--imp-muted);">Sign in with the business Google account. Allow reading and sending mail. The last 30 days come in quietly, with no alerts; new mail after that is sorted and alerts you when it matters.</p>
+    <div class="ml-actions"><a class="btn-primary" href="/mail/connect">Connect Gmail</a></div>
+    {% endif %}
+  </div>
+  <div class="card">
+    <div class="card-title">What alerts you</div>
+    <ul style="margin:8px 0 0 18px; line-height:1.6;">
+      <li>A new lead, web form or email from a customer</li>
+      <li>A U-Haul job offer or dispatch</li>
+      <li>A bill that says past due, cancelled, failed or shutoff</li>
+    </ul>
+    <p style="margin:8px 0 0; color:var(--imp-muted); font-size:13.5px;">Alerts land in Needs you on Home. Everything else sorts quietly into its tab. Move an email to another tab and it stays there.</p>
+  </div>
+</div>
+{% endblock %}

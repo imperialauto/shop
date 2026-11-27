@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Email{% if unread_all %} ({{ unread_all }}){% endif %} — Imperial Auto Care{% endblock %}
+{% block content %}
+{% include "mail/_style.html" %}
+{% set qs = '&q=' ~ (q|urlencode) if q else '' %}
+<div class="page-header">
+  <div>
+    <div class="page-title">Email</div>
+    <div style="font-size:12px; color:var(--imp-muted); margin-top:3px; overflow-wrap:anywhere;">{{ acct.address }}{% if acct.last_sync_at %} · checked {{ acct.last_sync_at|mail_when }}{% endif %}</div>
+  </div>
+  <div style="display:flex; gap:8px; flex-wrap:wrap; margin-left:auto;">
+    <a href="/mail/compose" class="btn-primary">New email</a>
+    <form method="post" action="/mail/sync" style="margin:0;"><input type="hidden" name="next" value="{{ request.url.path }}?{{ request.url.query }}"><button class="btn-secondary">Check now</button></form>
+    <a href="/mail/settings" class="btn-secondary" aria-label="Email settings">Settings</a>
+  </div>
+</div>
+<div class="page-body ml-wrap">
+  {% if note %}<p class="ml-note" role="status">{{ note }}</p>{% endif %}
+  {% if flash_error %}<p class="ml-err" role="alert">{{ flash_error }}</p>{% endif %}
+  {% if acct.status == 'error' %}<p class="ml-err">The last check didn't work: {{ acct.last_error }} <a href="/mail/settings" style="color:inherit;">Settings</a></p>{% endif %}
+  {% if search_error %}<p class="ml-err">Gmail search didn't work: {{ search_error }}</p>{% endif %}
+
+  <nav class="ml-tabs" aria-label="Mailbox">
+    <a class="ml-tab{% if box == 'inbox' %} on{% endif %}" href="/mail">Inbox{% if unread_all %} <b>{{ unread_all }}</b>{% endif %}</a>
+    <a class="ml-tab{% if box == 'starred' %} on{% endif %}" href="/mail?box=starred">Starred</a>
+    <a class="ml-tab{% if box == 'sent' %} on{% endif %}" href="/mail?box=sent">Sent</a>
+    <a class="ml-tab{% if box == 'all' %} on{% endif %}" href="/mail?box=all">All mail</a>
+  </nav>
+  {% if box == 'inbox' %}
+  <nav class="ml-tabs" aria-label="Sorted tabs">
+    <a class="ml-tab{% if not tab %} on{% endif %}" href="/mail{{ '?' ~ qs[1:] if qs else '' }}">Everything</a>
+    {% for slug, label in categories.items() %}
+    <a class="ml-tab{% if tab == slug %} on{% endif %}" href="/mail?tab={{ slug }}{{ qs }}">{{ label }}{% if counts.get(slug) %} <b>{{ counts[slug] }}</b>{% endif %}</a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+
+  <div class="ml-bar">
+    <form class="ml-search" method="get" action="/mail" role="search">
+      {% if tab %}<input type="hidden" name="tab" value="{{ tab }}">{% endif %}
+      {% if box != 'inbox' %}<input type="hidden" name="box" value="{{ box }}">{% endif %}
+      <input class="form-input" type="search" name="q" value="{{ q }}" placeholder="Search name, email, subject or words" aria-label="Search email" style="flex:1;">
+      <button class="btn-secondary">Search</button>
+    </form>
+    {% if q %}
+    <a class="btn-secondary" href="/mail?box=all&q={{ q|urlencode }}&gmail=1">Search all of Gmail</a>
+    <a class="btn-secondary" href="/mail{% if box != 'inbox' %}?box={{ box }}{% endif %}">Clear</a>
+    {% endif %}
+  </div>
+
+  <div class="ml-list">
+    {% for t in threads %}
+    {% set c = customers.get(t.customer_id) %}
+    <a class="ml-row{% if t.unread %} unread{% endif %}" href="/mail/t/{{ t.id }}">
+      <span class="ml-from">{% if t.starred %}<span aria-label="Starred" style="color:var(--imp-gold);">★</span> {% endif %}{{ t.last_from or '(unknown)' }}{% if t.message_count > 1 %} <span style="color:var(--imp-muted); font-weight:400;">{{ t.message_count }}</span>{% endif %}</span>
+      <span class="ml-time">{{ t.last_at|mail_when }}</span>
+      <span class="ml-subj">{% if t.urgent %}<span class="ml-tagl hot">Needs you</span>{% endif %}{% if c %}<span class="ml-tagl cust">{{ c.first_name }} {{ c.last_name }}</span>{% endif %}{% if not tab or box != 'inbox' %}<span class="ml-tagl">{{ categories.get(t.category, 'Other') }}</span>{% endif %}{{ t.subject or '(no subject)' }}</span>
+      <span class="ml-snip">{{ t.snippet }}</span>
+    </a>
+    {% else %}
+    <p class="ml-empty">{% if q %}Nothing matches “{{ q }}” here. Try “Search all of Gmail”.{% elif box == 'inbox' and tab %}Nothing in {{ categories[tab] }} right now.{% elif box == 'inbox' %}Inbox is clear.{% else %}Nothing here yet.{% endif %}</p>
+    {% endfor %}
+  </div>
+  <div class="ml-pager">
+    {% if page > 1 %}<a class="btn-secondary" href="/mail?box={{ box }}{% if tab %}&tab={{ tab }}{% endif %}{{ qs }}&page={{ page - 1 }}">Newer</a>{% else %}<span></span>{% endif %}
+    {% if more %}<a class="btn-secondary" href="/mail?box={{ box }}{% if tab %}&tab={{ tab }}{% endif %}{{ qs }}&page={{ page + 1 }}">Older</a>{% endif %}
+  </div>
+</div>
+{% endblock %}

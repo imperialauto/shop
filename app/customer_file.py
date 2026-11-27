@@ -164,9 +164,10 @@ def build(db: Session, customer: Customer, fetch=None) -> dict:
         # A queue item for a text repeats that text; the text itself is already in the file.
         if not website and (not said or said in bodies or item.summary == "Message written by the shop"):
             continue
-        source = "Website request" if website else "Imperial note"
+        source = ("Email" if item.quo_conversation_id.startswith("WEBMAIL") else "Website request") if website else "Imperial note"
         entries.append(_entry("job", item.created_at, f"{source} · {item.category.replace('_', ' ')}",
-                              item.summary, link="/dashboard"))
+                              item.summary, link=(f"/mail/t/{item.quo_conversation_id[7:]}"
+                                                  if item.quo_conversation_id.startswith("WEBMAIL") else "/dashboard")))
 
     entries = [e for e in entries if e["at"]]
     entries.sort(key=lambda e: e["at"], reverse=True)

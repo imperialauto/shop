@@ -16,6 +16,7 @@ from app.routes import tags as tag_routes
 from app.routes import changes as change_routes
 from app.routes import job_deposit_routes
 from app.routes import canned_jobs_page
+from app.routes import mail as mail_routes
 from app import agent_keys, agent_connector, appointment_feed
 from app.scheduler import start_scheduler
 
@@ -66,6 +67,7 @@ app.include_router(local_node.worker_router, prefix="/internal/local-node", tags
 app.include_router(invoices.router, prefix="/invoices", tags=["invoices"])
 app.include_router(owner_estimates.router, prefix="/finance", tags=["finance"])
 app.include_router(finance.router, prefix="/finance", tags=["finance"])
+app.include_router(mail_routes.router, prefix="/mail", tags=["mail"])
 app.include_router(owner_setup.router, tags=["owner_setup"])
 app.include_router(account_security.router, tags=["security"])
 app.include_router(staff.router, tags=["staff"])
