@@ -16,6 +16,7 @@
 #   app.include_router(internal_messaging.router, prefix="/internal", tags=["internal"])
 # ─────────────────────────────────────────────────────────
 
+import logging
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -24,6 +25,7 @@ from datetime import datetime, timezone
 import os
 import secrets
 
+from app.ro_status_policy import CLOSED_STATUSES
 from app.database import get_db
 from app.models import Customer, Vehicle, RepairOrder, Invoice, Communication
 
@@ -33,7 +35,7 @@ INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
 
 # Public base URL customers hit for signing links / status pages. Falls back
 # to the known production URL if not set so this doesn't silently break.
-PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://web-production-94989.up.railway.app")
+from app import public_links  # customer links always use imperialautophx.com
 
 
 def internal_key_valid(candidate: str | None) -> bool:
@@ -92,7 +94,7 @@ def get_messaging_context(
 
     open_ro = (
         db.query(RepairOrder)
-        .filter(RepairOrder.customer_id == customer.id, RepairOrder.status != "delivered")
+        .filter(RepairOrder.customer_id == customer.id, RepairOrder.status.notin_(CLOSED_STATUSES))
         .order_by(RepairOrder.created_at.desc())
         .first()
     )
@@ -136,7 +138,7 @@ def get_messaging_context(
             "signedAt": open_ro.signed_at.isoformat() if open_ro.signed_at else None,
             "hasSigningLink": bool(open_ro.public_token),
             "signingUrl": (
-                f"{PUBLIC_BASE_URL}/sign/ro/{open_ro.public_token}" if open_ro.public_token else None
+                public_links.public_url(f"/sign/ro/{open_ro.public_token}") if open_ro.public_token else None
             ),
         }
 
@@ -175,7 +177,7 @@ def create_or_get_signing_link(
         db.commit()
         db.refresh(ro)
 
-    signing_url = f"{PUBLIC_BASE_URL}/sign/ro/{ro.public_token}"
+    signing_url = public_links.public_url(f"/sign/ro/{ro.public_token}")
     vehicle = ro.vehicle
     vehicle_label = f"{vehicle.year} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
 
@@ -230,7 +232,7 @@ def log_communication(
 
     open_ro = (
         db.query(RepairOrder)
-        .filter(RepairOrder.customer_id == customer.id, RepairOrder.status != "delivered")
+        .filter(RepairOrder.customer_id == customer.id, RepairOrder.status.notin_(CLOSED_STATUSES))
         .order_by(RepairOrder.created_at.desc())
         .first()
     )
@@ -268,7 +270,17 @@ def log_communication(
                 return {"logged": True, "duplicate": True, "repairOrderId": existing.repair_order_id}
         raise
 
-    return {"logged": True, "repairOrderId": open_ro.id if open_ro else None}
+    result = {"logged": True, "repairOrderId": open_ro.id if open_ro else None}
+    if direction == "inbound":
+        try:
+            from app import text_approval
+            done = text_approval.handle_inbound(db, customer, comm)
+            if done:
+                result["textApproval"] = done
+        except Exception:  # never let this stop the text from being logged
+            db.rollback()
+            logging.getLogger(__name__).exception("text_yes_approval_failed")
+    return result
 
 
 @router.get("/messaging/owner-focus")

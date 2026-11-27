@@ -16,6 +16,7 @@ PROBLEM_CATEGORY = "app_problem"  # "Report a problem" entries, kept off to-do l
 PERSONAL_CATEGORY = "owner_todo"
 BACKLOG_CATEGORY = "owner_backlog"
 SHOP_CATEGORY = "shop_task"
+BOARD_CATEGORY = "shop_board"  # the shop TV to-do list (app/shop_board.py), kept off the other lists
 
 
 class ImperialTask(Base):

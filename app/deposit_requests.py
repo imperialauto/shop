@@ -2,7 +2,7 @@
 
 When a customer approves lines on their approval link, and the owner has switched
 "Text the deposit request when a customer approves" on in Settings, one text goes to
-the customer asking for a 50% deposit by Zelle or cash, and, on jobs over $750, offering Snap Finance.
+the customer asking for a 50% deposit by card (QuickBooks link), Zelle, Apple Pay or cash, and, on jobs over $750, offering Snap Finance.
 The Snap link itself is never sent from here: the customer has to ask for it.
 
 The text goes through the same path as an owner-approved dashboard reply, so the
@@ -15,7 +15,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app import approval_links, business_settings, customer_file, snap_offer
+from app import approval_links, business_settings, customer_file, payment_options, snap_offer
 from app.config import OWNER_PHONE
 from app.dispatch_model import DispatchAudit, DispatchItem, DispatchOutbound, OPEN_STATUSES
 from app.models import RepairOrder
@@ -31,7 +31,8 @@ def enabled() -> bool:
 
 
 def zelle_to() -> str:
-    return os.getenv("DEPOSIT_ZELLE_TO", "jaelan@imperialautocarellc.com").strip()
+    from app import payment_options
+    return payment_options.zelle_to()
 
 
 def conversation_key(ro_id: int) -> str:
@@ -62,7 +63,7 @@ def message_for(ro: RepairOrder, lines, offer_snap: bool = False) -> str:
     work = f"the work on your {car}" if car else "the work"
     return (f"Hi {approval_links.greeting_for(ro)}, thanks for approving {work}. "
             f"To order parts and get you on the schedule, I'll need a ${deposit:,.2f} deposit, "
-            f"half of the ${total:,.2f} total, by Zelle to {zelle_to()} or cash. "
+            f"half of the ${total:,.2f} total, by {payment_options.phrase()}. "
             + (snap_offer.LINE + " " if offer_snap else "") + "Jae")
 
 

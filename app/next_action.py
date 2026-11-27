@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from app.ro_status_policy import CLOSED_STATUSES
 from app.approval_links import conversation_key
 from app.dispatch_model import OPEN_STATUSES, DispatchItem, DispatchOutbound
 from app.models import RepairOrder
@@ -25,13 +26,20 @@ def _since(when) -> str:
     return f" for {int(hours)} hours" if hours < 48 else f" for {int(hours // 24)} days"
 
 
+def _first(ro: RepairOrder) -> str:
+    from app.approval_links import greeting_for
+    name = greeting_for(ro)
+    return "the customer" if name == "there" else name
+
+
 def for_job(db: Session, ro: RepairOrder, role: str) -> dict | None:
     """{"who", "title", "detail", "post"|"href", "button", "fields"} or None when the job is finished."""
     lines = ro.line_items
     invoice = next((i for i in ro.invoices if i.status != "void"), None)
     office = role != "tech"
+    sender = role in ("owner", "admin")  # their Ask for approval texts the customer straight away
 
-    if ro.status == "delivered":
+    if ro.status in ("delivered", "cancelled"):
         return None
     # An invoice may be issued or paid before repair work is finished.
     # Payment alone never means the vehicle is ready to be released.
@@ -62,13 +70,19 @@ def for_job(db: Session, ro: RepairOrder, role: str) -> dict | None:
                 "post": f"/invoices/create/{ro.id}", "fields": {}, "button": "Create invoice"} if office else None
     if undecided and ro.status not in STARTED:
         return {"who": "Office", "title": f"Ask the customer to approve {len(undecided)} item{'s' if len(undecided) != 1 else ''}",
-                "detail": "Queues the approval text for your YES. Nothing goes out on its own.",
+                "detail": (f"Texts {_first(ro)} their approval link from the shop line now." if sender
+                           else "Queues the approval text for the owner's YES. Nothing goes out on its own."),
                 "post": f"/ro/{ro.id}/request-approval", "fields": {}, "button": "Ask for approval"} if office else None
     if pending and (not approved or ro.status not in STARTED):
         link = db.query(DispatchItem).filter(DispatchItem.quo_conversation_id == conversation_key(ro.id),
                                              DispatchItem.status.in_(OPEN_STATUSES + ("approved",))).order_by(
                                                  DispatchItem.id.desc()).first()
-        waited = _since(min((li.created_at for li in pending if li.created_at), default=None))
+        from app.shop_board import approval_sent_at  # late import: shop_board imports this module
+        waited = _since(approval_sent_at(db, ro, pending))  # since the link was last sent, as Home counts it
+        if link is not None and link.status in OPEN_STATUSES and sender:
+            return {"who": "Owner", "title": f"Approval text #{link.id} hasn't gone out yet",
+                    "detail": f"Texts {_first(ro)} their approval link now. It won't repeat a link they already have.",
+                    "post": f"/ro/{ro.id}/request-approval", "fields": {}, "button": "Text approval link"}
         if link is not None and link.status in OPEN_STATUSES:
             return {"who": "Owner", "title": f"Approval text #{link.id} is waiting for your YES",
                     "detail": f"Reply YES {link.id} to the alert, or send it from the dashboard.", "href": "/dashboard#queue",
@@ -82,11 +96,15 @@ def for_job(db: Session, ro: RepairOrder, role: str) -> dict | None:
         ).first() is not None)
         if sent:
             return {"who": "Customer", "title": f"Waiting on the customer's approval{waited}",
-                    "detail": "The approval text send was recorded. Queue a reminder if needed.",
-                    "post": f"/ro/{ro.id}/request-approval", "fields": {}, "button": "Queue a reminder"} if office else None
+                    "detail": ("The approval text send was recorded. Send a reminder if needed; it won't text them twice before they reply."
+                               if sender else "The approval text send was recorded. Queue a reminder if needed."),
+                    "post": f"/ro/{ro.id}/request-approval", "fields": {},
+                    "button": "Send a reminder" if sender else "Queue a reminder"} if office else None
         return {"who": "Office", "title": "Approval link send is not confirmed",
-                "detail": "No successful customer text send is recorded for this job. Check Quo; queue a new link if needed. Nothing sends without approval.",
-                "post": f"/ro/{ro.id}/request-approval", "fields": {}, "button": "Queue approval link"} if office else None
+                "detail": ("No dashboard send is recorded for this job. Sending checks their texts first and won't repeat a link already sent."
+                           if sender else "No successful customer text send is recorded for this job. Check Quo; queue a new link if needed. Nothing sends without approval."),
+                "post": f"/ro/{ro.id}/request-approval", "fields": {},
+                "button": "Text approval link" if sender else "Queue approval link"} if office else None
     if ro.status not in STARTED:
         if not approved:
             return {"who": "Office", "title": "Review declined work",
@@ -98,13 +116,22 @@ def for_job(db: Session, ro: RepairOrder, role: str) -> dict | None:
         return {"who": "Tech", "title": "Approved. Start the work", "detail": "Starting it shows on My day, Home and the board.",
                 "post": f"/ro/{ro.id}/update-status", "fields": {"status": "in_progress"}, "button": "Start work"}
     if ro.status == "waiting_parts":
-        return {"who": "Tech", "title": "Waiting on parts", "detail": "When they arrive, carry on.",
+        return {"who": "Tech", "title": "Parts ordered", "detail": "When they arrive, carry on.",
                 "post": f"/ro/{ro.id}/update-status", "fields": {"status": "in_progress"}, "button": "Parts are here"}
     return {"who": "Tech", "title": "Finish the work", "detail": "Marking it complete tells the office to invoice.",
             "post": f"/ro/{ro.id}/update-status", "fields": {"status": "complete"}, "button": "Mark complete"}
 
 
 STUCK_AFTER_HOURS = 48
+LATE_DAYS = 2  # anything waiting on the shop this long shows red on Home
+
+
+def days_since(when) -> int:
+    """Whole days since a time; naive times are UTC. 0 when unknown."""
+    if not when:
+        return 0
+    when = when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+    return max(int((datetime.now(timezone.utc) - when).total_seconds() // 86400), 0)
 
 
 def last_activity(ro: RepairOrder):
@@ -122,7 +149,7 @@ def last_activity(ro: RepairOrder):
 def stuck_jobs(db: Session, now: datetime, limit: int = 5) -> list[tuple[RepairOrder, dict, float]]:
     """Open jobs whose next step hasn't moved in two days, oldest first. Read-only."""
     found = []
-    for ro in db.query(RepairOrder).filter(RepairOrder.status != "delivered").all():
+    for ro in db.query(RepairOrder).filter(RepairOrder.status.notin_(CLOSED_STATUSES)).all():
         step = for_job(db, ro, "owner")
         last = last_activity(ro)
         if step is None or last is None:

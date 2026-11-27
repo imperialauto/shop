@@ -10,8 +10,8 @@ or two-step code.
 |---|---|
 | `customers:read` | Search customers, read a customer with vehicles and recent jobs |
 | `customers:write` | Add a customer (an existing phone returns that customer), add a vehicle |
-| `estimates:read` | Read a job and its lines |
-| `estimates:write` | Start a job with draft lines; add lines to a job that is not invoiced or finished |
+| `estimates:read` | Read a job, its lines and totals; the estimate as a printable PDF |
+| `estimates:write` | Start a job with draft lines; add, edit or remove draft lines on a job that is not invoiced or finished; move a job on the board |
 | `appointments:read` | List appointments |
 | `appointments:write` | Book a tentative appointment (same hours, buffer and double-booking rules as the calendar) |
 
@@ -45,7 +45,27 @@ curl -H "Authorization: Bearer $IMPERIAL_AGENT_KEY" https://<dashboard>/internal
 Endpoints (all under `/internal/agent/v1`): `GET /whoami`, `GET /customers?q=`,
 `GET /customers/{id}`, `POST /customers`, `POST /customers/{id}/vehicles`,
 `GET /jobs/{id}`, `POST /estimates`, `POST /jobs/{id}/lines`,
-`GET /appointments`, `POST /appointments`.
+`POST /jobs/{id}/status`, `PATCH /jobs/{id}/lines/{line_id}`, `DELETE /jobs/{id}/lines/{line_id}`,
+`GET /jobs/{id}/estimate.pdf`, `GET /appointments`, `POST /appointments`.
+
+`POST /jobs/{id}/status` with `{"status": "in_progress", "note": "parts in"}` moves a job on the
+board (scope `estimates:write`). It runs the job page's own checks (`app/ro_status_policy.py`),
+closes the job's website request item like the staff button, logs `job.status` with
+`old -> new; note`, and returns the job with its next step. It can mark a job Complete (ready
+for pickup; `ready_for_pickup` is accepted too) but does not fire `app.job_events`, so no pickup
+text goes out and the reply says the customer hasn't been told. It never moves a job to Picked up
+(delivered), or moves one that is already there, because that can send the review request.
+
+`PATCH /jobs/{id}/lines/{line_id}` (only the fields sent change) and `DELETE` correct or remove a
+draft line with the job page editor's rules: only lines the customer hasn't been asked about
+(`approval` is null), no invoice, job not finished, and not a line marked done for removal. Each is
+logged (`estimate.edit_line`, `estimate.remove_line`) with the old values, and the reply carries
+the recalculated `totals` (every job reply does, from `app/estimate_pdf.py`).
+
+`GET /jobs/{id}/estimate.pdf` returns the estimate as a PDF (recommended repair, `OPTIONAL` lines as
+add-ons, declined lines listed but not counted, parts-only tax at the invoice rate, 50% deposit,
+terms). Staff get the same file from the job page's Print estimate button (`/ro/{id}/estimate.pdf`,
+office login). The connector's `get_estimate_pdf` returns it as an embedded PDF plus that link.
 
 ## Claude connector (sign in once, no key in chat)
 

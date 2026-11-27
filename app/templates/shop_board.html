@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Shop board — Imperial Auto Care</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <style>
+    /* Built to be read from across the bay: sizes follow the screen width, so the same page
+       fills the wall TV and the desk monitor. */
+    :root {
+      --purple: #2D0245; --purple-deep: #12001D; --panel: #1E0631; --line: rgba(234,210,114,0.18);
+      --gold: #EAD272; --gold-dark: #CBB06B; --ink: #F5EEFB; --muted: #BBA9CC;
+      --green: #7BE0A0; --amber: #F2C35B; --red: #FF8A80;
+      --serif: 'Cormorant Garamond', Georgia, serif;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --gap: clamp(10px, 1.2vw, 26px);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body { background: radial-gradient(ellipse at top, var(--purple) 0%, var(--purple-deep) 70%); color: var(--ink);
+           font-family: var(--sans); overflow: hidden; cursor: default; }
+    .tv { height: 100vh; display: grid; grid-template-rows: auto 1fr; padding: var(--gap); gap: var(--gap); }
+    header { display: flex; align-items: center; justify-content: space-between; gap: var(--gap); }
+    .brand { font-family: var(--serif); color: var(--gold); font-weight: 700; font-size: clamp(22px, 2.6vw, 64px); line-height: 1; }
+    .brand small { display: block; font-family: var(--sans); font-weight: 600; letter-spacing: .14em; text-transform: uppercase;
+                   color: var(--muted); font-size: clamp(10px, .85vw, 20px); margin-top: .35em; }
+    .clock { text-align: right; }
+    .clock .time { font-size: clamp(26px, 3.4vw, 84px); font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+    .clock .date { color: var(--muted); font-size: clamp(12px, 1.15vw, 28px); margin-top: .2em; }
+    .full { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 10px;
+            font-size: clamp(11px, .8vw, 18px); padding: .5em .9em; cursor: pointer; }
+    .full:hover { color: var(--gold); border-color: var(--gold); }
+    :fullscreen .full { display: none; }
+    .full.sound-off { color: var(--amber); border-color: var(--amber); font-weight: 700; }
+    :fullscreen .full.sound-off:not([hidden]) { display: inline-block; }
+
+    #board-panel { min-height: 0; display: flex; flex-direction: column; gap: var(--gap); }
+    #board-panel > .cols { flex: 1 1 auto; }
+
+    /* Timers: big enough to read from under a car */
+    .timers { display: grid; grid-template-columns: repeat(auto-fit, minmax(clamp(220px, 22vw, 560px), 1fr)); gap: var(--gap); }
+    .tv-timer { background: rgba(30, 6, 49, 0.9); border: 2px solid var(--gold); border-radius: clamp(10px, 1vw, 22px);
+                padding: clamp(10px, 1vw, 24px) clamp(14px, 1.4vw, 32px); display: grid; grid-template-columns: 1fr auto;
+                grid-template-rows: auto auto; column-gap: 1em; align-items: center; }
+    .tv-timer .t-label { font-size: clamp(16px, 1.7vw, 42px); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tv-timer .t-note { color: var(--muted); font-size: clamp(11px, 1vw, 24px); font-weight: 600; }
+    .tv-timer .t-clock { grid-row: span 2; grid-column: 2; font-size: clamp(40px, 5.6vw, 150px); font-weight: 800; line-height: 1;
+                         color: var(--gold); font-variant-numeric: tabular-nums; }
+    .tv-timer.soon { border-color: var(--amber); }
+    .tv-timer.soon .t-clock { color: var(--amber); }
+    .tv-timer.up { border-color: var(--red); background: rgba(120, 20, 20, 0.85); animation: timer-flash 1s steps(2, start) infinite; }
+    .tv-timer.up .t-clock { color: #FFFFFF; }
+    .tv-timer.up .t-note { color: #FFD7D2; }
+    @keyframes timer-flash { 50% { background: rgba(255, 60, 60, 0.95); } }
+    @media (prefers-reduced-motion: reduce) { .tv-timer.up { animation: none; } }
+    .top { display: grid; grid-template-columns: 1fr auto; gap: var(--gap); }
+    .stack { display: flex; flex-direction: column; gap: var(--gap); min-height: 0; }
+    .stack > .card { flex: 2 1 0; }
+    .stack > .card:first-child { flex: 3 1 0; }
+    .stack > .parts-card { flex: 0 1 auto; max-height: 30%; }
+
+    /* Ready for pickup */
+    .pickup { display: flex; flex-wrap: wrap; align-items: center; gap: .4em 1.2em; padding: clamp(8px, .8vw, 18px) clamp(14px, 1.4vw, 32px);
+              border-radius: clamp(10px, 1vw, 22px); background: linear-gradient(90deg, rgba(63,174,106,.35), rgba(123,224,160,.18));
+              border: 2px solid var(--green); font-size: clamp(16px, 1.8vw, 44px); font-weight: 700; }
+    .pickup .p-label { color: var(--green); text-transform: uppercase; letter-spacing: .08em; font-weight: 800; }
+    .pickup .p-car + .p-car::before { content: "•"; color: var(--green); margin-right: 1.2em; }
+    .hrs.on { color: var(--green); }
+    .hrs.over { color: var(--red); font-weight: 800; }
+    .job .when.days.late { color: var(--red); }
+    .waiting { display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; column-gap: .8em; align-items: center; align-content: center; }
+    .waiting .label { color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .1em; font-size: clamp(11px, 1vw, 24px); }
+    .waiting .count { grid-row: span 2; font-size: clamp(30px, 4.2vw, 108px); font-weight: 800; line-height: 1; color: var(--green); }
+    .waiting.on .count { color: var(--amber); }
+    .waiting .parts-of { font-size: clamp(12px, 1.15vw, 28px); font-weight: 600; }
+    .job .when.days { color: var(--muted); font-size: clamp(12px, 1.15vw, 28px); }
+    .stage.mobile { background: rgba(123,224,160,.10); color: var(--green); border-color: rgba(123,224,160,.35); }
+    .todo.part::before { border-style: dashed; }
+    .todo .who { color: var(--muted); font-weight: 500; font-size: .75em; }
+    .card { background: rgba(30, 6, 49, 0.82); border: 1px solid var(--line); border-radius: clamp(10px, 1vw, 22px);
+            padding: clamp(12px, 1.3vw, 30px); min-height: 0; overflow: hidden; }
+    .card h2 { font-family: var(--serif); color: var(--gold); margin: 0 0 .45em; font-size: clamp(20px, 2.1vw, 52px); line-height: 1;
+               display: flex; justify-content: space-between; align-items: baseline; gap: 1em; }
+    .card h2 span { font-family: var(--sans); color: var(--muted); font-size: .45em; font-weight: 600; }
+    .cols { display: grid; grid-template-columns: 1.25fr 1fr; gap: var(--gap); min-height: 0; }
+
+    /* Sales strip */
+    .sales { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: clamp(12px, 2vw, 48px); }
+    .sales .label { color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .1em; font-size: clamp(11px, 1vw, 24px); }
+    .sales .big { font-size: clamp(30px, 4.2vw, 108px); font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+    .sales .big small { font-size: .42em; color: var(--muted); font-weight: 600; }
+    .bar { height: clamp(18px, 2.2vw, 56px); background: rgba(255,255,255,.08); border-radius: 999px; overflow: hidden; border: 1px solid var(--line); }
+    .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--gold-dark), var(--gold)); border-radius: 999px; transition: width .8s ease; }
+    .sales.hit .bar i { background: linear-gradient(90deg, #3FAE6A, var(--green)); }
+    .sales .left { text-align: right; font-size: clamp(14px, 1.6vw, 40px); font-weight: 700; }
+    .sales.hit .left { color: var(--green); }
+
+    /* Jobs */
+    .jobs { list-style: none; margin: 0; padding: 0; display: grid; gap: clamp(6px, .7vw, 16px); }
+    .job { display: grid; grid-template-columns: clamp(70px, 7.5vw, 190px) 1fr auto; gap: clamp(8px, 1vw, 24px); align-items: center;
+           padding: clamp(6px, .6vw, 14px) 0; border-bottom: 1px solid var(--line); }
+    .job:last-child { border-bottom: 0; }
+    .job .when { font-weight: 800; color: var(--gold); font-size: clamp(14px, 1.45vw, 36px); font-variant-numeric: tabular-nums; }
+    .job .when.none { color: var(--muted); font-weight: 600; font-size: clamp(11px, 1vw, 24px); }
+    .job .what { font-size: clamp(15px, 1.6vw, 40px); font-weight: 700; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .job .who { color: var(--muted); font-size: .7em; font-weight: 600; }
+    .stage { font-size: clamp(11px, 1.05vw, 26px); font-weight: 700; padding: .35em .8em; border-radius: 999px; white-space: nowrap;
+             background: rgba(234,210,114,.14); color: var(--gold); border: 1px solid rgba(234,210,114,.35); }
+    .stage.in_progress, .stage.diagnosing { background: rgba(123,224,160,.14); color: var(--green); border-color: rgba(123,224,160,.4); }
+    .stage.waiting_parts, .stage.waiting_approval { background: rgba(242,195,91,.12); color: var(--amber); border-color: rgba(242,195,91,.4); }
+    .stage.complete { background: rgba(187,169,204,.12); color: var(--ink); border-color: rgba(187,169,204,.4); }
+
+    /* To-do */
+    .todos { list-style: none; margin: 0; padding: 0; display: grid; gap: clamp(6px, .7vw, 16px); }
+    .todo { display: flex; gap: .6em; align-items: flex-start; font-size: clamp(15px, 1.6vw, 40px); font-weight: 600; line-height: 1.2; }
+    .todo::before { content: ""; flex: none; width: .9em; height: .9em; margin-top: .14em; border: .12em solid var(--gold); border-radius: .22em; }
+    .todo.urgent { color: #FFD7D2; }
+    .todo.urgent::before { border-color: var(--red); background: rgba(255,138,128,.2); }
+    .todo.done { color: var(--muted); text-decoration: line-through; font-weight: 500; font-size: clamp(12px, 1.2vw, 30px); }
+    .todo.done::before { background: var(--gold-dark); }
+    .cols .card { display: flex; flex-direction: column; }
+    [data-pages] > [hidden] { display: none !important; }
+    [data-pages] { flex: 1 1 auto; min-height: 0; overflow: hidden; align-content: start; }
+    .page-no { font-weight: 600; margin-left: .6em; }
+    .page-no:empty { display: none; }
+    .todo.alert em { font-style: normal; font-weight: 800; color: var(--gold); text-transform: uppercase; font-size: .7em; letter-spacing: .06em; margin-right: .2em; }
+    .completed { flex: none; border-top: 1px solid var(--line); margin-top: .6em; padding-top: .5em; }
+    .completed h3 { margin: 0 0 .3em; color: var(--muted); font-size: clamp(12px, 1.1vw, 26px); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; display: flex; justify-content: space-between; }
+    .more { color: var(--muted); font-size: clamp(12px, 1.1vw, 26px); margin-top: .5em; }
+    .empty { color: var(--muted); font-size: clamp(14px, 1.4vw, 34px); }
+    .foot { color: var(--muted); font-size: clamp(10px, .75vw, 18px); text-align: right; opacity: .75; }
+    .warn { color: var(--amber); font-size: clamp(14px, 1.4vw, 34px); }
+
+    @media (max-aspect-ratio: 1/1) {  /* a phone or a screen on its side */
+      body { overflow: auto; }
+      .tv { height: auto; }
+      [data-pages] { overflow: visible; }
+      .cols, .sales, .top, .timers { grid-template-columns: 1fr; }
+      .stack > .card { flex: none; }
+      .sales .left { text-align: left; }
+    }
+  </style>
+</head>
+<body data-build="{{ build }}">
+  <div class="tv">
+    <header>
+      <div class="brand">Imperial Auto Care<small>Shop board</small></div>
+      <button class="full sound-off" id="sound-on" type="button" hidden>Turn on timer sound</button>
+      <button class="full" type="button" onclick="document.documentElement.requestFullscreen && document.documentElement.requestFullscreen()">Full screen</button>
+      <div class="clock"><div class="time" id="clock-time">{{ board.now.strftime('%-I:%M %p') }}</div><div class="date" id="clock-date">{{ board.now.strftime('%A, %B %-d') }}</div></div>
+    </header>
+    <main id="board-panel" hx-get="/board/panel" hx-trigger="every {{ refresh }}s" hx-swap="innerHTML">
+      {% include "shop_board_panel.html" %}
+    </main>
+  </div>
+  <script>
+    // The clock runs on Phoenix time, whatever zone the screen's computer is set to.
+    (function () {
+      var t = document.getElementById('clock-time'), d = document.getElementById('clock-date');
+      var timeFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Phoenix', hour: 'numeric', minute: '2-digit' });
+      var dateFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Phoenix', weekday: 'long', month: 'long', day: 'numeric' });
+      function tick() { var now = new Date(); t.textContent = timeFmt.format(now); d.textContent = dateFmt.format(now); }
+      tick(); setInterval(tick, 15000);
+      // If the screen is left up overnight, start fresh each morning.
+      var opened = dateFmt.format(new Date());
+      setInterval(function () { if (dateFmt.format(new Date()) !== opened) location.reload(); }, 600000);
+      // Watchdog: if the board hasn't refreshed in 3 minutes (a lost connection, or the refresh script never
+      // loaded), reload the whole page so the screen never sits on old information.
+      var lastSwap = Date.now();
+      document.body.addEventListener('htmx:afterSwap', function () { lastSwap = Date.now(); });
+      setInterval(function () { if (Date.now() - lastSwap > 180000 && navigator.onLine !== false) location.reload(); }, 30000);
+    })();
+
+    // A list longer than its card turns pages every few seconds, so every item gets its turn on screen.
+    (function () {
+      var PAGE_SECONDS = 8, pageOf = {};
+      function pagesFor(list) {
+        var items = Array.prototype.slice.call(list.children);
+        items.forEach(function (li) { li.hidden = false; });
+        var room = list.clientHeight, pages = [], start = 0;
+        if (!items.length || list.scrollHeight <= room + 1) return [items];
+        var top = items[0].offsetTop;
+        items.forEach(function (li, i) {
+          if (li.offsetTop + li.offsetHeight - top > room && i > start) { pages.push(items.slice(start, i)); start = i; top = li.offsetTop; }
+        });
+        pages.push(items.slice(start));
+        return pages;
+      }
+      function show() {
+        document.querySelectorAll('[data-pages]').forEach(function (list, n) {
+          if (getComputedStyle(list).overflow === 'visible') return;  // phone layout scrolls instead
+          var pages = pagesFor(list), key = n + ':' + list.className, label = list.closest('.card').querySelector('.page-no');
+          var at = (pageOf[key] || 0) % pages.length;
+          pages.forEach(function (page, i) { page.forEach(function (li) { li.hidden = i !== at; }); });
+          if (label) label.textContent = pages.length > 1 ? '· page ' + (at + 1) + ' of ' + pages.length : '';
+        });
+      }
+      function turn() {
+        document.querySelectorAll('[data-pages]').forEach(function (list, n) { var key = n + ':' + list.className; pageOf[key] = (pageOf[key] || 0) + 1; });
+        show();
+      }
+      document.body.addEventListener('htmx:afterSwap', show);
+      window.addEventListener('resize', show);
+      show(); setInterval(turn, PAGE_SECONDS * 1000);
+    })();
+  </script>
+  <script>
+    // Timers count down every second on the TV itself; the 20-second refresh only adds and removes them.
+    (function () {
+      var beeped = {}, ctx = null, soundBtn = document.getElementById('sound-on');
+      // Browsers keep a page silent until someone taps it once. The first tap or key press anywhere on the
+      // board (or the amber button) turns sound on for as long as the page stays open.
+      function unlock() {
+        try {
+          var A = window.AudioContext || window.webkitAudioContext;
+          if (!A) return;
+          if (!ctx) ctx = new A();
+          if (ctx.state === 'suspended') ctx.resume();
+        } catch (e) {}
+        setTimeout(showSoundState, 300);
+      }
+      function soundReady() { return !!ctx && ctx.state === 'running'; }
+      function showSoundState() { if (soundBtn) soundBtn.hidden = soundReady(); }
+      ['pointerdown', 'keydown', 'touchstart'].forEach(function (ev) { document.addEventListener(ev, unlock, { passive: true }); });
+      if (soundBtn) soundBtn.addEventListener('click', function () { unlock(); setTimeout(function () { beep(1); }, 350); });
+      unlock();  // works straight away where the browser allows sound without a tap
+      setInterval(showSoundState, 5000);
+      function fmt(ms) {
+        var s = Math.round(Math.abs(ms) / 1000), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, r = s % 60;
+        return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(r).padStart(2, '0');
+      }
+      function beep(rounds) {
+        if (!soundReady()) { showSoundState(); return; }  // the red flash still shows
+        try {
+          var t0 = ctx.currentTime;
+          for (var r = 0; r < (rounds || 1); r++) {
+            [0, 0.35, 0.7].forEach(function (at) {
+              var start = t0 + r * 1.6 + at, o = ctx.createOscillator(), g = ctx.createGain();
+              o.type = 'square'; o.frequency.value = 1000; o.connect(g); g.connect(ctx.destination);
+              g.gain.setValueAtTime(0.5, start); g.gain.setValueAtTime(0, start + 0.25);
+              o.start(start); o.stop(start + 0.27);
+            });
+          }
+        } catch (e) {}
+      }
+      function tick() {
+        document.querySelectorAll('.tv-timer[data-ends]').forEach(function (el) {
+          var left = Number(el.dataset.ends) - Date.now(), clock = el.querySelector('.t-clock');
+          var up = left <= 0;
+          clock.textContent = up ? "Time's up" : fmt(left);
+          el.classList.toggle('up', up);
+          el.classList.toggle('soon', !up && left <= 60000);
+          // When time is up: three loud beeps, then again every 15 seconds for the first minute.
+          var id = el.dataset.id, ring = up && left > -60000 ? Math.floor(-left / 15000) : -1;
+          if (ring >= 0 && beeped[id] !== ring && !(beeped[id] === 'old')) { beeped[id] = ring; beep(ring === 0 ? 2 : 1); }
+          if (up && beeped[id] === undefined) beeped[id] = 'old';  // ended long before this page opened: flash only
+        });
+      }
+      tick(); setInterval(tick, 1000);
+      document.body.addEventListener('htmx:afterSwap', tick);
+    })();
+  </script>
+</body>
+</html>

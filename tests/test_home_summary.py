@@ -56,7 +56,9 @@ class HomeSummaryTests(unittest.TestCase):
     def test_numbers(self):
         with self.Session() as db, patch.object(calendar_feed, "upcoming", return_value=[]):
             data = home_summary.summary(db, SimpleNamespace(role="owner"), datetime.now(PHOENIX))
-        self.assertEqual((data["needs_you"], data["urgent"], data["awaiting"]), (1, 1, 2))
+        # Awaiting = open jobs with a pending line (the intake job). The waiting_approval job has nothing
+        # pending, so it isn't counted as waiting on the customer.
+        self.assertEqual((data["needs_you"], data["urgent"], data["awaiting"]), (1, 1, 1))
         money = dict(data["money"])
         self.assertEqual(money.pop("cycle")["days"], 30)  # first contact to paid, checked in test_cycle_time
         self.assertEqual(money, {"owed": 300, "owed_count": 1, "paid_week": 200})
@@ -91,7 +93,9 @@ class HomeSummaryTests(unittest.TestCase):
                 self.assertIn('href="/ro/?status=approval_received"', page.text)
                 self.assertIn("Approval received", page.text)
                 self.assertIn("Work complete", page.text)
-                self.assertNotIn("Ready for pickup", page.text)
+                # The stage chip keeps saying "Work complete" (complete is not proof of pickup); the green
+                # pickup banner is the shop board's own, shown only for finished cars marked as still here.
+                self.assertIn(">Work complete<strong>", page.text)
                 self.assertEqual("paid this week" in page.text, money)
 
 

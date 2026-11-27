@@ -1,5 +1,6 @@
 """Assistant access keys and the assistant API. Made-up data only."""
 import os
+import secrets
 import unittest
 from datetime import timedelta
 from unittest.mock import patch
@@ -225,6 +226,112 @@ class ApiWorkTests(_Setup):
         with self.Session() as db:
             self.assertEqual(db.query(LineItem).count(), 0)
             self.assertEqual(db.query(AgentAction).count(), 0)
+
+
+class JobStatusTests(_Setup):
+    def make_job(self, status="intake", approval=None):
+        with self.Session() as db:
+            c = Customer(first_name="Sam", last_name="Example", phone="6025550111")
+            db.add(c)
+            db.flush()
+            v = Vehicle(customer_id=c.id, year=2005, make="Dodge", model="Ram 3500")
+            db.add(v)
+            db.flush()
+            ro = RepairOrder(customer_id=c.id, vehicle_id=v.id, status=status, public_token=secrets.token_hex(20))
+            db.add(ro)
+            db.flush()
+            db.add(LineItem(repair_order_id=ro.id, description="Transmission service", unit_price=180,
+                            approval=approval))
+            db.commit()
+            return ro.id
+
+    def move(self, headers, ro_id, status, note=None):
+        body = {"status": status}
+        if note is not None:
+            body["note"] = note
+        return self.client.post(f"/internal/agent/v1/jobs/{ro_id}/status", headers=headers, json=body)
+
+    def test_moves_job_logs_it_and_sends_nothing(self):
+        _, headers = self.issue()
+        ro_id = self.make_job(status="approval_received", approval="approved")
+        response = self.move(headers, ro_id, "In Progress", "parts in, starting the fluid service")
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual((body["status"], body["previous_status"], body["changed"]),
+                         ("in_progress", "approval_received", True))
+        self.assertIn("next_step", body)
+        with self.Session() as db:
+            self.assertEqual(db.get(RepairOrder, ro_id).status, "in_progress")
+            action = db.query(AgentAction).one()
+            self.assertEqual((action.action, action.target_id), ("job.status", ro_id))
+            self.assertEqual(action.summary, "approval_received -> in_progress; parts in, starting the fluid service")
+            self.assertEqual(db.query(Communication).count(), 0)
+
+    def test_same_status_changes_and_logs_nothing(self):
+        _, headers = self.issue()
+        ro_id = self.make_job(status="diagnosing")
+        body = self.move(headers, ro_id, "diagnosing").json()
+        self.assertFalse(body["changed"])
+        with self.Session() as db:
+            self.assertEqual(db.query(AgentAction).count(), 0)
+
+    def test_job_page_checks_still_apply(self):
+        _, headers = self.issue()
+        ro_id = self.make_job(status="intake", approval=None)
+        response = self.move(headers, ro_id, "in_progress")
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("Approve at least one", response.json()["detail"])
+        with self.Session() as db:
+            self.assertEqual(db.get(RepairOrder, ro_id).status, "intake")
+            self.assertEqual(db.query(AgentAction).count(), 0)
+
+    def test_ready_for_pickup_sends_no_pickup_text(self):
+        from app.dispatch_model import DispatchItem, DispatchOutbound
+        _, headers = self.issue()
+        ro_id = self.make_job(status="in_progress", approval="approved")
+        with patch("app.pickup_texts.enabled", return_value=True), \
+                patch("app.customer_file._bridge", side_effect=AssertionError("no Quo call")):
+            response = self.move(headers, ro_id, "Ready for pickup", note="Focus done, road tested")
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual((body["status"], body["previous_status"], body["changed"]), ("complete", "in_progress", True))
+        self.assertIn("No pickup text", body["note"])
+        with self.Session() as db:
+            self.assertEqual(db.get(RepairOrder, ro_id).status, "complete")
+            self.assertEqual(db.query(AgentAction).one().summary, "in_progress -> complete; Focus done, road tested")
+            self.assertEqual(db.query(DispatchItem).count(), 0)
+            self.assertEqual(db.query(DispatchOutbound).count(), 0)
+            self.assertEqual(db.query(Communication).count(), 0)
+
+    def test_complete_needs_approved_work_and_picked_up_stays_with_the_office(self):
+        _, headers = self.issue()
+        waiting = self.make_job(status="waiting_approval", approval="pending")
+        self.assertEqual(self.move(headers, waiting, "complete").status_code, 409)
+        ro_id = self.make_job(status="in_progress", approval="approved")
+        for target in ("delivered", "picked up", "Picked-Up"):
+            self.assertEqual(self.move(headers, ro_id, target).status_code, 409, target)
+        gone = self.make_job(status="delivered", approval="approved")
+        self.assertEqual(self.move(headers, gone, "complete").status_code, 409)
+        with self.Session() as db:
+            self.assertEqual(db.get(RepairOrder, ro_id).status, "in_progress")
+            self.assertEqual(db.get(RepairOrder, gone).status, "delivered")
+            self.assertEqual(db.query(AgentAction).count(), 0)
+
+    def test_unknown_status_missing_job_and_scope(self):
+        _, headers = self.issue()
+        ro_id = self.make_job()
+        self.assertEqual(self.move(headers, ro_id, "paid").status_code, 422)
+        self.assertEqual(self.move(headers, 9999, "diagnosing").status_code, 404)
+        _, read_only = self.issue(scopes=["estimates:read"])
+        self.assertEqual(self.move(read_only, ro_id, "diagnosing").status_code, 403)
+
+    def test_allowed_statuses_are_board_columns(self):
+        from app.routes import agent_api
+        from app.routes.repair_orders import RO_STATUSES
+        board = dict(RO_STATUSES)
+        for key, label in agent_api.AGENT_STATUSES.items():
+            self.assertEqual(board[key], label)
+        self.assertEqual(set(board) - set(agent_api.AGENT_STATUSES), set(agent_api.OFFICE_ONLY_STATUSES))
 
 
 class OwnerSettingsTests(_Setup):

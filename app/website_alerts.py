@@ -101,3 +101,58 @@ def close_for_job(db: Session, order: RepairOrder, actor: str, reason: str) -> i
 
 def is_website(item: DispatchItem) -> bool:
     return (item.quo_conversation_id or "").startswith("WEB")
+
+
+ACTIVITY_DEFAULT_HOURS = 24
+ACTIVITY_MAX_DAYS = 14
+
+
+def _utc(value: datetime) -> datetime:
+    from datetime import timezone
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def recent(db: Session, since: datetime | None = None, now: datetime | None = None) -> dict:
+    """Website bookings, estimate requests and roadside requests that came in since `since`
+    (default the last 24 hours, at most 14 days back), newest first. Read only; sends nothing.
+    For the owner's app alerts, so a web booking never waits on someone opening the dashboard."""
+    from datetime import timedelta, timezone
+
+    from app import launch_offer
+    from app.appointment_model import Appointment
+    from app.dispatch_model import DispatchOutbound
+
+    now = _utc(now or datetime.now(timezone.utc))
+    since = max(_utc(since) if since else now - timedelta(hours=ACTIVITY_DEFAULT_HOURS),
+                now - timedelta(days=ACTIVITY_MAX_DAYS))
+    # SQLite keeps times without a zone, so filter loosely and re-check in Python.
+    rows = (db.query(DispatchItem).filter(DispatchItem.quo_conversation_id.like("WEB%"),
+                                          DispatchItem.created_at >= since.replace(tzinfo=None) - timedelta(days=1))
+            .order_by(DispatchItem.created_at.desc(), DispatchItem.id.desc()).all())
+    out = []
+    for item in rows:
+        key = item.quo_conversation_id or ""
+        if _utc(item.created_at) < since or not key[3:].isdigit():
+            continue  # approvals and lost-reference notes have their own keys and tools
+        order = db.get(RepairOrder, int(key[3:]))
+        booking = item.category == "booking"
+        entry = {
+            "ref": f"WEB-{key[3:]}", "job_id": int(key[3:]),
+            "kind": "booking" if booking else ("roadside request" if item.urgency == "urgent" else "estimate request"),
+            "urgent": item.urgency == "urgent", "received_at": _utc(item.created_at).isoformat(),
+            "needs_owner": item.status == "needs_owner", "open": item.status in OPEN_STATUSES,
+            "customer": " ".join(p for p in ((order.customer.first_name, order.customer.last_name) if order and order.customer else ()) if p),
+            "customer_id": item.customer_id, "vehicle": item.vehicle_text or "", "summary": item.summary,
+            "launch_offer": bool(order and launch_offer.MARK in (order.concern or "")),
+        }
+        if booking and order is not None:
+            visit = (db.query(Appointment).filter(Appointment.repair_order_id == order.id)
+                     .order_by(Appointment.id.desc()).first())
+            if visit is not None:
+                entry["visit_starts_at"] = _utc(visit.starts_at).isoformat()
+                entry["visit_status"] = visit.status
+                entry["visit_location"] = visit.location
+                sent = (db.query(DispatchOutbound).filter_by(dedupe_key=f"bookconf:{visit.id}").first())
+                entry["confirmation_text"] = sent.status if sent else "none"
+        out.append(entry)
+    return {"since": since.isoformat(), "count": len(out), "items": out}

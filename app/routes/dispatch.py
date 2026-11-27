@@ -7,12 +7,14 @@ import json
 import os
 import re
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from pydantic import AwareDatetime, BaseModel, Field
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
+from app.ro_status_policy import CLOSED_STATUSES
 from app import calendar_feed, pricing
 from app.appointments import PHOENIX
 from app.auth import get_current_user, require_admin
@@ -22,9 +24,10 @@ from app.dispatch import AUTO_POLICIES, LOCKED_POLICIES, MAKES, POLICIES, PROMIS
 from app.appointment_model import Appointment
 from app import alert_rules, business_settings, approval_links, dispatch_anchor, name_finder, next_action, quo_import, snap_offer, website_alerts
 from app.sending_pause import is_paused, pause, resume
-from app import quick_replies
+from app import quick_replies, reply_context, reply_drafts
 from app.dispatch_model import DispatchAudit, DispatchEvent, DispatchItem, DispatchOutbound, DispatchPolicy, DispatchSync, OPEN_STATUSES
 from app.models import Communication, Customer, LineItem, PartsOrder, RepairOrder, Vehicle
+from app.ro_status_policy import CLOSED_STATUSES
 from app.routes.internal_messaging import _find_customer_by_phone, _normalize_phone, require_internal_key
 
 router = APIRouter()
@@ -78,6 +81,7 @@ class OwnerAction(BaseModel):
 class OutboundResult(BaseModel):
     key: str = Field(min_length=1, max_length=160)
     status: str = Field(pattern="^(sent|failed|skipped)$")
+    messageId: str | None = Field(default=None, max_length=80)  # Quo's id for the text, when it was sent
 
 
 class SyncReport(BaseModel):
@@ -708,7 +712,9 @@ def due_owner_messages(db: Session, now: datetime) -> list[dict]:
 def queued_replies(db: Session) -> list[dict]:
     """Replies approved on the dashboard. Each is handed over once and never retried."""
     replies = []
-    rows = db.query(DispatchOutbound).filter(DispatchOutbound.kind == DASHBOARD_REPLY, DispatchOutbound.status == "queued").all()
+    rows = (db.query(DispatchOutbound)
+            .filter_by(kind=DASHBOARD_REPLY, status="queued")
+            .with_for_update(skip_locked=True).all())
     for row in rows:
         item = db.get(DispatchItem, row.item_id)
         row.status = "reserved"
@@ -744,6 +750,13 @@ def tick(request: Request, background: BackgroundTasks, owner_texts: bool = True
         return {"ownerPhone": OWNER_PHONE or None, "messages": [], "customerReplies": [], "paused": True}
     now = datetime.now(timezone.utc)
     messages = due_owner_messages(db, now) if owner_texts else []
+    if owner_texts and not request.app.state.read_only:
+        from app import review_requests
+        try:  # owner's setting: the day-after-pickup review text joins the reply queue below
+            review_requests.due(db, now)
+        except (SQLAlchemyError, HTTPException, ValueError) as exc:
+            db.rollback()
+            print(f"review_requests_unavailable {type(exc).__name__}")
     replies = queued_replies(db) if owner_texts else []
     followups = []
     if (not request.app.state.read_only and not replies and customer_followups.enabled()
@@ -767,11 +780,21 @@ def tick(request: Request, background: BackgroundTasks, owner_texts: bool = True
             quote_followups.queue_next(db, now)  # a draft for the owner's Send; nothing goes out here
             from app import diag_credit
             diag_credit.queue_next(db, now)  # same: a draft only
+            from app import declined_followups
+            declined_followups.queue_next(db, now)  # 30-60 day reminder: a draft only, off by default
         except (SQLAlchemyError, HTTPException, ValueError) as exc:
             db.rollback()
             print(f"declined_followup_unavailable {type(exc).__name__}")
+    confirmations = []
+    if not request.app.state.read_only:
+        from app import booking_confirmations
+        try:  # website booking confirmations: off unless the owner turned them on
+            confirmations = booking_confirmations.due(db, now)
+        except (SQLAlchemyError, HTTPException, ValueError) as exc:
+            db.rollback()
+            print(f"booking_confirmations_unavailable {type(exc).__name__}")
     return {"ownerPhone": OWNER_PHONE or None, "messages": messages,
-            "customerReplies": replies, "customerFollowups": followups}
+            "customerReplies": replies, "customerFollowups": followups, "bookingConfirmations": confirmations}
 
 
 class FollowupCheck(BaseModel):
@@ -910,7 +933,7 @@ def _owner_part_cost(db: Session, request_: OwnerAction) -> dict:
     if direct:
         chosen = db.query(RepairOrder).filter(
             RepairOrder.id == request_.roId,
-            RepairOrder.status != "delivered",
+            RepairOrder.status.notin_(CLOSED_STATUSES),
         ).with_for_update().first()
         if chosen is None:
             return {"ownerReply": "That RO was not found or is already delivered. Nothing changed."}
@@ -931,7 +954,7 @@ def _owner_part_cost(db: Session, request_: OwnerAction) -> dict:
             customer_id = matches[0].id
         active = db.query(RepairOrder).filter(
             RepairOrder.customer_id == customer_id,
-            RepairOrder.status != "delivered",
+            RepairOrder.status.notin_(CLOSED_STATUSES),
         ).with_for_update().all()
         if item.vehicle_id:
             active = [ro for ro in active if ro.vehicle_id == item.vehicle_id]
@@ -1070,7 +1093,7 @@ def _owner_quote_part(db: Session, request_: OwnerAction) -> dict:
 
     ro = db.query(RepairOrder).filter(
         RepairOrder.id == ro_id,
-        RepairOrder.status != "delivered",
+        RepairOrder.status.notin_(CLOSED_STATUSES),
     ).with_for_update().first()
     if ro is None:
         return {"ownerReply": "That repair order is missing or already delivered. Nothing changed."}
@@ -1151,7 +1174,7 @@ def _owner_prepare_link(db: Session, request_: OwnerAction) -> dict:
         )):
         return {"ownerReply": "Explicit RO and fitment-verification command required. Nothing changed."}
     ro = db.query(RepairOrder).filter(
-        RepairOrder.id == ro_id, RepairOrder.status != "delivered"
+        RepairOrder.id == ro_id, RepairOrder.status.notin_(CLOSED_STATUSES)
     ).with_for_update().first()
     if ro is None:
         return {"ownerReply": "Repair order not found or already delivered; nothing changed."}
@@ -1229,9 +1252,13 @@ def outbound_result(result: OutboundResult, db: Session = Depends(get_db), _auth
     row = db.query(DispatchOutbound).filter(DispatchOutbound.dedupe_key == result.key).first()
     if row is None:
         raise HTTPException(404, "Unknown message.")
+    if row.status == "failed" and result.status == "sent" and row.kind == DASHBOARD_REPLY:
+        # It had been given up on (no word for too long) and the owner may have sent it again; record it.
+        audit(db, row.item_id, "system", "text_sent_late", row.kind)
     row.status = result.status
     row.updated_at = datetime.now().astimezone()
-    audit(db, row.item_id, "system", f"text_{result.status}", row.kind)
+    audit(db, row.item_id, "system", f"text_{result.status}",
+          f"{row.kind} {result.messageId}"[:255] if result.messageId else row.kind)
     db.commit()
     return {"recorded": True}
 
@@ -1299,7 +1326,7 @@ def set_sending(request: Request, action: str = Form(...), db: Session = Depends
         resume(db, user.username)
     else:
         raise HTTPException(422, "Choose stop or resume.")
-    return RedirectResponse("/dashboard", status_code=303)
+    return RedirectResponse("/dashboard/inbox", status_code=303)
 
 
 @router.post("/{item_id}/decide")
@@ -1345,11 +1372,22 @@ def decide(
         db.add(DispatchOutbound(dedupe_key=f"dashboard:{item.id}:{item.last_message_id}", kind=DASHBOARD_REPLY, item_id=item.id, status="queued"))
         if PROMISE.search(text):
             audit(db, item.id, "system", "follow_up_due", (item.decided_at + PROMISE_AFTER).isoformat())
+    _commit_send(db)
+    return RedirectResponse(back_to(next_page), status_code=303)
+
+
+def _commit_send(db):
+    """Commit a decision and its queued reply. The only failure that may pass quietly is the
+    same reply already being queued (a double tap: unique dedupe key). Anything else rolls
+    back and tells the owner nothing was sent, instead of looking like it worked."""
     try:
         db.commit()
-    except IntegrityError:
+    except IntegrityError as error:
         db.rollback()
-    return RedirectResponse(back_to(next_page), status_code=303)
+        if "dedupe_key" in str(getattr(error, "orig", error)):
+            return
+        raise HTTPException(503, "That reply couldn't be queued, so nothing was sent and the item is still open. "
+                                 "Try again, or reply in Quo.") from error
 
 
 def back_to(path: str) -> str:
@@ -1396,6 +1434,11 @@ def compose(
     newest_message_id = newest_message_id.strip()[:128]
     if not newest_message_id:
         raise HTTPException(409, "The latest messages couldn't be checked. Refresh the page, or reply in Quo.")
+    # Concurrent submissions of the same text from the same thread state share one queue key.
+    fingerprint = json.dumps([number, newest_message_id, text], ensure_ascii=False)
+    dedupe_key = f"compose:{sha256(fingerprint.encode()).hexdigest()}"
+    if db.query(DispatchOutbound.id).filter_by(dedupe_key=dedupe_key).first():
+        return RedirectResponse(back_to(next_page), status_code=303)
     recent = [row for row in db.query(DispatchItem).order_by(DispatchItem.updated_at.desc()).limit(500)
               if "".join(c for c in (row.customer_phone or "") if c.isdigit())[-10:] == tail]
     if any(website_alerts.is_website(row) and row.status in OPEN_STATUSES for row in recent):
@@ -1418,11 +1461,11 @@ def compose(
     item.draft_reply = text
     item.thread_message_id = newest_message_id
     audit(db, item.id, user.username, "owner_compose" if open_item is None else "owner_approve")
-    db.add(DispatchOutbound(dedupe_key=f"compose:{item.id}:{uuid4().hex}", kind=DASHBOARD_REPLY,
+    db.add(DispatchOutbound(dedupe_key=dedupe_key, kind=DASHBOARD_REPLY,
                             item_id=item.id, status="queued"))
     if PROMISE.search(text):
         audit(db, item.id, "system", "follow_up_due", (now + PROMISE_AFTER).isoformat())
-    db.commit()
+    _commit_send(db)
     return RedirectResponse(back_to(next_page), status_code=303)
 
 
@@ -1438,7 +1481,7 @@ def close(item_id: int, request: Request, db: Session = Depends(get_db)):
     item.updated_at = datetime.now().astimezone()
     audit(db, item.id, user.username, "owner_close")
     db.commit()
-    return RedirectResponse("/dashboard?view=customer", status_code=303)
+    return RedirectResponse("/dashboard/inbox?view=customer", status_code=303)
 
 
 @router.post("/policies")
@@ -1469,7 +1512,7 @@ async def save_policies(request: Request, db: Session = Depends(get_db)):
             policy.mode = mode
         audit(db, None, user.username, "policy_saved", f"{key}={mode}")
     db.commit()
-    return RedirectResponse("/dashboard", status_code=303)
+    return RedirectResponse("/dashboard/inbox", status_code=303)
 
 
 VIEWS = {
@@ -1513,17 +1556,56 @@ def _appointment_for(item: DispatchItem, scheduled, scheduled_jobs):
     return scheduled.get(item.customer_id)
 
 
+# Queue items made for one job, by their conversation key (LINK12, DEP12, WEB12-decision, ...). Review
+# requests (REV) and oil reminders (OIL) are meant for jobs already picked up, so they never count as stale.
+JOB_ITEM = re.compile(r"(LINK|DEP|DIAG|PICKUP|QUOTE|PARTPRICE|WEB)([0-9]+)(?:-decision)?")
+
+
+def stale_for_job(db: Session, item: DispatchItem, marks: dict | None = None, cache: dict | None = None) -> bool:
+    """True when a queue item is about a job that no longer needs it: the job is closed (picked up or
+    cancelled), or its work is complete and the car has gone, or it asks to send an approval link and
+    nothing on the job is waiting on the customer. Worked out when read; the item itself is not changed."""
+    from app import shop_board
+    from app.ro_status_policy import is_open
+
+    match = JOB_ITEM.fullmatch(item.quo_conversation_id or "")
+    if not match:
+        return False
+    ro_id = int(match[2])
+    cache = {} if cache is None else cache
+    if ro_id not in cache:
+        cache[ro_id] = db.get(RepairOrder, ro_id)
+    ro = cache[ro_id]
+    if ro is None:
+        return False
+    if not is_open(ro):
+        return True
+    if marks is None:
+        marks = shop_board.lot_marks(db)
+    if ro.status == "complete" and ro.id in marks["away"]:
+        return True
+    return match[1] == "LINK" and not any(line.approval == "pending" for line in ro.line_items)
+
+
+def _drop_stale(db: Session, items: list[DispatchItem]) -> list[DispatchItem]:
+    if not any(JOB_ITEM.fullmatch(item.quo_conversation_id or "") for item in items):
+        return items
+    from app import shop_board
+    marks, cache = shop_board.lot_marks(db), {}
+    return [item for item in items if not stale_for_job(db, item, marks, cache)]
+
+
 def _select(db: Session, view: str, scheduled: dict[int, datetime], scheduled_jobs: dict[tuple[int, int], datetime]) -> list[DispatchItem]:
     query = db.query(DispatchItem)
     if view == "completed":
         return query.filter(DispatchItem.status.in_(("declined", "closed"))).order_by(DispatchItem.updated_at.desc()).limit(25).all()
     if view == "customer":
-        return query.filter(DispatchItem.status == "approved").order_by(DispatchItem.updated_at.desc()).limit(25).all()
+        return _drop_stale(db, query.filter(DispatchItem.status == "approved").order_by(DispatchItem.updated_at.desc()).limit(60).all())[:25]
     if view == "scheduled":
         candidates = query.filter(DispatchItem.customer_id.in_(list(scheduled)),
                                   DispatchItem.status.in_(OPEN_STATUSES + ("approved",))).all()
-        return [item for item in candidates if _appointment_for(item, scheduled, scheduled_jobs)][:25]
-    items = query.filter(DispatchItem.status.in_(OPEN_STATUSES)).all()
+        return _drop_stale(db, [item for item in candidates if _appointment_for(item, scheduled, scheduled_jobs)])[:25]
+    items = _drop_stale(db, query.filter(DispatchItem.status.in_(OPEN_STATUSES)).all())
     if view == "urgent":
         items = [i for i in items if i.urgency != "normal"]
     elif view == "approval":
@@ -1545,7 +1627,7 @@ def _card(db: Session, item: DispatchItem, scheduled: dict[int, datetime], sched
                 open_ro = order
         else:
             open_ro = db.query(RepairOrder).filter(
-                RepairOrder.customer_id == customer.id, RepairOrder.status != "delivered",
+                RepairOrder.customer_id == customer.id, RepairOrder.status.notin_(CLOSED_STATUSES),
             ).order_by(RepairOrder.created_at.desc()).first()
         if open_ro and open_ro.line_items:
             estimate = sum(line.quantity * line.unit_price for line in open_ro.line_items)
@@ -1559,11 +1641,27 @@ def _card(db: Session, item: DispatchItem, scheduled: dict[int, datetime], sched
         "last_from_us": _last_from_us(item, history),
         "quick_replies": quick_replies.suggestions(item, customer, history),
         "draft_state": _draft_state(db, item),
+        **_reply_draft(db, item),
         "open_ro": open_ro,
         "estimate": estimate,
         "next_appointment": _appointment_for(item, scheduled, scheduled_jobs),
         "start_job": _start_job_url(customer, item),
     }
+
+
+def _reply_draft(db: Session, item: DispatchItem) -> dict:
+    """The reply box's starting text and what the stored facts couldn't answer. Read-only:
+    nothing is saved or queued, so a draft can never go out without the owner's Send."""
+    empty = {"reply_draft": None, "reply_source": None, "needs_info": []}
+    if website_alerts.is_website(item) or item.draft_reply == "" or item.status not in OPEN_STATUSES:
+        return empty
+    try:
+        context = reply_context.build(db, item.customer_id, item)
+        result = reply_drafts.card_draft(item, context)
+    except Exception:  # noqa: BLE001 - a draft problem must never take down the queue
+        db.rollback()
+        return empty
+    return {"reply_draft": result.text, "reply_source": result.source, "needs_info": result.needs_info}
 
 
 def _last_from_us(item: DispatchItem, history) -> bool:
@@ -1641,6 +1739,7 @@ class QuoContact(BaseModel):
     firstName: str = Field(default="", max_length=120)
     lastName: str = Field(default="", max_length=120)
     company: str = Field(default="", max_length=120)
+    externalId: str = Field(default="", max_length=120)
     emails: list[str] = Field(default_factory=list, max_length=10)
     phones: list[str] = Field(default_factory=list, max_length=10)
 
@@ -1671,3 +1770,71 @@ def quo_contacts_catch_up(batch: QuoContactBatch, db: Session = Depends(get_db),
     row.last_detail = f"Checked {result['contacts']} Quo contacts; renamed {result['renamed']}."[:255]
     db.commit()
     return result
+
+
+# ── Reply desk: live queue rows, drafts and clean-up. None of these send or save anything. ──
+
+QUEUE_ROWS_MAX = 25
+
+
+def queue_rows_context(db: Session, view: str = "open", limit: int = QUEUE_ROWS_MAX, back: str = "/dashboard") -> dict:
+    """What the rows partial needs, the same rows Home and Needs-you render, plus a stamp
+    that changes whenever a row would look different (new text, new draft, decision)."""
+    from app import next_action
+    queue = dashboard_context(db, view)
+    rows = queue.get("dispatch_items", [])[:max(1, min(limit, QUEUE_ROWS_MAX))]
+    for row in rows:
+        row["days_waiting"] = 0 if row.get("last_from_us") else next_action.days_since(row["item"].created_at)
+    stamp_source = json.dumps([[r["item"].id, r["item"].last_message_id, r["item"].status, r["item"].draft_reply,
+                                r.get("reply_draft"), r.get("needs_info"), r.get("last_from_us")] for r in rows],
+                              default=str)
+    return {"dispatch_items": rows, "dispatch_ready": queue.get("dispatch_ready", False),
+            "queue_back": back_to(back), "queue_stamp": sha256(stamp_source.encode()).hexdigest()[:16]}
+
+
+@router.get("/queue-rows")
+def queue_rows(request: Request, view: str = "open", limit: int = QUEUE_ROWS_MAX, back: str = "/dashboard",
+               layout: str = "", db: Session = Depends(get_db)):
+    """The Needs-you rows as an HTML fragment, polled every ~25 s so new texts show without a reload."""
+    from fastapi.responses import HTMLResponse
+    from app.templating import Jinja2Templates
+    get_current_user(request, db)
+    context = queue_rows_context(db, view, limit, back)
+    templates = Jinja2Templates(directory="app/templates")
+    page = "_dispatch_rows_home.html" if layout == "home" else "_dispatch_rows.html"
+    response = templates.TemplateResponse(request, page, {"request": request, **context})
+    response.headers["X-Queue-Stamp"] = context["queue_stamp"]
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@router.post("/{item_id}/clean-up")
+def clean_up_reply(item_id: int, request: Request, rough: str = Form(default=""), db: Session = Depends(get_db)):
+    """Turns what the owner typed or dictated into a clean text for the reply box. Sends nothing:
+    the text only goes out when he taps Send, through the usual decide path."""
+    user = get_current_user(request, db)
+    if user.role not in COMPOSE_ROLES:
+        raise HTTPException(403, "Your login can't text customers.")
+    item = db.get(DispatchItem, item_id)
+    if item is None:
+        raise HTTPException(404, "Item not found.")
+    rough = rough.strip()[:1500]
+    if not rough:
+        raise HTTPException(422, "Type or dictate what you want to say first.")
+    context = reply_context.build(db, item.customer_id, item)
+    result = reply_drafts.clean_up(rough, context)
+    db.rollback()  # read-only: make sure nothing from building the context is written
+    return {"text": result.text, "source": result.source}
+
+
+@router.get("/{item_id}/draft")
+def fresh_draft(item_id: int, request: Request, db: Session = Depends(get_db)):
+    """The current draft for one item from the latest thread and job. Saves nothing."""
+    get_current_user(request, db)
+    item = db.get(DispatchItem, item_id)
+    if item is None:
+        raise HTTPException(404, "Item not found.")
+    data = _reply_draft(db, item)
+    db.rollback()
+    return {"text": data["reply_draft"], "source": data["reply_source"], "needsInfo": data["needs_info"],
+            "messageId": item.last_message_id}

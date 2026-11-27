@@ -13,7 +13,8 @@ PostgreSQL lock the staff booking API uses. Confirmation appears on screen only.
 """
 import logging
 
-from app import appointment_followup, business_settings, calendar_feed, estimate_prefill, lead_lifecycle, website_alerts
+from app.ro_status_policy import CLOSED_STATUSES
+from app import appointment_followup, booking_confirmations, business_settings, referrals, calendar_feed, estimate_prefill, launch_offer, lead_lifecycle, website_alerts
 import os
 import re
 import secrets
@@ -143,6 +144,8 @@ def render(request: Request, name: str, status_code: int = 200, form_page: bool 
         "canonical_url": canonical_url(request.url.path) if can_index else None,
         "forms_open": forms_enabled(request.app.state.read_only),
         "year": datetime.now(PHOENIX).year,
+        "referral_box": referrals.enabled(),
+        "launch_offer": launch_offer.banner(),
     }
     return templates.TemplateResponse(name, {**base, **context}, status_code=status_code,
                                       headers=page_headers(form_page))
@@ -152,7 +155,8 @@ def render(request: Request, name: str, status_code: int = 200, form_page: bool 
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    return render(request, "site/home.html", active="home", bookable=bookable_services())
+    from app.gallery import home_photos
+    return render(request, "site/home.html", active="home", bookable=bookable_services(), work_photos=home_photos())
 
 
 @router.get("/services", response_class=HTMLResponse)
@@ -272,7 +276,7 @@ async def status_lost(request: Request, db: Session = Depends(get_db)):
     if phone:
         eligible = (db.query(Customer).join(RepairOrder, RepairOrder.customer_id == Customer.id)
                     .filter(Customer.phone.isnot(None), RepairOrder.public_token.isnot(None),
-                            RepairOrder.status != "delivered").distinct())
+                            RepairOrder.status.notin_(CLOSED_STATUSES)).distinct())
         matches = []
         for customer in eligible.yield_per(200):
             if phone_digits(customer.phone) == phone:
@@ -283,7 +287,7 @@ async def status_lost(request: Request, db: Session = Depends(get_db)):
             customer = matches[0]
             orders = (db.query(RepairOrder).filter(RepairOrder.customer_id == customer.id,
                                                    RepairOrder.public_token.isnot(None),
-                                                   RepairOrder.status != "delivered")
+                                                   RepairOrder.status.notin_(CLOSED_STATUSES))
                       .order_by(RepairOrder.id.desc()).limit(5).all())
             if orders:
                 website_alerts.queue_reference_help(db, customer, orders)
@@ -609,6 +613,8 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
             raise FormError(taken)
         customer, matched = find_or_create_customer(db, person)
         vehicle = find_or_create_vehicle(db, customer, matched, vehicle_details)
+        referral_note = referrals.from_website(db, customer, form.get("referral_code"))
+        offer_line = launch_offer.claim(db, person["phone"])
         label = phoenix_label(starts_at)
         total = total_price(service, zone, vehicle_class, axles)
         package = ""
@@ -622,6 +628,8 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
             f"Price shown: {service.price_label}." + (f" {'Starting total' if service.price_type == 'starting' else 'Total'} shown: ${total:,.2f}." if total is not None else " No final price yet."),
             f"Customer notes: {notes}" if notes else "",
             f"Mileage given: {vehicle_details['mileage']:,}" if vehicle_details["mileage"] else "",
+            referral_note,
+            offer_line,
         ])
         order = new_repair_order(db, customer, vehicle, concern, vehicle_details["mileage"])
         estimate_prefill.oil_change_line(db, order, service)
@@ -631,11 +639,16 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
         db.add(appointment)
         db.flush()
         item = website_alerts.queue(db, order, "booking", f"Booked {service.name}, {label}{', mobile visit' if zone else ''}."
-                                    + (" Starting price: check parts for this VIN and confirm the final price." if service.price_type == "starting" else ""),
+                                    + (" Starting price: check parts for this VIN and confirm the final price." if service.price_type == "starting" else "")
+                                    + launch_offer.note(offer_line),
                                     vehicle_text=" ".join(str(p) for p in (vehicle_details["year"], vehicle_details["make"], vehicle_details["model"]) if p),
                                     review=service.price_type == "starting")
         lead_lifecycle.intake_from_website(db, order, item, appointment)
         appointment_followup.add_reminder(db, appointment, "website")
+        texted = booking_confirmations.queue(db, appointment, item, person["contact"])
+        if texted:
+            order.concern = order.concern.replace("No message has been sent to the customer.",
+                                                  "A booking confirmation text is set to go to the customer.")
         db.commit()
     except FormError as exc:
         db.rollback()
@@ -648,7 +661,10 @@ async def book_submit(request: Request, db: Session = Depends(get_db)):
         f"From ${shown:,.2f} for {axles} axle{'s' if axles == 2 else ''} ({VEHICLE_CLASSES[vehicle_class].lower()})".replace(".00", ""))
     request.session["site_booking"] = {"ref": f"WEB-{order.id}", "service": service.name, "time": label,
                                        "price": price_text, "starting": service.price_type == "starting",
-                                       "fee": (zone.fee or 0) if zone else 0, "token": order.public_token}
+                                       "fee": (zone.fee or 0) if zone else 0, "token": order.public_token,
+                                       "texted": texted, "offer": launch_offer.config()["percent"] if offer_line else 0}
+    if offer_line:
+        launch_offer.forget()
     remember_submission(request, resend, "booking", request.session["site_booking"])
     return RedirectResponse("/site/book/received", status_code=303)
 
@@ -710,11 +726,12 @@ async def estimate_submit(request: Request, db: Session = Depends(get_db)):
         log.info("site_form_rejected form=estimate reason=%s", str(exc)[:60])
         return estimate_page(request, 422, str(exc), values)
     return save_request(request, db, person, details, line, where, location, description,
-                        retry=lambda code, message: estimate_page(request, code, message, values))
+                        retry=lambda code, message: estimate_page(request, code, message, values),
+                        referral_code=form.get("referral_code"))
 
 
 def save_request(request: Request, db: Session, person: dict, details: dict, line, where: str, location: str,
-                 description: str, retry, heading: str = "Estimate request from the website."):
+                 description: str, retry, heading: str = "Estimate request from the website.", referral_code: str | None = None):
     """One request makes one customer, vehicle, job, lead and owner item, with the estimate started
     from approved prices. Shared by estimate and roadside requests."""
     resend = fingerprint("estimate", person["phone"], " ".join(description.split()))
@@ -726,18 +743,21 @@ def save_request(request: Request, db: Session, person: dict, details: dict, lin
     try:
         customer, matched = find_or_create_customer(db, person)
         vehicle = find_or_create_vehicle(db, customer, matched, details)
+        offer_line = launch_offer.claim(db, person["phone"]) if where != "roadside" else ""
         concern = concern_text(heading, person, matched, [
             f"Service: {line.name}." if line else "",
             f"Where: {WHERE_OPTIONS[where]}{' — ' + location if location else ''}.",
             f"Mileage given: {details['mileage']:,}" if details["mileage"] else "",
             f"Details: {description}",
+            referrals.from_website(db, customer, referral_code),
+            offer_line,
         ])
         order = new_repair_order(db, customer, vehicle, concern, details["mileage"])
         started = estimate_prefill.prefill(db, order, line.slug if line else "", where)
         order.concern = (order.concern + "\n" + "Estimate started: " + started)[:4000]
         db.flush()
         item = website_alerts.queue(db, order, "request", f"{line.name if line else 'Estimate'}: {WHERE_OPTIONS[where]}. {description}"[:200]
-                                    + f" | {started}",
+                                    + f" | {started}" + launch_offer.note(offer_line),
                                     service_line=line.slug if line else "",
                                     vehicle_text=" ".join(str(p) for p in (details["year"], details["make"], details["model"]) if p))
         lead_lifecycle.intake_from_website(db, order, item)
@@ -746,7 +766,9 @@ def save_request(request: Request, db: Session, person: dict, details: dict, lin
         db.rollback()
         raise
     request.session["site_estimate"] = {"ref": f"WEB-{order.id}", "token": order.public_token,
-                                        "roadside": where == "roadside"}
+                                        "roadside": where == "roadside", "offer": launch_offer.config()["percent"] if offer_line else 0}
+    if offer_line:
+        launch_offer.forget()
     remember_submission(request, resend, "estimate", request.session["site_estimate"])
     return RedirectResponse("/site/estimate/received", status_code=303)
 

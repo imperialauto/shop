@@ -12,7 +12,7 @@ from datetime import datetime, time, timedelta, timezone
 from app import business_settings, customer_followups, quo_task_sync
 from app.appointments import PHOENIX
 from app.dispatch_model import DispatchItem, OPEN_STATUSES
-from app.imperial_task_model import BACKLOG_CATEGORY, PERSONAL_CATEGORY, PROBLEM_CATEGORY, ImperialTask, ImperialTaskAudit
+from app.imperial_task_model import BACKLOG_CATEGORY, BOARD_CATEGORY, PERSONAL_CATEGORY, PROBLEM_CATEGORY, ImperialTask, ImperialTaskAudit
 from app.models import Communication, Customer, RepairOrder
 
 OPEN = ("open", "in_progress", "blocked")
@@ -184,7 +184,7 @@ def board(db, now: datetime | None = None, *, linked: bool | None = None, sort: 
     week_ago = now - timedelta(days=7)
     followup_days = business_settings.task_followup_days()
     rows = db.query(ImperialTask).filter(ImperialTask.status.in_(OPEN + ("done_verified",)),
-                                         ImperialTask.category.notin_((PROBLEM_CATEGORY, PERSONAL_CATEGORY, BACKLOG_CATEGORY))).order_by(
+                                         ImperialTask.category.notin_((PROBLEM_CATEGORY, PERSONAL_CATEGORY, BACKLOG_CATEGORY, BOARD_CATEGORY))).order_by(
         ImperialTask.id.desc()).all()
     groups: "OrderedDict[str, dict]" = OrderedDict()
     cache = {}
@@ -204,7 +204,7 @@ def board(db, now: datetime | None = None, *, linked: bool | None = None, sort: 
         if job_id and job_id not in orders:
             orders[job_id] = db.get(RepairOrder, job_id)
         order = orders.get(job_id)
-        if order and order.status == "delivered" and bucket != "done":
+        if order and order.status in ("delivered", "cancelled") and bucket != "done":
             order = None
         if linked is not None and linked != bool(order):
             continue
@@ -278,7 +278,7 @@ def open_for_customer(db, conversation_ids, phone) -> list[dict]:
     tail = _digits(phone)
     out = []
     for task in db.query(ImperialTask).filter(ImperialTask.status.in_(OPEN), ImperialTask.category.notin_(
-            (PROBLEM_CATEGORY, PERSONAL_CATEGORY, BACKLOG_CATEGORY))).order_by(ImperialTask.id.desc()).all():
+            (PROBLEM_CATEGORY, PERSONAL_CATEGORY, BACKLOG_CATEGORY, BOARD_CATEGORY))).order_by(ImperialTask.id.desc()).all():
         info = quo_task_sync.details(task) if task.source == quo_task_sync.SOURCE else {}
         if (info.get("conversationId") in wanted) or (tail and _digits(info.get("phone")) == tail):
             tag = quo_task_sync.label(task.title)

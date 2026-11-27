@@ -15,6 +15,10 @@
     <strong>Business settings</strong>
     <div class="text-sm text-stone-400">Hours, online booking, prices, mobile fees and payment methods</div>
   </a>
+  <a href="/settings/canned-jobs" class="card max-w-md" style="display:block; text-decoration:none;">
+    <strong>Packages</strong>
+    <div class="text-sm text-stone-400">Oil change, brake jobs and diagnostic: the lines one tap adds to a job</div>
+  </a>
   <a href="/settings/security-privacy" class="card max-w-md" style="display:block; text-decoration:none;">
     <strong>Security &amp; Privacy</strong>
     <div class="text-sm text-stone-400">Every protection in one list: sign-in limits, form limits, browser protections, customer links, privacy notice, terms and what the website shows</div>
@@ -154,8 +158,8 @@
             <td>{{ k.name }}</td>
             <td style="font-family: monospace;">{{ k.key_prefix }}…</td>
             <td class="text-sm">{{ k.scope_list|join(', ') }}</td>
-            <td class="text-sm">{{ k.last_used_at.strftime('%b %d %H:%M UTC') if k.last_used_at else 'Never' }}</td>
-            <td class="text-sm">{{ k.expires_at.strftime('%b %d, %Y') }}</td>
+            <td class="text-sm">{{ (k.last_used_at|shop_time).strftime('%b %d %H:%M') if k.last_used_at else 'Never' }}</td>
+            <td class="text-sm">{{ (k.expires_at|shop_time).strftime('%b %d, %Y') }}</td>
             <td>
               {% if k.status == 'active' %}
               <form method="post" action="/settings/users/assistant-keys/{{ k.id }}/revoke" style="display:inline;">
@@ -196,7 +200,7 @@
     <h4 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Recent Assistant Changes</h4>
     <ul class="text-sm space-y-1">
       {% for a in agent_actions %}
-      <li>{{ a.created_at.strftime('%b %d %H:%M UTC') }} · {{ a.action }}{% if a.target_id %} #{{ a.target_id }}{% endif %}{% if a.summary %} · {{ a.summary }}{% endif %}</li>
+      <li>{{ (a.created_at|shop_time).strftime('%b %d %H:%M') }} · {{ a.action }}{% if a.target_id %} #{{ a.target_id }}{% endif %}{% if a.summary %} · {{ a.summary }}{% endif %}</li>
       {% endfor %}
     </ul>
     {% endif %}

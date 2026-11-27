@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, ForeignKey, Enum, LargeBinary
+from sqlalchemy import Column, Integer, String, Text, Float, Boolean, Date, DateTime, ForeignKey, Enum, LargeBinary
 from sqlalchemy.orm import relationship
 from app.database import Base
 import enum
@@ -96,6 +96,9 @@ class RepairOrder(Base):
     signature_data = Column(Text, nullable=True)   # base64 PNG data URL
     approved_by = Column(String(128), nullable=True)
     signed_at = Column(DateTime, nullable=True)
+    # Lines the customer had approved or was asked about that the shop took off afterwards, as a JSON
+    # list of {"description", "total", "was"}. Shown on their approval page until they next answer.
+    removed_since_approval = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -105,6 +108,7 @@ class RepairOrder(Base):
     line_items = relationship("LineItem", back_populates="repair_order")
     invoices = relationship("Invoice", back_populates="repair_order")
     communications = relationship("Communication", back_populates="repair_order")
+    deposits = relationship("JobDeposit", back_populates="repair_order", order_by="JobDeposit.received_at")
 
 
 class LineItem(Base):
@@ -112,7 +116,7 @@ class LineItem(Base):
     id = Column(Integer, primary_key=True)
     repair_order_id = Column(Integer, ForeignKey("repair_orders.id"), nullable=False)
     description = Column(Text, nullable=False)
-    item_type = Column(String(16), default="labor")  # labor, part, sublet, misc
+    item_type = Column(String(16), default="labor")  # labor, part, sublet, misc, discount (negative, untaxed, see app/discounts.py)
     quantity = Column(Float, default=1.0)
     unit_price = Column(Float, default=0.0)
     taxable = Column(Boolean, default=True)
@@ -122,6 +126,10 @@ class LineItem(Base):
     # "in_person" or "phone" when shop staff recorded it, with the staff login that did.
     approval_source = Column(String(16))
     approval_recorded_by = Column(String(64))
+    # A line changed after the customer saw it (app/line_changes.py): JSON of the version they last
+    # saw or answered, and when it changed. The line is back to "pending" until they answer again.
+    changed_from = Column(Text)
+    changed_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime, default=datetime.utcnow)
     # Technician completion. Separate from customer approval, invoicing and payment.
     completed_at = Column(DateTime(timezone=True))
@@ -183,6 +191,7 @@ class PartsOrder(Base):
     status = Column(String(32), default="ordered")  # ordered, received, returned
     ordered_at = Column(DateTime, default=datetime.utcnow)
     received_at = Column(DateTime)
+    eta = Column(Date)  # supplier's expected arrival day (shop's local day); see app/parts_tracking.py
 
 
 class Communication(Base):
@@ -243,6 +252,25 @@ class Payment(Base):
     paid_at = Column(DateTime, default=datetime.utcnow)
 
     invoice = relationship("Invoice", back_populates="payments")
+
+
+class JobDeposit(Base):
+    """Money a customer paid on a job before it has an invoice (the 50% deposit).
+    When the job's invoice is made, each deposit becomes a payment on it (payment_id) so the balance is right."""
+    __tablename__ = "job_deposits"
+    id = Column(Integer, primary_key=True)
+    repair_order_id = Column(Integer, ForeignKey("repair_orders.id"), nullable=False, index=True)
+    amount = Column(Float, nullable=False)
+    method = Column(String(32), nullable=False)
+    reference = Column(String(128))
+    received_at = Column(DateTime, nullable=False, default=datetime.utcnow)  # naive UTC, like Payment.paid_at
+    recorded_by = Column(String(64))
+    payment_id = Column(Integer, ForeignKey("payments.id"), nullable=True)
+    removed_at = Column(DateTime(timezone=True))
+    removed_by = Column(String(64))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    repair_order = relationship("RepairOrder", back_populates="deposits")
 
 
 class EstimateSession(Base):

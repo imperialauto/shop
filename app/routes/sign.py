@@ -6,7 +6,7 @@ from app.database import get_db
 from app.models import RepairOrder, Invoice
 from datetime import datetime, timezone
 
-from app import approval_links, deposit_requests, website_alerts
+from app import line_changes, approval_links, approval_options, deposit_requests, next_visit, referrals, website_alerts
 import os
 import secrets
 from app.security_controls import link_expired
@@ -21,15 +21,45 @@ templates = Jinja2Templates(
 
 # ── Estimate / RO approval signing ─────────────────────────────────────────
 
+def _customer_photos(ro):
+    """Only files the office marked for the customer. A photo tied to an item on this page shows under
+    that item; the rest (whole job, or a line not on this page) show together in one gallery."""
+    from sqlalchemy.orm import object_session
+    from app.routes import ro_evidence
+    db = object_session(ro)
+    if db is None:
+        return {}, []
+    shown = {li.id for li in ro.line_items if li.approval in ("approved", "pending")}
+    by_line, gallery = {}, []
+    for f in ro_evidence.attachments_for(db, ro.id, customer_only=True):
+        if f.line_item_id in shown:
+            by_line.setdefault(f.line_item_id, []).append(f)
+        else:
+            gallery.append(f)
+    return by_line, gallery
+
+
 def _sign_page(request, ro, error=None, status=200):
     pending = [li for li in ro.line_items if li.approval == "pending"]
+    from app.routes.invoices import SHOP_TAX_RATE
     subtotal = sum(li.total for li in ro.line_items if li.approval in ("approved", "pending"))
+    # Same math as the deposit text and the invoice: tax on parts only.
+    subtotal = round(subtotal + round(sum(li.total for li in ro.line_items
+                                          if li.approval in ("approved", "pending") and li.item_type == "part")
+                                      * SHOP_TAX_RATE, 2), 2)
+    fixed = [li for li in ro.line_items if li.approval == "approved"]
     from app import security_controls
     terms = None
     if security_controls.value("terms_on_approval_page"):
         terms = [p.strip() for p in security_controls.value("terms_text").split("\n\n") if p.strip()]
+    line_photos, job_photos = _customer_photos(ro)
     return templates.TemplateResponse("sign_ro.html", {
         "request": request, "ro": ro, "subtotal": subtotal, "pending": pending, "error": error, "terms": terms,
+        "line_photos": line_photos, "job_photos": job_photos,
+        "options": approval_options.groups(pending), "tax_rate": SHOP_TAX_RATE,
+        "changes": line_changes.summary(ro),
+        "fixed_total": round(sum(li.total for li in fixed), 2),
+        "fixed_taxable": round(sum(li.total for li in fixed if li.item_type == "part"), 2),
     }, status_code=status, headers=PRIVATE_PAGE)
 
 
@@ -59,6 +89,10 @@ async def sign_ro_submit(request: Request, token: str, db: Session = Depends(get
     decisions = {li.id: form.get(f"line_{li.id}") for li in pending}
     if any(choice not in ("approved", "declined") for choice in decisions.values()):
         return _sign_page(request, ro, "Choose Approve or Decline for each item.", 422)
+    if len(approval_options.groups(pending)) > 1:
+        mixed = approval_options.mixed_error(pending, decisions)
+        if mixed:
+            return _sign_page(request, ro, mixed, 422)
     if not signature_data or signature_data in ("data:,", ""):
         return _sign_page(request, ro, "Please draw your signature before submitting.", 422)
     from app import security_controls
@@ -74,6 +108,9 @@ async def sign_ro_submit(request: Request, token: str, db: Session = Depends(get
     for li in pending:
         li.approval, li.decided_at = decisions[li.id], now
         li.approval_source, li.approval_recorded_by = "link", None
+    from app import discounts
+    discounts.follow_decisions(ro)  # declined everything: the shop's discounts go with it
+    line_changes.answered(ro)
     ro.signature_data = signature_data
     ro.approved_by = (approved_by or "Customer")[:128]
     ro.signed_at = datetime.utcnow()
@@ -113,6 +150,8 @@ def sign_invoice_page(request: Request, invoice_id: int, token: str = "", db: Se
         raise HTTPException(status_code=404, detail="Not found")
     return templates.TemplateResponse("sign_invoice.html", {
         "request": request, "invoice": invoice, "ro": invoice.repair_order,
+        "next_visit": next_visit.receipt_line(invoice),
+        "share": referrals.share_line(db, invoice),
     }, headers=PRIVATE_PAGE)
 
 

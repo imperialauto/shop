@@ -55,6 +55,17 @@
 
     .already-signed { background: rgba(74,222,128,0.08); border: 1px solid rgba(74,222,128,0.2); color: var(--imp-ok); border-radius: 10px; padding: 16px; text-align: center; font-size: 14px; }
 
+    .quick-picks { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .quick-note { width: 100%; font-size: 12.5px; color: var(--imp-muted); }
+    .quick-btn { flex: 1 1 140px; min-height: 44px; border-radius: 8px; border: 1px solid var(--imp-line); background: var(--imp-paper); color: var(--imp-ink); font-size: 14px; font-weight: 600; cursor: pointer; padding: 8px 10px; }
+    .quick-primary { background: var(--imp-gold); color: var(--imp-purple-deep); border-color: var(--imp-gold); }
+
+    .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+    .photo-grid a { display: block; font-size: 12px; color: var(--imp-muted); overflow-wrap: anywhere; text-decoration: none; }
+    .photo-grid img { width: 100%; aspect-ratio: 4/3; object-fit: cover; border-radius: 6px; display: block; }
+    .photo-file { display: flex; align-items: center; justify-content: center; min-height: 72px; border: 1px solid var(--imp-line); border-radius: 6px; padding: 6px; text-align: center; }
+    .line-photos { margin-top: 8px; }
+
     .auth-notice { font-size: 11.5px; color: var(--imp-muted); line-height: 1.5; margin-top: 8px; }
   </style>
 </head>
@@ -68,11 +79,22 @@
   </div>
 </div>
 
+{% macro photo_grid(files, label) -%}
+<div class="photo-grid" role="list" aria-label="{{ label }}">
+  {% for f in files %}
+  <a role="listitem" href="/status/{{ ro.public_token }}/files/{{ f.id }}" target="_blank" rel="noopener">
+    {% if f.content_type in ('image/jpeg', 'image/png', 'image/webp') %}<img src="/status/{{ ro.public_token }}/files/{{ f.id }}" alt="Photo from the shop" loading="lazy">
+    {% else %}<span class="photo-file">{{ 'PDF' if f.content_type == 'application/pdf' else 'Photo' }} · tap to open</span>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+{%- endmacro %}
+
 <div class="container">
 
   {% if ro.signed_at and not pending %}
   <div class="already-signed" style="margin-top:20px;">
-    ✓ Already signed by {{ ro.approved_by }} on {{ ro.signed_at.strftime('%B %d, %Y') }}
+    ✓ Already signed by {{ ro.approved_by }} on {{ (ro.signed_at|shop_time).strftime('%B %d, %Y') }}
   </div>
   {% elif not pending %}
   <div class="card" style="margin-top:20px;">No estimate is ready for approval.</div>
@@ -91,36 +113,64 @@
     {% if ro.vehicle.engine %}<div class="vehicle-sub">{{ ro.vehicle.engine }}</div>{% endif %}
   </div>
 
+  {% if job_photos %}
+  <div class="card" id="inspection-photos">
+    <div class="section-title">Photos from the inspection</div>
+    {{ photo_grid(job_photos, "Photos from the inspection") }}
+    <p style="font-size:12px; color:var(--imp-muted); margin-top:8px;">Tap a photo to see it full size.</p>
+  </div>
+  {% endif %}
+
   <form method="post" id="sign-form">
     <input type="hidden" name="signature_data" id="sig-data" />
 
   <!-- Line Items -->
   <div class="card">
     <div class="section-title">Approve or decline each item</div>
+    {% if pending|length > 1 %}
+    <div class="quick-picks" role="group" aria-label="Quick choices">
+      {% if options %}
+      <p class="quick-note">This estimate has {{ options|length }} options. Pick one and we'll fill in the items for you. You can still change any item below.</p>
+      {% for opt in options %}
+      <button type="button" class="quick-btn quick-primary" data-option="{{ opt.number }}" data-ids="{{ opt.ids|join(',') }}">Choose Option {{ opt.number }}{% if opt.name %} ({{ opt.name }}){% endif %}</button>
+      {% endfor %}
+      {% else %}
+      <button type="button" class="quick-btn quick-primary" id="approve-all">Approve all</button>
+      {% endif %}
+      <button type="button" class="quick-btn" id="decline-all">Decline all</button>
+    </div>
+    {% endif %}
+    {% if changes and (changes.changed or changes.new or changes.removed) %}
+    <div style="font-size:13px; color:var(--imp-ink); background:var(--imp-surface); border-radius:8px; padding:10px 12px; margin:8px 0 12px;">
+      We updated your estimate. Only the changed or new items need your answer.{% if changes.kept %} Items you already approved stay approved.{% endif %}
+      {% if changes.removed %}<div style="margin-top:6px; color:var(--imp-muted);">Taken off: {% for r in changes.removed %}{{ r.description }} ({{ r.total|money }}){% if not loop.last %}, {% endif %}{% endfor %}.</div>{% endif %}
+    </div>
+    {% endif %}
     <table>
       <tbody>
         {% for li in ro.line_items if li.approval in ['approved', 'pending'] %}
         <tr>
           <td class="td-desc">
             {{ li.description }}
-            <div style="font-size:11.5px; color:var(--imp-muted); margin-top:1px;">{{ li.item_type | title }} × {{ li.quantity }}{% if li.approval == 'approved' %} · Approved{% elif li.approval == 'declined' %} · Declined{% endif %}</div>
+            <div style="font-size:11.5px; color:var(--imp-muted); margin-top:1px;">{% if li.item_type == 'discount' %}Discount, taken off your total{% else %}{{ li.item_type | title }} × {{ li.quantity }}{% if li.approval == 'approved' %} · Approved{% elif li.approval == 'declined' %} · Declined{% endif %}{% endif %}{% if changes %}{% for c in changes.changed if c.line.id == li.id %} · <strong>Changed</strong>, was {{ c.was.total|money }}{% if c.description_changed %} ({{ c.was.description }}){% endif %}{% endfor %}{% if li.id in changes.new_ids %} · <strong>New</strong>{% endif %}{% endif %}</div>
+            {% if line_photos.get(li.id) %}<div class="line-photos">{{ photo_grid(line_photos[li.id], "Photos for " ~ li.description) }}</div>{% endif %}
             {% if li.approval == 'pending' %}
             <div style="display:flex; gap:8px; margin-top:8px;">
-              <label style="flex:1; min-height:44px; display:flex; align-items:center; gap:6px; background:var(--imp-surface); border-radius:8px; padding:0 10px;"><input type="radio" name="line_{{ li.id }}" value="approved" data-amount="{{ '%.2f'|format(li.total) }}" required> Approve</label>
+              <label style="flex:1; min-height:44px; display:flex; align-items:center; gap:6px; background:var(--imp-surface); border-radius:8px; padding:0 10px;"><input type="radio" name="line_{{ li.id }}" value="approved" data-amount="{{ '%.2f'|format(li.total) }}" data-taxable="{{ 1 if li.item_type == 'part' else 0 }}" data-line="{{ li.id }}" required> Approve</label>
               <label style="flex:1; min-height:44px; display:flex; align-items:center; gap:6px; background:var(--imp-surface); border-radius:8px; padding:0 10px;"><input type="radio" name="line_{{ li.id }}" value="declined"> Decline</label>
             </div>
             {% endif %}
           </td>
-          <td class="td-right">${{ "%.2f"|format(li.total) }}</td>
+          <td class="td-right">{{ li.total|money }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
     <div class="total-row">
-      <span class="total-label">Total you approve</span>
+      <span class="total-label">Total you approve{% if tax_rate %}, with tax{% endif %}</span>
       <span class="total-amount" id="approved-total">${{ "%.2f"|format(subtotal) }}</span>
     </div>
-    <p style="font-size:12px; color:var(--imp-muted); margin-top:8px;">Review the itemized charges and any applicable taxes before authorizing. Declined items are not performed or charged.</p>
+    <p style="font-size:12px; color:var(--imp-muted); margin-top:8px;">{% if tax_rate %}Includes {{ '%g'|format(tax_rate * 100) }}% sales tax on parts. {% endif %}Review the itemized charges before authorizing. Declined items are not performed or charged.</p>
   </div>
 
     <div class="card">
@@ -232,14 +282,48 @@
     var label = document.getElementById('approved-total');
     var radios = document.querySelectorAll('input[type=radio][name^="line_"]');
     if (!label || !radios.length) return;
-    var fixed = {{ '%.2f'|format(ro.line_items|selectattr('approval', 'equalto', 'approved')|map(attribute='total')|sum) }};
+    var optional = {{ '{' }}{% for li in pending if li.description and li.description.strip().upper().startswith('OPTIONAL') %}"{{ li.id }}": true{% if not loop.last %}, {% endif %}{% endfor %}{{ '}' }};
+    var fixed = {{ '%.2f'|format(fixed_total) }}, fixedTaxable = {{ '%.2f'|format(fixed_taxable) }}, rate = {{ tax_rate }};
     function update() {
-      var sum = fixed;
-      document.querySelectorAll('input[type=radio][value=approved]:checked').forEach(function (r) { sum += parseFloat(r.dataset.amount); });
+      var sum = fixed, taxable = fixedTaxable;
+      document.querySelectorAll('input[type=radio][value=approved]:checked').forEach(function (r) {
+        sum += parseFloat(r.dataset.amount);
+        if (r.dataset.taxable === '1') taxable += parseFloat(r.dataset.amount);
+      });
+      sum += Math.round(taxable * rate * 100) / 100;
       label.textContent = '$' + sum.toFixed(2);
     }
     radios.forEach(function (r) { r.addEventListener('change', update); });
     update();
+
+    // Quick choices: they only tick the boxes below; the customer can still change any item before signing.
+    function set(lineId, choice) {
+      var r = document.querySelector('input[type=radio][name="line_' + lineId + '"][value="' + choice + '"]');
+      if (r) r.checked = true;
+    }
+    var all = Array.prototype.map.call(document.querySelectorAll('input[type=radio][value=approved]'), function (r) { return r.dataset.line; });
+    var optionIds = {};
+    document.querySelectorAll('[data-option]').forEach(function (b) { optionIds[b.dataset.option] = b.dataset.ids.split(','); });
+    var inAnyOption = {};
+    Object.keys(optionIds).forEach(function (k) { optionIds[k].forEach(function (id) { inAnyOption[id] = true; }); });
+    var approveAll = document.getElementById('approve-all');
+    if (approveAll) approveAll.addEventListener('click', function () { all.forEach(function (id) { set(id, 'approved'); }); update(); });
+    var declineAll = document.getElementById('decline-all');
+    if (declineAll) declineAll.addEventListener('click', function () { all.forEach(function (id) { set(id, 'declined'); }); update(); });
+    document.querySelectorAll('[data-option]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var mine = {};
+        optionIds[b.dataset.option].forEach(function (id) { mine[id] = true; });
+        // This option's items and the items that go with every option are approved; the other options' are declined.
+        // Lines marked OPTIONAL are left for the customer to decide.
+        all.forEach(function (id) {
+          if (mine[id]) set(id, 'approved');
+          else if (inAnyOption[id]) set(id, 'declined');
+          else if (!optional[id]) set(id, 'approved');
+        });
+        update();
+      });
+    });
   })();
 </script>
 {% endif %}

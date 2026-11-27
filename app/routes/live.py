@@ -9,6 +9,7 @@ import secrets
 from datetime import datetime, time, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from app.ro_status_policy import CLOSED_STATUSES
 from app.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
@@ -135,7 +136,7 @@ def control_page(request: Request, db: Session = Depends(get_db)):
     token = os.environ.get("LIVE_OVERLAY_TOKEN", "").strip()
     scheme = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
     overlay_url = f"{scheme}://{request.url.netloc}/live/overlay/{token}" if token else ""
-    orders = db.query(RepairOrder).filter(RepairOrder.status != "delivered").order_by(RepairOrder.created_at.desc()).limit(100).all()
+    orders = db.query(RepairOrder).filter(RepairOrder.status.notin_(CLOSED_STATUSES)).order_by(RepairOrder.created_at.desc()).limit(100).all()
     return templates.TemplateResponse("live_control.html", {
         "request": request, "user": user, "overlay_url": overlay_url, "orders": orders,
     }, headers={"Cache-Control": "no-store"})

@@ -14,6 +14,7 @@ from test_agent_api import PASSWORD, _Setup
 from app import agent_connector, agent_keys
 from app.agent_keys import AgentAction, AgentKey
 from app.main import app
+from app.models import Customer, RepairOrder, Vehicle
 
 CALLBACK = "https://claude.ai/api/mcp/auth_callback"
 
@@ -200,11 +201,103 @@ class McpTests(_Flow):
         self.assertTrue(missing["isError"])
         self.assertIn("not found", missing["content"][0]["text"])
 
+    def test_set_job_status_tool(self):
+        headers, _ = self.connect()
+        with self.Session() as db:
+            c = Customer(first_name="Sam", last_name="Example")
+            db.add(c)
+            db.flush()
+            v = Vehicle(customer_id=c.id, make="Dodge")
+            db.add(v)
+            db.flush()
+            ro = RepairOrder(customer_id=c.id, vehicle_id=v.id, status="intake", public_token="u" * 40)
+            db.add(ro)
+            db.commit()
+            ro_id = ro.id
+        moved = self.rpc(headers, "tools/call", {"name": "set_job_status", "arguments": {
+            "job_id": ro_id, "status": "diagnosing", "note": "scan for codes"}}).json()["result"]
+        self.assertFalse(moved["isError"], moved)
+        self.assertIn('"status": "diagnosing"', moved["content"][0]["text"])
+        refused = self.rpc(headers, "tools/call", {"name": "set_job_status", "arguments": {
+            "job_id": ro_id, "status": "delivered"}}).json()["result"]
+        self.assertTrue(refused["isError"])
+        with self.Session() as db:
+            self.assertEqual(db.get(RepairOrder, ro_id).status, "diagnosing")
+            self.assertEqual([a.action for a in db.query(AgentAction).all()], ["job.status"])
+
     def test_revoking_in_settings_cuts_claude_off(self):
         headers, _ = self.connect()
         with self.Session() as db:
             agent_keys.revoke(db, db.query(AgentKey).one().id, 1)
         self.assertEqual(self.rpc(headers, "tools/list").status_code, 401)
+
+
+class SendApprovalToolTests(_Flow):
+    """Claude's send_approval_request goes through the owner's own send, so it lands on the job. Nothing real is texted."""
+
+    def setUp(self):
+        super().setUp()
+        from app.models import Customer, LineItem, RepairOrder, Vehicle
+        with self.Session() as db:
+            db.add(Customer(id=1, first_name="Pat", last_name="Sample", phone="(602) 555-0100"))
+            db.add(Vehicle(id=1, customer_id=1, year=2013, make="Ford", model="Explorer"))
+            db.add(RepairOrder(id=12, customer_id=1, vehicle_id=1, status="diagnosing", public_token="made-up-token"))
+            db.add(LineItem(repair_order_id=12, description="Oil cooler", unit_price=98.99))
+            db.commit()
+
+    @staticmethod
+    def thread(path, phone):
+        return {"messages": [{"id": "AC1", "direction": "INBOUND", "body": "any news?"}]}, None
+
+    def send(self, headers, **args):
+        from app import customer_file
+        with patch.object(customer_file, "_bridge", self.thread):
+            out = self.rpc(headers, "tools/call", {"name": "send_approval_request",
+                                                    "arguments": {"job_id": 12, **args}}).json()["result"]
+        import json
+        return out["isError"], json.loads(out["content"][0]["text"])
+
+    def outbound(self):
+        from app.dispatch_model import DispatchOutbound
+        with self.Session() as db:
+            return [(o.kind, o.status) for o in db.query(DispatchOutbound).all()]
+
+    def test_needs_its_own_scope(self):
+        headers, _ = self.connect(scopes=[s for s in agent_keys.SCOPES if s != "estimates:send"])
+        names = {t["name"] for t in self.rpc(headers, "tools/list").json()["result"]["tools"]}
+        self.assertNotIn("send_approval_request", names)
+        error, _ = self.send(headers)
+        self.assertTrue(error)
+        self.assertEqual(self.outbound(), [])
+
+    def test_sends_once_with_its_own_wording_and_logs_it(self):
+        from app.dispatch_model import DispatchAudit, DispatchItem
+        headers, _ = self.connect()
+        error, got = self.send(headers, message="Hi, your Explorer quote is ready. Jae")
+        self.assertFalse(error, got)
+        self.assertEqual((got["state"], got["sent"]), ("sending", True))
+        self.assertIn("Hi, your Explorer quote is ready. Jae", got["text"])
+        self.assertIn("/status/made-up-token", got["text"])  # the job's link is always in it
+        self.assertEqual(self.outbound(), [("dashboard_reply", "queued")])
+        with self.Session() as db:
+            item = db.query(DispatchItem).one()
+            self.assertEqual((item.status, item.decided_by, item.quo_conversation_id), ("approved", 1, "LINK12"))
+            self.assertEqual([a.action for a in db.query(AgentAction).all()], ["approval.send"])
+            self.assertIn("Claude connector", db.query(DispatchAudit).filter_by(action="owner_approve").one().detail)
+        error, again = self.send(headers)
+        self.assertEqual((again["state"], again["sent"]), ("in_flight", False))
+        self.assertEqual(len(self.outbound()), 1)
+
+    def test_paused_texting_sends_nothing(self):
+        from app.dispatch_model import DispatchAudit
+        from app.sending_pause import PAUSED
+        headers, _ = self.connect()
+        with self.Session() as db:
+            db.add(DispatchAudit(actor="owner", action=PAUSED, detail="test"))
+            db.commit()
+        _, got = self.send(headers)
+        self.assertEqual(got["state"], "paused")
+        self.assertEqual(self.outbound(), [])
 
 
 if __name__ == "__main__":

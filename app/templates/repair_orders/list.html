@@ -24,8 +24,8 @@
       </select>
     </div>
     <div class="flex-1">
-      <label class="form-label">Search customer</label>
-      <input type="text" name="search" value="{{ search }}" placeholder="Name or fleet…" class="form-input" />
+      <label class="form-label">Search customer or tag</label>
+      <input type="text" name="search" value="{{ search }}" placeholder="Name, fleet or tag…" class="form-input" />
     </div>
     <button type="submit" class="btn-secondary">Search</button>
   </form>
@@ -55,6 +55,7 @@
           {% else %}
           {{ ro.customer.first_name }} {{ ro.customer.last_name }}
           {% endif %}
+          {% for n in job_tags.get(ro.id, []) %}<span class="text-xs" style="color:var(--imp-gold); margin-left:6px;">#{{ n }}</span>{% endfor %}
         </td>
         <td class="text-stone-400">{{ ro.vehicle.label }}</td>
         <td class="text-stone-300 max-w-xs truncate">{{ ro.concern or '—' }}</td>
@@ -72,7 +73,7 @@
           </span>
         </td>
         <td class="text-stone-400">{{ ro.assigned_tech.full_name if ro.assigned_tech else '—' }}</td>
-        <td class="text-stone-500 text-xs">{{ ro.created_at.strftime('%m/%d/%y') }}</td>
+        <td class="text-stone-500 text-xs">{{ (ro.created_at|shop_time).strftime('%m/%d/%y') }}</td>
       </tr>
       {% endfor %}
     </tbody>

@@ -62,9 +62,9 @@ def _line(db: Session, ro_id: int, li_id: int) -> LineItem:
     return li
 
 
-def _back(ro_id: int, **flag) -> RedirectResponse:
+def _back(ro_id: int, anchor: str = "line-items", **flag) -> RedirectResponse:
     query = "&".join(f"{k}={quote(str(v))}" for k, v in flag.items())
-    return RedirectResponse(f"/ro/{ro_id}{'?' + query if query else ''}#line-items", status_code=303)
+    return RedirectResponse(f"/ro/{ro_id}{'?' + query if query else ''}#{anchor}", status_code=303)
 
 
 def progress(ro: RepairOrder) -> dict:
@@ -103,7 +103,7 @@ def reopen_line(request: Request, ro_id: int, li_id: int, db: Session = Depends(
 
 @router.post("/{ro_id}/attachments")
 async def upload(request: Request, ro_id: int, db: Session = Depends(get_db),
-                 files: list[UploadFile] = File(...), line_item_id: str = Form(""),
+                 files: list[UploadFile | str] = File(...), line_item_id: str = Form(""),
                  visibility: str = Form("internal")):
     user = _staff(request, db)
     if user is None:
@@ -120,6 +120,9 @@ async def upload(request: Request, ro_id: int, db: Session = Depends(get_db),
     if visibility == "customer" and user.role not in OFFICE:
         visibility = "internal"  # techs' uploads start internal; the office decides what the customer sees
     rows, rejected = [], []
+    # The job page has two pickers (camera and library); the one left unused posts an empty, unnamed part.
+    # (Starlette hands that part over as an empty string.)
+    files = [f for f in files if not isinstance(f, str) and ((f.filename or "").strip() or (f.size or 0) > 0)]
     for upload_ in files[:12]:
         data = await upload_.read(MAX_BYTES + 1)
         name = (upload_.filename or "file").rsplit("/", 1)[-1][:200] or "file"
@@ -136,9 +139,11 @@ async def upload(request: Request, ro_id: int, db: Session = Depends(get_db),
     if rows:
         db.add_all(rows)
         db.commit()
+    if not rows and not rejected:
+        rejected.append("no photo was picked")
     if rejected and not rows:
-        return _back(ro_id, upload="failed", why="; ".join(rejected)[:300])
-    return _back(ro_id, upload=len(rows), **({"why": "; ".join(rejected)[:300]} if rejected else {}))
+        return _back(ro_id, "evidence", upload="failed", why="; ".join(rejected)[:300])
+    return _back(ro_id, "evidence", upload=len(rows), **({"why": "; ".join(rejected)[:300]} if rejected else {}))
 
 
 def _attachment(db: Session, ro_id: int, att_id: int) -> RoAttachment:
@@ -173,7 +178,7 @@ def set_visibility(request: Request, ro_id: int, att_id: int, db: Session = Depe
         raise HTTPException(422, "Choose internal or customer-visible.")
     _attachment(db, ro_id, att_id).visibility = visibility
     db.commit()
-    return _back(ro_id, shared=att_id if visibility == "customer" else "")
+    return _back(ro_id, f"file-{att_id}", shared=att_id if visibility == "customer" else "")
 
 
 @public_router.get("/status/{token}/files/{att_id}")

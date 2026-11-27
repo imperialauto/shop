@@ -79,7 +79,7 @@
 {% if history %}
 <div class="card max-w-3xl mt-6">
   <h2 class="font-bold mb-2">Change history</h2>
-  <ul class="text-sm space-y-1">{% for h in history %}<li>{{ h.changed_at.strftime('%m/%d/%y %I:%M %p') }} UTC by {{ h.changed_by }}</li>{% endfor %}</ul>
+  <ul class="text-sm space-y-1">{% for h in history %}<li>{{ (h.changed_at|shop_time).strftime('%m/%d/%y %I:%M %p') }} by {{ h.changed_by }}</li>{% endfor %}</ul>
 </div>
 {% endif %}
 {% endblock %}

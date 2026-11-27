@@ -50,6 +50,7 @@ class ApprovalLinkTests(unittest.TestCase):
             self.addCleanup(p.stop)
         with self.Session() as db:
             db.add(User(id=1, username="owner", password_hash=hash_password(PASSWORD), role="owner"))
+            db.add(User(id=2, username="office", password_hash=hash_password(PASSWORD), role="office"))
             db.add(Customer(id=1, first_name="Pat", last_name="Sample", phone="(602) 555-0100"))
             db.add(Vehicle(id=1, customer_id=1, year=2016, make="Ford", model="Focus"))
             db.add(RepairOrder(id=5, customer_id=1, vehicle_id=1, status="diagnosing", public_token="made-up-token"))
@@ -58,6 +59,9 @@ class ApprovalLinkTests(unittest.TestCase):
             db.commit()
         self.owner = TestClient(app, follow_redirects=False)
         self.owner.post("/login", data={"username": "owner", "password": PASSWORD})
+        # Office staff queue the text for the owner's YES; the owner's own press sends it (test_one_link_approval).
+        self.office = TestClient(app, follow_redirects=False)
+        self.office.post("/login", data={"username": "office", "password": PASSWORD})
         self.internal = TestClient(app)
 
     def tearDown(self):
@@ -71,7 +75,7 @@ class ApprovalLinkTests(unittest.TestCase):
 
     def ask(self, fetch=thread):
         with patch.object(customer_file, "_bridge", fetch):
-            return self.owner.post("/ro/5/request-approval").headers["location"]
+            return self.office.post("/ro/5/request-approval").headers["location"]
 
     def owner_text(self, ident, body):
         return self.internal.post("/internal/dispatch/intake", headers=HEADERS,
@@ -176,7 +180,7 @@ class ApprovalLinkTests(unittest.TestCase):
         self.assertIn("Review the itemized charges and any applicable tax", item.draft_reply)
         self.assertIn("verify tax treatment", item.summary)
         sign_page = TestClient(app).get("/sign/ro/made-up-token").text
-        self.assertIn("Review the itemized charges and any applicable taxes", sign_page)
+        self.assertIn("Review the itemized charges before authorizing", sign_page)
         self.assertNotIn("Before tax. Declined items", sign_page)
 
     def test_mobile_numbers(self):

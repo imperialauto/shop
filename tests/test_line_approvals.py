@@ -221,7 +221,9 @@ class LineApprovalTests(unittest.TestCase):
             with self.Session() as db:
                 db.get(LineItem, line_id).approval = approval
                 db.commit()
-            self.assertEqual(self.owner.get(f"/ro/{self.job}/edit-line-item/{line_id}").status_code, 409)
+            # A sent line can be edited now (it goes back to the customer), but a form opened before the
+            # customer answered is stale and must be reloaded first.
+            self.assertEqual(self.owner.get(f"/ro/{self.job}/edit-line-item/{line_id}").status_code, 200)
             self.assertEqual(self.owner.post(f"/ro/{self.job}/edit-line-item/{line_id}", data=data).status_code, 409)
         with self.Session() as db:
             db.get(LineItem, line_id).approval = None

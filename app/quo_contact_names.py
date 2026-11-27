@@ -13,6 +13,14 @@ Quo (nothing in the webhook body is trusted) and posts it here. Rules:
 An empty email on the customer is filled from Quo; an email already there stays.
 The messaging service also sends every Quo contact once an hour (apply_all), so
 a missed webhook or a contact renamed before this existed still catches up.
+
+The other way (names_for_quo): a name typed in the dashboard is offered back
+for Quo contacts that our own sync made (externalId "imperial-ops:...") and that
+still carry a placeholder or job label. A contact made or named by hand in Quo
+is never offered, and only when exactly one customer has that number. The
+messaging service writes those, and only when QUO_NAME_WRITEBACK is on. It
+cannot loop: the written name equals the dashboard's, which Quo-to-dashboard
+already skips (typed names win), and a real name is never offered again.
 Never contacts a customer. The caller commits.
 """
 import re
@@ -25,6 +33,8 @@ from app.dispatch_model import DispatchAudit
 from app.models import Customer
 
 SOURCE = "quo_contact"
+OWN_PREFIX = "imperial-ops:"
+MAX_TO_QUO = 50
 WORD = re.compile(r"^[A-Za-z][A-Za-z'’.&-]*$")
 MAKE = re.compile(rf"\b({MAKES}|chevy|mercedes-benz|benz|sprinter|f-?\d{{3}}|silverado|tahoe|camry|accord|civic|altima|explorer|impala)\b", re.I)
 JOB = re.compile(
@@ -103,12 +113,36 @@ def apply(db: Session, contact: dict, index: dict | None = None) -> dict:
     return {"updated": updated, "emails": emailed, "reason": None if updated else (skipped[0] if skipped else "no_customer")}
 
 
+def name_for_quo(contact: dict, index: dict) -> dict | None:
+    """The dashboard's typed name for one of our own placeholder contacts, else None."""
+    if not str(contact.get("externalId") or "").startswith(OWN_PREFIX) or not contact.get("id"):
+        return None
+    if person_name(contact.get("firstName"), contact.get("lastName"), contact.get("company")) is not None:
+        return None  # already a real name in Quo: leave it
+    phones = {digits(p) for p in contact.get("phones") or [] if len(digits(p)) == 10}
+    customers = {c.id: c for p in phones for c in index.get(p, [])}
+    if len(customers) != 1:
+        return None
+    customer = next(iter(customers.values()))
+    if customer.name_source != "staff":
+        return None
+    last = "" if (customer.last_name or "").strip() == "-" else customer.last_name
+    name = person_name(customer.first_name, last, "")
+    if name is None:
+        return None
+    return {"id": str(contact["id"])[:64], "firstName": name[0], "lastName": name[1], "customer": customer.id}
+
+
 def apply_all(db: Session, contacts: list[dict]) -> dict:
     """The hourly catch-up: every Quo contact at once, one customer lookup."""
     index = _index(db)
     renamed = emails = 0
+    to_quo = []
     for contact in contacts:
         result = apply(db, contact, index)
         renamed += result.get("updated", 0)
         emails += result.get("emails", 0)
-    return {"contacts": len(contacts), "renamed": renamed, "emails": emails}
+        offer = name_for_quo(contact, index)
+        if offer and len(to_quo) < MAX_TO_QUO:
+            to_quo.append(offer)
+    return {"contacts": len(contacts), "renamed": renamed, "emails": emails, "names_for_quo": to_quo}

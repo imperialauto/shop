@@ -44,4 +44,4 @@ async function sendCustomerFollowup({ reminder, quo, shopClient }) {
   await shopClient.dispatchOutbound({ key: reminder.key, status });
 }
 
-module.exports = { sendCustomerFollowup };
+module.exports = { sendCustomerFollowup, OPT_OUT };

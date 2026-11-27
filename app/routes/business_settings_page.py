@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app import business_settings as store
 from app.auth import get_current_user
 from app.database import get_db
-from app import oil_reminders, pricing
+from app import oil_reminders, pricing, review_requests
 from app.public_site import BOOKABLE_SERVICES, VEHICLE_CLASSES
 from app.routes.invoices import METHOD_LABELS, enabled_methods
 
@@ -60,12 +60,16 @@ def current() -> dict:
         "task_followup_days": store.task_followup_days(),
         "task_followup_max": store.TASK_FOLLOWUP_MAX,
         "automatic_customer_followups": (store.raw("automatic_customer_followups") or "").strip().lower() == "true",
+        "next_visit_offer": (store.raw("next_visit_offer") or "").strip().lower() == "true",
+        "automatic_review_text": (store.raw("automatic_review_text") or "").strip().lower() == "true",
+        "google_review_link": (store.raw("google_review_link") or "").strip() or review_requests.DEFAULT_LINK,
         "automatic_deposit_text": (store.raw("automatic_deposit_text") or "").strip().lower() == "true",
         "automatic_pickup_text": (store.raw("automatic_pickup_text") or "").strip().lower() == "true",
         "automatic_oil_reminders": (store.raw("automatic_oil_reminders") or "").strip().lower() == "true",
         "oil_reminder_months": oil_reminders.months(),
         "automatic_declined_followup": (store.raw("automatic_declined_followup") or "").strip().lower() == "true",
         "automatic_diag_credit_reminder": (store.raw("automatic_diag_credit_reminder") or "").strip().lower() == "true",
+        "automatic_declined_reminder": (store.raw("automatic_declined_reminder") or "").strip().lower() == "true",
         "automatic_snap_link": (store.raw("automatic_snap_link") or "").strip().lower() == "true",
         "buffer": store.raw("shop_buffer_minutes") or "60",
         "lead": store.raw("booking_lead_minutes") or "120",
@@ -142,6 +146,14 @@ def parse(form) -> dict:
         ))
     if "automatic_customer_followups_shown" in form:
         alerts["automatic_customer_followups"] = str(form.get("automatic_customer_followups") == "on").lower()
+    if "next_visit_offer_shown" in form:
+        alerts["next_visit_offer"] = str(form.get("next_visit_offer") == "on").lower()
+    if "automatic_review_text_shown" in form:
+        link = form.get("google_review_link", "").strip()
+        if link and not review_requests.valid_link(link):
+            raise Invalid("Google review link: paste the link from Ask for reviews on your Google Business Profile. It starts with https://g.page/r/")
+        alerts["automatic_review_text"] = str(form.get("automatic_review_text") == "on").lower()
+        alerts["google_review_link"] = link
     if "automatic_deposit_text_shown" in form:
         alerts["automatic_deposit_text"] = str(form.get("automatic_deposit_text") == "on").lower()
     if "automatic_pickup_text_shown" in form:
@@ -152,6 +164,8 @@ def parse(form) -> dict:
                                                     "Oil reminder months", 1, 24))
     if "automatic_declined_followup_shown" in form:
         alerts["automatic_declined_followup"] = str(form.get("automatic_declined_followup") == "on").lower()
+    if "automatic_declined_reminder_shown" in form:
+        alerts["automatic_declined_reminder"] = str(form.get("automatic_declined_reminder") == "on").lower()
     if "automatic_diag_credit_reminder_shown" in form:
         alerts["automatic_diag_credit_reminder"] = str(form.get("automatic_diag_credit_reminder") == "on").lower()
     if "automatic_snap_link_shown" in form:
@@ -172,8 +186,15 @@ def page(request: Request, db: Session, user, status: int = 200, **extra):
     except SQLAlchemyError:  # the settings tables are not created yet
         db.rollback()
         history, extra = [], {"not_ready": True, **extra}
+    from app import referrals
+    referral_report = None
+    if referrals.enabled():
+        try:
+            referral_report = referrals.report(db)
+        except SQLAlchemyError:  # the referral tables are not created yet
+            db.rollback()
     return templates.TemplateResponse("business_settings.html", {"request": request, "user": user, "settings": current(), "vehicle_classes": VEHICLE_CLASSES,
-                                      "history": history, **extra}, status_code=status)
+                                      "history": history, "referral_report": referral_report, **extra}, status_code=status)
 
 
 @router.get("/settings/business", response_class=HTMLResponse)
