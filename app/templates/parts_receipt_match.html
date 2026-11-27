@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Match a parts receipt — Imperial Auto Care{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title">Match a parts receipt</div>
+    <div style="font-size:12px; color:var(--imp-muted); margin-top:3px;">Drop in a receipt and its PO puts it on the right job.</div>
+  </div>
+  <div style="margin-left:auto;"><a href="/ro/" class="btn-secondary">← Jobs</a></div>
+</div>
+<div class="page-body" style="display:grid; gap:14px; max-width:640px;">
+  {% if not ready %}
+  <div class="card" style="font-size:13px; color:var(--imp-muted);">Parts receipts aren't switched on yet.</div>
+  {% else %}
+  {% if error %}<div class="card text-sm text-red-400" role="alert">{{ error }}</div>{% endif %}
+  <form method="post" action="/ro/receipts" enctype="multipart/form-data" class="card space-y-3" style="margin:0;">
+    <div>
+      <label class="form-label" for="m-po">PO on the receipt</label>
+      <input id="m-po" name="po" class="form-input font-mono" maxlength="64" value="{{ po }}" placeholder="IAC-PO-0021" style="min-height:44px">
+      <p class="text-stone-500 text-xs mt-1">Leave it blank for a store PDF that prints our PO; it's read off the receipt. Photos need the PO typed in.</p>
+    </div>
+    <div class="grid gap-2" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));">
+      <div><label class="form-label" for="m-vendor">Store</label><input id="m-vendor" name="vendor" class="form-input" maxlength="128" placeholder="AutoZone"></div>
+      <div><label class="form-label" for="m-total">Total</label><input id="m-total" name="total" type="number" step="0.01" min="0" class="form-input" inputmode="decimal"></div>
+    </div>
+    <div><label class="form-label" for="m-note">Note</label><input id="m-note" name="note" class="form-input" maxlength="500" placeholder="Core charge, return…"></div>
+    <div>
+      <label class="form-label" for="m-file">Receipt (photo or PDF, 10 MB max)</label>
+      <input id="m-file" type="file" name="files" accept="image/*,application/pdf" required class="form-input" style="min-height:44px">
+    </div>
+    <div class="text-right"><button type="submit" class="btn-primary" style="min-height:44px">Find the job and save</button></div>
+    <p class="text-stone-500 text-xs">Saving a receipt changes no prices and texts nobody. You can move it to another job afterwards.</p>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

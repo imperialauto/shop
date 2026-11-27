@@ -13,7 +13,7 @@ OWNER_ONLY = ("/finance", "/changes", "/settings/users", "/settings/business", "
 ADMIN_ONLY = ("/live", "/dispatch/sending", "/dispatch/policies")
 OFFICE = ("/my-day", "/board", "/dashboard", "/customers", "/vehicles", "/ro", "/appointments", "/invoices", "/estimates", "/dispatch", "/ai", "/settings")
 TECH_READ = re.compile(r"^/(my-day|board(/panel|/manage)?|ro(/board|/|/\d+(/vehicles|/attachments/\d+|/ai-review/\d+(/status)?)?)?|vehicles/\d+|appointments/?|appointments/calendar|settings(/security)?)$")
-TECH_WRITE = re.compile(r"^/(board/todos(/\d+)?|board/timers(/[0-9a-f]{1,16})?|board/clock/\d+|ro/\d+/(clock|update-status|update-notes|add-line-item|add-package|lines/\d+/(complete|reopen)|attachments|inspection|parts/\d+/arrived|ai-review(/\d+/(approve|reject|retry|cancel))?)|ai/[a-z-]+/\d+|settings/change-password|settings/security/(start|confirm|disable))$")
+TECH_WRITE = re.compile(r"^/(board/todos(/\d+)?|board/timers(/[0-9a-f]{1,16})?|board/clock/\d+|ro/\d+/(clock|update-status|update-notes|add-line-item|add-package|lines/\d+/(complete|reopen)|attachments|inspection|receipts|parts/\d+/arrived|ai-review(/\d+/(approve|reject|retry|cancel))?)|ai/[a-z-]+/\d+|settings/change-password|settings/security/(start|confirm|disable))$")
 PASSWORD_CHANGE_PATHS = ("/settings", "/settings/change-password", "/logout")
 
 

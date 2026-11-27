@@ -110,6 +110,12 @@ class RepairOrder(Base):
     communications = relationship("Communication", back_populates="repair_order")
     deposits = relationship("JobDeposit", back_populates="repair_order", order_by="JobDeposit.received_at")
 
+    @property
+    def po_number(self) -> str:
+        """The PO to give parts stores for this job, from its job number (see app/po_numbers.py)."""
+        from app import po_numbers
+        return po_numbers.for_job(self.id)
+
 
 class LineItem(Base):
     __tablename__ = "line_items"

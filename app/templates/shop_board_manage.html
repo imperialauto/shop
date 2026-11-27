@@ -124,7 +124,7 @@
     {% else %}
       {% for job in lot %}
       <div class="sb-row {% if not job.here %}done{% endif %}">
-        <span class="sb-title">#{{ job.id }} {{ job.vehicle }}{% if job.who %} · {{ job.who }}{% endif %}<br><span class="sb-note">{{ job.stage }}{% if job.here %} · here{% else %} · not here{% endif %}{% if job.book or job.worked or job.clock_on %} · {{ job.worked }} of {{ job.book }} hr book{% if job.clock_on %} · clock running{% endif %}{% endif %}</span></span>
+        <span class="sb-title">#{{ job.id }} {{ job.vehicle }}{% if job.who %} · {{ job.who }}{% endif %}<br><span class="sb-note">{% if job.po %}{{ job.po }} · {% endif %}{{ job.stage }}{% if job.here %} · here{% else %} · not here{% endif %}{% if job.book or job.worked or job.clock_on %} · {{ job.worked }} of {{ job.book }} hr book{% if job.clock_on %} · clock running{% endif %}{% endif %}</span></span>
         {% if not read_only and job.here %}
         <form method="post" action="/board/clock/{{ job.id }}">
           {% if job.clock_on %}<button class="btn-secondary sb-check" name="operation" value="stop">Stop clock</button>

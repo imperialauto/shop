@@ -450,7 +450,8 @@ TOOLS = {
                         _CustomerUpdate, _call_update_customer, False),
     "add_vehicle": ("customers:write", "Add a vehicle to a customer. A VIN already on that customer returns the existing vehicle.",
                     _Vehicle, _call_vehicle, False),
-    "get_job": ("estimates:read", "One job (repair order) with its estimate lines.", _Job,
+    "get_job": ("estimates:read", "One job (repair order) with its estimate lines and its parts PO number. A PO "
+                "like IAC-PO-0021 on a parts receipt is job 21.", _Job,
                 lambda db, key, a: agent_api.get_job(a.job_id, db, key), True),
     "start_estimate": ("estimates:write", "Start a job with draft estimate lines. Nothing is sent to the customer.",
                        agent_api.EstimateIn, lambda db, key, a: agent_api.create_estimate(a, db, key), False),

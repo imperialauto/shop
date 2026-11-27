@@ -4,7 +4,7 @@
 
 <div class="flex items-center justify-between mb-6">
   <h1 class="text-2xl font-bold text-yellow-400">Repair Orders</h1>
-  <a href="/ro/new" class="btn-primary">+ New RO</a>
+  <div class="flex gap-2">{% if user.role in ('owner', 'admin', 'office') %}<a href="/ro/receipts" class="btn-secondary">Match a parts receipt</a>{% endif %}<a href="/ro/new" class="btn-primary">+ New RO</a></div>
 </div>
 
 {% set deleted_job = request.query_params.get('deleted', '') %}
@@ -25,7 +25,7 @@
     </div>
     <div class="flex-1">
       <label class="form-label">Search customer or tag</label>
-      <input type="text" name="search" value="{{ search }}" placeholder="Name, fleet or tag…" class="form-input" />
+      <input type="text" name="search" value="{{ search }}" placeholder="Name, fleet, tag, job # or PO…" class="form-input" />
     </div>
     <button type="submit" class="btn-secondary">Search</button>
   </form>

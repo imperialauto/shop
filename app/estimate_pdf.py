@@ -115,7 +115,7 @@ def build(ro: RepairOrder, today: date | None = None) -> bytes:
     width = 7 * inch
     story = []
     head = Table([[[para(SHOP_NAME, "shop"), para(SHOP_ADDRESS, "small"), para(SHOP_CONTACT, "small")],
-                   [Paragraph("ESTIMATE", s["title"]), para(f"Repair order #{ro.id}", "right"),
+                   [Paragraph("ESTIMATE", s["title"]), para(f"Repair order #{ro.id} · PO {ro.po_number}", "right"),
                     para(f"Date: {today:%B %d, %Y} · Valid until {today + timedelta(days=VALID_DAYS):%B %d, %Y}",
                          "right")]]],
                  colWidths=[width * 0.55, width * 0.45])
