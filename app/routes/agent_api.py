@@ -101,8 +101,8 @@ def line_json(li: LineItem) -> dict:
 
 
 def job_json(ro: RepairOrder) -> dict:
-    return {"id": ro.id, "customer_id": ro.customer_id, "vehicle_id": ro.vehicle_id, "status": ro.status,
-            "concern": ro.concern, "tech_notes": ro.tech_notes, "mileage_in": ro.mileage_in,
+    return {"id": ro.id, "po_number": ro.po_number, "customer_id": ro.customer_id, "vehicle_id": ro.vehicle_id,
+            "status": ro.status, "concern": ro.concern, "tech_notes": ro.tech_notes, "mileage_in": ro.mileage_in,
             "invoiced": bool(ro.invoices), "lines": [line_json(li) for li in ro.line_items],
             "totals": estimate_pdf.totals(ro)}
 

@@ -177,7 +177,7 @@ def change_timer(db: Session, key, args: TimerChange) -> dict:
 def list_jobs(db: Session) -> dict:
     """Open jobs as the TV labels them (first name and vehicle), whether the car is here, and time worked vs book."""
     rows = shop_board.lot_list(db)
-    keep = ("id", "who", "vehicle", "stage", "here", "book", "worked", "clock_on", "over_book")
+    keep = ("id", "po", "who", "vehicle", "stage", "here", "book", "worked", "clock_on", "over_book")
     return {"jobs": [{k: row.get(k) for k in keep if k in row} for row in rows]}
 
 

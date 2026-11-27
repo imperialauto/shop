@@ -1,0 +1,88 @@
+{# Parts receipts card: context key `receipts_card` from app.parts_receipts.card(). Nothing here texts anyone
+   or changes a price. #}
+{% set rc = receipts_card %}
+{% if rc %}
+{% set qp = request.query_params %}
+<div class="card mb-4" id="receipts">
+  <div class="flex items-center justify-between mb-3" style="gap:8px; flex-wrap:wrap;">
+    <h3 class="text-xs text-stone-400 uppercase tracking-wide">Parts receipts</h3>
+    <span class="text-xs text-stone-400">Give stores PO <span class="font-mono text-gold-300 select-all">{{ rc.po }}</span>
+      {% if rc.count and rc.can_view %} · {{ rc.count }} receipt{{ 's' if rc.count != 1 }}{% if rc.total %} · &#36;{{ '%.2f'|format(rc.total) }}{% endif %}{% endif %}</span>
+  </div>
+
+  {% if not rc.ready %}
+  <p class="text-stone-500 text-sm">Parts receipts aren't switched on yet.</p>
+  {% else %}
+  {% if qp.get('receipt_error') %}<p class="text-sm text-red-400 mb-2" role="alert">{{ qp.get('receipt_error') }}</p>
+  {% elif qp.get('receipt') == 'matched' %}<p class="text-sm text-green-400 mb-2" role="status">Receipt matched to this job by PO {{ qp.get('po') }}.</p>
+  {% elif qp.get('receipt') == 'moved' %}<p class="text-sm text-green-400 mb-2" role="status">Receipt moved here from {{ qp.get('came_from') }}.</p>
+  {% elif qp.get('receipt') == 'removed' %}<p class="text-sm text-green-400 mb-2" role="status">Receipt removed.</p>
+  {% elif qp.get('receipt') == 'saved' %}<p class="text-sm text-green-400 mb-2" role="status">Receipt saved to this job.</p>{% endif %}
+  {% if qp.get('other') %}<p class="text-sm text-amber-300 mb-2" role="alert">This receipt also shows {{ qp.get('other') }}, which is another job. Check it's on the right one{% if rc.can_view %}, and use Move if not{% endif %}.</p>{% endif %}
+
+  {% if rc.rows %}
+  <ul class="divide-y divide-stone-800 mb-3">
+    {% for r in rc.rows %}
+    <li class="py-2 flex flex-wrap items-center justify-between" style="gap:8px;" id="receipt-{{ r.id }}">
+      <div style="min-width:0; flex:1 1 220px;">
+        <a href="/ro/{{ ro.id }}/receipts/{{ r.id }}" target="_blank" rel="noopener" class="text-sm text-gold-400 underline">{{ r.vendor or r.filename }}</a>
+        <div class="text-xs text-stone-400">
+          {% if r.total is not none %}&#36;{{ '%.2f'|format(r.total) }} · {% endif %}{{ 'PDF' if r.content_type == 'application/pdf' else 'Photo' }}
+          · {{ (r.created_at|shop_time).strftime('%-m/%-d %-I:%M %p') }} by {{ r.uploaded_by }} · {{ rc.how.get(r.matched_by, '') }}
+          {% if r.note %}<br>{{ r.note }}{% endif %}
+        </div>
+      </div>
+      <details class="text-xs">
+        <summary class="text-stone-500 cursor-pointer" style="min-height:32px">Move or remove</summary>
+        <form method="post" action="/ro/{{ ro.id }}/receipts/{{ r.id }}/move" class="flex items-center mt-2" style="gap:6px;">
+          <input name="po" class="form-input" maxlength="64" required placeholder="PO or job #" aria-label="Move to PO or job number" style="max-width:160px">
+          <button type="submit" class="btn-secondary text-xs" style="min-height:44px">Move</button>
+        </form>
+        <form method="post" action="/ro/{{ ro.id }}/receipts/{{ r.id }}/delete" class="mt-2">
+          <button type="submit" class="text-red-400 underline text-xs" style="min-height:44px" onclick="return confirm('Remove this receipt from the job? It can\'t be undone.')">Remove</button>
+        </form>
+      </details>
+    </li>
+    {% endfor %}
+  </ul>
+  {% elif rc.count %}<p class="text-stone-400 text-sm mb-2">{{ rc.count }} receipt{{ 's' if rc.count != 1 }} on file. The office can open them.</p>
+  {% else %}<p class="text-stone-500 text-sm mb-2">No receipts on this job yet.</p>{% endif %}
+
+  {% if rc.can_upload %}
+  <form method="post" action="/ro/{{ ro.id }}/receipts" enctype="multipart/form-data" id="receipt-form" class="space-y-2">
+    <div class="grid gap-2" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); align-items:end;">
+      <div><label class="form-label" for="rc-vendor">Store</label><input id="rc-vendor" name="vendor" class="form-input" maxlength="128" placeholder="AutoZone"></div>
+      {% if rc.can_view %}<div><label class="form-label" for="rc-total">Total</label><input id="rc-total" name="total" type="number" step="0.01" min="0" class="form-input" inputmode="decimal"></div>{% endif %}
+      <div><label class="form-label" for="rc-note">Note</label><input id="rc-note" name="note" class="form-input" maxlength="500" placeholder="Core charge, return…"></div>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <label for="rc-camera" class="btn-primary inline-flex items-center justify-center" style="min-height:48px; flex:1 1 160px; cursor:pointer;">Photo of receipt</label>
+      <input id="rc-camera" type="file" name="files" accept="image/*" capture="environment" data-receipt-pick
+             style="position:absolute; width:1px; height:1px; opacity:0; overflow:hidden;">
+      <label for="rc-file" class="btn-secondary inline-flex items-center justify-center" style="min-height:48px; flex:1 1 160px; cursor:pointer;">Add PDF or photo</label>
+      <input id="rc-file" type="file" name="files" accept="image/*,application/pdf" data-receipt-pick
+             style="position:absolute; width:1px; height:1px; opacity:0; overflow:hidden;">
+      <noscript><button type="submit" class="btn-secondary" style="min-height:48px">Upload</button></noscript>
+    </div>
+    <p class="text-sm text-stone-400" id="receipt-sending" role="status" hidden>Uploading…</p>
+  </form>
+  <p class="text-stone-500 text-xs mt-1">Fill in the store and total first, then pick the receipt. One at a time, 10 MB max. Saving a receipt changes no prices and texts nobody.
+    {% if rc.can_view %} Got a receipt and not sure which job? <a href="/ro/receipts" class="underline">Match it by PO</a>.{% endif %}</p>
+  <script>
+    (function () {
+      var form = document.getElementById('receipt-form');
+      if (!form) return;
+      form.querySelectorAll('[data-receipt-pick]').forEach(function (input) {
+        input.addEventListener('change', function () {
+          if (!input.files || !input.files.length) return;
+          form.querySelectorAll('[data-receipt-pick]').forEach(function (other) { if (other !== input) other.disabled = true; });
+          document.getElementById('receipt-sending').hidden = false;
+          form.submit();
+        });
+      });
+    })();
+  </script>
+  {% endif %}
+  {% endif %}
+</div>
+{% endif %}

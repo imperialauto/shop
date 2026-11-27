@@ -14,7 +14,8 @@ from app import canned_jobs
 from app.dispatch_model import DispatchAudit, DispatchItem, DispatchOutbound
 from app.sending_pause import DASHBOARD_REPLY, is_paused
 from app.routes import local_node
-from app import parts_tracking
+from app import parts_tracking, po_numbers
+from urllib.parse import quote
 import os, secrets
 from datetime import datetime, timezone
 
@@ -97,11 +98,22 @@ def board_view(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("repair_orders/board.html", {"request": request, "user": user, "columns": columns, "statuses": RO_STATUSES})
 
 
+def _job_number(search: str) -> int:
+    """A job number typed into the search box ("21" or "#21"), or 0."""
+    text = (search or "").strip().lstrip("#")
+    return int(text) if text.isdigit() and len(text) <= 9 else 0
+
+
 @router.get("/", response_class=HTMLResponse)
 def list_ros(request: Request, db: Session = Depends(get_db), status: str = "open", search: str = ""):
     user = require_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=302)
+
+    # A PO off a parts receipt (IAC-PO-0021, PO 21...) goes straight to its job, open or closed.
+    po_job = po_numbers.parse(search)
+    if po_job and db.get(RepairOrder, po_job) is not None:
+        return RedirectResponse(f"/ro/{po_job}?po_found={quote(po_numbers.for_job(po_job))}", status_code=303)
 
     query = db.query(RepairOrder)
     if status == "open":
@@ -116,7 +128,8 @@ def list_ros(request: Request, db: Session = Depends(get_db), status: str = "ope
             (Customer.first_name.ilike(f"%{search}%")) |
             (Customer.last_name.ilike(f"%{search}%")) |
             (Customer.fleet_name.ilike(f"%{search}%")) |
-            (RepairOrder.id.in_(tagged or [0]))
+            (RepairOrder.id.in_(tagged or [0])) |
+            (RepairOrder.id == _job_number(search))
         )
 
     ros = query.order_by(RepairOrder.created_at.desc()).all()
@@ -223,10 +236,17 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         "closeout_problem": job_closeout.problem(ro),
         "flags": job_flags.for_job(db, ro),
         "parts_card": parts_tracking.card(db, ro, user.role),
+        "receipts_card": _receipts().card(db, ro, user.role),
         "canned_jobs": canned_jobs.menu(),
         "approval_send": _approval_send(db, ro, user),
         "job_timer": _job_timer().for_job(db, ro, user),
     })
+
+
+def _receipts():
+    from app import parts_receipts
+
+    return parts_receipts
 
 
 def _job_timer():

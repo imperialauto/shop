@@ -126,6 +126,7 @@ def _job(order, *, time_label=None, mobile=False):
     tech = order.assigned_tech
     return {
         "id": order.id,
+        "po": order.po_number,
         "time": time_label,
         "mobile": mobile,
         "who": _who(order.customer),

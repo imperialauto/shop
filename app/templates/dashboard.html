@@ -225,7 +225,7 @@
           <div class="h-row h-job {% if days >= late_days %}late{% endif %}" id="job-{{ ro.id }}">
             <a class="when" href="/ro/{{ ro.id }}" aria-label="Open job {{ ro.id }}">#{{ ro.id }}</a>
             <a class="what" href="/ro/{{ ro.id }}">{{ ro.vehicle.label if ro.vehicle else 'No vehicle' }}
-              <span class="who">{% if ro.customer.customer_type == 'fleet' %}Fleet · {{ ro.customer.fleet_name }}{% else %}{{ ro.customer.first_name }} {{ ro.customer.last_name }}{% endif %}</span>
+              <span class="who">{% if ro.customer.customer_type == 'fleet' %}Fleet · {{ ro.customer.fleet_name }}{% else %}{{ ro.customer.first_name }} {{ ro.customer.last_name }}{% endif %} · <span class="h-po">{{ ro.po_number }}</span></span>
               {% if job_tags.get(ro.id) %}<span class="h-tags">{% for n in job_tags[ro.id] %}#{{ n }} {% endfor %}</span>{% endif %}
               <span class="next">Next step: {% if step %}{{ step.who }}: {{ step.title }}{% else %}—{% endif %}{% if days >= late_days %} · <b class="h-age">{{ days }} days</b>{% endif %}</span>
             </a>

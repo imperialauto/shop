@@ -9,7 +9,7 @@
 <div class="flex items-start justify-between mb-6">
   <div>
     <h1 class="text-2xl font-bold text-yellow-400">Invoice #{{ invoice.id }}</h1>
-    <p class="text-stone-400 text-sm">RO <a href="/ro/{{ invoice.repair_order_id }}" class="text-gold-400 hover:underline">#{{ invoice.repair_order_id }}</a> · {{ (invoice.created_at|shop_time).strftime('%B %d, %Y') }}</p>
+    <p class="text-stone-400 text-sm">RO <a href="/ro/{{ invoice.repair_order_id }}" class="text-gold-400 hover:underline">#{{ invoice.repair_order_id }}</a>{% if invoice.repair_order %} · PO {{ invoice.repair_order.po_number }}{% endif %} · {{ (invoice.created_at|shop_time).strftime('%B %d, %Y') }}</p>
   </div>
   <div class="flex gap-2">
     {% if invoice.status == 'draft' %}
