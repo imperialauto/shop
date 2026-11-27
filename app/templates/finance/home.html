@@ -67,6 +67,14 @@
   .fin-col { display:grid; gap:14px; min-width:0; }
   .fin-card { padding:16px; min-width:0; }
   .fin-card h2 { margin:0 0 4px; font-size:15px; font-weight:650; color:var(--imp-heading); }
+  .fin-bank { border-top:1px solid var(--imp-line); padding-top:10px; margin-top:10px; }
+  .fin-bank-head { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .fin-bank-head h3 { margin:0; font-size:14px; font-weight:650; }
+  .fin-bank-ok { color:var(--imp-muted); font-size:12px; }
+  .fin-bank-pick { margin:4px 0 0; }
+  .fin-bank-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  .fin-bank-actions form { margin:0; }
+  .fin-in { color:var(--imp-ok); }
   .fin-card .cap { color:var(--imp-muted); font-size:12px; margin:0 0 8px; line-height:1.5; }
   .fin-row { display:flex; justify-content:space-between; gap:10px; padding:11px 0; border-bottom:1px solid var(--imp-line); }
   .fin-row:last-child { border-bottom:0; }
@@ -346,10 +354,66 @@
         <div class="fin-total"><span>Repeating costs a month</span><strong>{{ usd(business.monthly_costs) }}</strong></div>
       </section>
 
+      <section class="card fin-card" aria-labelledby="fin-bank-h" id="banks">
+        <h2 id="fin-bank-h">Banks</h2>
+        {% if not bank_enabled %}
+        <p class="cap">Link your banks so balances and payments come in on their own. This needs the Plaid keys added in Railway first.</p>
+        {% elif not bank_ready %}
+        <p class="cap">The bank feed isn't set up on this server yet.</p>
+        {% else %}
+        <p class="cap">Balances update at 6:30 AM, 12:30 PM and 5:30 PM. You sign in to each bank in Plaid's window; this page never sees your bank password.</p>
+        <p id="bank-status" class="fin-banner warn" role="status" hidden></p>
+        {% for entry in bank_links %}{% set link = entry.link %}
+        <div class="fin-bank">
+          <div class="fin-bank-head">
+            <h3>{{ link.institution }}</h3>
+            {% if link.status == 'needs_login' %}<button type="button" class="btn-secondary text-xs" data-bank-connect="{{ link.id }}">Reconnect</button>
+            {% elif link.status == 'ok' %}<span class="fin-bank-ok">Updated {{ entry.synced or 'just now' }}</span>{% endif %}
+          </div>
+          {% if link.last_error %}<p class="cap" style="color:var(--imp-danger);">{{ link.last_error }}</p>{% endif %}
+          {% for a in entry.accounts %}
+          <div class="fin-row">
+            <div class="fin-row-main"><h3>{{ a.name }}{% if a.mask %} ...{{ a.mask }}{% endif %}</h3>
+              <p>{% if a.kind == 'credit' %}Card · owed {{ usd(a.current_cents or 0) }}{% elif a.kind == 'loan' %}Loan · owed {{ usd(a.current_cents or 0) }}{% else %}{{ (a.subtype or a.kind)|capitalize }}{% if a.available_cents is not none and a.current_cents is not none and a.available_cents != a.current_cents %} · {{ usd(a.current_cents) }} before pending{% endif %}{% endif %}</p></div>
+            <div class="fin-row-side">
+              {% if a.kind in ('depository',) %}<div class="amount">{{ usd(a.available_cents if a.available_cents is not none else (a.current_cents or 0)) }}</div>{% endif %}
+              <form method="post" action="/finance/bank/accounts/{{ a.id }}" class="fin-bank-pick">
+                <input type="hidden" name="window" value="{{ window }}">
+                <input type="hidden" name="scope" value="{{ a.scope }}">
+                <input type="hidden" name="tracked" value="{{ 'yes' if a.tracked else 'no' }}">
+                <label class="sr-only" for="bank-acct-{{ a.id }}">Count {{ a.name }} as</label>
+                <select id="bank-acct-{{ a.id }}" class="fin-acct" data-bank-pick>
+                  <option value="business"{% if a.tracked and a.scope == 'business' %} selected{% endif %}>Shop</option>
+                  <option value="personal"{% if a.tracked and a.scope == 'personal' %} selected{% endif %}>Personal</option>
+                  <option value="off"{% if not a.tracked %} selected{% endif %}>Leave out</option>
+                </select>
+              </form>
+            </div>
+          </div>
+          {% endfor %}
+          <form method="post" action="/finance/bank/{{ link.id }}/remove" data-confirm="Disconnect {{ link.institution }}? Its accounts keep their last balance here." style="margin-top:6px;">
+            <input type="hidden" name="window" value="{{ window }}"><button class="fin-link" type="submit">Disconnect {{ link.institution }}</button></form>
+        </div>
+        {% endfor %}
+        <div class="fin-bank-actions">
+          <button type="button" class="btn-primary" data-bank-connect="">Connect a bank</button>
+          {% if bank_links %}<form method="post" action="/finance/bank/pull"><input type="hidden" name="window" value="{{ window }}"><button class="btn-secondary" type="submit">Update now</button></form>{% endif %}
+        </div>
+        {% if bank_recent %}
+        <details class="fin-more" style="margin-top:10px;"><summary>Recent bank activity</summary>
+          {% for r in bank_recent %}
+          <div class="fin-row"><div class="fin-row-main"><h3>{{ r.txn.name }}</h3><p>{{ r.txn.day.strftime('%b %-d') }}{% if r.account %} · {{ r.account.name }}{% if r.account.mask %} ...{{ r.account.mask }}{% endif %}{% endif %}{% if r.txn.pending %} · pending{% endif %}</p></div>
+            <div class="fin-row-side"><div class="amount{% if r.txn.amount_cents > 0 %} fin-in{% endif %}">{% if r.txn.amount_cents > 0 %}+{% endif %}{{ usd(r.txn.amount_cents) }}</div></div></div>
+          {% endfor %}
+        </details>
+        {% endif %}
+        {% endif %}
+      </section>
+
       <section class="card fin-card" aria-labelledby="fin-acct-h">
         <h2 id="fin-acct-h">Shop accounts</h2>
         {% for a in business.accounts %}
-        <div class="fin-row"><div class="fin-row-main"><h3>{{ a.name }}</h3><p>As of {{ a.as_of.strftime('%b %-d') }}{% if a.held_cents %} · {{ usd(a.held_cents) }} held for a customer{% endif %}</p></div>
+        <div class="fin-row"><div class="fin-row-main"><h3>{{ a.name }}</h3><p>{% if a.id in bank_fed_ids %}From the bank, {% else %}As of {% endif %}{{ a.as_of.strftime('%b %-d') }}{% if a.held_cents %} · {{ usd(a.held_cents) }} held for a customer{% endif %}</p></div>
           <div class="fin-row-side"><div class="amount">{{ usd(a.balance_cents) }}</div></div></div>
         {% else %}<p class="cap">No balances yet. Add them under Update.</p>{% endfor %}
         {% if business.recorded_in %}<div class="fin-row"><div class="fin-row-main"><h3>Job payments since then</h3><p>Recorded on jobs after you last typed a balance. Counted as cash until you type it again.</p></div>
@@ -360,7 +424,7 @@
         <h2 id="fin-personal-h">Personal, kept separate</h2>
         <p class="cap">Never mixed into the shop numbers above.</p>
         <details class="fin-more"><summary>Cash {{ usd(personal.cash) }} · bills due {{ usd(personal.owed) }}</summary>
-          {% for a in personal.accounts %}<div class="fin-row"><div class="fin-row-main"><h3>{{ a.name }}</h3><p>As of {{ a.as_of.strftime('%b %-d') }}</p></div><div class="fin-row-side"><div class="amount">{{ usd(a.balance_cents) }}</div></div></div>{% endfor %}
+          {% for a in personal.accounts %}<div class="fin-row"><div class="fin-row-main"><h3>{{ a.name }}</h3><p>{% if a.id in bank_fed_ids %}From the bank, {% else %}As of {% endif %}{{ a.as_of.strftime('%b %-d') }}</p></div><div class="fin-row-side"><div class="amount">{{ usd(a.balance_cents) }}</div></div></div>{% endfor %}
           {{ pay_list(pay.personal, 'personal', personal, window, today) }}
           {% for b in personal.later_bills %}{{ bill_row(b, today, window, False, personal) }}{% endfor %}
           {% if personal.short %}<p class="cap" style="margin-top:8px;color:var(--imp-danger);">Short {{ usd(personal.short) }} on personal bills through {{ end.strftime('%b %-d') }}.</p>{% endif %}
@@ -427,8 +491,19 @@
     </div>
   </div>
 </div>
+{% if bank_enabled and bank_ready %}<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+<script src="/static/bank-link.js"></script>{% endif %}
 <script>
 (function () {
+  // A bank account's Shop / Personal / Leave out pick saves as soon as it changes.
+  document.querySelectorAll('select[data-bank-pick]').forEach(function (select) {
+    select.addEventListener('change', function () {
+      var form = select.form;
+      form.querySelector('[name="tracked"]').value = select.value === 'off' ? 'no' : 'yes';
+      if (select.value !== 'off') form.querySelector('[name="scope"]').value = select.value;
+      form.submit();
+    });
+  });
   document.querySelectorAll('form[data-confirm]').forEach(function (form) {
     form.addEventListener('submit', function (event) {
       if (!window.confirm(form.getAttribute('data-confirm'))) event.preventDefault();
