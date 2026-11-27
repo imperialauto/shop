@@ -34,6 +34,7 @@ KEYS = {
     "automatic_declined_followup": "AUTOMATIC_DECLINED_FOLLOWUP",
     "automatic_declined_reminder": "AUTOMATIC_DECLINED_REMINDER",
     "canned_jobs": "CANNED_JOBS_JSON",
+    "instant_quotes": "INSTANT_QUOTES_JSON",
     "automatic_diag_credit_reminder": "AUTOMATIC_DIAG_CREDIT_REMINDER",
     "automatic_snap_link": "AUTOMATIC_SNAP_LINK",
     "snap_apply_link": "SNAP_APPLY_LINK",

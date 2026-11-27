@@ -54,6 +54,7 @@ jobs:
           PUBLIC_SERVICE_CATALOG: '{"diagnostic":{"price":10,"minutes":60},"oil-service":{"price":20,"minutes":60},"pre-purchase":{"price":30,"price_type":"starting","minutes":90},"battery-charging":{"price":40,"minutes":30,"mobile":true},"brake-pads-rotors":{"tiers":{"sedan":300,"suv":350,"pickup":400},"minutes":120}}'
           PUBLIC_AUTO_TIMES: '{"resources":["bay-2"],"step_minutes":60}'
           PUBLIC_MOBILE_ZONES: '{"85000":{"fee":5,"travel_minutes":30}}'
+          INSTANT_QUOTES_ENABLED: 'true'
         run: |
           PYTHONPATH=. python tests/e2e/seed.py
           nohup python -m uvicorn app.main:app --port 8099 > server.log 2>&1 &

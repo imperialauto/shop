@@ -11,6 +11,7 @@
       {% elif item.roadside %}Roadside request received. Nothing is dispatched until we call you to confirm the price and timing. If you're in danger, call 911.
       {% else %}Request received. This is not a booking yet: we will review it and contact you about an estimate and a time.{% endif %}
     </p>
+    {% if item.quoted %}<p class="alert alert-ok" role="status">Price held: {{ item.quoted }} with tax. We confirm it with your VIN and the parts, then contact you to approve it and set a time.</p>{% endif %}
     {% if item.offer %}<p class="alert alert-ok" role="status">You got our launch offer: {{ item.offer }}% off labor. We take it off your final bill.</p>{% endif %}
     {% if item.ref %}
     <div class="panel" style="margin:18px 0">
