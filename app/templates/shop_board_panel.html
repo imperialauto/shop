@@ -54,7 +54,7 @@
       {% for job in board.jobs %}
       <li class="job">
         <span class="when days">{% if job.days is none %}&nbsp;{% elif job.days == 0 %}Today{% else %}{{ job.days }} day{{ '' if job.days == 1 else 's' }}{% endif %}</span>
-        <span class="what">{{ job.vehicle }}{% set bits = [job.who, job.tech]|select|list %}{% if bits or job.book or job.clock_on %}<br><span class="who">{{ bits|join(' · ') }}{% if (job.book or job.clock_on) and bits %} · {% endif %}{% if job.book or job.clock_on %}<span class="hrs {% if job.over_book %}over{% elif job.clock_on %}on{% endif %}">{{ job.worked }}{% if job.book %} of {{ job.book }}{% endif %} hr{% if job.over_book %} · over book{% endif %}</span>{% endif %}</span>{% endif %}</span>
+        <span class="what">{{ job.vehicle }}{% set bits = [job.who, job.tech]|select|list %}{% if bits or job.book or job.clock_on %}<br><span class="who">{{ bits|join(' · ') }}{% if (job.book or job.clock_on) and bits %} · {% endif %}{% if job.book or job.clock_on %}<span class="hrs {% if job.over_book %}over{% elif job.clock_on %}on{% endif %}">{% if job.book and not job.worked and not job.clock_on %}{{ job.book }} hr booked{% else %}{{ job.worked }}{% if job.book %} of {{ job.book }}{% endif %} hr{% endif %}{% if job.over_book %} · over book{% endif %}</span>{% endif %}</span>{% endif %}</span>
         <span class="stage {{ job.stage_key }}">{{ job.stage }}</span>
       </li>
       {% endfor %}

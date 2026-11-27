@@ -94,6 +94,37 @@ class JobTimerTests(unittest.TestCase):
         with self.Session() as db:
             self.assertEqual(db.get(RepairOrder, 12).status, "in_progress")  # the job itself is untouched
 
+    def _approved_not_started(self, approval="approved"):
+        with self.Session() as db:
+            db.add(RepairOrder(id=20, customer_id=1, vehicle_id=1, status="approval_received"))
+            db.add(LineItem(repair_order_id=20, description="Brakes", item_type="labor", quantity=2.0, approval=approval))
+            db.commit()
+
+    def test_starting_the_clock_on_an_approved_job_moves_it_to_in_progress(self):
+        from app.dispatch_model import DispatchAudit
+        self._approved_not_started()
+        self.client("mike").post("/ro/20/clock", data={"operation": "start"})
+        with self.Session() as db:
+            self.assertEqual(db.get(RepairOrder, 20).status, "in_progress")
+            self.assertEqual(db.query(DispatchAudit).filter_by(action="clock_started_job").count(), 1)
+        with self.at(NOW + timedelta(hours=1)):
+            self.client("mike").post("/ro/20/clock", data={"operation": "stop"})
+        with self.Session() as db:
+            self.assertEqual(db.get(RepairOrder, 20).status, "in_progress")  # stopping never moves the job back
+
+    def test_clock_on_a_job_with_every_line_declined_leaves_the_job_alone(self):
+        self._approved_not_started(approval="declined")
+        self.client().post("/board/clock/20", data={"operation": "start"})
+        with self.Session() as db:
+            self.assertEqual(db.get(RepairOrder, 20).status, "approval_received")
+            self.assertTrue(shop_board.job_clocks(db)[20]["on"])
+
+    def test_tv_shows_booked_hours_until_someone_clocks_in(self):
+        self._approved_not_started()  # the newest job on the car is the one the TV shows
+        html = self.client().get("/board/panel").text
+        self.assertIn("2.0 hr booked", html)
+        self.assertNotIn("0.0 of 2.0 hr", html)
+
     def test_two_workers_add_up_and_stop_on_the_job_page_stops_only_mine(self):
         owner, tech = self.client(), self.client("mike")
         with self.at(NOW - timedelta(hours=3)):

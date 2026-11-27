@@ -137,6 +137,18 @@ class BoardLiveTests(unittest.TestCase):
         # waiting_approval with nothing pending, so nobody is actually waiting on those customers.
         self.assertEqual(waiting, {"texts": 1, "calls": 1, "estimates": 1, "total": 3})
 
+    def test_waiting_on_you_skips_items_about_a_job_that_no_longer_needs_them(self):
+        """The TV counts what the Needs you page shows: a text about a picked-up job isn't waiting on anyone."""
+        with self.Session() as db:
+            db.add(RepairOrder(id=30, customer_id=1, vehicle_id=1, status="delivered"))
+            db.add(DispatchItem(quo_conversation_id="PICKUP30", customer_phone="+16025550100", status="needs_owner",
+                                last_message_id="m30"))
+            db.add(DispatchItem(quo_conversation_id="c2", customer_phone="+16025550102", status="needs_owner",
+                                last_message_id="m2"))
+            db.commit()
+            waiting = shop_board.waiting_on_you(db)
+        self.assertEqual((waiting["texts"], waiting["calls"]), (1, 0))
+
     def test_parts_on_order_show_without_prices(self):
         with self.Session() as db:
             parts = shop_board.parts_coming(db)
