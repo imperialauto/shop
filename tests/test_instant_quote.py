@@ -220,6 +220,30 @@ class InstantQuoteTests(unittest.TestCase):
             self.assertEqual(item.status, "needs_owner")
             self.assertIn("Instant price $86.24", item.summary)
 
+    def test_the_held_price_shows_on_the_job_and_in_the_owner_queue(self):
+        visitor = TestClient(app, follow_redirects=False)
+        data = {"job": "oil-change", "where": "shop", "year": "2016", "make": "Toyota", "model": "Camry",
+                "first_name": "Testy", "last_name": "Sampleton", "phone": "(602) 555-0143", "contact_method": "text"}
+        with self.on(), patch.object(socket.socket, "connect", no_network):
+            self.assertEqual(visitor.post("/site/quote/hold", data=data).status_code, 303)
+            owner = self.sign_in()
+            with self.Session() as db:
+                order_id = db.query(RepairOrder).one().id
+            job = owner.get(f"/ro/{order_id}")
+            self.assertEqual(job.status_code, 200)
+            self.assertIn("$86.24", job.text)
+            self.assertIn("Instant price from the website", job.text)
+            self.assertIn("Instant price $86.24", owner.get("/dashboard/inbox").text)
+
+    def test_the_site_links_to_the_price_page_only_when_it_is_on(self):
+        client = TestClient(app)
+        with self.on():
+            self.assertIn('href="/site/quote"', client.get("/site/").text)
+            self.assertIn('href="/site/quote"', client.get("/site/estimate").text)
+        with patch.dict(os.environ, {"INSTANT_QUOTES_ENABLED": ""}):
+            self.assertNotIn('href="/site/quote"', client.get("/site/").text)
+            self.assertNotIn('href="/site/quote"', client.get("/site/estimate").text)
+
     def test_hold_needs_public_forms_open_and_ignores_a_price_sent_by_the_browser(self):
         client = TestClient(app, follow_redirects=False)
         data = {"job": "diagnostic", "where": "shop", "year": "2016", "make": "Toyota", "model": "Camry",

@@ -135,6 +135,11 @@ def _site_controls() -> dict:
             "terms": v["terms_published"]}
 
 
+def _instant_quotes_on() -> bool:
+    from app import instant_quote
+    return instant_quote.enabled()
+
+
 def render(request: Request, name: str, status_code: int = 200, form_page: bool = False, **context):
     can_index = indexable() and not form_page
     base = {
@@ -146,6 +151,7 @@ def render(request: Request, name: str, status_code: int = 200, form_page: bool 
         "year": datetime.now(PHOENIX).year,
         "referral_box": referrals.enabled(),
         "launch_offer": launch_offer.banner(),
+        "instant_quotes_on": _instant_quotes_on(),
     }
     return templates.TemplateResponse(name, {**base, **context}, status_code=status_code,
                                       headers=page_headers(form_page))

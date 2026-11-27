@@ -19,7 +19,8 @@ PAGES = [("dashboard", "/dashboard"), ("dashboard-urgent", "/dashboard?view=urge
          ("site-heavy-duty", "/site/services/heavy-duty"), ("site-contact", "/site/contact"), ("site-book", "/site/book"),
          ("site-book-times", "/site/book?service=diagnostic"), ("site-estimate", "/site/estimate"),
          ("site-mobile", "/site/book?service=battery-charging&where=mobile&zip=85000"), ("site-pricing", "/site/pricing"),
-         ("site-roadside-service", "/site/services/mobile-roadside"), ("security-privacy", "/settings/security-privacy"), ("site-faq", "/site/faq"), ("site-status", "/site/status")]
+         ("site-roadside-service", "/site/services/mobile-roadside"), ("security-privacy", "/settings/security-privacy"), ("site-faq", "/site/faq"), ("site-status", "/site/status"),
+         ("site-quote", "/site/quote"), ("instant-price-book", "/settings/instant-quotes")]
 
 
 def measure(page, label, device, status, errors):
@@ -574,8 +575,117 @@ def flows(page, device):
         measure(visitor, "site-roadside-received", device, 200, [])
         visitor.context.close()
 
+
+    def quote_visitor():
+        return page.context.browser.new_context(**page_options).new_page()
+
+    def pick_job(visitor, job, year="2016", make="Ford", model="Focus", where="shop", zip_code=""):
+        visitor.goto(BASE + "/site/quote")
+        visitor.select_option("#job", job)
+        visitor.locator("label.choice", has=visitor.locator(f"input[name=where][value={where}]")).click()
+        visitor.fill("#zip", zip_code)
+        visitor.fill("#year", year)
+        visitor.fill("#make", make)
+        visitor.fill("#model", model)
+        visitor.click("form[action='/site/quote'] button[type=submit]")
+        visitor.wait_for_load_state("networkidle")
+
+    def site_instant_price():
+        visitor = quote_visitor()
+        visitor.goto(BASE + "/site/")
+        visitor.click(".hero a[href='/site/quote']")
+        assert visitor.url.endswith("/site/quote"), visitor.url
+        measure(visitor, "site-quote-form", device, 200, [])
+        pick_job(visitor, "oil-change")
+        price = visitor.inner_text("#price")
+        assert "$86.24" in price and "Tax (parts only)" in price, price[:400]
+        measure(visitor, "site-quote-price", device, 200, [])
+        visitor.fill("#first_name", "Quote" + device)
+        visitor.fill("#last_name", "Visitor")
+        visitor.fill("#phone", "6025550151" if device == "phone" else "6025550152")
+        visitor.fill("#when", "Saturday morning")
+        visitor.check("input[name=contact_method][value=text]")
+        visitor.click("form[action='/site/quote/hold'] button[type=submit]")
+        visitor.wait_for_url("**/site/estimate/received")
+        body = visitor.inner_text("body")
+        assert "Price held: $86.24" in body, body[:400]
+        measure(visitor, "site-quote-held", device, 200, [])
+        reference = visitor.inner_text("#ref").strip()
+        assert reference.startswith("WEB-"), reference
+        context["quote_ro"] = int(reference.split("-", 1)[1])
+        pick_job(visitor, "oil-change")  # holding the same price again must not make a second job
+        visitor.fill("#first_name", "Quote" + device)
+        visitor.fill("#last_name", "Visitor")
+        visitor.fill("#phone", "6025550151" if device == "phone" else "6025550152")
+        visitor.check("input[name=contact_method][value=text]")
+        visitor.click("form[action='/site/quote/hold'] button[type=submit]")
+        visitor.wait_for_url("**/site/estimate/received")
+        assert visitor.inner_text("#ref").strip() == reference, "held the same price twice"
+        visitor.context.close()
+
+    def instant_price_on_dashboard():
+        ro = context["quote_ro"]
+        page.goto(f"{BASE}/ro/{ro}")
+        body = page.inner_text("body")
+        assert "Instant price from the website" in body and "Saturday morning" in body, body[:600]
+        assert "$86.24" in body, "job total does not match the price the customer saw"
+        measure(page, "instant-price-job", device, 200, [])
+        page.goto(BASE + "/dashboard/inbox")
+        assert "Instant price $86.24" in page.inner_text("body"), "no owner queue item for the held price"
+
+    def site_instant_price_problems():
+        visitor = quote_visitor()
+        pick_job(visitor, "oil-change", year="19")
+        assert visitor.locator("[role=alert]").count() == 1, "bad year accepted"
+        assert visitor.input_value("#make") == "Ford", "form lost what the customer typed"
+        pick_job(visitor, "oil-change", where="onsite", zip_code="85000")
+        alert = visitor.locator("[role=alert]")
+        assert alert.count() == 1 and alert.locator("a[href='/site/estimate']").count() == 1, "shop-only job priced on site"
+        measure(visitor, "site-quote-no-price", device, 200, [])
+        visitor.goto(BASE + "/site/estimate")
+        visitor.click("a[href='/site/quote']")
+        assert visitor.url.endswith("/site/quote"), visitor.url
+        visitor.context.close()
+
+    def instant_price_book():
+        page.goto(BASE + "/settings")
+        page.click("a[href='/settings/instant-quotes']")
+        page.wait_for_url("**/settings/instant-quotes")
+        card = page.locator("section.card", has_text="Add a job")
+        card.locator("[name^=name_]").fill("Battery install (walkthrough)")
+        card.locator("[name^=hours_]").fill("0.5")
+        card.locator("[name^=parts_]").fill("150")
+        card.locator("[name^=supplies_]").check()
+        card.locator("[name^=mobile_]").check()
+        page.click("button:has-text('Save price book')")
+        page.wait_for_load_state("networkidle")
+        assert "Saved." in page.inner_text("body"), page.inner_text("body")[:400]
+        measure(page, "instant-price-book-saved", device, 200, [])
+        bad = page.locator("section.card", has_text="Add a job")
+        bad.locator("[name^=name_]").fill("Broken job")
+        bad.locator("[name^=hours_]").fill("lots")
+        page.click("button:has-text('Save price book')")
+        assert "Nothing was saved" in page.inner_text("body"), "bad hours were saved"
+        visitor = quote_visitor()
+        visitor.goto(BASE + "/site/quote")
+        key = visitor.eval_on_selector("#job", "s => [...s.options].find(o => o.text.startsWith('Battery install')).value")
+        assert "Broken job" not in visitor.inner_text("#job")
+        pick_job(visitor, key)
+        assert "$246.30" in visitor.inner_text("#price"), visitor.inner_text("#price")[:400]
+        pick_job(visitor, key, where="onsite", zip_code="85000")
+        price = visitor.inner_text("#price")
+        assert "$334.55" in price and "Mobile service call" in price, price[:400]
+        pick_job(visitor, key, where="onsite", zip_code="99999")
+        assert visitor.locator("[role=alert] a[href='/site/estimate']").count() == 1, "unpriced ZIP got a price"
+        visitor.context.close()
+        page.goto(BASE + "/settings/instant-quotes")
+        page.once("dialog", lambda dialog: dialog.accept())
+        page.click("button:has-text('Back to defaults')")
+        page.wait_for_load_state("networkidle")
+        assert "Battery install (walkthrough)" not in page.content(), "Back to defaults kept the added job"
+
     for name, action in [("wrong password", wrong_password), ("login", login), ("Master Tasks create, reschedule, complete and reopen", master_tasks), ("public site booking", site_booking), ("public mobile booking", site_mobile_booking), ("public time conflict", site_taken_time), ("public site estimate", site_estimate),
-                         ("public brake package", site_brake_package), ("public unpriced request", site_request_unpriced), ("public roadside", site_roadside), ("new customer", customer), ("new vehicle", vehicle), ("new repair order", repair_order),
+                         ("public brake package", site_brake_package), ("public unpriced request", site_request_unpriced), ("public roadside", site_roadside), ("instant price and hold", site_instant_price), ("held price on the dashboard", instant_price_on_dashboard), ("instant price errors", site_instant_price_problems), ("instant price book", instant_price_book), ("new customer", customer), ("new vehicle", vehicle), ("new repair order", repair_order),
                          ("add line item", line_item), ("edit line item", edit_line_item), ("add part", part_item), ("customer status link", public_status),
                          ("customer signature", signature), ("change status", status), ("create invoice", invoice),
                          ("no duplicate invoice", duplicate_invoice), ("record payment", payment),

@@ -6,6 +6,7 @@
     <div class="eyebrow">Estimate request</div>
     <h1>Tell us about the job</h1>
     <p>For diagnostics, diesel and heavy-duty trucks, European work, transmissions, fleet vehicles, on-site work, towing or roadside help. A VIN helps us look up the right parts.</p>
+    {% if instant_quotes_on %}<p class="hint">Common job? <a href="/site/quote">See your price in seconds</a>.</p>{% endif %}
 
     {% if error %}<p class="alert alert-error" role="alert">{{ error }}</p>{% endif %}
 
