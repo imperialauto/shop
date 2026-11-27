@@ -10,7 +10,7 @@ from statistics import median
 from sqlalchemy.orm import Session
 
 from app.dispatch_model import DispatchItem
-from app.models import RepairOrder
+from app.models import Invoice, Payment, RepairOrder
 
 
 def _utc(value):
@@ -42,7 +42,13 @@ def recent(db: Session, days: int = 30, now: datetime | None = None) -> dict:
     """Median hours from first contact to paid for jobs paid in the last N days."""
     now = now or datetime.now(timezone.utc)
     hours = []
-    for ro in db.query(RepairOrder).all():
+    # Only jobs with a payment in the window can count, so don't walk every job ever made
+    # (this ran on each owner Home load and grew with the shop's history).
+    cutoff = (now - timedelta(days=days + 1)).astimezone(timezone.utc).replace(tzinfo=None)
+    paid_jobs = (db.query(Invoice.repair_order_id).join(Payment, Payment.invoice_id == Invoice.id)
+                 .filter(Payment.paid_at >= cutoff))
+    jobs = db.query(RepairOrder).filter(RepairOrder.id.in_(paid_jobs.scalar_subquery())).all()
+    for ro in jobs:
         t = for_job(db, ro)
         paid = next((s["at"] for s in t["steps"] if s["label"] == "Paid"), None)
         if t["hours_to_paid"] is not None and paid and now - paid <= timedelta(days=days):

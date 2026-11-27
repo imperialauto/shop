@@ -6,7 +6,8 @@ from groq import AsyncGroq
 from app.groq_models import text_model, vision_model
 import json, base64, html, os, secrets, io
 from xml.sax.saxutils import escape as xml_escape
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from app.database import get_db
 from app.auth import get_current_user
@@ -400,9 +401,15 @@ async def create_ro_from_estimate(
 @router.post("/pdf")
 async def download_pdf(
     request: Request,
+    db: Session = Depends(get_db),
     estimate_json: str = Form(...),
 ):
     """Generate and return a PDF estimate."""
+    # Signed-in staff only: anyone else could print official-looking Imperial estimates.
+    try:
+        get_current_user(request, db)
+    except HTTPException:
+        return RedirectResponse("/login", status_code=302)
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.units import inch
     from reportlab.lib import colors
@@ -441,7 +448,8 @@ async def download_pdf(
     note_style = ParagraphStyle("note", parent=styles["Normal"], textColor=grey, fontSize=9, leading=13, spaceAfter=6)
     cell_style = ParagraphStyle("cell", parent=styles["Normal"], textColor=dark, fontSize=9, leading=12)
 
-    today = date.today().strftime("%B %d, %Y")
+    # Shop time, not Railway's UTC clock (which reads tomorrow after 5 PM in Phoenix).
+    today = datetime.now(ZoneInfo("America/Phoenix")).date().strftime("%B %d, %Y")
     name = data.get("name", "Customer")
     year = data.get("year", "")
     make = data.get("make", "")

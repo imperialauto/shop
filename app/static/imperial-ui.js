@@ -18,6 +18,35 @@
     form.querySelectorAll("[data-quick-reply]").forEach(function (c) { c.classList.toggle("active", c === chip); });
   });
 
+  // ── Ask before, and lock while sending ────────────────────────────────────
+  // Any form with data-confirm asks once (this used to work only on Home and Money, so the job
+  // page's "text the link again" sent without asking). Any posting form then disables its submit
+  // buttons so a double tap can't post twice.
+  document.addEventListener("submit", function (event) {
+    var form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    var ask = form.getAttribute("data-confirm");
+    if (ask && !window.confirm(ask)) { event.preventDefault(); return; }
+    if ((form.getAttribute("method") || "get").toLowerCase() !== "post" || form.hasAttribute("hx-post")) return;
+    if (form.target && form.target !== "_self") return;  // opens elsewhere (a PDF); this page stays usable
+    setTimeout(function () {
+      var buttons = form.querySelectorAll("button[type='submit'], button:not([type]), input[type='submit']");
+      buttons.forEach(function (b) { b.disabled = true; b.setAttribute("aria-busy", "true"); });
+      // A download or a slow answer leaves the page in place; unlock after a while either way.
+      setTimeout(function () {
+        buttons.forEach(function (b) { b.disabled = false; b.removeAttribute("aria-busy"); });
+      }, 8000);
+    }, 0);
+  });
+  // Coming back with the Back button can restore a page with its buttons still locked.
+  window.addEventListener("pageshow", function (event) {
+    if (!event.persisted) return;
+    document.querySelectorAll("button[aria-busy='true'], input[aria-busy='true']").forEach(function (b) {
+      b.disabled = false;
+      b.removeAttribute("aria-busy");
+    });
+  });
+
   // ── Report a problem ──────────────────────────────────────────────────────
   var fab = document.getElementById("problem-fab");
   var dialog = document.getElementById("problem-dialog");

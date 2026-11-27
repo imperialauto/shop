@@ -74,6 +74,14 @@ def queue(db: Session, ro: RepairOrder, approved_lines, fetch=None) -> DispatchI
     phone = approval_links.mobile(ro.customer.phone if ro.customer else None)
     if phone is None or phone == approval_links.mobile(OWNER_PHONE):
         return None
+    from app import job_deposits
+    if job_deposits.total(ro) > 0:
+        return None  # a deposit was already recorded on this job (before any invoice existed)
+    # Shop discounts are approved by the shop, not the customer, so they aren't in approved_lines;
+    # count them so the text matches the estimate PDF's total.
+    approved_lines = list(approved_lines) + [
+        li for li in ro.line_items
+        if li.item_type == "discount" and li.approval in (None, "approved") and li not in approved_lines]
     total, deposit = amounts(approved_lines)
     if deposit <= 0:
         return None

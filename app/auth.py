@@ -46,10 +46,9 @@ def get_current_user(request: Request, db: Session) -> User:
     if session_too_old(request):
         request.session.clear()
         raise HTTPException(status_code=401, detail="Signed out after the time set in Security & Privacy.")
-    if user.role == "owner":
-        provided = request.session.get("owner_session_tag", "")
-        if not provided or not hmac.compare_digest(provided, _owner_session_tag(user)):
-            raise HTTPException(status_code=401, detail="Owner session expired. Sign in again.")
+    provided = request.session.get("owner_session_tag", "")
+    if not provided or not hmac.compare_digest(provided, _owner_session_tag(user)):
+        raise HTTPException(status_code=401, detail="Session expired. Sign in again.")
     return user
 
 
@@ -85,10 +84,9 @@ def login_user(request: Request, user: User, remember: bool = False):
     request.session["remember"] = bool(remember)
     request.session["user_id"] = user.id
     request.session["username"] = user.username
-    if user.role == "owner":
-        request.session["owner_session_tag"] = _owner_session_tag(user)
-    else:
-        request.session.pop("owner_session_tag", None)
+    # Every login is bound to its current password, so resetting a staff password signs out a
+    # stolen or old session at once instead of letting it run out its 30 days.
+    request.session["owner_session_tag"] = _owner_session_tag(user)
 
 
 def logout_user(request: Request):

@@ -81,6 +81,9 @@ def _money(value: str) -> float | None:
         amount = float(text)
     except ValueError:
         raise HTTPException(400, "Cost has to be a dollar amount, like 47.69.")
+    if amount != amount or amount in (float("inf"), float("-inf")):  # "nan" / "inf" parse as floats
+        raise HTTPException(400, "Cost has to be a dollar amount, like 47.69.")
+    amount = round(amount, 2)
     if amount < 0 or amount > 100000:
         raise HTTPException(400, "Cost has to be between $0 and $100,000.")
     return amount

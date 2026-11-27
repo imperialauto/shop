@@ -1792,15 +1792,20 @@ def queue_rows_context(db: Session, view: str = "open", limit: int = QUEUE_ROWS_
             "queue_back": back_to(back), "queue_stamp": sha256(stamp_source.encode()).hexdigest()[:16]}
 
 
+_ROWS_TEMPLATES = None
+
+
 @router.get("/queue-rows")
 def queue_rows(request: Request, view: str = "open", limit: int = QUEUE_ROWS_MAX, back: str = "/dashboard",
                layout: str = "", db: Session = Depends(get_db)):
     """The Needs-you rows as an HTML fragment, polled every ~25 s so new texts show without a reload."""
-    from fastapi.responses import HTMLResponse
-    from app.templating import Jinja2Templates
+    global _ROWS_TEMPLATES
     get_current_user(request, db)
     context = queue_rows_context(db, view, limit, back)
-    templates = Jinja2Templates(directory="app/templates")
+    if _ROWS_TEMPLATES is None:  # built once; a new one per poll threw away Jinja's compiled-template cache
+        from app.templating import Jinja2Templates
+        _ROWS_TEMPLATES = Jinja2Templates(directory="app/templates")
+    templates = _ROWS_TEMPLATES
     page = "_dispatch_rows_home.html" if layout == "home" else "_dispatch_rows.html"
     response = templates.TemplateResponse(request, page, {"request": request, **context})
     response.headers["X-Queue-Stamp"] = context["queue_stamp"]
