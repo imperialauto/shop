@@ -92,6 +92,17 @@ class RecommendedServiceTests(unittest.TestCase):
         self.db.commit()
         self.assertIn(new.id, self.ids(rec.for_customer(self.db, 1)))
 
+    def test_lines_not_agreed_at_close_out_count(self):
+        from app import job_closeout
+        job = self.db.get(RepairOrder, 20)
+        self.db.add(LineItem(id=40, repair_order_id=20, description="Tie rod end", unit_price=95, created_at=T0))
+        self.db.add(LineItem(id=41, repair_order_id=20, description="Alignment", unit_price=120, created_at=T0))
+        self.db.commit()
+        job_closeout.close_out(self.db, job, "owner", [41], picked_up=True)
+        self.db.commit()
+        self.assertEqual(self.db.get(LineItem, 40).approval_source, "shop")
+        self.assertIn(40, self.ids(rec.for_customer(self.db, 1)))
+
     def test_remove_hides_it_without_changing_lines(self):
         rec.dismiss(self.db, self.db.get(LineItem, 4), "owner")
         self.db.commit()

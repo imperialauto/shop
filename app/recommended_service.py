@@ -7,7 +7,7 @@ customer when the car was picked up counts too, since nobody said yes to it.
 
 A recommendation drops off by itself once the same work shows up on a later line for that car that
 wasn't declined (added to a job, quoted again or done), or when the owner removes it. Removing writes
-an audit row, so nothing in the jobs or lines changes. Discounts, the shop's own lines and $0 lines are
+an audit row, so nothing in the jobs or lines changes. Discounts and $0 lines are
 left out, and the same work (labor and parts apart) is listed once per car, the newest.
 
 Nothing here texts anyone. Reminders about declined work stay with app.declined_followups (a draft for
@@ -45,7 +45,8 @@ def dismissed_ids(db: Session) -> set[int]:
 
 def _counts(line: LineItem) -> bool:
     ro = line.repair_order
-    if ro is None or line.item_type == "discount" or line.approval_source == "shop" or (line.unit_price or 0) <= 0:
+    # Close-out marks lines the customer never agreed to as declined by the shop; those still count.
+    if ro is None or line.item_type == "discount" or (line.unit_price or 0) <= 0:
         return False
     if line.approval == "declined":
         return True
