@@ -113,6 +113,12 @@
     <p class="text-sm text-stone-400 mt-2">Once per customer, ever. Goes out during shop hours the day after a job is marked picked up, after the bill is paid, and only for pickups in the last 7 days. If they texted you since pickup, a balance was waived, or their texts can't be checked, the draft waits for your YES. Mark a customer as already reviewed on their page and they're never asked. It never offers a discount for a review; Google doesn't allow that.</p>
   </section>
   <section class="card">
+    <h2 class="font-bold mb-2">After-service check-in</h2>
+    <input type="hidden" name="automatic_service_checkin_shown" value="1">
+    <label><input type="checkbox" name="automatic_service_checkin" {% if settings.automatic_service_checkin %}checked{% endif %}> Text a check-in a week after pickup</label>
+    <p class="text-sm text-stone-400 mt-2">"Is everything running right? If anything seems off, just reply here." Goes out during shop hours 7 days after a job is marked picked up, at most once a month per customer, and only for pickups in the last 14 days. If they texted you since pickup, owe a balance, or their texts can't be checked, the draft waits for your YES. Skipped if they're back in with another open job. It names no price; declined work stays on their Next recommended service list.</p>
+  </section>
+  <section class="card">
     <h2 class="font-bold mb-2">Deposit text</h2>
     <input type="hidden" name="automatic_deposit_text_shown" value="1">
     <label><input type="checkbox" name="automatic_deposit_text" {% if settings.automatic_deposit_text %}checked{% endif %}> Text the deposit request when a customer approves on their link</label>

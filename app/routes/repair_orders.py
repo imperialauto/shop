@@ -226,7 +226,14 @@ def view_ro(request: Request, ro_id: int, db: Session = Depends(get_db)):
         "canned_jobs": canned_jobs.menu(),
         "approval_send": _approval_send(db, ro, user),
         "job_timer": _job_timer().for_job(db, ro, user),
+        "recommended": _recommended().for_job(db, ro) if ro.status not in ("delivered", "cancelled") else [],
     })
+
+
+def _recommended():
+    from app import recommended_service
+
+    return recommended_service
 
 
 def _job_timer():
@@ -583,6 +590,29 @@ def add_line_item(
     db.commit()
     return RedirectResponse(f"/ro/{ro_id}" + ("?line_added=invoice#line-items" if invoice else ""), status_code=302)
 
+
+@router.post("/{ro_id}/recommendations/{line_id}/add")
+def add_recommendation(request: Request, ro_id: int, line_id: int, db: Session = Depends(get_db)):
+    """Copies a next recommended service from this car's earlier job onto this one, still needing approval."""
+    user = require_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    ro = db.query(RepairOrder).filter(RepairOrder.id == ro_id).first()
+    if not ro or ro.status in ("delivered", "cancelled"):
+        raise HTTPException(404, "Job not found.")
+    line = next((li for li in _recommended().for_job(db, ro) if li.id == line_id), None)
+    if line is None:
+        return RedirectResponse(f"/ro/{ro_id}#line-items", status_code=303)  # already added or removed
+    invoice = next((inv for inv in ro.invoices if inv.status != "void"), None)
+    if invoice and (invoice.status != "draft" or invoice.customer_signed_at):
+        return RedirectResponse(f"/ro/{ro_id}?line_error=invoiced#line-items", status_code=303)
+    _recommended().add_to_job(db, line, ro, user.username)
+    if invoice:
+        from app.routes.invoices import refresh_draft
+        db.refresh(ro)
+        refresh_draft(db, invoice, ro)
+    db.commit()
+    return RedirectResponse(f"/ro/{ro_id}#line-items", status_code=303)
 
 
 def line_item_revision(li):

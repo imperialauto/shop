@@ -27,6 +27,7 @@ KEYS = {
     "next_visit_offer": "NEXT_VISIT_OFFER",
     "automatic_review_text": "AUTOMATIC_REVIEW_TEXT",
     "google_review_link": "GOOGLE_REVIEW_LINK",
+    "automatic_service_checkin": "AUTOMATIC_SERVICE_CHECKIN",
     "automatic_deposit_text": "AUTOMATIC_DEPOSIT_TEXT",
     "automatic_pickup_text": "AUTOMATIC_PICKUP_TEXT",
     "automatic_oil_reminders": "AUTOMATIC_OIL_REMINDERS",

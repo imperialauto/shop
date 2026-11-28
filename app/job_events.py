@@ -7,15 +7,16 @@ inside its own savepoint, so one failing never blocks the status change or the o
 - delivered: the Google review request for the day after pickup (app.review_requests). Payments
   recorded after pickup schedule it from app.routes.invoices. The pickup-ready text goes out on
   complete and never asks for a review, so a customer gets one text at each step.
+- delivered: the after-service check-in a week after pickup (app.service_checkins).
 """
 from sqlalchemy.orm import Session
 
-from app import pickup_texts, review_requests
+from app import pickup_texts, review_requests, service_checkins
 from app.models import RepairOrder
 
 HANDLERS = {
     "complete": [pickup_texts.queue],
-    "delivered": [review_requests.schedule],
+    "delivered": [review_requests.schedule, service_checkins.schedule],
 }
 
 

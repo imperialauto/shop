@@ -130,9 +130,10 @@ class PickupTextTests(unittest.TestCase):
         self.assertEqual(self.pickups(job), [])
 
     def test_pickup_hooks_send_one_text_each(self):
-        from app import review_requests
+        from app import review_requests, service_checkins
         self.assertEqual(job_events.HANDLERS["complete"], [pickup_texts.queue])
-        self.assertEqual(job_events.HANDLERS["delivered"], [review_requests.schedule])
+        # Review the day after pickup, check-in a week after: each schedules its own later text.
+        self.assertEqual(job_events.HANDLERS["delivered"], [review_requests.schedule, service_checkins.schedule])
         job = self.job()
         self.move(job, "complete", terms=True)
         self.assertNotIn("review", self.pickups(job)[0][1].lower())
