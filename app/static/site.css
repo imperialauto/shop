@@ -163,3 +163,21 @@ input:focus, select:focus, textarea:focus { outline: 3px solid rgba(203,176,107,
 .gallery-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 @media (max-width: 860px) { .gallery-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 520px) { .gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .gallery-item figcaption { font-size: .82rem; padding: 8px; } }
+
+/* Financing (Snap Finance) */
+.finance-strip { background: linear-gradient(90deg, var(--gold-dark), var(--gold)); color: var(--purple-deep); border-bottom: 1px solid var(--gold-dark); }
+.finance-strip-inner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding-top: 16px; padding-bottom: 16px; }
+.finance-strip-text { display: flex; flex-direction: column; gap: 2px; max-width: 640px; }
+.finance-strip-text strong { font-family: var(--serif); font-size: 1.2rem; }
+.finance-badge { font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; font-weight: 800; }
+.finance-strip-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.finance-strip .btn-gold { background: var(--purple-deep); color: var(--gold); }
+.finance-strip .btn-gold:hover { background: var(--purple); }
+.finance-more { color: var(--purple-deep); font-weight: 700; min-height: 44px; display: inline-flex; align-items: center; }
+.finance-inline { background: var(--surface-2); border: 1px solid var(--gold-dark); border-radius: 10px; padding: 10px 14px; }
+.finance-inline a { font-weight: 700; }
+.finance-panel { margin-top: 22px; border-color: var(--gold-dark); }
+.nav a.nav-finance { color: var(--gold); font-weight: 700; }
+.finance-fine { margin-top: 18px; font-size: .75rem; color: #9c8dab; }
+.finance-fine p { margin: 0 0 6px; }
+@media (max-width: 640px) { .finance-strip-actions { width: 100%; } .finance-strip-actions .btn { flex: 1; } }

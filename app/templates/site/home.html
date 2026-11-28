@@ -14,9 +14,10 @@
       <a class="btn btn-outline" href="/site/services">Explore services</a>
       {% endif %}
     </div>
-    <div class="hero-facts"><span>Written estimate before work</span><span>Powerstroke, Cummins, Duramax</span><span>18-wheeler jump starts and towing</span></div>
+    <div class="hero-facts"><span>Written estimate before work</span><span>Powerstroke, Cummins, Duramax</span><span>18-wheeler jump starts and towing</span>{% if financing %}<span>Financing through Snap Finance</span>{% endif %}</div>
   </div>
 </section>
+{% include "site/_financing_strip.html" %}
 
 <section class="section">
   <div class="wrap">
@@ -88,7 +89,7 @@
       <p>Tell us what the vehicle is doing. Add the VIN if you have it and we will get back to you with next steps.</p>
     </div>
     <div class="actions">
-      {% if forms_open %}<a class="btn btn-gold" href="/site/estimate">Request an estimate</a><a class="btn btn-outline" href="/site/roadside">Broken down? Roadside help</a>
+      {% if forms_open %}<a class="btn btn-gold" href="/site/estimate">Request an estimate</a><a class="btn btn-outline" href="/site/roadside">Broken down? Roadside help</a>{% if financing %}<a class="btn btn-outline" href="/site/financing">Financing options</a>{% endif %}
       {% else %}<a class="btn btn-gold" href="tel:{{ business.phone_tel }}">Call or text the shop</a><a class="btn btn-outline" href="/site/roadside">Roadside information</a>{% endif %}
     </div>
   </div>

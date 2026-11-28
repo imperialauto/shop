@@ -13,6 +13,7 @@
     </div>
   </div>
 </section>
+{% if not roadside and line.slug != 'rentals' %}{% include "site/_financing_strip.html" %}{% endif %}
 <section class="section">
   <div class="wrap split">
     <div>
@@ -22,6 +23,7 @@
     </div>
     <div class="panel">
       <h3>{% if roadside %}Need help now?{% else %}Ready to come in?{% endif %}</h3>
+      {% if financing and not roadside and line.slug != 'rentals' %}<p class="finance-inline">Paying over time? <a href="/site/financing">Financing through Snap Finance</a> is available.</p>{% endif %}
       <p>{% if roadside %}Send your location online and we'll call you to confirm before anything is dispatched.{% else %}Standard services can be booked online. Complex repairs start with an online estimate request, and you approve the price before work begins.{% endif %}</p>
       <div class="actions" style="margin-top:0">
         {% for label, href in actions %}<a class="btn {{ 'btn-purple' if loop.first else 'btn-light' }}" href="{{ href }}">{{ label }}</a>{% endfor %}

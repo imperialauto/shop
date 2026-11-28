@@ -19,7 +19,7 @@ from app.models import Communication, Customer, RepairOrder, Vehicle
 from app.routes import public_site as public_routes
 
 PAGES = ["/site", "/site/", "/site/services", "/site/contact", "/site/book", "/site/book?service=diagnostic",
-         "/site/estimate", "/site/estimate?service=diesel", "/site/pricing", "/site/faq", "/site/status"] + [f"/site/services/{line.slug}" for line in public_site.SERVICE_LINES if line.slug not in ("nvzn-customs", "rentals")]
+         "/site/estimate", "/site/estimate?service=diesel", "/site/pricing", "/site/faq", "/site/status", "/site/financing"] + [f"/site/services/{line.slug}" for line in public_site.SERVICE_LINES if line.slug not in ("nvzn-customs", "rentals")]
 
 
 def no_network(*args, **kwargs):
@@ -120,6 +120,26 @@ class PublicPages(unittest.TestCase):
             self.assertIn("(480) 914-4144", response.text, path)
         self.assertEqual(self.client.get("/site/services/not-a-service").status_code, 404)
         self.assertEqual(self.client.get("/static/site.css").status_code, 200)
+
+    def test_snap_financing_is_shown_with_its_footnotes_and_apply_goes_to_the_shop_link(self):
+        from app import business_settings
+        with patch.object(business_settings, "_load", return_value={"snap_apply_link": "https://snapf.in/TEST"}):
+            for path in ("/site/", "/site/financing", "/site/pricing", "/site/services/diesel", "/site/book", "/site/estimate"):
+                page = self.client.get(path).text
+                self.assertIn("/site/financing", page, path)
+                self.assertIn("Not all applicants are approved", page, path)
+                self.assertNotIn("48078", page, path)  # Snap: no text-to-apply on websites
+            self.assertNotIn("finance-strip", self.client.get("/site/services/towing").text)
+            apply = self.client.get("/site/financing/apply", follow_redirects=False)
+            self.assertEqual(apply.status_code, 302)
+            self.assertEqual(apply.headers["location"], "https://snapf.in/TEST")
+            self.assertIn("Do you offer financing?", self.client.get("/site/faq").text)
+        with patch.object(business_settings, "_load", return_value={"website_financing": "false"}):
+            self.assertEqual(self.client.get("/site/financing").status_code, 404)
+            self.assertEqual(self.client.get("/site/financing/apply", follow_redirects=False).status_code, 404)
+            home = self.client.get("/site/").text
+            self.assertNotIn("Snap", home)
+            self.assertNotIn("Do you offer financing?", self.client.get("/site/faq").text)
 
     def test_seo_pages_sitemap_and_private_forms_are_gated(self):
         with patch.dict(os.environ, {"PUBLIC_SITE_INDEXABLE": ""}):

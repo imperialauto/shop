@@ -330,6 +330,9 @@ def sitemap_xml():
     paths = ["/site/", "/site/services", "/site/our-work", "/site/contact", "/site/pricing", "/site/faq"]
     if "rentals" not in hidden_slugs():
         paths.append("/site/rentals")
+    from app import site_financing
+    if site_financing.enabled():
+        paths.append("/site/financing")
     paths.extend("/site/services/" + line.slug for line in visible_lines())
     urls = "".join(
         "<url><loc>https://imperialautophx.com" + path + "</loc></url>\n"
