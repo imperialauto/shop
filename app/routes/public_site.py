@@ -14,7 +14,7 @@ PostgreSQL lock the staff booking API uses. Confirmation appears on screen only.
 import logging
 
 from app.ro_status_policy import CLOSED_STATUSES
-from app import appointment_followup, booking_confirmations, business_settings, referrals, calendar_feed, estimate_prefill, launch_offer, lead_lifecycle, website_alerts
+from app import appointment_followup, booking_confirmations, business_settings, referrals, calendar_feed, estimate_prefill, launch_offer, lead_lifecycle, site_financing, website_alerts
 import os
 import re
 import secrets
@@ -60,6 +60,8 @@ FAQ = (
     ("Will I get an estimate before repairs?", "Yes. Complex repairs start with an estimate, and work starts after you approve it."),
     ("How do I check on my vehicle?", "Use the repair status page with your reference number and phone number."),
     ("Do you work on semis and 18-wheelers?", "Yes. We repair heavy-duty diesel trucks and do roadside jump starts and no-start calls for semis, box trucks and fleet units."),
+    ("Do you offer financing?", "Yes, through Snap Finance. Approval amounts range from $300 to $5,000, subject to Snap's "
+     "approval. See our Financing page to apply."),
     ("Do you tow?", "Yes. Send a towing request with the location and we will confirm it with you before anyone is dispatched."),
 )
 STATUS_LIMIT = SubmissionLimiter(limit=20, control="status_hourly_limit")
@@ -112,7 +114,7 @@ def page_headers(form_page: bool = False) -> dict:
 
 def canonical_url(path: str) -> str | None:
     """Only canonicalize published information pages, never customer workflows."""
-    public_paths = {"/site/", "/site/services", "/site/contact", "/site/pricing",
+    public_paths = {"/site/", "/site/services", "/site/contact", "/site/pricing", "/site/financing",
                     "/site/rentals", "/site/faq", "/site/our-work"}
     if path == "/site":
         path = "/site/"
@@ -146,6 +148,7 @@ def render(request: Request, name: str, status_code: int = 200, form_page: bool 
         "year": datetime.now(PHOENIX).year,
         "referral_box": referrals.enabled(),
         "launch_offer": launch_offer.banner(),
+        "financing": site_financing.context(),
     }
     return templates.TemplateResponse(name, {**base, **context}, status_code=status_code,
                                       headers=page_headers(form_page))
@@ -215,9 +218,27 @@ def our_work(request: Request):
     return render(request, "site/our_work.html", active="our-work", photos=PHOTOS)
 
 
+@router.get("/financing", response_class=HTMLResponse)
+def financing(request: Request):
+    if not site_financing.enabled():
+        raise HTTPException(404, "Not found")
+    return render(request, "site/financing.html", active="financing")
+
+
+@router.get("/financing/apply")
+def financing_apply(request: Request):
+    """Sends the visitor to the shop's own Snap application. Logged so clicks can be counted."""
+    if not site_financing.enabled():
+        raise HTTPException(404, "Not found")
+    log.info("site financing apply click")
+    return RedirectResponse(site_financing.apply_link(), status_code=302,
+                            headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow"})
+
+
 @router.get("/faq", response_class=HTMLResponse)
 def faq(request: Request):
-    return render(request, "site/faq.html", active="faq", questions=FAQ)
+    questions = FAQ if site_financing.enabled() else tuple(q for q in FAQ if "financing" not in q[0].lower())
+    return render(request, "site/faq.html", active="faq", questions=questions)
 
 
 def status_page(request: Request, status_code: int = 200, error: str = "", lost: str = ""):

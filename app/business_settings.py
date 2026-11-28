@@ -37,6 +37,8 @@ KEYS = {
     "automatic_diag_credit_reminder": "AUTOMATIC_DIAG_CREDIT_REMINDER",
     "automatic_snap_link": "AUTOMATIC_SNAP_LINK",
     "snap_apply_link": "SNAP_APPLY_LINK",
+    # Snap Finance on the public website (app/site_financing.py): "false" hides it everywhere.
+    "website_financing": "WEBSITE_FINANCING",
     "alert_rules": "ALERT_RULES_JSON",
     "labor_rates": "LABOR_RATES_JSON",
     "booking_auto_times": "PUBLIC_AUTO_TIMES",

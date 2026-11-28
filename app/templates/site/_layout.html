@@ -30,6 +30,7 @@
         <a href="/site/book" {% if active == 'book' %}aria-current="page"{% endif %}>Book online</a>
         <a href="/site/estimate" {% if active == 'estimate' %}aria-current="page"{% endif %}>Get an estimate</a>
         <a href="/site/roadside" {% if active == 'roadside' %}aria-current="page"{% endif %}>Roadside &amp; towing</a>
+        {% if financing %}<a class="nav-finance" href="/site/financing" {% if active == 'financing' %}aria-current="page"{% endif %}>Financing</a>{% endif %}
       </div>
       <div class="nav-secondary">
         <a href="/site/status" {% if active == 'status' %}aria-current="page"{% endif %}>Repair status</a>
@@ -63,7 +64,14 @@
         <h3>Services</h3>
         <ul>{% for line in service_lines %}<li><a href="/site/services/{{ line.slug }}">{{ line.name }}</a></li>{% endfor %}</ul>
       </div>
+      {% if financing %}<div>
+        <h3>Financing</h3>
+        <p>Fix it now, pay over time with Snap Finance.</p>
+        <a href="/site/financing">See financing</a><br>
+        <a href="{{ financing.apply_path }}" rel="nofollow noopener" target="_blank">Apply with Snap</a>
+      </div>{% endif %}
     </div>
+    {% include "site/_financing_fine.html" %}
     <div class="legal">© {{ year }} {{ business.legal_name }}.{% if 'nvzn-customs' not in hidden_services %} NVZN Customs is a division of {{ business.legal_name }}.{% endif %}
       {% if site_controls.privacy %} · <a href="/site/privacy">Privacy</a>{% endif %}{% if site_controls.terms %} · <a href="/site/terms">Terms</a>{% endif %}{% if site_controls.login_button %} · <a href="/login" rel="nofollow">Staff login</a>{% endif %}</div>
   </div>

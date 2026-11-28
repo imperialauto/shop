@@ -14,6 +14,7 @@
       {% endfor %}
     </div>
     <p style="margin-top:18px">Complex repairs need an estimate and your approval. <a href="/site/estimate">Request an estimate</a>.</p>
+    {% if financing %}<div class="panel finance-panel"><h3>Want to pay over time?</h3><p>Apply with Snap Finance. No credit needed.¹ Approvals from {{ financing.range }}.² Financed repairs cost the same as paying any other way.</p><div class="actions" style="margin-top:0"><a class="btn btn-purple" href="{{ financing.apply_path }}" rel="nofollow noopener" target="_blank">Apply with Snap</a><a class="btn btn-light" href="/site/financing">How it works</a></div></div>{% endif %}
   </div>
 </section>
 {% endblock %}
