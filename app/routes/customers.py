@@ -3,9 +3,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Customer, RepairOrder, Vehicle
+from app.models import Customer, LineItem, RepairOrder, Vehicle
 from app.auth import get_current_user
-from app import customer_file, name_finder, next_visit, quo_import, referrals, review_requests, tags
+from app import customer_file, name_finder, next_visit, quo_import, recommended_service, referrals, review_requests, tags
 from datetime import datetime, timezone
 from app.appointments import PHOENIX
 import os, secrets
@@ -185,6 +185,7 @@ def view_customer(request: Request, customer_id: int, db: Session = Depends(get_
         "referral_error": request.query_params.get("referral_error"),
         "next_visit": _paused(db, lambda d: next_visit.open_offer(d, customer.id, datetime.now(timezone.utc))) if next_visit.enabled() else None,
         "review_done": _paused(db, lambda d: review_requests.asked_before(d, customer.id)),
+        "recommended": recommended_service.by_vehicle(db, customer.id),
         "tag_list": tags.names_for(db, "customer", [customer.id]).get(customer.id, []), "tag_known": tags.known(db),
     })
 
@@ -242,6 +243,22 @@ def mark_reviewed(request: Request, customer_id: int, db: Session = Depends(get_
     review_requests.mark_reviewed(db, customer_id, user.username)
     db.commit()
     return RedirectResponse(f"/customers/{customer_id}", status_code=303)
+
+
+@router.post("/{customer_id}/recommendations/{line_id}/remove")
+def remove_recommendation(request: Request, customer_id: int, line_id: int, db: Session = Depends(get_db)):
+    """Takes a next recommended service off the customer's list. The job and its lines don't change."""
+    user = require_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    if user.role not in ("owner", "admin", "office"):
+        raise HTTPException(403, "Only the office can change this.")
+    line = db.get(LineItem, line_id)
+    if line is None or line.repair_order is None or line.repair_order.customer_id != customer_id:
+        raise HTTPException(status_code=404)
+    recommended_service.dismiss(db, line, user.username)
+    db.commit()
+    return RedirectResponse(f"/customers/{customer_id}#recommended", status_code=303)
 
 
 @router.get("/{customer_id}/edit", response_class=HTMLResponse)

@@ -62,6 +62,7 @@ def current() -> dict:
         "automatic_customer_followups": (store.raw("automatic_customer_followups") or "").strip().lower() == "true",
         "next_visit_offer": (store.raw("next_visit_offer") or "").strip().lower() == "true",
         "automatic_review_text": (store.raw("automatic_review_text") or "").strip().lower() == "true",
+        "automatic_service_checkin": (store.raw("automatic_service_checkin") or "").strip().lower() == "true",
         "google_review_link": (store.raw("google_review_link") or "").strip() or review_requests.DEFAULT_LINK,
         "automatic_deposit_text": (store.raw("automatic_deposit_text") or "").strip().lower() == "true",
         "automatic_pickup_text": (store.raw("automatic_pickup_text") or "").strip().lower() == "true",
@@ -154,6 +155,8 @@ def parse(form) -> dict:
             raise Invalid("Google review link: paste the link from Ask for reviews on your Google Business Profile. It starts with https://g.page/r/")
         alerts["automatic_review_text"] = str(form.get("automatic_review_text") == "on").lower()
         alerts["google_review_link"] = link
+    if "automatic_service_checkin_shown" in form:
+        alerts["automatic_service_checkin"] = str(form.get("automatic_service_checkin") == "on").lower()
     if "automatic_deposit_text_shown" in form:
         alerts["automatic_deposit_text"] = str(form.get("automatic_deposit_text") == "on").lower()
     if "automatic_pickup_text_shown" in form:

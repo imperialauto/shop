@@ -225,6 +225,21 @@
   {% endif %}
 </div>
 
+{% if recommended %}
+<section class="card mb-4" id="recommended" aria-label="Next recommended service">
+  <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-2">Next recommended service for this car</h3>
+  <ul style="display:grid;gap:6px">
+    {% for li in recommended %}
+    <li class="flex flex-wrap items-center justify-between gap-2 text-sm">
+      <span>{{ li.description }} <span class="text-stone-400">${{ '{:,.2f}'.format(li.total) }}, {{ 'declined' if li.approval == 'declined' else 'not answered' }} on job #{{ li.repair_order_id }}</span></span>
+      <form method="post" action="/ro/{{ ro.id }}/recommendations/{{ li.id }}/add"><button class="btn-secondary">Add to this job</button></form>
+    </li>
+    {% endfor %}
+  </ul>
+  <p class="text-xs text-stone-500 mt-2">Added lines still need the customer's approval. Nothing is sent.</p>
+</section>
+{% endif %}
+
 <!-- Line Items -->
 <div class="card mb-4" id="line-items">
   <h3 class="text-xs text-stone-400 uppercase tracking-wide mb-3">Line Items

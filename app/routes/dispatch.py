@@ -757,6 +757,12 @@ def tick(request: Request, background: BackgroundTasks, owner_texts: bool = True
         except (SQLAlchemyError, HTTPException, ValueError) as exc:
             db.rollback()
             print(f"review_requests_unavailable {type(exc).__name__}")
+        from app import service_checkins
+        try:  # owner's setting: the week-after-pickup check-in
+            service_checkins.due(db, now)
+        except (SQLAlchemyError, HTTPException, ValueError) as exc:
+            db.rollback()
+            print(f"service_checkins_unavailable {type(exc).__name__}")
     replies = queued_replies(db) if owner_texts else []
     followups = []
     if (not request.app.state.read_only and not replies and customer_followups.enabled()

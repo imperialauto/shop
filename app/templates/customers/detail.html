@@ -28,6 +28,25 @@
 {% set tag_kind, tag_target, tag_next = 'customer', customer.id, '/customers/' ~ customer.id %}
 {% include "_tags.html" %}
 
+{% if recommended %}
+<section id="recommended" class="card mb-4" aria-label="Next recommended service" style="display:grid;gap:8px">
+  <h2 class="font-bold">Next recommended service</h2>
+  {% for vehicle, lines in recommended %}
+  <div>
+    {% if recommended|length > 1 or vehicle %}<p class="text-sm text-stone-300">{{ [vehicle.year, vehicle.make, vehicle.model]|select|join(' ') if vehicle else 'No vehicle on file' }}</p>{% endif %}
+    <ul style="display:grid;gap:6px">
+      {% for li in lines %}
+      <li class="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <span>{{ li.description }} <span class="text-stone-400">${{ '{:,.2f}'.format(li.total) }}, {{ 'declined' if li.approval == 'declined' else 'not answered' }} on <a href="/ro/{{ li.repair_order_id }}#line-items">job #{{ li.repair_order_id }}</a></span></span>
+        {% if can_text %}<form method="post" action="/customers/{{ customer.id }}/recommendations/{{ li.id }}/remove"><button class="btn-secondary">Remove</button></form>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+  <p class="text-xs text-stone-500">Shows on their next job for the same car, with Add to this job. Drops off once the work is on a later job.</p>
+</section>
+{% endif %}
 {% if next_visit %}<p class="card mb-4 text-sm" role="status">Next-visit offer from job #{{ next_visit[0] }}: 10% off labor, up to $50, on a job over $200, good through {{ next_visit[1].astimezone(tz).strftime('%b %-d, %Y') }}. It comes off when the invoice is made.</p>{% endif %}
 {% if referral %}
 <section id="referrals" class="card mb-4" aria-label="Referrals" style="display:grid;gap:8px">
